@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Uploader } from '../ui/Uploader';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 export function ProfileDrawer({ isOpen, onClose, user }) {
   const [email, setEmail] = useState('');

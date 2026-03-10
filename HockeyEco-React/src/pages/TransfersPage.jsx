@@ -7,7 +7,7 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 import { CreateTransferRequestModal } from '../modals/CreateTransferRequestModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal'; 
 

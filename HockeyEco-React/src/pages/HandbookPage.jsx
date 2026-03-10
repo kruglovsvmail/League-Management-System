@@ -7,7 +7,7 @@ import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Tooltip } from '../ui/Tooltip';
 import { Input } from '../ui/Input';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 export function HandbookPage() {
   const [activeTab, setActiveTab] = useState(0); // 0: Пользователи, 1: Команды, 2: Арены

@@ -5,7 +5,7 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { DatePicker } from '../ui/DatePicker'; // <-- ИЗМЕНИЛИ ИМПОРТ
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 const POSITION_LABELS = { goalie: 'Вратарь', defense: 'Защитник', forward: 'Нападающий' };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 import { DivisionTeamsList } from './DivisionTeamsList';
 import { TeamRosterTable } from './TeamRosterTable';
 import { Loader } from '../ui/Loader';

@@ -6,7 +6,7 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge';
 import { Tooltip } from '../ui/Tooltip';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   const [loading, setLoading] = useState(true);

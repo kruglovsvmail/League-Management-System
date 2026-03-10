@@ -8,7 +8,7 @@ import { Uploader } from '../ui/Uploader';
 import { DatePicker } from '../ui/DatePicker';
 import { Stepper } from '../ui/Stepper';
 import { Switch } from '../ui/Switch';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 const STEPS = ['Лого и название', 'Временные рамки', 'Настройки Регулярки', 'Настройки Плей-офф'];
 

@@ -4,7 +4,7 @@ import { Select } from '../ui/Select';
 import { SegmentButton } from '../ui/SegmentButton'; // <-- Исправлен путь
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 const POSITION_LABELS = { 
   goalie: 'Вратарь', 

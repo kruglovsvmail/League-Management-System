@@ -10,7 +10,7 @@ import { DatePicker } from '../ui/DatePicker';
 import { Switch } from '../ui/Switch';
 import { Badge } from '../ui/Badge';
 import { Loader } from '../ui/Loader';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 

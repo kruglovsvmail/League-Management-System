@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Uploader } from '../ui/Uploader';
 import { Button } from '../ui/Button';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
 
 export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initialDark, isSaving = false, canClearLight = true, canClearDark = true, readOnly = false }) {
   const [lightFile, setLightFile] = useState(null);
