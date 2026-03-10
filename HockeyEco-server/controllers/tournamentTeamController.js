@@ -1,0 +1,154 @@
+import pool from '../config/db.js';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import s3 from '../config/s3.js';
+
+export const getTournamentTeamRoster = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Получаем игроков ростера
+        const result = await pool.query(`
+            SELECT
+                tr.id as tournament_roster_id,
+                tr.player_id,
+                tr.application_status,
+                tr.qualification_id,
+                tr.insurance_url,
+                tr.insurance_expires_at,
+                tr.medical_url,
+                tr.medical_expires_at,
+                tr.is_fee_paid,
+                tr.jersey_number,
+                tr.position,
+                tr.is_captain,
+                tr.is_assistant,
+                tr.period_end,
+                tr.updated_at,
+                u.first_name,
+                u.last_name,
+                u.middle_name,
+                u.avatar_url as user_avatar_url,
+                (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1) as team_member_photo_url,
+                lq.short_name as qualification_short_name,
+                
+                -- ИЗМЕНЕНИЕ: Собираем все активные дисквалификации игрока в один JSON-массив
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'status', d.status,
+                            'penalty_type', d.penalty_type,
+                            'games_assigned', d.games_assigned,
+                            'games_served', d.games_served,
+                            'end_date', d.end_date,
+                            'reason', d.reason
+                        )
+                    )
+                    FROM disqualifications d
+                    WHERE d.tournament_roster_id = tr.id AND d.status = 'active'
+                ) as active_disqualifications
+
+            FROM tournament_rosters tr
+            JOIN users u ON tr.player_id = u.id
+            JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+            LEFT JOIN league_qualifications lq ON tr.qualification_id = lq.id
+            WHERE tr.tournament_team_id = $1
+            ORDER BY u.last_name, u.first_name
+        `, [id]);
+
+        // 2. Получаем представителей (staff) команды
+        const staffResult = await pool.query(`
+            SELECT
+                u.id as player_id,
+                u.first_name,
+                u.last_name,
+                u.middle_name,
+                u.phone,
+                u.avatar_url as user_avatar_url,
+                tm.photo_url as team_member_photo_url,
+                string_agg(tr.role, ', ') as roles
+            FROM tournament_teams tt
+            JOIN team_members tm ON tt.team_id = tm.team_id
+            JOIN team_roles tr ON tm.id = tr.member_id
+            JOIN users u ON tm.user_id = u.id
+            WHERE tt.id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
+            GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url
+            ORDER BY u.last_name, u.first_name
+        `, [id]);
+
+        res.json({ success: true, data: result.rows, staff: staffResult.rows });
+    } catch (err) {
+        console.error('Ошибка получения ростера:', err);
+        res.status(500).json({ success: false, error: 'Ошибка загрузки состава' });
+    }
+};
+
+export const updateTournamentTeamStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        await pool.query(`UPDATE tournament_teams SET status = $1, updated_at = NOW() WHERE id = $2`, [status, id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка смены статуса команды:', err);
+        res.status(500).json({ success: false, error: 'Ошибка смены статуса команды' });
+    }
+};
+
+export const updateTournamentTeamCustomData = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { custom_description, custom_jersey_light_url, custom_jersey_dark_url, custom_team_photo_url } = req.body;
+        
+        let updates = [];
+        let values = [];
+        let counter = 1;
+
+        if (custom_description !== undefined) {
+            updates.push(`custom_description = $${counter++}`);
+            values.push(custom_description);
+        }
+        if (custom_jersey_light_url !== undefined) {
+            updates.push(`custom_jersey_light_url = $${counter++}`);
+            values.push(custom_jersey_light_url);
+        }
+        if (custom_jersey_dark_url !== undefined) {
+            updates.push(`custom_jersey_dark_url = $${counter++}`);
+            values.push(custom_jersey_dark_url);
+        }
+        if (custom_team_photo_url !== undefined) {
+            updates.push(`custom_team_photo_url = $${counter++}`);
+            values.push(custom_team_photo_url);
+        }
+
+        if (updates.length > 0) {
+            values.push(id);
+            await pool.query(`UPDATE tournament_teams SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${counter}`, values);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка обновления данных турнирной команды:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сохранения данных' });
+    }
+};
+
+export const uploadTournamentTeamFile = async (req, res) => {
+    try {
+        const { id, type } = req.params;
+        if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
+        
+        const ext = req.file.originalname.split('.').pop();
+        const fileName = `uploads/tournament_teams_${id}_custom_${type}_url.${ext}`;
+
+        await s3.send(new PutObjectCommand({
+            Bucket: 'hockeyeco-uploads',
+            Key: fileName,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype
+        }));
+
+        res.json({ success: true, url: fileName });
+    } catch (err) {
+        console.error('Ошибка загрузки файла команды турнира:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};

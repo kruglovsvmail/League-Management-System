@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  /* Резервирует место под полосу прокрутки, чтобы контент не прыгал */
+  scrollbar-gutter: stable; 
+}
+
+:root {
+  /* Базовые цвета в формате RGB (для поддержки opacity в Tailwind) */
+  --orange: 255 122 0;
+  --orange-hover: 224 106 0;
+  --graphite: 44 44 46;
+  --graphite-light: 72 72 74;
+  --graphite-dark: 32 32 34;
+  --white: 255 255 255;
+  --gray-light: 229 229 234;
+  --gray-bg-light: 248 249 250;
+
+  /* Градиенты фона (можно оставить HEX) */
+  --bg-grad-1: #f5f7fa;
+  --bg-grad-2: #c3cfe2;
+
+  /* Яркие цвета для Статусов (RGB) */
+  --status-pending: 0 122 255; 
+  --status-pending-hover: 0 91 181;
+  --status-accepted: 26 167 47; 
+  --status-rejected: 255 69 58; 
+  --status-rejected-hover: 196 43 35;
+
+  /* Переменные скруглений (border-radius) */
+  --radius-sm: 8px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-xxl: 20px;
+  --radius-pill: 40px;
+  --radius-circle: 50%;
+
+  /* Новые темные оттенки для сайдбара */
+  --sidebar-bg: #1A1C1E;
+  --sidebar-item-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-active-glass: rgba(255, 255, 255, 0.1);
+}
+
+/* Эффект матового стекла для активного пункта */
+.glass-active {
+  background: var(--sidebar-active-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: rgb(var(--graphite));
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  background: linear-gradient(135deg, var(--bg-grad-1) 0%, var(--bg-grad-2) 100%);
+  margin: 0;
+}
+
+/* Оставили класс для заголовков групп */
+.group-title {
+  font-size: 1.5rem;
+  color: rgb(var(--graphite));
+  border-bottom: 2px solid rgb(var(--orange));
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.glass-panel {
+  background-color: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+  border-radius: var(--radius-xl);
+}
