@@ -48,6 +48,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     {
       label: 'ФИО', 
+      sortKey: 'last_name',
       width: 'w-[100px]',
       render: (row) => {
         let statusBadge = '';
@@ -121,22 +122,31 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       }
     },
     { 
+      label: 'ID', 
+      sortKey: 'tournament_roster_id',  align: 'center',
+      width: 'w-[70px]', 
+      render: (row) => <span className="text-[12px] text-graphite/50 font-mono" title="ID заявки">{row.tournament_roster_id || row.player_id}</span> 
+    },
+    { 
       label: 'Поз.', 
-      width: 'w-[120px] text-center', 
+      sortKey: 'position',
+      width: 'w-[80px]', align: 'center',
       render: (row) => (
         <span className="text-graphite">{POSITION_MAP[row.position] || '-'}</span>
       )
     },
     { 
       label: '№', 
-      width: 'w-[120px] text-center', 
+      sortKey: 'jersey_number',
+      width: 'w-[80px]', align: 'center',
       render: (row) => (
         <span className="font-black text-graphite text-[13px]">{row.jersey_number || '-'}</span>
       )
     },
     { 
       label: 'Квал.', 
-      width: 'w-[80px] text-center', 
+      sortKey: 'qualification_short_name',
+      width: 'w-[80px]', align: 'center',
       render: (row) => {
         const hasQual = !!row.qualification_id;
         return (
@@ -148,7 +158,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     { 
       label: 'Докум.', 
-      width: 'w-[80px] text-center', 
+      width: 'w-[80px]', align: 'center',
       render: (row) => {
         const hasMed = !!row.medical_url;
         const hasIns = !!row.insurance_url;
@@ -195,7 +205,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     { 
       label: 'Оплата', 
-      width: 'w-[80px] text-center', 
+      sortKey: 'is_fee_paid',
+      width: 'w-[80px]', align: 'center',
       render: (row) => (
         <div onClick={() => onOpenModal(row, 'fee')} className={`cursor-pointer hover:scale-105 inline-block transition-transform ${!canEditRoster ? 'opacity-70' : ''}`}>
           <Badge label="Взнос" type={row.is_fee_paid ? 'filled' : 'empty'} />
@@ -204,7 +215,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     { 
       label: 'Обновлено', 
-      width: 'w-[150px] text-center', 
+      sortKey: 'updated_at',
+      width: 'w-[150px]', align: 'right', 
       render: (row) => (
         <div className="flex flex-col text-[12px] text-graphite/70">
           <span>{row.updated_at ? dayjs(row.updated_at).format('DD.MM.YYYY') : '-'}</span>
@@ -214,7 +226,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     { 
       label: 'Допуск', 
-      width: 'w-[120px] text-center', 
+      sortKey: 'application_status',
+      width: 'w-[120px]', align: 'center',
       render: (row) => (
         <div className="flex justify-center">
           <Switch 
@@ -246,6 +259,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     {
       label: 'ФИО', 
+      sortKey: 'last_name',
       width: 'w-[300px]',
       render: (row) => (
         <div 
@@ -269,8 +283,15 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         </div>
       )
     },
+    { 
+      label: 'ID', 
+      sortKey: 'player_id', 
+      width: 'w-[70px]', 
+      render: (row) => <span className="text-[12px] text-graphite/50 font-mono" title="ID">{row.player_id}</span> 
+    },
     {
       label: 'Телефон', 
+      sortKey: 'phone',
       width: 'w-[300px] text-center',
       render: (row) => (
         <span className="text-[14px] font-medium text-graphite whitespace-nowrap">
@@ -280,6 +301,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     {
       label: 'Роль', 
+      sortKey: 'roles',
       width: 'w-[900px]',
       render: (row) => {
         if (!row.roles) return <span className="text-graphite/50">-</span>;

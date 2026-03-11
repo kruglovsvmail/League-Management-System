@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from '../components/Header';
-import { Table } from '../ui/Table'; // Используем твой Table2.jsx
+import { Table } from '../ui/Table'; 
 import { Loader } from '../ui/Loader';
 import { Toast } from '../modals/Toast';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Tooltip } from '../ui/Tooltip';
 import { Input } from '../ui/Input';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { getImageUrl, getToken } from '../utils/helpers';
 
 export function HandbookPage() {
   const [activeTab, setActiveTab] = useState(0); // 0: Пользователи, 1: Команды, 2: Арены
@@ -64,6 +64,73 @@ export function HandbookPage() {
     setIsPlayerModalOpen(true);
   };
 
+  // Фильтрация и подготовка данных для сортировки
+  const filteredData = useMemo(() => {
+    if (!data) return [];
+
+    let filtered = data;
+
+    // Сначала поиск
+    if (searchQuery.trim()) {
+      const lowerQuery = searchQuery.toLowerCase();
+      filtered = data.filter(item => {
+        if (activeTab === 0) { // Пользователи
+          const fullName = `${item.last_name || ''} ${item.first_name || ''} ${item.middle_name || ''}`.toLowerCase();
+          return fullName.includes(lowerQuery);
+        }
+        if (activeTab === 1 || activeTab === 2) { // Команды и Арены
+          const name = (item.name || '').toLowerCase();
+          const city = (item.city || '').toLowerCase();
+          return name.includes(lowerQuery) || city.includes(lowerQuery);
+        }
+        return true;
+      });
+    }
+
+    // Если это таблица команд, инжектим (вычисляем) поля статистики, чтобы по ним работала сортировка "на лету"
+    if (activeTab === 1) {
+      return filtered.map(team => {
+        let g = 0, w = 0, d = 0, l = 0, gf = 0, ga = 0;
+        
+        if (matchType === 1) {
+          g = team.official_games_played || 0;
+          w = team.official_wins || 0;
+          d = team.official_draws || 0;
+          l = team.official_losses || 0;
+          gf = team.official_goals_for || 0;
+          ga = team.official_goals_against || 0;
+        } else if (matchType === 2) {
+          g = team.friendly_games_played || 0;
+          w = team.friendly_wins || 0;
+          d = team.friendly_draws || 0;
+          l = team.friendly_losses || 0;
+          gf = team.friendly_goals_for || 0;
+          ga = team.friendly_goals_against || 0;
+        } else {
+          g = (team.official_games_played || 0) + (team.friendly_games_played || 0);
+          w = (team.official_wins || 0) + (team.friendly_wins || 0);
+          d = (team.official_draws || 0) + (team.friendly_draws || 0);
+          l = (team.official_losses || 0) + (team.friendly_losses || 0);
+          gf = (team.official_goals_for || 0) + (team.friendly_goals_for || 0);
+          ga = (team.official_goals_against || 0) + (team.friendly_goals_against || 0);
+        }
+        
+        return {
+          ...team,
+          display_games: g,
+          display_wins: w,
+          display_draws: d,
+          display_losses: l,
+          display_goals_for: gf,
+          display_goals_against: ga,
+        };
+      });
+    }
+
+    return filtered;
+  }, [data, searchQuery, activeTab, matchType]);
+
+
   // --- КОЛОНКИ: ПОЛЬЗОВАТЕЛИ ---
   const userColumns = [
     { label: '#', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
@@ -75,7 +142,7 @@ export function HandbookPage() {
         </div>
       );
     }},
-    { label: 'ФИО', width: 'w-[800px]', render: (row) => (
+    { label: 'ФИО', sortKey: 'last_name', width: 'w-[800px]', render: (row) => (
       <button 
         onClick={() => openPlayerProfile(row.id)}
         className="font-bold text-azure hover:text-azure-dark transition-colors text-left"
@@ -83,8 +150,8 @@ export function HandbookPage() {
         {`${row.last_name || ''} ${row.first_name || ''} ${row.middle_name || ''}`.trim() || 'Без имени'}
       </button>
     )},
-    { label: 'Дата рождения', width: 'w-[200px] text-center', render: (row) => <span className="text-graphite-light">{row.birth_date ? new Date(row.birth_date).toLocaleDateString('ru-RU') : '-'}</span> },
-    { label: 'Последняя команда', width: 'w-[260px] text-center', render: (row) => {
+    { label: 'Дата рождения', sortKey: 'birth_date', width: 'w-[200px] text-center', render: (row) => <span className="text-graphite-light">{row.birth_date ? new Date(row.birth_date).toLocaleDateString('ru-RU') : '-'}</span> },
+    { label: 'Последняя команда', sortKey: 'last_team_name', width: 'w-[260px] text-center', render: (row) => {
       if (!row.last_team_logo && !row.last_team_name) return <span className="text-graphite-light">-</span>;
       return (
         <div className="flex justify-center">
@@ -107,73 +174,31 @@ export function HandbookPage() {
 
   // --- КОЛОНКИ: КОМАНДЫ ---
   const teamColumns = [
-    { label: '#', width: 'w-[60px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
+    { label: '#', width: 'w-[20px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
     { label: 'Логотип', width: 'w-[60px]', render: (row) => (
       <div className="w-[50px] h-[50px] flex items-center justify-center p-1 shrink-0 rounded-md">
         <img src={getImageUrl(row.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="logo" />
       </div>
     )},
-    { label: 'Название Команды', width: 'w-[360px]', render: (row) => <span className="font-bold text-graphite">{row.name}</span> },
-    { label: 'Абр.', width: 'w-[100px] text-center', render: (row) => <span className="text-graphite/70">{row.short_name || '-'}</span> },
-    { label: 'Город', width: 'w-[150px]', render: (row) => <span className="text-graphite-light">{row.city || '-'}</span> },
-    { label: 'Игр', width: 'w-[60px] text-center', render: (row) => {
-      if (matchType === 1) return row.official_games_played;
-      if (matchType === 2) return row.friendly_games_played;
-      return row.official_games_played + row.friendly_games_played;
-    }},
-    { label: 'Победы', width: 'w-[60px] text-center', render: (row) => {
-      if (matchType === 1) return row.official_wins;
-      if (matchType === 2) return row.friendly_wins;
-      return row.official_wins + row.friendly_wins;
-    }},
-    { label: 'Ничьи', width: 'w-[60px] text-center', render: (row) => {
-      if (matchType === 1) return row.official_draws;
-      if (matchType === 2) return row.friendly_draws;
-      return row.official_draws + row.friendly_draws;
-    }},
-    { label: 'Пораж.', width: 'w-[60px] text-center', render: (row) => {
-      if (matchType === 1) return row.official_losses;
-      if (matchType === 2) return row.friendly_losses;
-      return row.official_losses + row.friendly_losses;
-    }},
-    { label: 'Забр.', width: 'w-[60px] text-center', render: (row) => {
-      if (matchType === 1) return row.official_goals_for;
-      if (matchType === 2) return row.friendly_goals_for;
-      return row.official_goals_for + row.friendly_goals_for;
-    }},
-    { label: 'Проп.', width: 'w-[100px] text-center', render: (row) => {
-      if (matchType === 1) return row.official_goals_against;
-      if (matchType === 2) return row.friendly_goals_against;
-      return row.official_goals_against + row.friendly_goals_against;
-    }},
+    { label: 'Название Команды', sortKey: 'name', width: 'w-[360px]', render: (row) => <span className="font-bold text-graphite">{row.name}</span> },
+    { label: 'Абр.', sortKey: 'short_name', width: 'w-[100px] text-center', render: (row) => <span className="text-graphite/70">{row.short_name || '-'}</span> },
+    { label: 'Город', sortKey: 'city', width: 'w-[150px]', align: 'center', render: (row) => <span className="text-graphite-light">{row.city || '-'}</span> },
+    { label: 'Игр', sortKey: 'display_games', width: 'w-[50px] text-center', render: (row) => row.display_games },
+    { label: 'Побед', sortKey: 'display_wins', width: 'w-[50px] text-center', render: (row) => row.display_wins },
+    { label: 'Ничьи', sortKey: 'display_draws', width: 'w-[50px] text-center', render: (row) => row.display_draws },
+    { label: 'Пораж.', sortKey: 'display_losses', width: 'w-[50px] text-center', render: (row) => row.display_losses },
+    { label: 'Забр.', sortKey: 'display_goals_for', width: 'w-[50px] text-center', render: (row) => row.display_goals_for },
+    { label: 'Проп.', sortKey: 'display_goals_against', width: 'w-[100px] text-center', render: (row) => row.display_goals_against },
   ];
 
   // --- КОЛОНКИ: АРЕНЫ ---
   const arenaColumns = [
     { label: '#', width: 'w-[60px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
-    { label: 'Название', width: 'w-[400px]', render: (row) => <span className="font-semibold text-graphite">{row.name}</span> },
-    { label: 'Город', width: 'w-[200px]', render: (row) => <span className="text-graphite">{row.city}</span> },
-    { label: 'Адрес', width: 'w-[300px]', render: (row) => <span className="text-graphite-light">{row.address || '-'}</span> },
+    { label: 'Название', sortKey: 'name', width: 'w-[400px]', render: (row) => <span className="font-semibold text-graphite">{row.name}</span> },
+    { label: 'Город', sortKey: 'city', width: 'w-[200px]', render: (row) => <span className="text-graphite">{row.city}</span> },
+    { label: 'Адрес', sortKey: 'address', width: 'w-[300px]', render: (row) => <span className="text-graphite-light">{row.address || '-'}</span> },
   ];
 
-  // Фильтрация данных по поиску
-  const filteredData = useMemo(() => {
-    if (!searchQuery.trim()) return data;
-    const lowerQuery = searchQuery.toLowerCase();
-
-    return data.filter(item => {
-      if (activeTab === 0) { // Пользователи
-        const fullName = `${item.last_name || ''} ${item.first_name || ''} ${item.middle_name || ''}`.toLowerCase();
-        return fullName.includes(lowerQuery);
-      }
-      if (activeTab === 1 || activeTab === 2) { // Команды и Арены
-        const name = (item.name || '').toLowerCase();
-        const city = (item.city || '').toLowerCase();
-        return name.includes(lowerQuery) || city.includes(lowerQuery);
-      }
-      return true;
-    });
-  }, [data, searchQuery, activeTab]);
 
   const getColumns = () => {
     if (activeTab === 0) return userColumns;

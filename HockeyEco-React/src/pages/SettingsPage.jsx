@@ -216,9 +216,9 @@ export function SettingsPage() {
           <img src={getImageUrl(row.avatar_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="avatar" />
         </div>
     )},
-    { label: 'ФИО', render: (row) => <span className="font-bold text-graphite">{`${row.last_name} ${row.first_name} ${row.middle_name || ''}`}</span> },
-    { label: 'Телефон', width: 'w-[160px]', render: (row) => <span className="font-semibold text-graphite-light">{formatPhoneDisplay(row.phone)}</span> },
-    { label: 'Роли', render: (row) => <span className="font-bold text-orange">{getRolesDisplay(row.roles)}</span> },
+    { label: 'ФИО', sortKey: 'last_name', render: (row) => <span className="font-bold text-graphite">{`${row.last_name} ${row.first_name} ${row.middle_name || ''}`}</span> },
+    { label: 'Телефон', sortKey: 'phone', width: 'w-[160px]',  render: (row) => <span className="font-semibold text-graphite-light">{formatPhoneDisplay(row.phone)}</span> },
+    { label: 'Роли', sortKey: 'roles', render: (row) => <span className="font-bold text-orange">{getRolesDisplay(row.roles)}</span> },
     { label: '', width: 'w-12', render: (row) => {
         // Защита: прячем кнопку редактирования, если нет прав или это сам текущий юзер
         if (!canManageStaff || row.user_id === user?.id) return null;

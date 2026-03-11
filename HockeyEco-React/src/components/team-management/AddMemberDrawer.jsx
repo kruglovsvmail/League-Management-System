@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
 import { Select } from '../../ui/Select';
-import { getImageUrl } from '../../utils/helpers';
+import { getImageUrl, getToken } from '../../utils/helpers';
 
 const POSITIONS = ['goalie', 'defense', 'forward'];
 const POS_LABELS = { 'goalie': 'Вратарь', 'defense': 'Защитник', 'forward': 'Нападающий' };
@@ -163,9 +163,16 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
       });
       const data = await res.json();
       
-      if (data.success) { onSuccess(); onClose(); } 
-      else alert(data.error || 'Ошибка при сохранении');
-    } catch (err) { alert('Сетевая ошибка'); }
+      if (data.success) { 
+        onSuccess(); 
+        onClose(); 
+      } else {
+        alert(data.error || 'Ошибка при сохранении');
+      }
+    } catch (err) { 
+      console.error("🔥 Ошибка при сохранении:", err);
+      alert('Произошла сетевая ошибка (см. консоль)'); 
+    }
     setIsSaving(false);
   };
 
