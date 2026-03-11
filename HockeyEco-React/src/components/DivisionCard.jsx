@@ -301,7 +301,7 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
   return (
     <div className="bg-white/50 backdrop-blur-xl rounded-xxl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden font-sans w-full transition-all duration-300 relative">
       <div 
-        className="p-6 md:p-8 flex flex-col xl:flex-row gap-8 items-center justify-between relative z-10 cursor-pointer group hover:bg-white/40 transition-colors"
+        className="p-6 md:p-8 flex flex-col xl:flex-row gap-8 items-center justify-between relative z-10 cursor-pointer group hover:transition-colors"
         onClick={toggleExpand}
       >
         <div className="flex items-center gap-4 w-[500px] min-w-0">
