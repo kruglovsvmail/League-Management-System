@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom'; // Добавили useSearchParams
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { SegmentButton } from '../ui/SegmentButton';
@@ -58,7 +58,18 @@ export function SettingsPage() {
   const canAddQuals = checkAccess('ADD_QUALIFICATIONS');
   const canDeleteQuals = checkAccess('DELETE_QUALIFICATIONS');
 
-  const [activeTab, setActiveTab] = useState(0);
+  // === НАСТРОЙКА URL-ПАРАМЕТРОВ ===
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = parseInt(searchParams.get('tab') || '0', 10);
+
+  const setActiveTab = (index) => {
+    setSearchParams(prev => {
+      prev.set('tab', index);
+      return prev;
+    }, { replace: true });
+  };
+  // ================================
+
   const [toast, setToast] = useState(null);
 
   // Стейты Вкладки 1 (Персонал)
@@ -216,7 +227,18 @@ export function SettingsPage() {
           <img src={getImageUrl(row.avatar_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="avatar" />
         </div>
     )},
-    { label: 'ФИО', sortKey: 'last_name', render: (row) => <span className="font-bold text-graphite">{`${row.last_name} ${row.first_name} ${row.middle_name || ''}`}</span> },
+    { label: 'ФИО', sortKey: 'last_name', render: (row) => (
+      <div className="flex flex-col text-left">
+        <span className="font-bold text-[14px] text-graphite leading-tight block truncate">
+          {`${row.last_name || ''} ${row.first_name || ''}`.trim() || 'Без имени'}
+        </span>
+        {row.middle_name && (
+          <span className="text-[12px] text-graphite-light block truncate mt-0.5">
+            {row.middle_name}
+          </span>
+        )}
+      </div>
+    )},
     { label: 'Телефон', sortKey: 'phone', width: 'w-[160px]',  render: (row) => <span className="font-semibold text-graphite-light">{formatPhoneDisplay(row.phone)}</span> },
     { label: 'Роли', sortKey: 'roles', render: (row) => <span className="font-bold text-orange">{getRolesDisplay(row.roles)}</span> },
     { label: '', width: 'w-12', render: (row) => {
@@ -487,7 +509,6 @@ export function SettingsPage() {
           )}
 
         </div>
-
       </div>
 
       {/* Модалки (Доступны только если можно редактировать, но на всякий случай оставляем защиту) */}

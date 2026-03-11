@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom'; // Добавили импорт
 import { Header } from '../components/Header';
 import { Button } from '../ui/Button';
 import { Table } from '../ui/Table2';
@@ -26,17 +27,57 @@ const ROLES = [
 ];
 
 export function TeamManagementPage() {
-  const [selectedTeam, setSelectedTeam] = useState(null);
-  const [activeTab, setActiveTab] = useState('base'); 
+  // === НАСТРОЙКА URL-ПАРАМЕТРОВ И ХРАНИЛИЩА ===
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = searchParams.get('tab') || 'base';
+  const appFilter = searchParams.get('filter') || 'current';
+  const teamSearchQuery = searchParams.get('q') || '';
+
+  const setActiveTab = (tab) => {
+    setSearchParams(prev => { prev.set('tab', tab); return prev; }, { replace: true });
+  };
+
+  const setAppFilter = (filter) => {
+    setSearchParams(prev => { prev.set('filter', filter); return prev; }, { replace: true });
+  };
+
+  const setTeamSearchQuery = (val) => {
+    setSearchParams(prev => {
+      if (val) prev.set('q', val);
+      else prev.delete('q');
+      return prev;
+    }, { replace: true });
+  };
+
+  // Сохраняем выбранную команду в sessionStorage, чтобы не терять при F5
+  const [selectedTeam, setSelectedTeamState] = useState(() => {
+    const saved = sessionStorage.getItem('tm_selected_team_data');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const setSelectedTeam = (team) => {
+    setSelectedTeamState(team);
+    if (team) {
+      sessionStorage.setItem('tm_selected_team_data', JSON.stringify(team));
+    } else {
+      sessionStorage.removeItem('tm_selected_team_data');
+      setSearchParams(prev => {
+        prev.delete('tab');
+        prev.delete('filter');
+        return prev;
+      }, { replace: true });
+    }
+  };
+  // ============================================
+
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   
   const [base, setBase] = useState([]);
   const [roster, setRoster] = useState([]);
   const [staff, setStaff] = useState([]);
   
-  // Состояния для заявок в лигу
   const [applications, setApplications] = useState([]);
-  const [appFilter, setAppFilter] = useState('current'); 
   const [isCreateAppDrawerOpen, setIsCreateAppDrawerOpen] = useState(false);
   const [availableLeagues, setAvailableLeagues] = useState([]);
   
@@ -45,7 +86,6 @@ export function TeamManagementPage() {
   const [isPhotoSaving, setIsPhotoSaving] = useState(false);
   const [profileModalUserId, setProfileModalUserId] = useState(null);
   const [cacheBuster, setCacheBuster] = useState(Date.now());
-  const [teamSearchQuery, setTeamSearchQuery] = useState('');
   const [teamsList, setTeamsList] = useState([]);
   const [isSearchingTeams, setIsSearchingTeams] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, typeStr: null, actionArgs: null });
@@ -336,7 +376,7 @@ export function TeamManagementPage() {
 
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
-      <Header title="Управление командой" subtitle={selectedTeam && ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[13px] font-bold text-graphite-light hover:text-orange">← Вернуться</button> )} />
+      <Header title="Управление командой" subtitle={selectedTeam && ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange">←  Вернуться к выбору команды</button> )} />
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         {selectedTeam && (
@@ -382,7 +422,7 @@ export function TeamManagementPage() {
                   </h3>
                   
                   {activeTab !== 'tournaments' && (
-                    <Button onClick={() => setIsAddDrawerOpen(true)}>+ Добавить {activeTab === 'base' ? 'в базу' : 'игрока/сотрудника'}</Button>
+                    <Button onClick={() => setIsAddDrawerOpen(true)}>+ Добавить {activeTab === 'base' ? '' : ''}</Button>
                   )}
 
                   {activeTab === 'tournaments' && (
@@ -547,11 +587,13 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
   if (canEditRoster) columns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeletePlayer(r.id)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
 
   return (
-    <div className="bg-white/70 border border-graphite/10 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white/70 border border-graphite/10 rounded-xxl shadow-sm hover:shadow-md transition-shadow">
       
-      {/* КЛАСС group ДОБАВЛЕН ЗДЕСЬ ДЛЯ HOVER ЭФФЕКТОВ КНОПКИ */}
-      <div className="p-5 flex items-center justify-between cursor-pointer group" onClick={() => setIsExpanded(!isExpanded)}>
-        <div className="flex items-center gap-4 w-[400px]">
+      {/* КЛАСС relative ДОБАВЛЕН ЗДЕСЬ ДЛЯ АБСОЛЮТНОГО ПОЗИЦИОНИРОВАНИЯ ЦЕНТРА */}
+      <div className="p-5 flex items-center justify-between cursor-pointer group relative" onClick={() => setIsExpanded(!isExpanded)}>
+        
+        {/* ЛЕВЫЙ БЛОК */}
+        <div className="flex items-center gap-4 w-[700px] relative z-10">
           <img src={getImageUrl(app.league_logo) || '/default/Logo_division_default.webp'} className="w-12 h-12 object-contain bg-graphite/5 rounded-lg p-1" />
           <div className="flex flex-col">
             <span className="text-[11px] font-bold text-orange uppercase tracking-wider">{app.season_name}</span>
@@ -560,12 +602,17 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
           </div>
         </div>
         
-        <div className="flex-1 flex justify-center items-center">
-          {statusInfo.btn ? ( <Button onClick={(e) => { e.stopPropagation(); onSendReview(); }} className="h-10 text-[13px]">Отправить на проверку</Button> ) : ( <div className={`px-4 py-2 rounded-lg font-bold text-[13px] ${statusInfo.style}`}>{statusInfo.text}</div> )}
+        {/* ЦЕНТРАЛЬНЫЙ БЛОК (Абсолютно по центру, не зависит от кнопок) */}
+        <div className="absolute left-3/4 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex justify-center items-center">
+          {statusInfo.btn ? ( 
+            <Button onClick={(e) => { e.stopPropagation(); onSendReview(); }} className="h-9 text-[13px]">Отправить</Button> 
+          ) : ( 
+            <div className={`px-4 py-2 rounded-lg font-bold text-[13px] ${statusInfo.style}`}>{statusInfo.text}</div> 
+          )}
         </div>
         
         {/* ПРАВЫЙ БЛОК С КНОПКАМИ */}
-        <div className="flex items-center gap-3 shrink-0 ml-auto justify-end">
+        <div className="flex items-center gap-3 shrink-0 ml-auto justify-end relative z-10">
           {canDeleteApp && ( 
             <button onClick={(e) => { e.stopPropagation(); onDeleteApp(); }} className="w-12 h-12 rounded-lg flex items-center justify-center bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white transition-colors" title="Удалить заявку">
               <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -574,9 +621,9 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
           
           {canDeleteApp && <div className="w-px h-10 bg-graphite/20 mx-1 hidden md:block"></div>}
           
-          {/* ОБНОВЛЕННАЯ КНОПКА РАЗВЕРТЫВАНИЯ КАК В ДИВИЗИОНАХ */}
+          {/* Исправил опечатку с двойным group-hover в твоем коде */}
           <button 
-            className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-300 ${isExpanded ? 'text-orange bg-orange/5' : 'text-graphite/40 group-hover:group-hover:text-orange group-hover:bg-orange/5'}`}
+            className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-300 ${isExpanded ? 'text-orange bg-orange/5' : 'text-graphite/40 group-hover:text-orange group-hover:bg-orange/5'}`}
           >
             <svg className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
           </button>
@@ -699,7 +746,7 @@ function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, currentApp
         </div>
 
         <div className="p-6 bg-white border-t border-graphite/10 shrink-0">
-          <Button onClick={handleSave} disabled={selectedPlayers.size === 0 || isSaving} isLoading={isSaving} className="w-full py-3">Добавить ({selectedPlayers.size})</Button>
+          <Button onClick={handleSave} disabled={selectedPlayers.size === 0 || isSaving} className="w-full py-3">Добавить ({selectedPlayers.size})</Button>
         </div>
       </div>
     </div>

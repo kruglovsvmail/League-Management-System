@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom'; // Добавлен импорт
 import { Header } from '../components/Header';
 import { Table } from '../ui/Table'; 
 import { Loader } from '../ui/Loader';
@@ -10,14 +11,41 @@ import { Input } from '../ui/Input';
 import { getImageUrl, getToken } from '../utils/helpers';
 
 export function HandbookPage() {
-  const [activeTab, setActiveTab] = useState(0); // 0: Пользователи, 1: Команды, 2: Арены
+  // === НАСТРОЙКА URL-ПАРАМЕТРОВ ===
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = parseInt(searchParams.get('tab') || '0', 10); // 0: Пользователи, 1: Команды, 2: Арены
+  const matchType = parseInt(searchParams.get('match') || '0', 10); // 0: Все, 1: Официальные, 2: Товарищеские
+  const searchQuery = searchParams.get('q') || '';
+
+  const setActiveTab = (index) => {
+    setSearchParams(prev => {
+      prev.set('tab', index);
+      prev.delete('q');     // Сбрасываем поиск при переключении вкладок
+      prev.delete('match'); // Сбрасываем фильтр матчей
+      return prev;
+    }, { replace: true });
+  };
+
+  const setMatchType = (index) => {
+    setSearchParams(prev => {
+      prev.set('match', index);
+      return prev;
+    }, { replace: true });
+  };
+
+  const setSearchQuery = (val) => {
+    setSearchParams(prev => {
+      if (val) prev.set('q', val);
+      else prev.delete('q');
+      return prev;
+    }, { replace: true });
+  };
+  // ================================
+
   const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState(null);
-  
-  // Состояния фильтров
-  const [searchQuery, setSearchQuery] = useState('');
-  const [matchType, setMatchType] = useState(0); // 0: Все, 1: Официальные, 2: Товарищеские
 
   // Состояния модального окна профиля игрока
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
@@ -25,8 +53,6 @@ export function HandbookPage() {
 
   useEffect(() => {
     fetchData(activeTab);
-    setSearchQuery(''); // Сбрасываем поиск при переключении вкладок
-    setMatchType(0);
   }, [activeTab]);
 
   const fetchData = async (tabIndex) => {
@@ -143,12 +169,19 @@ export function HandbookPage() {
       );
     }},
     { label: 'ФИО', sortKey: 'last_name', width: 'w-[800px]', render: (row) => (
-      <button 
+      <div 
         onClick={() => openPlayerProfile(row.id)}
-        className="font-bold text-azure hover:text-azure-dark transition-colors text-left"
+        className="cursor-pointer group flex flex-col items-start"
       >
-        {`${row.last_name || ''} ${row.first_name || ''} ${row.middle_name || ''}`.trim() || 'Без имени'}
-      </button>
+        <span className="font-bold text-[14px] text-azure group-hover:text-azure-dark transition-colors leading-tight block truncate">
+          {`${row.last_name || ''} ${row.first_name || ''}`.trim() || 'Без имени'}
+        </span>
+        {row.middle_name && (
+          <span className="text-[12px] text-graphite-light block truncate mt-0.5">
+            {row.middle_name}
+          </span>
+        )}
+      </div>
     )},
     { label: 'Дата рождения', sortKey: 'birth_date', width: 'w-[200px] text-center', render: (row) => <span className="text-graphite-light">{row.birth_date ? new Date(row.birth_date).toLocaleDateString('ru-RU') : '-'}</span> },
     { label: 'Последняя команда', sortKey: 'last_team_name', width: 'w-[260px] text-center', render: (row) => {

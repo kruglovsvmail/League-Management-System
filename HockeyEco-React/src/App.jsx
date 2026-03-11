@@ -107,45 +107,47 @@ export default function App() {
         </div>
       )}
 
-      <Routes>
-        <Route 
-          path="/login" 
-          element={ isAuthenticated ? <Navigate to="/divisions" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} /> } 
-        />
+      {!isInitializing && (
+        <Routes>
+          <Route 
+            path="/login" 
+            element={ isAuthenticated ? <Navigate to="/divisions" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} /> } 
+          />
 
-        <Route 
-          path="/" 
-          element={
-            isAuthenticated 
-              ? <AdminLayout 
-                  user={currentUser} 
-                  onLogout={handleLogout} 
-                  selectedLeague={selectedLeague}
-                  onLeagueChange={handleLeagueChange}
-                /> 
-              : <Navigate to="/login" replace />
-          }
-        >
-          <Route index element={<Navigate to="/divisions" replace />} />
-          
-          {/* ЗАЩИТА: Только для global_role === 'admin' */}
           <Route 
-            path="registry" 
-            element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to="/divisions" replace />} 
-          />
-          <Route 
-            path="teams" 
-            element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to="/divisions" replace />} 
-          />
-          
-          <Route path="divisions" element={<DivisionsPage />} />
-          <Route path="handbook" element={<HandbookPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="/transfers" element={<TransfersPage />} />
-          <Route path="/disqualifications" element={<DisqualificationsPage />} />
-          <Route path="*" element={<Navigate to="/divisions" replace />} />
-        </Route>
-      </Routes>
+            path="/" 
+            element={
+              isAuthenticated 
+                ? <AdminLayout 
+                    user={currentUser} 
+                    onLogout={handleLogout} 
+                    selectedLeague={selectedLeague}
+                    onLeagueChange={handleLeagueChange}
+                  /> 
+                : <Navigate to="/login" replace />
+            }
+          >
+            <Route index element={<Navigate to="/divisions" replace />} />
+            
+            {/* ЗАЩИТА: Только для global_role === 'admin' */}
+            <Route 
+              path="registry" 
+              element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to="/divisions" replace />} 
+            />
+            <Route 
+              path="teams" 
+              element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to="/divisions" replace />} 
+            />
+            
+            <Route path="divisions" element={<DivisionsPage />} />
+            <Route path="handbook" element={<HandbookPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="transfers" element={<TransfersPage />} />
+            <Route path="disqualifications" element={<DisqualificationsPage />} />
+            <Route path="*" element={<Navigate to="/divisions" replace />} />
+          </Route>
+        </Routes>
+      )}
     </>
   );
 }

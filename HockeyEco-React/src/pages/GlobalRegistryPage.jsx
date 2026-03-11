@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom'; // Добавили импорт
 import { Header } from '../components/Header';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Table } from '../ui/Table'; 
@@ -10,7 +11,7 @@ import { DatePicker } from '../ui/DatePicker';
 import { Switch } from '../ui/Switch';
 import { Badge } from '../ui/Badge';
 import { Loader } from '../ui/Loader';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { getImageUrl, getToken } from '../utils/helpers';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -26,14 +27,42 @@ const formatPhoneDynamic = (raw) => {
 };
 
 export function GlobalRegistryPage() {
-  const [activeTab, setActiveTab] = useState(0);
+  // === НАСТРОЙКА URL-ПАРАМЕТРОВ ===
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = parseInt(searchParams.get('tab') || '0', 10);
+  const typeFilterIndex = parseInt(searchParams.get('type') || '0', 10);
+  const searchQuery = searchParams.get('q') || '';
+
+  const setActiveTab = (index) => {
+    setSearchParams(prev => {
+      prev.set('tab', index);
+      prev.delete('q');    // Сбрасываем поиск при смене вкладки
+      prev.delete('type'); // Сбрасываем фильтр при смене вкладки
+      return prev;
+    }, { replace: true });
+  };
+
+  const setTypeFilterIndex = (index) => {
+    setSearchParams(prev => {
+      prev.set('type', index);
+      return prev;
+    }, { replace: true });
+  };
+
+  const setSearchQuery = (val) => {
+    setSearchParams(prev => {
+      if (val) prev.set('q', val);
+      else prev.delete('q');
+      return prev;
+    }, { replace: true });
+  };
+  // ================================
+
   const [tableData, setTableData] = useState([]);
   const [leaguesList, setLeaguesList] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
   
-  const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilterIndex, setTypeFilterIndex] = useState(0); 
-
   const [logoFile, setLogoFile] = useState(null);
   const [jerseyLightFile, setJerseyLightFile] = useState(null);
   const [jerseyDarkFile, setJerseyDarkFile] = useState(null);
@@ -85,8 +114,6 @@ export function GlobalRegistryPage() {
   useEffect(() => {
     fetchData();
     resetForm();
-    setSearchQuery('');
-    setTypeFilterIndex(0);
     
     if (activeTab === 2) {
       fetch(`${API_BASE}/api/registry/leagues`, { headers: getHeaders() })
@@ -257,7 +284,6 @@ export function GlobalRegistryPage() {
       case 1: return !!formData.name?.trim() && !!formData.city?.trim();
       case 2: return !!formData.uiLeague && !!formData.name?.trim() && !!formData.start_date && !!formData.end_date;
       case 3: return !!formData.name?.trim() && !!formData.short_name?.trim() && !!formData.city?.trim();
-      // Для юзеров больше не проверяем пол (gender)
       case 4: return !!formData.last_name?.trim() && !!formData.first_name?.trim() && !!formData.middle_name?.trim();
       default: return false;
     }

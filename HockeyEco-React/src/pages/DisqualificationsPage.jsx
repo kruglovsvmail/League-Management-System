@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -27,8 +27,27 @@ export function DisqualificationsPage() {
   const [divisionsList, setDivisionsList] = useState([]); 
   const [isLoading, setIsLoading] = useState(false);
 
-  const [statusFilterIndex, setStatusFilterIndex] = useState(0); 
-  const [typeFilterIndex, setTypeFilterIndex] = useState(0);     
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Читаем текущую вкладку из URL (если пусто, ставим 0)
+  const statusFilterIndex = parseInt(searchParams.get('status') || '0', 10);
+  const typeFilterIndex = parseInt(searchParams.get('type') || '0', 10);
+
+  // Функции для обновления URL при клике на вкладки
+  const setStatusFilterIndex = (index) => {
+    setSearchParams(prev => {
+      prev.set('status', index);
+      return prev;
+    }, { replace: true });
+  };
+
+  const setTypeFilterIndex = (index) => {
+    setSearchParams(prev => {
+      prev.set('type', index);
+      return prev;
+    }, { replace: true });
+  };
+
   const [divisionFilter, setDivisionFilter] = useState('Все дивизионы');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -260,7 +279,7 @@ export function DisqualificationsPage() {
                             {/* Блок кнопок управления показывается только если есть права */}
                             {canAction && d.status === 'active' && (
                               <div className="flex gap-2 justify-end">
-                                <Button onClick={(e) => handleAction(e, d.id, 'cancelled')} className="bg-white border-graphite/20 text-graphite hover:border-graphite">Отменить</Button>
+                                <Button onClick={(e) => handleAction(e, d.id, 'cancelled')} className="bg-white border-graphite/20 text-graphite hover:border-graphite">Списать</Button>
                                 <Button onClick={(e) => handleAction(e, d.id, 'completed')} className="bg-status-accepted hover:bg-status-accepted/90 text-white border-none">Отбыл</Button>
                               </div>
                             )}

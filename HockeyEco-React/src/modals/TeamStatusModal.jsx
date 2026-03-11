@@ -18,9 +18,9 @@ const STATUS_OPTIONS = [
     value: 'pending', 
     label: 'На проверке', 
     styles: {
-      bg: 'bg-status-pending/10', border: 'border-status-pending', 
-      text: 'text-status-pending', hover: 'hover:border-status-pending/40', 
-      dot: 'bg-status-pending'
+      bg: 'bg-orange/10', border: 'border-orange', 
+      text: 'text-orange', hover: 'hover:border-orange/40', 
+      dot: 'bg-orange'
     },
     desc: 'Заявка ожидает решения администратора' 
   },
@@ -28,9 +28,9 @@ const STATUS_OPTIONS = [
     value: 'revision', 
     label: 'На исправлении', 
     styles: {
-      bg: 'bg-orange/10', border: 'border-orange', 
-      text: 'text-orange', hover: 'hover:border-orange/40', 
-      dot: 'bg-orange'
+      bg: 'bg-blue-500/10', border: 'border-blue-500', 
+      text: 'text-blue-600', hover: 'hover:border-blue-500/40', 
+      dot: 'bg-blue-500'
     },
     desc: 'Команда исправляет недочеты в заявке' 
   },
@@ -87,7 +87,6 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
       </div>
 
       <div className="flex justify-end pt-5 border-t border-graphite/10">
-        {/* Добавил явные цвета для кнопки, чтобы она гармонировала с общим стилем проекта */}
         <Button 
           onClick={() => onSave(selectedStatus)} 
           isLoading={isSaving} 

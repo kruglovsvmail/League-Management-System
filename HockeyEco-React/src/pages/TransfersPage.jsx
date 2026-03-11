@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom'; // Добавили useSearchParams
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -26,6 +26,39 @@ export function TransfersPage() {
   const canCreateTransfer = checkAccess('CREATE_TRANSFER');
   const canActionTransfer = checkAccess('ACTION_TRANSFER');
   
+  // === НАСТРОЙКА URL-ПАРАМЕТРОВ ===
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const statusFilterIndex = parseInt(searchParams.get('status') || '0', 10);
+  const typeFilterIndex = parseInt(searchParams.get('type') || '0', 10);
+  const divisionFilter = searchParams.get('division') || 'Все дивизионы';
+  const searchQuery = searchParams.get('q') || '';
+
+  const setStatusFilterIndex = (index) => {
+    setSearchParams(prev => { prev.set('status', index); return prev; }, { replace: true });
+  };
+
+  const setTypeFilterIndex = (index) => {
+    setSearchParams(prev => { prev.set('type', index); return prev; }, { replace: true });
+  };
+
+  const setDivisionFilter = (val) => {
+    setSearchParams(prev => {
+      if (val && val !== 'Все дивизионы') prev.set('division', val);
+      else prev.delete('division'); // удаляем из URL, чтобы не засорять
+      return prev;
+    }, { replace: true });
+  };
+
+  const setSearchQuery = (val) => {
+    setSearchParams(prev => {
+      if (val) prev.set('q', val);
+      else prev.delete('q');
+      return prev;
+    }, { replace: true });
+  };
+  // ================================
+
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
   const [transfers, setTransfers] = useState([]);
@@ -34,10 +67,6 @@ export function TransfersPage() {
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
   const [hidingIds, setHidingIds] = useState(new Set());
-  const [statusFilterIndex, setStatusFilterIndex] = useState(0); 
-  const [typeFilterIndex, setTypeFilterIndex] = useState(0);     
-  const [divisionFilter, setDivisionFilter] = useState('Все дивизионы');
-  const [searchQuery, setSearchQuery] = useState('');
   
   const [expandedId, setExpandedId] = useState(() => {
     const saved = getExpiringStorage('transfers_expandedId');

@@ -58,8 +58,6 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
   const [profileModalPlayerId, setProfileModalPlayerId] = useState(null);
   const [leagueQuals, setLeagueQuals] = useState([]);
 
-  
-
   useEffect(() => { setExpiringStorage(`div_${division.id}_teamsTab`, teamsTab); }, [teamsTab, division.id]);
   useEffect(() => { setExpiringStorage(`div_${division.id}_rosterTab`, rosterTab); }, [rosterTab, division.id]);
 
@@ -287,8 +285,6 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
   const isAdmin = userRole === 'admin';
   const canEditRoster = isAdmin || (selectedTeam && selectedTeam.status !== 'revision');
   const canChangeTeamStatus = isAdmin || (isAppWindowOpen && selectedTeam && selectedTeam.status !== 'revision');
-  
-  // НОВАЯ ПЕРЕМЕННАЯ: Проверяем статус команды, открытой в модалке (а не selectedTeam)
   const canEditActiveTeamParams = isAdmin || (activeTeamForModal && activeTeamForModal.status !== 'revision');
 
   const STATUS_LABELS = {
@@ -297,6 +293,37 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
     revision: 'Команда на исправлении',
     rejected: 'Команда отклонена'
   };
+
+  // --- НОВАЯ ФУНКЦИЯ ДЛЯ ЦВЕТОВ КНОПКИ СТАТУСА ---
+  const getStatusButtonStyle = (status, canChange) => {
+    // 1. "На исправлении" — синяя и всегда неактивная
+    if (status === 'revision') {
+      return 'bg-blue-500/10 text-blue-600 cursor-not-allowed border-transparent opacity-90';
+    }
+
+    // 2. Если нет прав (или окно закрыто) — бледные цвета и блокировка
+    if (!canChange) {
+      if (status === 'approved') return 'bg-status-accepted/5 text-status-accepted/50 cursor-not-allowed border-transparent';
+      if (status === 'pending') return 'bg-orange/5 text-orange/50 cursor-not-allowed border-transparent';
+      if (status === 'rejected') return 'bg-status-rejected/5 text-status-rejected/50 cursor-not-allowed border-transparent';
+      return 'border-graphite/5 text-graphite/40 bg-graphite/5 cursor-not-allowed';
+    }
+
+    // 3. Активные красивые кнопки с hover-эффектом для лиги
+    switch (status) {
+      case 'approved':
+        return 'bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white border-transparent cursor-pointer';
+      case 'pending':
+        return 'bg-orange/10 text-orange hover:bg-orange hover:text-white border-transparent cursor-pointer';
+      case 'rejected':
+        return 'bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white border-transparent cursor-pointer';
+      default:
+        return 'border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 cursor-pointer';
+    }
+  };
+
+  // Финальная проверка: можно ли кликать на кнопку статуса?
+  const isStatusClickable = canChangeTeamStatus && selectedTeam?.status !== 'revision';
 
   return (
     <div className="bg-white/50 backdrop-blur-xl rounded-xxl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden font-sans w-full transition-all duration-300 relative">
@@ -388,18 +415,19 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
                   <div className="overflow-x-auto pb-2 custom-scrollbar flex-1">
                     <Tabs tabs={rosterTabsCounts} activeTab={rosterTab} onChange={setRosterTab} />
                   </div>
+                  
+                  {/* ОБНОВЛЕННАЯ ЦВЕТНАЯ КНОПКА СТАТУСА КОМАНДЫ */}
                   <button 
-                    onClick={() => canChangeTeamStatus && openModal(selectedTeam, 'status')}
-                    className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${
-                      canChangeTeamStatus 
-                        ? 'border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5' 
-                        : 'border-graphite/5 text-graphite/40 bg-graphite/5 cursor-not-allowed'
-                    }`}
-                    title={canChangeTeamStatus ? "Изменить статус команды" : "Изменение статуса недоступно"}
+                    onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
+                    className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
+                    title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
                     {STATUS_LABELS[selectedTeam.status] || 'Статус команды'}
                   </button>
+                  
                 </div>
                 <div className="relative min-h-[500px] transition-all duration-300">
                   {isRosterLoading && (
@@ -427,7 +455,6 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
       <PublishStatusModal isOpen={isPublishModalOpen} onClose={() => setIsPublishModalOpen(false)} isPublished={division.is_published} onSave={handlePublishSave} isSaving={isPublishSaving} />
       <TeamStatusModal isOpen={modalType === 'status'} onClose={closeModals} currentStatus={activeTeamForModal?.status} teamName={activeTeamForModal?.name} onSave={handleTeamStatusSave} isSaving={isDataSaving} />
       
-      {/* ИСПОЛЬЗУЕМ canEditActiveTeamParams ДЛЯ МОДАЛОК ПАРАМЕТРОВ КОМАНДЫ */}
       <TeamUniformModal isOpen={modalType === 'uniform'} onClose={closeModals} initialLight={activeTeamForModal?.custom_jersey_light_url ? `${getImageUrl(activeTeamForModal.custom_jersey_light_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_light_url ? getImageUrl(activeTeamForModal.jersey_light_url) : null)} initialDark={activeTeamForModal?.custom_jersey_dark_url ? `${getImageUrl(activeTeamForModal.custom_jersey_dark_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_dark_url ? getImageUrl(activeTeamForModal.jersey_dark_url) : null)} canClearLight={!!activeTeamForModal?.custom_jersey_light_url} canClearDark={!!activeTeamForModal?.custom_jersey_dark_url} onSave={handleUniformSave} isSaving={isDataSaving} readOnly={!canEditActiveTeamParams} />
       <TeamDescriptionModal isOpen={modalType === 'desc'} onClose={closeModals} initialText={activeTeamForModal?.custom_description || activeTeamForModal?.description || ''} onSave={handleDescSave} isSaving={isDataSaving} readOnly={!canEditActiveTeamParams} />
       <TeamPhotoModal isOpen={modalType === 'photo'} onClose={closeModals} initialPhoto={activeTeamForModal?.custom_team_photo_url ? `${getImageUrl(activeTeamForModal.custom_team_photo_url)}?t=${Date.now()}` : (activeTeamForModal?.team_photo_url ? getImageUrl(activeTeamForModal.team_photo_url) : null)} canClearPhoto={!!activeTeamForModal?.custom_team_photo_url} onSave={handlePhotoSave} isSaving={isDataSaving} readOnly={!canEditActiveTeamParams} />
