@@ -27,6 +27,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
   }, [selectedLeague]);
 
   const baseMenuItems = [
+    { name: "Матчи", path: "/games", icon: "matches" },
     { name: "Дивизионы", path: "/divisions", icon: "divisions" },
     { name: "Трансферы", path: "/transfers", icon: "transfers" },
     { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" },

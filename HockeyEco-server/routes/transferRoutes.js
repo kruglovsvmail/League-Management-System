@@ -8,7 +8,7 @@ import {
 import { 
     getTransfers, 
     handleTransferAction,
-    getAvailablePlayers,
+    getTransferPlayers, // Исправленный импорт
     createTransferRequest
 } from '../controllers/transferController.js';
 
@@ -17,7 +17,7 @@ const router = express.Router();
 router.use(verifyToken);
 
 // Маршруты для модалки создания заявки
-router.get('/transfers/available-players', getAvailablePlayers);
+router.get('/transfers/available-players', getTransferPlayers); // Исправленный вызов функции
 
 // ЗАЩИТА: Создавать трансфер может только top_manager
 router.post('/transfers', requireRoleForTransferCreate(['top_manager']), createTransferRequest);

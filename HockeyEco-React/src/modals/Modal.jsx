@@ -22,6 +22,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'default' }) {
     normal: 'max-w-[500px]',
     medium: 'max-w-[550px]',
     wide: 'max-w-[800px]',
+    wide2: 'max-w-[1100px]',
     'extra-wide': 'max-w-[1500px]',
   };
 

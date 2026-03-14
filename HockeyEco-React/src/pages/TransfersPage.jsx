@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom'; // Добавили useSearchParams
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -7,7 +7,7 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
 import { CreateTransferRequestModal } from '../modals/CreateTransferRequestModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal'; 
 
@@ -21,12 +21,11 @@ export function TransfersPage() {
   const { user, selectedLeague } = useOutletContext();
   const { checkAccess } = useAccess();
 
-  // Права доступа текущего пользователя
+  const isAdmin = user?.globalRole === 'admin';
   const canViewTransfers = checkAccess('VIEW_TRANSFERS');
   const canCreateTransfer = checkAccess('CREATE_TRANSFER');
   const canActionTransfer = checkAccess('ACTION_TRANSFER');
   
-  // === НАСТРОЙКА URL-ПАРАМЕТРОВ ===
   const [searchParams, setSearchParams] = useSearchParams();
 
   const statusFilterIndex = parseInt(searchParams.get('status') || '0', 10);
@@ -34,22 +33,15 @@ export function TransfersPage() {
   const divisionFilter = searchParams.get('division') || 'Все дивизионы';
   const searchQuery = searchParams.get('q') || '';
 
-  const setStatusFilterIndex = (index) => {
-    setSearchParams(prev => { prev.set('status', index); return prev; }, { replace: true });
-  };
-
-  const setTypeFilterIndex = (index) => {
-    setSearchParams(prev => { prev.set('type', index); return prev; }, { replace: true });
-  };
-
+  const setStatusFilterIndex = (index) => { setSearchParams(prev => { prev.set('status', index); return prev; }, { replace: true }); };
+  const setTypeFilterIndex = (index) => { setSearchParams(prev => { prev.set('type', index); return prev; }, { replace: true }); };
   const setDivisionFilter = (val) => {
     setSearchParams(prev => {
       if (val && val !== 'Все дивизионы') prev.set('division', val);
-      else prev.delete('division'); // удаляем из URL, чтобы не засорять
+      else prev.delete('division');
       return prev;
     }, { replace: true });
   };
-
   const setSearchQuery = (val) => {
     setSearchParams(prev => {
       if (val) prev.set('q', val);
@@ -57,7 +49,6 @@ export function TransfersPage() {
       return prev;
     }, { replace: true });
   };
-  // ================================
 
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
@@ -196,10 +187,16 @@ export function TransfersPage() {
     return new Date(dateString).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
+  const isAnyTransferWindowOpen = divisionsList.some(div => {
+    const now = new Date();
+    const tS = div.transfer_start ? new Date(div.transfer_start) : null;
+    const tE = div.transfer_end ? new Date(div.transfer_end) : null;
+    return (tS && tE && now >= tS && now <= tE);
+  });
+
   const seasonOptions = seasons.map(s => s.name);
   const selectedSeasonName = seasons.find(s => s.id === selectedSeasonId)?.name || '';
 
-  // Если нет прав на просмотр - выводим заглушку
   if (!canViewTransfers) {
     return (
       <div className="flex flex-col flex-1 animate-fade-in-down">
@@ -227,9 +224,15 @@ export function TransfersPage() {
                 }} />
               </div>
             )}
-            {/* Кнопка доступна только для top_manager */}
+            
             {canCreateTransfer && (
-              <Button onClick={() => setIsCreateModalOpen(true)}>+ Добавить запрос</Button>
+              (isAdmin || isAnyTransferWindowOpen) ? (
+                <Button onClick={() => setIsCreateModalOpen(true)}>+ Добавить запрос</Button>
+              ) : (
+                <div className="flex items-center px-4 py-2.5 bg-status-rejected/5 border border-status-rejected/20 rounded-xl" title="Трансферные окна закрыты во всех дивизионах">
+                  <span className="text-[12px] font-bold text-status-rejected leading-tight">Трансферные<br/>окна закрыты</span>
+                </div>
+              )
             )}
           </>
         }
@@ -237,7 +240,6 @@ export function TransfersPage() {
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         
-        {/* ЛЕВАЯ ПАНЕЛЬ ФИЛЬТРОВ (Зафиксирована) */}
         <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6 custom-scrollbar z-20">
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Статус заявки</label>
@@ -255,7 +257,6 @@ export function TransfersPage() {
           </div>
         </div>
 
-        {/* ПРАВАЯ ЧАСТЬ СО СПИСКОМ */}
         <div className="flex-1 relative z-10 min-h-[500px]">
           {isLoading && (
             <div className="absolute inset-0 z-20 flex items-start pt-20 justify-center">
@@ -277,18 +278,11 @@ export function TransfersPage() {
                 const teamLogo = getImageUrl(tr.team_logo || '/default/Logo_team_default.webp');
 
                 const now = new Date();
-                const appStart = tr.application_start ? new Date(tr.application_start) : null;
-                const appEnd = tr.application_end ? new Date(tr.application_end) : null;
                 const trStart = tr.transfer_start ? new Date(tr.transfer_start) : null;
                 const trEnd = tr.transfer_end ? new Date(tr.transfer_end) : null;
-                const isWindowOpen = (appStart && appEnd && now >= appStart && now <= appEnd) || (trStart && trEnd && now >= trStart && now <= trEnd);
                 
-                // Проверяем, есть ли у пользователя техническая возможность менять статусы
-                const canManage = isWindowOpen || user?.globalRole === 'admin';
-                // И есть ли у него при этом системные права
-                const isAllowedToAct = canActionTransfer && canManage;
-                const canRevertAdd = isAdd ? (Number(tr.games_played) === 0 && isAllowedToAct) : true;
-
+                const isTransferWindowOpen = (trStart && trEnd && now >= trStart && now <= trEnd);
+                
                 return (
                   <div key={tr.id} className={`grid transition-all duration-300 ease-in-out origin-top ${isHiding ? 'grid-rows-[0fr] opacity-0 mb-0 scale-[0.98]' : 'grid-rows-[1fr] opacity-100 mb-3 scale-100'}`}>
                     <div className="overflow-hidden">
@@ -325,7 +319,8 @@ export function TransfersPage() {
 
                         <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                           <div className="overflow-hidden">
-                            <div className="px-10 py-4 bg-graphite/5 border-t border-graphite/5 flex items-center gap-12">
+                            {/* Изменил gap с 12 на 10, чтобы ID аккуратно влез */}
+                            <div className="px-10 py-4 bg-graphite/5 border-t border-graphite/5 flex items-center gap-10">
                               <div className="text-center min-w-[100px]">
                                 {tr.resolved_at ? (
                                   <><div className="text-[12px] font-bold text-graphite">{resolved.date}</div><div className="text-[10px] font-medium text-graphite-light mt-0.5">{resolved.time}</div></>
@@ -334,22 +329,46 @@ export function TransfersPage() {
                               <div><div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">Дата рождения</div><div className="text-[13px] font-medium text-graphite">{formatBirthDate(tr.birth_date)}</div></div>
                               <div><div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">Амплуа</div><div className="text-[13px] font-medium text-graphite">{POSITIONS[tr.position] || tr.position || '-'}</div></div>
                               <div><div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">Номер</div><div className="text-[13px] font-bold text-graphite">{tr.jersey_number ? `#${tr.jersey_number}` : '-'}</div></div>
+                              
+                              {/* НОВЫЙ БЛОК С ID ЗАЯВКИ */}
+                              <div>
+                                <div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">ID запроса</div>
+                                <div className="text-[12px] font-mono text-graphite/40">#{tr.id}</div>
+                              </div>
 
-                              {/* Блок кнопок управления отображается только если есть права */}
-                              {isAllowedToAct && (
-                                <div className="ml-auto flex gap-2">
+                              {canActionTransfer && (
+                                <div className="ml-auto flex gap-3 items-center">
                                   {actionLoadingId === tr.id ? (
                                     <div className="h-10 flex items-center justify-center px-4"><svg className="animate-spin h-5 w-5 text-orange" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>
                                   ) : tr.status === 'pending' ? (
                                     <>
-                                      <button onClick={(e) => handleAction(e, tr.id, 'reject')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white transition-colors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                                      <button onClick={(e) => handleAction(e, tr.id, 'accept')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white transition-colors shadow-sm"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></button>
+                                      {/* Отклонить можно всегда */}
+                                      <button onClick={(e) => handleAction(e, tr.id, 'reject')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white transition-colors" title="Отклонить">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                      </button>
+                                      
+                                      {/* Подтвердить можно ТОЛЬКО в трансферное окно ИЛИ если ты Админ */}
+                                      {(isTransferWindowOpen || isAdmin) ? (
+                                        <div className="flex items-center gap-2">
+                                          {!isTransferWindowOpen && isAdmin && (
+                                            <span className="text-[10px] font-black text-status-rejected uppercase tracking-wider leading-tight text-right bg-status-rejected/10 px-2 py-1 rounded">Окно<br/>закрыто</span>
+                                          )}
+                                          <button onClick={(e) => handleAction(e, tr.id, 'accept')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white transition-colors shadow-sm" title="Подтвердить">
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="px-3 py-1.5 rounded-lg bg-status-rejected/5 border border-status-rejected/10 ml-1">
+                                          <span className="text-[10px] font-bold text-status-rejected uppercase tracking-wider leading-tight block text-center">Окно<br/>закрыто</span>
+                                        </div>
+                                      )}
                                     </>
-                                  ) : canRevertAdd ? (
-                                    <button onClick={(e) => handleAction(e, tr.id, 'revert')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-white border border-graphite/20 text-graphite hover:border-orange hover:transition-colors shadow-sm"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg></button>
-                                  ) : (
-                                    <div className="text-[11px] font-semibold text-status-rejected max-w-[120px] text-right leading-tight">Возврат невозможен (сыграны матчи)</div>
-                                  )}
+                                  ) : isAdmin ? (
+                                    /* Кнопка "Вернуть" только для админа */
+                                    <button onClick={(e) => handleAction(e, tr.id, 'revert')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-white border border-graphite/20 text-graphite hover:border-orange hover:transition-colors shadow-sm" title="Вернуть статус на проверку">
+                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+                                    </button>
+                                  ) : null}
                                 </div>
                               )}
                             </div>
@@ -366,7 +385,7 @@ export function TransfersPage() {
         </div>
       </div>
 
-      <CreateTransferRequestModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onSuccess={() => fetchTransfers(true)} divisions={divisionsList} />
+      <CreateTransferRequestModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onSuccess={() => fetchTransfers(true)} divisions={divisionsList} isAdmin={isAdmin} />
       <PlayerProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} playerId={selectedPlayerId} />
     </div>
   );

@@ -288,10 +288,29 @@ export const addPlayerToApplication = async (req, res) => {
                 const cap = pData?.is_captain || false;
                 const ast = pData?.is_assistant || false;
 
-                await pool.query(`
-                    INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
-                    VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING
-                `, [appId, pid, pos, num, cap, ast]);
+                // Проверяем, была ли уже запись для этого игрока в этой заявке
+                const checkRes = await pool.query(`SELECT id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`, [appId, pid]);
+                
+                if (checkRes.rows.length > 0) {
+                    // Игрок уже был (отзаявлен), "воскрешаем" его запись
+                    await pool.query(`
+                        UPDATE tournament_rosters 
+                        SET period_end = NULL, 
+                            application_status = 'pending', 
+                            position = $3, 
+                            jersey_number = $4, 
+                            is_captain = $5, 
+                            is_assistant = $6,
+                            updated_at = NOW()
+                        WHERE tournament_team_id = $1 AND player_id = $2
+                    `, [appId, pid, pos, num, cap, ast]);
+                } else {
+                    // Абсолютно новый игрок в заявке
+                    await pool.query(`
+                        INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                    `, [appId, pid, pos, num, cap, ast]);
+                }
             }
         }
         res.json({ success: true });

@@ -271,7 +271,7 @@ export function TeamManagementPage() {
     } catch (err) { showToast('Ошибка', 'Не удалось сохранить фото'); } finally { setIsPhotoSaving(false); }
   };
 
-  const getRenderPhoto = (r) => `${getImageUrl(r.photo_url || r.avatar_url || r.user_avatar_url || r.team_member_photo_url || '/default/user_default.webp')}?t=${cacheBuster}`;
+  const getRenderPhoto = (r) => `${getImageUrl(r.photo_url || r.avatar_url || r.team_member_photo_url || r.user_avatar_url || '/default/user_default.webp')}?t=${cacheBuster}`;
 
   // --- МЕТОДЫ ЗАЯВОК В ЛИГУ ---
 
@@ -380,7 +380,7 @@ export function TeamManagementPage() {
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         {selectedTeam && (
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-2xl p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-fade-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-xxl p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-fade-in">
             <div className="flex flex-col items-center mb-4 text-center">
               <img src={getImageUrl(selectedTeam.logo_url) || '/default/Logo_team_default.webp'} className="w-16 h-16 object-contain mb-3" />
               <span className="font-black text-[16px] leading-tight">{selectedTeam.name}</span>
@@ -533,7 +533,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
     }},
     { label: 'Нашивки', sortKey: 'is_captain', width: 'w-[90px]', render: (r) => { 
       if (!canEditRoster) {
-        return ( <div className="flex gap-1.5">{r.is_captain && <span className="w-6 h-6 flex items-center justify-center bg-orange text-white text-[10px] font-black rounded">C</span>}{r.is_assistant && <span className="w-6 h-6 flex items-center justify-center bg-status-accepted text-white text-[10px] font-black rounded">A</span>}</div> );
+        return ( <div className="flex gap-1.5">{r.is_captain && <span className="w-6 h-6 flex items-center justify-center bg-orange text-white text-[12px] font-bold rounded">K</span>}{r.is_assistant && <span className="w-6 h-6 flex items-center justify-center bg-status-accepted text-white text-[12px] font-bold rounded">A</span>}</div> );
       }
       const canAddA = r.is_assistant || (app.roster || []).filter(p => p.is_assistant).length < 2; 
       return ( <div className="flex gap-1.5"><button onClick={() => onUpdatePlayer(r.id, { is_captain: !r.is_captain, is_assistant: false })} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20'}`}>C</button><button onClick={() => { if (r.is_assistant) onUpdatePlayer(r.id, { is_assistant: false }); else onUpdatePlayer(r.id, { is_assistant: true, is_captain: false }); }} disabled={!canAddA && !r.is_assistant} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20'}`}>A</button></div> ); 

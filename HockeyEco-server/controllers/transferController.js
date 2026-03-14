@@ -28,22 +28,14 @@ export const getTransfers = async (req, res) => {
                     ORDER BY tr.id DESC LIMIT 1
                 ) END as position,
 
-                u.first_name, u.last_name, u.middle_name, u.birth_date, u.avatar_url,
-                t.name AS team_name, t.city AS team_city, t.logo_url AS team_logo,
-                d.name AS division_name, d.application_start, d.application_end, d.transfer_start, d.transfer_end,
-                tm.photo_url AS member_photo,
-                
-                COALESCE((
-                    SELECT COUNT(*) FROM game_rosters gr 
-                    JOIN games g ON gr.game_id = g.id 
-                    WHERE gr.player_id = rr.player_id AND gr.team_id = rr.team_id AND g.division_id = rr.division_id
-                ), 0) as games_played
-
+                u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date,
+                (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = rr.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1) as member_photo,
+                t.name as team_name, t.logo_url as team_logo,
+                d.name as division_name, d.application_start, d.application_end, d.transfer_start, d.transfer_end
             FROM roster_requests rr
             JOIN users u ON rr.player_id = u.id
             JOIN teams t ON rr.team_id = t.id
             JOIN divisions d ON rr.division_id = d.id
-            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = t.id
             WHERE d.season_id = $1
             ORDER BY rr.created_at DESC
         `, [seasonId]);
@@ -51,7 +43,7 @@ export const getTransfers = async (req, res) => {
         res.json({ success: true, data: result.rows });
     } catch (err) {
         console.error('Ошибка получения трансферов:', err);
-        res.status(500).json({ success: false, error: 'Ошибка загрузки трансферов' });
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 };
 
@@ -78,33 +70,45 @@ export const handleTransferAction = async (req, res) => {
         const tr = transferRes.rows[0];
 
         const now = new Date();
-        const appStart = tr.application_start ? new Date(tr.application_start) : null;
-        const appEnd = tr.application_end ? new Date(tr.application_end) : null;
         const trStart = tr.transfer_start ? new Date(tr.transfer_start) : null;
         const trEnd = tr.transfer_end ? new Date(tr.transfer_end) : null;
 
-        const isAppWindow = appStart && appEnd && now >= appStart && now <= appEnd;
-        const isTrWindow = trStart && trEnd && now >= trStart && now <= trEnd;
-        const isWindowOpen = isAppWindow || isTrWindow;
+        const isTransferWindowOpen = trStart && trEnd && now >= trStart && now <= trEnd;
         const isAdmin = tr.user_role === 'admin';
 
         let targetDate = new Date();
-        if (!isWindowOpen) {
-            let maxDate = 0;
-            if (appEnd) maxDate = Math.max(maxDate, appEnd.getTime());
-            if (trEnd) maxDate = Math.max(maxDate, trEnd.getTime());
-            if (maxDate > 0) targetDate = new Date(maxDate);
+        if (!isTransferWindowOpen) {
+            if (trEnd) targetDate = new Date(trEnd.getTime());
         }
 
         if (action === 'accept') {
-            if (!isWindowOpen && !isAdmin) throw new Error('Нет прав: окно заявок закрыто');
+            if (!isTransferWindowOpen && !isAdmin) throw new Error('Нет прав: трансферное окно закрыто');
             
             if (tr.request_type === 'add') {
                 if (!tr.tournament_team_id) throw new Error('Команда не заявлена в турнир');
-                await client.query(`
-                    INSERT INTO tournament_rosters (tournament_team_id, player_id, application_status, period_start, position, jersey_number)
-                    VALUES ($1, $2, 'declined', $3, $4, $5)
-                `, [tr.tournament_team_id, tr.player_id, targetDate, tr.position, tr.jersey_number]);
+                
+                const checkRoster = await client.query(
+                    `SELECT id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`, 
+                    [tr.tournament_team_id, tr.player_id]
+                );
+                
+                if (checkRoster.rows.length > 0) {
+                    await client.query(`
+                        UPDATE tournament_rosters 
+                        SET period_end = NULL, 
+                            application_status = 'declined', 
+                            period_start = $3, 
+                            position = $4, 
+                            jersey_number = $5,
+                            updated_at = NOW()
+                        WHERE tournament_team_id = $1 AND player_id = $2
+                    `, [tr.tournament_team_id, tr.player_id, targetDate, tr.position, tr.jersey_number]);
+                } else {
+                    await client.query(`
+                        INSERT INTO tournament_rosters (tournament_team_id, player_id, application_status, period_start, position, jersey_number)
+                        VALUES ($1, $2, 'declined', $3, $4, $5)
+                    `, [tr.tournament_team_id, tr.player_id, targetDate, tr.position, tr.jersey_number]);
+                }
             } else if (tr.request_type === 'remove') {
                 await client.query(`
                     UPDATE tournament_rosters SET period_end = $1 
@@ -114,23 +118,31 @@ export const handleTransferAction = async (req, res) => {
             await client.query(`UPDATE roster_requests SET status = 'approved', resolved_at = NOW() WHERE id = $1`, [id]);
         } 
         else if (action === 'reject') {
-            if (!isWindowOpen && !isAdmin) throw new Error('Нет прав: окно заявок закрыто');
             await client.query(`UPDATE roster_requests SET status = 'rejected', resolved_at = NOW() WHERE id = $1`, [id]);
         }
         else if (action === 'revert') {
             if (tr.request_type === 'add') {
                 if (Number(tr.games_played) > 0) throw new Error('Игрок уже сыграл матчи. Возврат невозможен.');
-                if (!isWindowOpen && !isAdmin) throw new Error('Нет прав: окно заявок закрыто');
+                if (!isAdmin) throw new Error('Нет прав: только администратор может откатывать трансферы');
                 
-                await client.query(`
-                    DELETE FROM tournament_rosters 
-                    WHERE id = (
-                        SELECT id FROM tournament_rosters 
-                        WHERE tournament_team_id = $1 AND player_id = $2 
-                        ORDER BY id DESC LIMIT 1
-                    )
-                `, [tr.tournament_team_id, tr.player_id]);
+                const historyCheck = await client.query(
+                    `SELECT period_start FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`, 
+                    [tr.tournament_team_id, tr.player_id]
+                );
+
+                if (historyCheck.rows.length > 0) {
+                    await client.query(`
+                        DELETE FROM tournament_rosters 
+                        WHERE id = (
+                            SELECT id FROM tournament_rosters 
+                            WHERE tournament_team_id = $1 AND player_id = $2 
+                            ORDER BY id DESC LIMIT 1
+                        )
+                    `, [tr.tournament_team_id, tr.player_id]);
+                }
             } else if (tr.request_type === 'remove') {
+                if (!isAdmin) throw new Error('Нет прав: только администратор может откатывать трансферы');
+                
                 await client.query(`
                     UPDATE tournament_rosters SET period_end = NULL 
                     WHERE tournament_team_id = $1 AND player_id = $2
@@ -150,46 +162,34 @@ export const handleTransferAction = async (req, res) => {
     }
 };
 
-// 3. Получение доступных игроков для модалки создания заявки
-export const getAvailablePlayers = async (req, res) => {
+// 3. Получение доступных игроков для добавления/отзаявки
+export const getTransferPlayers = async (req, res) => {
     try {
         const { divisionId, teamId, type } = req.query;
         let players = [];
-        let takenNumbers = [];
+        
+        const takenNumbersRes = await pool.query(`
+            SELECT tr.jersey_number FROM tournament_rosters tr
+            JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+            WHERE tt.division_id = $1 AND tt.team_id = $2 AND tr.period_end IS NULL AND tr.application_status != 'declined'
+        `, [divisionId, teamId]);
+        const takenNumbers = takenNumbersRes.rows.map(r => r.jersey_number).filter(n => n !== null);
 
         if (type === 'add') {
             const pRes = await pool.query(`
-                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.birth_date, u.avatar_url,
-                       tr_base.position, tm.photo_url
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url as member_photo
                 FROM team_members tm
                 JOIN users u ON tm.user_id = u.id
-                LEFT JOIN team_rosters tr_base ON tr_base.member_id = tm.id
-                WHERE tm.team_id = $1 AND tm.left_at IS NULL
-                  AND u.id NOT IN (
-                      SELECT player_id FROM tournament_rosters tr
-                      JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-                      WHERE tt.division_id = $2 AND tt.team_id = $1 AND tr.period_end IS NULL
-                  )
+                WHERE tm.team_id = $1 AND u.id NOT IN (
+                    SELECT tr.player_id FROM tournament_rosters tr
+                    JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                    WHERE tt.division_id = $2 AND tt.team_id = $1 AND tr.period_end IS NULL
+                )
             `, [teamId, divisionId]);
             players = pRes.rows;
-
-            // ИЗМЕНЕНИЕ: Собираем занятые номера ИЗ СОСТАВА + ИЗ ЗАЯВОК НА РАССМОТРЕНИИ
-            const numRes = await pool.query(`
-                SELECT tr.jersey_number FROM tournament_rosters tr
-                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-                WHERE tt.division_id = $1 AND tt.team_id = $2 AND tr.period_end IS NULL AND tr.jersey_number IS NOT NULL
-                
-                UNION
-                
-                SELECT rr.jersey_number FROM roster_requests rr
-                WHERE rr.division_id = $1 AND rr.team_id = $2 AND rr.request_type = 'add' AND rr.status = 'pending' AND rr.jersey_number IS NOT NULL
-            `, [divisionId, teamId]);
-            takenNumbers = numRes.rows.map(r => r.jersey_number);
-            
-        } else {
+        } else if (type === 'remove') {
             const pRes = await pool.query(`
-                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.birth_date, u.avatar_url,
-                       tr.position, tm.photo_url
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url as member_photo, tr.position, tr.jersey_number
                 FROM tournament_rosters tr
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
                 JOIN users u ON tr.player_id = u.id
@@ -222,10 +222,10 @@ export const createTransferRequest = async (req, res) => {
             INSERT INTO roster_requests (division_id, team_id, player_id, request_type, jersey_number, position)
             VALUES ($1, $2, $3, $4, $5, $6)
         `, [divisionId, teamId, playerId, requestType, jerseyNumber || null, position || null]);
-
+        
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка создания заявки:', err);
-        res.status(500).json({ success: false, error: 'Ошибка создания заявки' });
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 };

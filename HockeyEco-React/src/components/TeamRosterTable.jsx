@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Table } from '../ui/Table2';
 import { Badge } from '../ui/Badge';
 import { Tooltip } from '../ui/Tooltip';
@@ -28,6 +28,20 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     if (match) return `+7 (${match[2]}) ${match[3]}-${match[4]}-${match[5]}`;
     return phone; 
   };
+
+  // Вычисляем дублирующиеся номера (только для игроков)
+  const duplicateJerseys = useMemo(() => {
+    if (isStaff || !roster) return new Set();
+    const counts = {};
+    roster.forEach(r => {
+      const num = r.jersey_number;
+      if (num !== null && num !== undefined && num !== '') {
+        counts[num] = (counts[num] || 0) + 1;
+      }
+    });
+    // Возвращаем Set с номерами (в виде строк для надежного сравнения), которые встречаются больше 1 раза
+    return new Set(Object.keys(counts).filter(num => counts[num] > 1).map(String));
+  }, [roster, isStaff]);
 
   const playerColumns = [
     { 
@@ -139,9 +153,19 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       label: '№', 
       sortKey: 'jersey_number',
       width: 'w-[80px]', align: 'center',
-      render: (row) => (
-        <span className="font-black text-graphite text-[13px]">{row.jersey_number || '-'}</span>
-      )
+      render: (row) => {
+        const numStr = row.jersey_number != null ? String(row.jersey_number) : '';
+        const isDuplicate = numStr !== '' && duplicateJerseys.has(numStr);
+        
+        return (
+          <span 
+            className={`font-black text-[13px] ${isDuplicate ? 'text-status-rejected bg-status-rejected/10 px-2 py-0.5 rounded' : 'text-graphite'}`}
+            title={isDuplicate ? 'Этот номер дублируется в составе!' : ''}
+          >
+            {row.jersey_number || '-'}
+          </span>
+        );
+      }
     },
     { 
       label: 'Квал.', 

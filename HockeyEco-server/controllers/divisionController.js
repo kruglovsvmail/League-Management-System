@@ -2,6 +2,16 @@ import pool from '../config/db.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 
+// Вспомогательная функция проверки пересечения окон
+const checkOverlap = (appStart, appEnd, trStart, trEnd) => {
+    if (!appStart || !appEnd || !trStart || !trEnd) return false;
+    const as = new Date(appStart);
+    const ae = new Date(appEnd);
+    const ts = new Date(trStart);
+    const te = new Date(trEnd);
+    return (as <= te) && (ae >= ts);
+};
+
 export const getSeasons = async (req, res) => {
     try {
         const { leagueId } = req.params;
@@ -86,6 +96,11 @@ export const createDivision = async (req, res) => {
             wins_needed_final, wins_needed_3rd
         } = req.body;
 
+        // ВАЛИДАЦИЯ ПЕРЕСЕЧЕНИЯ ДАТ НА БЭКЕНДЕ
+        if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
+            return res.status(400).json({ success: false, error: 'Периоды заявочной кампании и трансферного окна не могут пересекаться' });
+        }
+
         const result = await pool.query(`
             INSERT INTO divisions (
                 season_id, name, short_name, tournament_type,
@@ -129,6 +144,12 @@ export const updateDivision = async (req, res) => {
             points_loss_reg, ranking_criteria, playoff_start_round, has_third_place, wins_needed_1_8, wins_needed_1_4,
             wins_needed_1_2, wins_needed_final, wins_needed_3rd
         } = req.body;
+
+        // ВАЛИДАЦИЯ ПЕРЕСЕЧЕНИЯ ДАТ НА БЭКЕНДЕ
+        if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
+            return res.status(400).json({ success: false, error: 'Периоды заявочной кампании и трансферного окна не могут пересекаться' });
+        }
+
         await pool.query(`
             UPDATE divisions SET 
                 name = $1, short_name = $2, tournament_type = $3, start_date = $4, end_date = $5,

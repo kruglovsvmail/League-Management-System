@@ -93,7 +93,7 @@ export function DivisionTeamsList({ teams, onOpenModal, selectedTeamId, onTeamSe
                     : 'hover:opacity-60 hover:opacity-100'
                 }`}
               >
-                <img src={logoSrc} className="w-full h-full object-contain drop-shadow-sm" alt="logo" />
+                <img src={logoSrc} className="w-full h-full object-contain drop-shadow-lg" alt="logo" />
               </div>
             </Tooltip>
 

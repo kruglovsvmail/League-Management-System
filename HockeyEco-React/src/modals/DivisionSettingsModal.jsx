@@ -127,14 +127,27 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
     setFormData(prev => ({ ...prev, ranking_criteria: newCriteria }));
   };
 
+  // ФУНКЦИЯ ПРОВЕРКИ ПЕРЕСЕЧЕНИЯ ДАТ ЗАЯВКИ И ТРАНСФЕРА
+  const isOverlap = () => {
+    const as = formData.application_start ? new Date(formData.application_start) : null;
+    const ae = formData.application_end ? new Date(formData.application_end) : null;
+    const ts = formData.transfer_start ? new Date(formData.transfer_start) : null;
+    const te = formData.transfer_end ? new Date(formData.transfer_end) : null;
+
+    if (as && ae && ts && te) {
+      // Пересечение происходит, если Старт_А <= Конец_Б И Конец_А >= Старт_Б
+      return (as <= te) && (ae >= ts);
+    }
+    return false;
+  };
+
   // Валидация
   const isFormValid = () => {
     if (!formData.name || !formData.tournament_type) return false;
     if (!formData.start_date || !formData.end_date) return false;
+    if (isOverlap()) return false; // Блокируем кнопку, если даты пересекаются
     return true;
   };
-
-  
 
   // Универсальная загрузка файлов
   const uploadFileS3 = async (divId, type, file) => {
@@ -207,9 +220,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
       <div className="w-[600px] left-14 flex justify-between items-center mb-8 relative px-2">
         <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[2px] bg-graphite/10 z-0"></div>
         {STEPS.map((step, idx) => {
-          // Отключаем кликабельность таба, если он не нужен для данного типа турнира
           const isDisabledTab = (!hasRegular && idx === 2) || (!hasPlayoff && idx === 3);
-          
           return (
             <div 
               key={idx} 
@@ -289,6 +300,13 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
                 <DatePicker placeholder="Старт трансферов" value={formData.transfer_start} onChange={(val) => handleChange('transfer_start', val)} />
                 <DatePicker placeholder="Конец трансферов" value={formData.transfer_end} onChange={(val) => handleChange('transfer_end', val)} />
               </div>
+              
+              {/* СООБЩЕНИЕ ОБ ОШИБКЕ ПЕРЕСЕЧЕНИЯ ДАТ */}
+              {isOverlap() && (
+                <div className="md:col-span-2 mt-2 p-3 bg-status-rejected/10 border border-status-rejected/20 rounded-xl text-[12px] font-bold text-status-rejected text-center">
+                  Периоды заявочной кампании и трансферного окна не могут пересекаться!
+                </div>
+              )}
             </div>
           </div>
         </div>

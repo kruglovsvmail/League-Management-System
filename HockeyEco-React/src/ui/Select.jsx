@@ -81,7 +81,7 @@ export function Select({ options, value, onChange, placeholder = "Выберит
 
         {isOpen && createPortal(
           <div 
-            className="portal-dropdown absolute bg-white/95 backdrop-blur-xl rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-fade-in-down overflow-y-auto max-h-[650px]"
+            className="portal-dropdown absolute bg-white/70 backdrop-blur-xl rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-fade-in-down overflow-y-auto max-h-[650px]"
             style={{ top: `${coords.top}px`, left: `${coords.left}px`, width: `${coords.width}px` }}
           >
             {options.map((opt, idx) => (

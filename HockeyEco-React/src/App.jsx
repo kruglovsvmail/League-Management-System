@@ -10,7 +10,9 @@ import { DivisionsPage } from './pages/DivisionsPage';
 import { TransfersPage } from './pages/TransfersPage';
 import { DisqualificationsPage } from './pages/DisqualificationsPage';
 import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
-import { TeamManagementPage } from './pages/TeamManagementPage'; // Импорт новой страницы
+import { TeamManagementPage } from './pages/TeamManagementPage';
+import { GamesPage } from './pages/GamesPage';
+import { GamePage } from './pages/GamePage';
 
 // Импорт каркаса и UI
 import { AdminLayout } from './AdminLayout';
@@ -140,9 +142,11 @@ export default function App() {
             />
             
             <Route path="divisions" element={<DivisionsPage />} />
+            <Route path="games" element={<GamesPage />} />
             <Route path="handbook" element={<HandbookPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="transfers" element={<TransfersPage />} />
+            <Route path="games/:gameId" element={<GamePage />} />
             <Route path="disqualifications" element={<DisqualificationsPage />} />
             <Route path="*" element={<Navigate to="/divisions" replace />} />
           </Route>

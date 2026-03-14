@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from './Modal';
 import { Select } from '../ui/Select';
-import { SegmentButton } from '../ui/SegmentButton'; // <-- Исправлен путь
+import { SegmentButton } from '../ui/SegmentButton';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { getImageUrl, getToken } from '../utils/helpers';
 
 const POSITION_LABELS = { 
   goalie: 'Вратарь', 
@@ -12,7 +12,8 @@ const POSITION_LABELS = {
   forward: 'Нападающий' 
 };
 
-export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], onSuccess }) {
+// ДОБАВЛЕН ПРОП isAdmin
+export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], onSuccess, isAdmin }) {
   const [typeIndex, setTypeIndex] = useState(0); 
   const [selectedDivName, setSelectedDivName] = useState('');
   const [teams, setTeams] = useState([]);
@@ -30,13 +31,22 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const requestType = typeIndex === 0 ? 'add' : 'remove';
-  const divisionId = divisions?.find(d => d.name === selectedDivName)?.id;
+  
+  // НАХОДИМ ВЫБРАННЫЙ ДИВИЗИОН ЦЕЛИКОМ, ЧТОБЫ ВЗЯТЬ ДАТЫ
+  const selectedDivision = divisions?.find(d => d.name === selectedDivName);
+  const divisionId = selectedDivision?.id;
   const teamId = teams.find(t => t.name === selectedTeamName)?.team_id;
 
   const isNumberTaken = takenNumbers.includes(Number(jerseyNumber));
 
-  // Функция для получения токена (ИЗМЕНЕНИЕ)
-  
+  // ПРОВЕРКА: Открыто ли трансферное окно В ВЫБРАННОМ дивизионе?
+  const isWindowOpen = useMemo(() => {
+    if (!selectedDivision) return true; // Пока ничего не выбрано, не блокируем
+    const now = new Date();
+    const tS = selectedDivision.transfer_start ? new Date(selectedDivision.transfer_start) : null;
+    const tE = selectedDivision.transfer_end ? new Date(selectedDivision.transfer_end) : null;
+    return (tS && tE && now >= tS && now <= tE);
+  }, [selectedDivision]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -47,7 +57,6 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
     }
   }, [isOpen]);
 
-  // Загрузка команд (ИЗМЕНЕНИЕ: добавлен токен)
   useEffect(() => {
     if (divisionId) {
       fetch(`${import.meta.env.VITE_API_URL}/api/divisions/${divisionId}/teams`, {
@@ -67,7 +76,6 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
     }
   }, [divisionId]);
 
-  // Загрузка игроков (ИЗМЕНЕНИЕ: добавлен токен и изменен путь)
   useEffect(() => {
     if (divisionId && teamId) {
       setIsLoadingPlayers(true);
@@ -110,7 +118,6 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
     
     setIsSubmitting(true);
     try {
-      // ИЗМЕНЕНИЕ: добавлен токен и изменен путь
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/transfers`, {
         method: 'POST',
         headers: { 
@@ -150,9 +157,21 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
             <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Тип запроса</span>
             <SegmentButton options={['Дозаявка', 'Отзаявка']} defaultIndex={typeIndex} onChange={setTypeIndex} />
           </div>
+          
           <Select label="Дивизион" options={divisions.map(d => d.name)} value={selectedDivName} onChange={setSelectedDivName} />
+          
           <Select label="Команда" options={teams.map(t => t.name)} value={selectedTeamName} onChange={setSelectedTeamName} />
           
+          {/* ИНФОРМАЦИОННОЕ ТАБЛО О СТАТУСЕ ОКНА */}
+          {selectedDivision && !isWindowOpen && (
+            <div className={`p-3 rounded-xl border text-[12px] leading-tight mt-[-10px] animate-fade-in ${isAdmin ? 'bg-orange/10 border-orange/20 text-orange' : 'bg-status-rejected/5 border-status-rejected/20 text-status-rejected'}`}>
+              <span className="font-bold block mb-1">Трансферное окно закрыто</span>
+              {isAdmin 
+                ? 'Вы можете создать заявку благодаря правам администратора.' 
+                : 'Создание новых запросов в данный момент недоступно.'}
+            </div>
+          )}
+
           {typeIndex === 0 && selectedPlayerId && (
             <div className="flex flex-col gap-4 p-4 bg-orange/5 border border-orange/20 rounded-xl mt-4 animate-fade-in">
               <div className="flex flex-col gap-1">
@@ -203,7 +222,15 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
             )}
           </div>
           <div className="mt-2 pt-4 border-t border-graphite/10 shrink-0">
-            <Button onClick={handleSubmit} disabled={!selectedPlayerId || isSubmitting || (typeIndex === 0 && (!jerseyNumber || !position || isNumberTaken))} isLoading={isSubmitting} className="w-full">Создать заявку</Button>
+            {/* ИЗМЕНЕНО: Добавлена блокировка (!isWindowOpen && !isAdmin) */}
+            <Button 
+              onClick={handleSubmit} 
+              disabled={!selectedPlayerId || isSubmitting || (typeIndex === 0 && (!jerseyNumber || !position || isNumberTaken)) || (!isWindowOpen && !isAdmin)} 
+              isLoading={isSubmitting} 
+              className="w-full"
+            >
+              Создать заявку
+            </Button>
           </div>
         </div>
       </div>

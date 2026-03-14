@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 
-export function Table({ columns, data, rowClassName }) {
+export function Table({ columns, data, rowClassName, hideHeader = false }) {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const sortedData = useMemo(() => {
@@ -40,39 +40,39 @@ export function Table({ columns, data, rowClassName }) {
   return (
     <div className="w-full overflow-x-auto font-sans">
       <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            {columns.map((col, idx) => {
-              // Динамическое выравнивание ячейки заголовка
-              let alignClass = 'text-left';
-              if (col.align === 'center') alignClass = 'text-center';
-              else if (col.align === 'right') alignClass = 'text-right';
+        {!hideHeader && (
+          <thead>
+            <tr>
+              {columns.map((col, idx) => {
+                let alignClass = 'text-left';
+                if (col.align === 'center') alignClass = 'text-center';
+                else if (col.align === 'right') alignClass = 'text-right';
 
-              return (
-                <th 
-                  key={idx} 
-                  onClick={() => col.sortKey && requestSort(col.sortKey)}
-                  className={`py-4 px-4 text-[12px] uppercase text-black/40 font-semibold tracking-wide border-b border-graphite/20 select-none ${col.width || ''} ${alignClass} ${col.sortKey ? 'cursor-pointer hover:text-orange hover:bg-graphite/0 transition-colors group' : ''}`}
-                >
-                  {/* Контейнер по размеру текста, иконка висит абсолютно сбоку */}
-                  <div className="relative inline-flex items-center justify-center">
-                    <span>{col.label}</span>
-                    {col.sortKey && (
-                      <div className="absolute left-full pl-1.5 top-1/2 -translate-y-1/2 flex items-center">
-                        <svg 
-                          className={`w-3.5 h-3.5 transition-transform duration-200 ${sortConfig.key === col.sortKey ? 'text-orange opacity-100' : 'opacity-0 group-hover:opacity-40'} ${sortConfig.key === col.sortKey && sortConfig.direction === 'desc' ? 'rotate-180' : ''}`} 
-                          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
+                return (
+                  <th 
+                    key={idx} 
+                    onClick={() => col.sortKey && requestSort(col.sortKey)}
+                    className={`py-4 px-4 text-[12px] uppercase text-black/40 font-semibold tracking-wide border-b border-graphite/20 select-none ${col.width || ''} ${alignClass} ${col.sortKey ? 'cursor-pointer hover:text-orange hover:bg-graphite/0 transition-colors group' : ''}`}
+                  >
+                    <div className="relative inline-flex items-center justify-center">
+                      <span>{col.label}</span>
+                      {col.sortKey && (
+                        <div className="absolute left-full pl-1.5 top-1/2 -translate-y-1/2 flex items-center">
+                          <svg 
+                            className={`w-3.5 h-3.5 transition-transform duration-200 ${sortConfig.key === col.sortKey ? 'text-orange opacity-100' : 'opacity-0 group-hover:opacity-40'} ${sortConfig.key === col.sortKey && sortConfig.direction === 'desc' ? 'rotate-180' : ''}`} 
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+        )}
         <tbody>
           {sortedData.map((row, rowIndex) => (
             <tr 
@@ -80,7 +80,6 @@ export function Table({ columns, data, rowClassName }) {
               className={`transition-all duration-200 hover:bg-white/30 group ${rowClassName ? rowClassName(row) : ''}`}
             >
               {columns.map((col, colIndex) => {
-                // Динамическое выравнивание контента
                 let alignClass = 'text-left';
                 if (col.align === 'center') alignClass = 'text-center';
                 else if (col.align === 'right') alignClass = 'text-right';
