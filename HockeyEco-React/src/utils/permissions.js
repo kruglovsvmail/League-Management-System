@@ -17,5 +17,9 @@ export const PERMISSIONS = {
   VIEW_DISQUALIFICATIONS: ['top_manager', 'league_admin', 'referee'], // Просмотр
   CREATE_DISQUALIFICATION: ['top_manager', 'league_admin'],           // Назначать
   ACTION_DISQUALIFICATION: ['top_manager', 'league_admin'],            // Отменять / Отбыл
-};
 
+  // Матчи и Протокол
+  VIEW_GAMES: ['top_manager', 'league_admin', 'referee', 'media'], // Просмотр матчей
+  MANAGE_GAMES: ['top_manager', 'league_admin'],                   // Редактировать время/арену/статус
+  MANAGE_PROTOCOL: ['top_manager', 'league_admin'],                // Ведение live-протокола (в дополнение к секретарю матча)
+};

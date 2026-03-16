@@ -114,11 +114,20 @@ export const addTeamMember = async (req, res) => {
             } 
             else if (type === 'staff' && Array.isArray(roles)) {
                 await client.query(`UPDATE team_roles SET left_at = NOW() WHERE member_id = $1 AND left_at IS NULL`, [memberId]);
-                for (const role of roles) {
+                
+                // Оптимизация Bulk Insert для ролей
+                if (roles.length > 0) {
+                    const rValues = [];
+                    const rParams = [];
+                    let rIdx = 1;
+                    roles.forEach(role => {
+                        rValues.push(`($${rIdx++}, $${rIdx++})`);
+                        rParams.push(memberId, role);
+                    });
                     await client.query(`
-                        INSERT INTO team_roles (member_id, role) VALUES ($1, $2)
+                        INSERT INTO team_roles (member_id, role) VALUES ${rValues.join(', ')}
                         ON CONFLICT (member_id, role) DO UPDATE SET left_at = NULL
-                    `, [memberId, role]);
+                    `, rParams);
                 }
             }
         }
@@ -225,26 +234,17 @@ export const createTeamApplication = async (req, res) => {
         );
         const appId = appRes.rows[0].id;
 
+        // ОПТИМИЗАЦИЯ N+1: Вставляем всех игроков одним SQL-запросом (INSERT INTO ... SELECT)
         if (playerIds && playerIds.length > 0) {
-            for (const pid of playerIds) {
-                const pRes = await client.query(`
-                    SELECT tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant 
-                    FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
-                    WHERE tm.team_id = $1 AND tm.user_id = $2
-                `, [teamId, pid]);
-                
-                const pData = pRes.rows[0];
-                const pos = pData?.position || null;
-                const num = pData?.jersey_number !== undefined ? pData.jersey_number : null;
-                const cap = pData?.is_captain || false;
-                const ast = pData?.is_assistant || false;
-                
-                await client.query(`
-                    INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                `, [appId, pid, pos, num, cap, ast]);
-            }
+            await client.query(`
+                INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
+                SELECT $1, tm.user_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant 
+                FROM team_rosters tr 
+                JOIN team_members tm ON tr.member_id = tm.id
+                WHERE tm.team_id = $2 AND tm.user_id = ANY($3::int[])
+            `, [appId, teamId, playerIds]);
         }
+
         await client.query('COMMIT');
         res.json({ success: true, applicationId: appId });
     } catch (err) {
@@ -270,51 +270,80 @@ export const sendApplicationForReview = async (req, res) => {
 };
 
 export const addPlayerToApplication = async (req, res) => {
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
         const { teamId, appId } = req.params;
         const { playerIds } = req.body;
         
         if (playerIds && playerIds.length > 0) {
-            for (const pid of playerIds) {
-                const pRes = await pool.query(`
-                    SELECT tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant 
-                    FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
-                    WHERE tm.team_id = $1 AND tm.user_id = $2
-                `, [teamId, pid]);
-                
-                const pData = pRes.rows[0];
-                const pos = pData?.position || null;
-                const num = pData?.jersey_number !== undefined ? pData.jersey_number : null;
-                const cap = pData?.is_captain || false;
-                const ast = pData?.is_assistant || false;
+            // ОПТИМИЗАЦИЯ N+1: Решаем задачу через Bulk Updates & Inserts
+            
+            // 1. Получаем данные обо всех запрашиваемых игроках одним запросом
+            const pRes = await client.query(`
+                SELECT tm.user_id as pid, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant 
+                FROM team_rosters tr 
+                JOIN team_members tm ON tr.member_id = tm.id
+                WHERE tm.team_id = $1 AND tm.user_id = ANY($2::int[])
+            `, [teamId, playerIds]);
+            
+            // 2. Проверяем, кто уже есть в заявке (чтобы воскресить)
+            const checkRes = await client.query(`
+                SELECT player_id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = ANY($2::int[])
+            `, [appId, playerIds]);
+            const existingPids = new Set(checkRes.rows.map(r => r.player_id));
 
-                // Проверяем, была ли уже запись для этого игрока в этой заявке
-                const checkRes = await pool.query(`SELECT id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`, [appId, pid]);
-                
-                if (checkRes.rows.length > 0) {
-                    // Игрок уже был (отзаявлен), "воскрешаем" его запись
-                    await pool.query(`
-                        UPDATE tournament_rosters 
-                        SET period_end = NULL, 
-                            application_status = 'pending', 
-                            position = $3, 
-                            jersey_number = $4, 
-                            is_captain = $5, 
-                            is_assistant = $6,
-                            updated_at = NOW()
-                        WHERE tournament_team_id = $1 AND player_id = $2
-                    `, [appId, pid, pos, num, cap, ast]);
+            const insertValues = [];
+            const insertParams = [];
+            let insertIdx = 1;
+
+            const updateValues = [];
+            const updateParams = [];
+            let updateIdx = 1;
+
+            // Распределяем игроков: кого обновить, а кого вставить
+            for (const row of pRes.rows) {
+                if (existingPids.has(row.pid)) {
+                    updateValues.push(`($${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++})`);
+                    updateParams.push(appId, row.pid, row.position, row.jersey_number, row.is_captain || false, row.is_assistant || false);
                 } else {
-                    // Абсолютно новый игрок в заявке
-                    await pool.query(`
-                        INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
-                        VALUES ($1, $2, $3, $4, $5, $6)
-                    `, [appId, pid, pos, num, cap, ast]);
+                    insertValues.push(`($${insertIdx++}, $${insertIdx++}, $${insertIdx++}, $${insertIdx++}, $${insertIdx++}, $${insertIdx++})`);
+                    insertParams.push(appId, row.pid, row.position, row.jersey_number, row.is_captain || false, row.is_assistant || false);
                 }
             }
+
+            // Выполняем массовое обновление одним запросом (UPSERT/VALUES паттерн)
+            if (updateValues.length > 0) {
+                await client.query(`
+                    UPDATE tournament_rosters AS tr
+                    SET period_end = NULL,
+                        application_status = 'pending',
+                        position = v.position,
+                        jersey_number = v.jersey_number::int,
+                        is_captain = v.is_captain::boolean,
+                        is_assistant = v.is_assistant::boolean,
+                        updated_at = NOW()
+                    FROM (VALUES ${updateValues.join(', ')}) AS v(app_id, pid, position, jersey_number, is_captain, is_assistant)
+                    WHERE tr.tournament_team_id = v.app_id::int AND tr.player_id = v.pid::int
+                `, updateParams);
+            }
+
+            // Выполняем массовую вставку одним запросом
+            if (insertValues.length > 0) {
+                await client.query(`
+                    INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
+                    VALUES ${insertValues.join(', ')}
+                `, insertParams);
+            }
         }
+        await client.query('COMMIT');
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) { 
+        await client.query('ROLLBACK');
+        res.status(500).json({ success: false, error: err.message }); 
+    } finally {
+        client.release();
+    }
 };
 
 export const removePlayerFromApplication = async (req, res) => {

@@ -471,7 +471,8 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
         onSave={handlePlayerDocsSave} 
         isSaving={isPlayerSaving} 
         readOnly={!canEditRoster}
-      />
+        playerName={activePlayerForModal ? `${activePlayerForModal.last_name || ''} ${activePlayerForModal.first_name || ''}`.trim() : ''}
+/>
       <PlayerProfileModal isOpen={!!profileModalPlayerId} onClose={() => setProfileModalPlayerId(null)} playerId={profileModalPlayerId} />
     </div>
   );

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Modal } from './Modal';
+import { createPortal } from 'react-dom';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Table } from '../ui/Table2';
 import { getImageUrl, getToken } from '../utils/helpers';
 
-const POSITION_MAP = { 'goalie': 'Вратарь', 'defense': 'Защитник', 'forward': 'Нападающий' };
+const POSITION_MAP = { 'goalie': 'Вр', 'defense': 'Защ', 'forward': 'Нап' };
 
 // Обратный маппинг из БД
 const mapDbPositionToUI = (dbPos) => {
@@ -56,11 +56,20 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
               jersey_number: gData.jersey_number || p.jersey_number || '',
               position: mapDbPositionToUI(gData.position_in_line) || p.position,
               is_captain: gData.is_captain,
-              is_assistant: gData.is_assistant
+              is_assistant: gData.is_assistant,
+              photo_url: gData.photo_url || p.photo_url
             });
           } else {
             newAvailable.push(p);
           }
+        });
+
+        // Сортируем только при первичной загрузке (Вратарь -> Защитник -> Нападающий)
+        const posOrder = { 'goalie': 1, 'defense': 2, 'forward': 3 };
+        newSelected.sort((a, b) => {
+          const posA = posOrder[a.position] || 99;
+          const posB = posOrder[b.position] || 99;
+          return posA - posB;
         });
 
         setAvailable(newAvailable);
@@ -84,7 +93,6 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     setSelected(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
 
-  // Логика для капитанов (макс 1) и ассистентов (макс 2)
   const handleLetterClick = (id, letter) => {
     setSelected(prev => {
       let updated = [...prev];
@@ -95,7 +103,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
 
       if (letter === 'C') {
         if (!p.is_captain) {
-          updated = updated.map(x => ({ ...x, is_captain: false })); // Сбрасываем кэпа у всех
+          updated = updated.map(x => ({ ...x, is_captain: false })); 
           updated[playerIndex] = { ...p, is_captain: true, is_assistant: false };
         } else {
           updated[playerIndex] = { ...p, is_captain: false };
@@ -105,7 +113,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
           updated[playerIndex] = { ...p, is_assistant: false };
         } else {
           const aCount = updated.filter(x => x.is_assistant).length;
-          if (aCount >= 2) return prev; // Блокируем, если уже 2 ассистента
+          if (aCount >= 2) return prev; 
           updated[playerIndex] = { ...p, is_assistant: true, is_captain: false };
         }
       }
@@ -138,12 +146,22 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
   const defense = selected.filter(p => p.position === 'defense');
   const forwards = selected.filter(p => p.position === 'forward');
 
-  // Определение колонок для Table2.jsx
+  // Проверка дубликатов номеров
+  const numberCounts = {};
+  selected.forEach(p => {
+    const num = String(p.jersey_number || '').trim();
+    if (num) {
+      numberCounts[num] = (numberCounts[num] || 0) + 1;
+    }
+  });
+  const duplicateNumbers = new Set(Object.keys(numberCounts).filter(num => numberCounts[num] > 1));
+  const hasDuplicates = duplicateNumbers.size > 0;
+
   const selectedColumns = [
     { 
       label: 'Фото', 
       width: 'w-[80px]', 
-      render: (p) => ( <img src={getImageUrl(p.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-md object-cover bg-graphite/5 shrink-0" alt="av" /> )
+      render: (p) => ( <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-8 h-8 rounded-md object-cover bg-graphite/5 shrink-0" alt="av" /> )
     },
     { 
       label: 'Игрок', 
@@ -159,8 +177,8 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       width: 'w-[120px]', 
       render: (p) => ( 
         <Select 
-          options={['Вратарь', 'Защитник', 'Нападающий']} 
-          value={POSITION_MAP[p.position] || 'Вратарь'} 
+          options={['Вр', 'Защ', 'Нап']} 
+          value={POSITION_MAP[p.position] || 'Вр'} 
           onChange={(val) => {
             const newPos = Object.keys(POSITION_MAP).find(k => POSITION_MAP[k] === val);
             if (newPos) handleUpdate(p.id, 'position', newPos);
@@ -172,16 +190,25 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     { 
       label: 'Номер', 
       width: 'w-[50px]', 
-      render: (p) => ( 
-        <div className="flex justify-center w-full">
-          <Input 
-            value={p.jersey_number || ''} 
-            onChange={(e) => handleUpdate(p.id, 'jersey_number', e.target.value.replace(/\D/g, '').slice(0, 2))}
-            placeholder="№"
-            className="w-10 h-8 text-center text-[13px] font-bold px-1 bg-white border-graphite/20" 
-          /> 
-        </div>
-      )
+      render: (p) => {
+        const num = String(p.jersey_number || '').trim();
+        const isDuplicate = num && duplicateNumbers.has(num);
+        
+        return ( 
+          <div className="flex justify-center w-full">
+            <Input 
+              value={p.jersey_number || ''} 
+              onChange={(e) => handleUpdate(p.id, 'jersey_number', e.target.value.replace(/\D/g, '').slice(0, 2))}
+              placeholder="№"
+              className={`w-10 h-8 text-center text-[13px] font-bold px-1 transition-colors ${
+                isDuplicate 
+                  ? 'bg-status-rejected/10 border-status-rejected text-status-rejected focus:border-status-rejected' 
+                  : 'bg-white border-graphite/20'
+              }`} 
+            /> 
+          </div>
+        );
+      }
     },
     { 
       label: 'Нашивки', 
@@ -217,104 +244,109 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     }
   ];
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Состав на матч: ${teamName || ''}`} size="wide2">
-      {isLoading ? (
-        <div className="h-[60vh] flex items-center justify-center"><span className="text-graphite-light font-bold">Загрузка состава...</span></div>
-      ) : (
-        <div className="flex flex-col h-[75vh]">
-          
-          <div className="grid grid-cols-5 gap-8 flex-1 overflow-hidden">
-            
-            {/* ЛЕВАЯ ЧАСТЬ: ДОСТУПНЫЕ ИГРОКИ */}
-            <div className="col-span-2 flex flex-col bg-white border border-graphite/10 rounded-2xl shadow-sm overflow-hidden h-full">
-              <div className="p-5 border-b border-graphite/10 bg-graphite/[0.02]">
-                <h3 className="text-[14px] font-black uppercase text-graphite mb-4">Заявка на турнир ({available.length})</h3>
-                <Input 
-                  placeholder="Поиск по ФИО..." 
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full text-[13px]"
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                {filteredAvailable.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-3 hover:bg-orange/5 rounded-xl group transition-colors border border-transparent hover:border-orange/10">
-                    <div className="flex items-center gap-3 min-w-0 pr-2">
-                      <img src={getImageUrl(p.avatar_url || '/default/user_default.webp')} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
-                      <div className="min-w-0 flex flex-col justify-center">
-                        <span className="block text-[13px] font-bold text-graphite leading-tight truncate">{p.last_name} {p.first_name}</span>
-                        {/* Вывод Отчества, Амплуа и Номера в одну строку через разделитель */}
-                        <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
-                          {[
-                            p.middle_name,
-                            POSITION_MAP[p.position] || 'Амплуа',
-                            p.jersey_number ? `№${p.jersey_number}` : null
-                          ].filter(Boolean).join(' | ')}
-                        </span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handleAdd(p)}
-                      className="w-8 h-8 flex items-center justify-center rounded-md bg-graphite/5 text-graphite hover:bg-orange hover:text-white transition-colors shrink-0"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+  const drawerContent = (
+    <div className={`fixed inset-0 z-[35] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+      <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className={`absolute top-0 right-0 h-full w-full max-w-[1100px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-5 border-b border-graphite/10 bg-white shrink-0">
+          <h2 className="font-black text-xl text-graphite uppercase tracking-wide">Состав на матч: {teamName || ''}</h2>
+          <button onClick={onClose} className="text-graphite-light hover:text-orange transition-colors">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
 
-            {/* ПРАВАЯ ЧАСТЬ: СОСТАВ НА ИГРУ */}
-            <div className="col-span-3 flex flex-col bg-white border-2 border-orange/30 rounded-2xl shadow-md overflow-hidden h-full">
-              <div className="p-4 border-b border-graphite/10 bg-orange/5 flex justify-between items-center">
-                <h3 className="text-[14px] font-black uppercase text-graphite">В составе на матч</h3>
-                <div className="flex gap-3 text-[11px] font-bold">
-                  <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">Всего: <span className="text-orange text-[13px]">{selected.length}</span></span>
-                  <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">В: {goalies.length}</span>
-                  <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">П: {defense.length + forwards.length}</span>
+        {/* Content */}
+        <div className="flex-1 p-6 md:p-8 overflow-hidden flex flex-col">
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <span className="text-graphite-light font-bold">Загрузка состава...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-5 gap-8 flex-1 overflow-hidden h-full">
+              
+              {/* Левая панель: доступные игроки */}
+              <div className="col-span-2 flex flex-col bg-white border border-graphite/10 rounded-2xl shadow-sm overflow-hidden h-full">
+                <div className="p-5 border-b border-graphite/10 bg-graphite/[0.02] shrink-0">
+                  <h3 className="text-[14px] font-black uppercase text-graphite mb-4">Заявка на турнир ({available.length})</h3>
+                  <Input 
+                    placeholder="Поиск по ФИО..." 
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full px-2 py-2 text-[12px]"
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                  {filteredAvailable.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-3 hover:bg-orange/5 rounded-xl group transition-colors border border-transparent hover:border-orange/10">
+                      <div className="flex items-center gap-3 min-w-0 pr-2">
+                        <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <span className="block text-[13px] font-bold text-graphite leading-tight truncate">{p.last_name} {p.first_name}</span>
+                          <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
+                            {[
+                              p.middle_name,
+                              POSITION_MAP[p.position] || 'Амплуа',
+                              p.jersey_number ? `№${p.jersey_number}` : null
+                            ].filter(Boolean).join(' | ')}
+                          </span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleAdd(p)}
+                        className="w-8 h-8 flex items-center justify-center rounded-md bg-graphite/5 text-graphite hover:bg-orange hover:text-white transition-colors shrink-0"
+                      >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
-                {selected.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-[13px] font-bold text-graphite/40 text-center px-10">
-                    Состав пуст.<br/>Выберите игроков из списка слева.
+              {/* Правая панель: выбранный состав */}
+              <div className="col-span-3 flex flex-col bg-white border-2 border-orange/30 rounded-2xl shadow-md overflow-hidden h-full">
+                <div className="p-4 border-b border-graphite/10 bg-orange/5 flex justify-between items-center shrink-0">
+                  <h3 className="text-[14px] font-black uppercase text-graphite">В составе на матч</h3>
+                  <div className="flex gap-3 text-[11px] font-bold">
+                    <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">Всего: <span className="text-orange text-[13px]">{selected.length}</span></span>
+                    <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">В: {goalies.length}</span>
+                    <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">П: {defense.length + forwards.length}</span>
                   </div>
-                ) : (
-                  <>
-                    {goalies.length > 0 && (
-                      <div className="mb-0">
-                        <div className="bg-graphite/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-graphite/60 border-y border-graphite/10">Вратари</div>
-                        <Table columns={selectedColumns} data={goalies} hideHeader={true} />
-                      </div>
-                    )}
-                    {defense.length > 0 && (
-                      <div className="mb-0">
-                        <div className="bg-graphite/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-graphite/60 border-y border-graphite/10">Защитники</div>
-                        <Table columns={selectedColumns} data={defense} hideHeader={true} />
-                      </div>
-                    )}
-                    {forwards.length > 0 && (
-                      <div className="mb-0">
-                        <div className="bg-graphite/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-graphite/60 border-y border-graphite/10">Нападающие</div>
-                        <Table columns={selectedColumns} data={forwards} hideHeader={true} />
-                      </div>
-                    )}
-                  </>
-                )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
+                  {selected.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-[13px] font-bold text-graphite/40 text-center px-10">
+                      Состав пуст.<br/>Выберите игроков из списка слева.
+                    </div>
+                  ) : (
+                    <Table columns={selectedColumns} data={selected} hideHeader={true} />
+                  )}
+                </div>
+
+                <div className="p-5 border-t border-graphite/10 bg-gray-50 shrink-0">
+                  <Button 
+                    onClick={handleSave} 
+                    isLoading={isSaving} 
+                    disabled={hasDuplicates}
+                    className={`w-full transition-all ${
+                      hasDuplicates 
+                        ? 'bg-graphite/20 border-graphite/20 text-graphite/50 cursor-not-allowed hover:bg-graphite/20 hover:border-graphite/20 hover:text-graphite/50' 
+                        : ''
+                    }`}
+                  >
+                    {hasDuplicates ? 'Исправьте дублирующиеся номера' : 'Утвердить заявку на матч'}
+                  </Button>
+                </div>
               </div>
 
-              <div className="p-5 border-t border-graphite/10 bg-gray-50 shrink-0">
-                <Button onClick={handleSave} isLoading={isSaving} className="w-full">
-                  Утвердить заявку на матч
-                </Button>
-              </div>
             </div>
-
-          </div>
+          )}
         </div>
-      )}
-    </Modal>
+      </div>
+    </div>
   );
+
+  return createPortal(drawerContent, document.body);
 }

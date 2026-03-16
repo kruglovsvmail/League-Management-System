@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Modal } from './Modal';
+import { createPortal } from 'react-dom';
 import { Uploader } from '../ui/Uploader';
 import { Calendar } from '../ui/Calendar';
 import { Button } from '../ui/Button';
 
-export function MedicalDocsModal({ isOpen, onClose, onSave, isSaving = false, initialMed, initialIns, initialMedExp, initialInsExp, readOnly = false }) {
+export function MedicalDocsModal({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  isSaving = false, 
+  initialMed, 
+  initialIns, 
+  initialMedExp, 
+  initialInsExp, 
+  readOnly = false,
+  playerName
+}) {
   const [medFile, setMedFile] = useState(null);
   const [insFile, setInsFile] = useState(null);
   const [medCleared, setMedCleared] = useState(false);
@@ -50,34 +61,90 @@ export function MedicalDocsModal({ isOpen, onClose, onSave, isSaving = false, in
     });
   };
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Медицина и Страховка" size="wide">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-[30px] mb-6">
+  const modalContent = (
+    <div className={`fixed inset-0 z-[35] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={onClose}></div>
+      
+      {/* Drawer Panel */}
+      <div className={`absolute top-0 right-0 h-full w-full max-w-[900px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
-        <div className="flex flex-col gap-[15px]">
-          <Uploader 
-            label="Медицинская справка" heightClass="h-[152px]" accept=".jpg,.png,.pdf,.doc,.docx" 
-            initialUrl={initialMed} onFileSelect={(file, cleared) => { setMedFile(file); setMedCleared(cleared); }}
-            disabled={readOnly}
-          />
-          <Calendar label="ДЕЙСТВУЕТ ДО:" value={medExp} onChange={setMedExp} disabled={readOnly} />
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-5 border-b border-graphite/10 bg-white shrink-0">
+          {/* Убрали класс uppercase и написали ДОКУМЕНТЫ заглавными */}
+          <h2 className="font-black text-xl text-graphite tracking-wide">
+            ДОКУМЕНТЫ{playerName ? `: ${playerName}` : ''}
+          </h2>
+          <button onClick={onClose} className="text-graphite-light hover:text-orange transition-colors">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
 
-        <div className="flex flex-col gap-[15px]">
-          <Uploader 
-            label="Страховой полис" heightClass="h-[152px]" accept=".jpg,.png,.pdf,.doc,.docx" 
-            initialUrl={initialIns} onFileSelect={(file, cleared) => { setInsFile(file); setInsCleared(cleared); }}
-            disabled={readOnly}
-          />
-          <Calendar label="ДЕЙСТВУЕТ ДО:" value={insExp} onChange={setInsExp} disabled={readOnly} />
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 flex flex-col">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-fit">
+            
+            {/* Med Block */}
+            <div className="flex flex-col gap-[15px] bg-white p-6 rounded-2xl border border-graphite/10 shadow-sm">
+              <span className="text-[12px] font-bold text-graphite-light uppercase tracking-wide mb-1">Медицинская справка</span>
+              <Uploader 
+                label="Скан справки" 
+                heightClass="h-[152px]" 
+                accept=".jpg,.png,.pdf,.doc,.docx" 
+                initialUrl={initialMed} 
+                onFileSelect={(file, cleared) => { setMedFile(file); setMedCleared(cleared); }}
+                disabled={readOnly}
+              />
+              <Calendar 
+                label="ДЕЙСТВУЕТ ДО:" 
+                value={medExp} 
+                onChange={setMedExp} 
+                disabled={readOnly} 
+              />
+            </div>
+
+            {/* Ins Block */}
+            <div className="flex flex-col gap-[15px] bg-white p-6 rounded-2xl border border-graphite/10 shadow-sm">
+              <span className="text-[12px] font-bold text-graphite-light uppercase tracking-wide mb-1">Страховой полис</span>
+              <Uploader 
+                label="Скан полиса" 
+                heightClass="h-[152px]" 
+                accept=".jpg,.png,.pdf,.doc,.docx" 
+                initialUrl={initialIns} 
+                onFileSelect={(file, cleared) => { setInsFile(file); setInsCleared(cleared); }}
+                disabled={readOnly}
+              />
+              <Calendar 
+                label="ДЕЙСТВУЕТ ДО:" 
+                value={insExp} 
+                onChange={setInsExp} 
+                disabled={readOnly} 
+              />
+            </div>
+
+          </div>
         </div>
+
+        {/* Footer */}
+        {!readOnly && (
+          <div className="px-8 py-5 border-t border-graphite/10 bg-white shrink-0 flex justify-end">
+            <Button 
+              onClick={handleSave} 
+              isLoading={isSaving} 
+              disabled={isSaving} 
+              className={`min-w-[160px] py-3 transition-all duration-300 ${isSaving ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+            >
+              Сохранить
+            </Button>
+          </div>
+        )}
 
       </div>
-      {!readOnly && (
-        <div className="flex justify-end pt-5 border-t border-graphite/10">
-          <Button onClick={handleSave} isLoading={isSaving} disabled={isSaving} className={`bg-orange text-white border-none transition-all duration-300 ${isSaving ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-orange-hover'}`}>Сохранить</Button>
-        </div>
-      )}
-    </Modal>
+    </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

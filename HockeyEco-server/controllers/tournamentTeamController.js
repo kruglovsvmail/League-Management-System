@@ -6,7 +6,7 @@ export const getTournamentTeamRoster = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 1. Получаем игроков ростера
+        // 1. Получаем игроков ростера (с оптимизированным получением фото и дисквалификаций)
         const result = await pool.query(`
             SELECT
                 tr.id as tournament_roster_id,
@@ -28,34 +28,49 @@ export const getTournamentTeamRoster = async (req, res) => {
                 u.last_name,
                 u.middle_name,
                 u.avatar_url as user_avatar_url,
-                (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1) as team_member_photo_url,
+                tm_photo.photo_url as team_member_photo_url,
                 lq.short_name as qualification_short_name,
                 
-                -- ИЗМЕНЕНИЕ: Собираем все активные дисквалификации игрока в один JSON-массив
-                (
-                    SELECT json_agg(
-                        json_build_object(
-                            'status', d.status,
-                            'penalty_type', d.penalty_type,
-                            'games_assigned', d.games_assigned,
-                            'games_served', d.games_served,
-                            'end_date', d.end_date,
-                            'reason', d.reason
-                        )
-                    )
-                    FROM disqualifications d
-                    WHERE d.tournament_roster_id = tr.id AND d.status = 'active'
-                ) as active_disqualifications
+                -- ИЗМЕНЕНИЕ: Оптимизированный сбор активных дисквалификаций
+                COALESCE(dq.active_disqualifications, '[]'::json) as active_disqualifications
 
             FROM tournament_rosters tr
             JOIN users u ON tr.player_id = u.id
             JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
             LEFT JOIN league_qualifications lq ON tr.qualification_id = lq.id
+            
+            -- Оптимизация: берем последнее фото без сканирования всей таблицы на каждую строку
+            LEFT JOIN LATERAL (
+                SELECT photo_url 
+                FROM team_members 
+                WHERE user_id = u.id AND team_id = tt.team_id AND photo_url IS NOT NULL 
+                ORDER BY id DESC LIMIT 1
+            ) tm_photo ON true
+
+            -- Оптимизация: собираем дисквалификации в один проход
+            LEFT JOIN (
+                SELECT 
+                    tournament_roster_id, 
+                    json_agg(
+                        json_build_object(
+                            'status', status,
+                            'penalty_type', penalty_type,
+                            'games_assigned', games_assigned,
+                            'games_served', games_served,
+                            'end_date', end_date,
+                            'reason', reason
+                        )
+                    ) as active_disqualifications
+                FROM disqualifications
+                WHERE status = 'active'
+                GROUP BY tournament_roster_id
+            ) dq ON dq.tournament_roster_id = tr.id
+
             WHERE tr.tournament_team_id = $1
             ORDER BY u.last_name, u.first_name
         `, [id]);
 
-        // 2. Получаем представителей (staff) команды
+        // 2. Получаем представителей (staff) команды (Вернул этот блок!)
         const staffResult = await pool.query(`
             SELECT
                 u.id as player_id,

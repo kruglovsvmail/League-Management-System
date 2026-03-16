@@ -274,7 +274,7 @@ export function TransfersPage() {
                 const isAdd = tr.request_type === 'add';
                 const created = formatDateTime(tr.created_at);
                 const resolved = formatDateTime(tr.resolved_at);
-                const playerPhoto = getImageUrl(tr.member_photo || tr.avatar_url || '/default/user_default.webp');
+                const playerPhoto = getImageUrl(tr.member_photo || '/default/user_default.webp'); // tr.avatar_url - вставить если нужно фото из users
                 const teamLogo = getImageUrl(tr.team_logo || '/default/Logo_team_default.webp');
 
                 const now = new Date();

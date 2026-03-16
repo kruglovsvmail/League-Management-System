@@ -244,7 +244,6 @@ export const requireRoleForTransferCreate = (allowedRoles) => async (req, res, n
   } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
 };
 
-// НОВЫЕ ОХРАННИКИ ДЛЯ ДИСКВАЛИФИКАЦИЙ
 export const requireRoleByDisqualification = (allowedRoles) => async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -275,4 +274,60 @@ export const requireRoleForDisqualificationCreate = (allowedRoles) => async (req
     if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Заявка игрока не найдена' });
     await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
   } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
+};
+
+// НОВЫЕ ОХРАННИКИ ДЛЯ МАТЧЕЙ И ПРОТОКОЛА
+export const requireRoleByGame = (allowedRoles) => async (req, res, next) => {
+  try {
+    const { gameId } = req.params;
+    const result = await pool.query(`
+      SELECT s.league_id 
+      FROM games g
+      JOIN divisions d ON g.division_id = d.id
+      JOIN seasons s ON d.season_id = s.id
+      WHERE g.id = $1
+    `, [gameId]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
+  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
+};
+
+export const requireGameProtocolAccess = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    
+    // Проверка на глобального админа (как и в хелпере)
+    const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
+    if (userRes.rows[0]?.global_role === 'admin') return next();
+
+    const { gameId } = req.params;
+
+    // 1. Проверяем, назначен ли этот юзер секретарем именно на этот матч
+    const refRes = await pool.query(`
+        SELECT 1 FROM game_referee 
+        WHERE game_id = $1 AND user_id = $2 AND role = 'scorekeeper'
+    `, [gameId, userId]);
+
+    if (refRes.rows.length > 0) return next(); // Секретарю доступ разрешен!
+
+    // 2. Если не секретарь, проверяем, является ли он админом/менеджером лиги этого матча
+    const leagueRes = await pool.query(`
+        SELECT s.league_id 
+        FROM games g
+        JOIN divisions d ON g.division_id = d.id
+        JOIN seasons s ON d.season_id = s.id
+        WHERE g.id = $1
+    `, [gameId]);
+
+    if (leagueRes.rows.length > 0) {
+        const leagueId = leagueRes.rows[0].league_id;
+        // Тут мы можем просто переиспользовать уже написанный хелпер, он сам проверит и ответит ошибкой если что!
+        return await checkLeagueRoleHelper(req, res, next, leagueId, ['top_manager', 'league_admin']);
+    }
+
+    return res.status(403).json({ success: false, error: 'Доступ к ведению протокола запрещен' });
+  } catch (err) {
+      console.error('Ошибка проверки прав протокола:', err);
+      res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
 };

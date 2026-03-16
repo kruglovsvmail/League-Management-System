@@ -17,6 +17,7 @@ import disqualificationRoutes from './routes/disqualificationRoutes.js';
 import registryRoutes from './routes/registryRoutes.js';
 import teamManagementRoutes from './routes/teamManagementRoutes.js';
 import gameRoutes from './routes/gameRoutes.js';
+import gameLiveDeskRoutes from './routes/gameLiveDeskRoutes.js';
 
 // Импортируем pool для проверки связи
 import pool from './config/db.js';
@@ -52,6 +53,7 @@ app.use('/api', disqualificationRoutes);
 app.use('/api', registryRoutes);
 app.use('/api', teamManagementRoutes);
 app.use('/api', gameRoutes);
+app.use('/api', gameLiveDeskRoutes);
 
 // --- ФОНОВЫЕ ЗАДАЧИ (CRON) ---
 // Проверка и снятие временных штрафов каждый день в 03:00 по Москве

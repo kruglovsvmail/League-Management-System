@@ -82,22 +82,22 @@ export const getGameById = async (req, res) => {
 
         const game = result.rows[0];
 
-        // Получаем судей с АВАТАРКАМИ
-        const refRes = await pool.query(`
-            SELECT gr.role, u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
-            FROM game_referee gr
-            JOIN users u ON gr.user_id = u.id
-            WHERE gr.game_id = $1
-        `, [gameId]);
-
-        // Получаем медиа с АВАТАРКАМИ
-        const mediaRes = await pool.query(`
-            SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
-            FROM game_media gm
-            JOIN users u ON gm.user_id = u.id
-            WHERE gm.game_id = $1
-            LIMIT 1
-        `, [gameId]);
+        // Параллельный запрос судей и медиа
+        const [refRes, mediaRes] = await Promise.all([
+            pool.query(`
+                SELECT gr.role, u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+                FROM game_referee gr
+                JOIN users u ON gr.user_id = u.id
+                WHERE gr.game_id = $1
+            `, [gameId]),
+            pool.query(`
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+                FROM game_media gm
+                JOIN users u ON gm.user_id = u.id
+                WHERE gm.game_id = $1
+                LIMIT 1
+            `, [gameId])
+        ]);
 
         const officials = { head_1: '', head_2: '', linesman_1: '', linesman_2: '', scorekeeper: '', media: '' };
         
@@ -216,44 +216,45 @@ export const getGameRoster = async (req, res) => {
     try {
         const { gameId, teamId } = req.params;
 
-        const gameRes = await pool.query('SELECT division_id FROM games WHERE id = $1', [gameId]);
-        if (gameRes.rows.length === 0) return res.status(404).json({ error: 'Матч не найден' });
-        const divisionId = gameRes.rows[0].division_id;
+        // Выполняем все три независимых запроса параллельно
+        const [tRosterRes, gRosterRes, staffRes] = await Promise.all([
+            // 1. Заявка на турнир (объединили поиск division_id и tournament_team_id через JOIN)
+            pool.query(`
+                SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position, tm.photo_url
+                FROM tournament_rosters tr
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                JOIN games g ON g.division_id = tt.division_id
+                JOIN users u ON tr.player_id = u.id
+                LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2
+                WHERE g.id = $1 
+                  AND tt.team_id = $2 
+                  AND tr.application_status = 'approved' 
+                  AND tr.period_end IS NULL
+                ORDER BY u.last_name
+            `, [gameId, teamId]),
 
-        const ttRes = await pool.query('SELECT id FROM tournament_teams WHERE division_id = $1 AND team_id = $2', [divisionId, teamId]);
-        if (ttRes.rows.length === 0) return res.status(404).json({ error: 'Команда не заявлена на турнир' });
-        const tournamentTeamId = ttRes.rows[0].id;
+            // 2. Состав уже добавленный на игру
+            pool.query(`
+                SELECT gr.player_id, gr.jersey_number, gr.position_in_line, gr.is_captain, gr.is_assistant,
+                       u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+                FROM game_rosters gr
+                JOIN users u ON gr.player_id = u.id
+                LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
+                WHERE gr.game_id = $1 AND gr.team_id = $2
+                ORDER BY u.last_name
+            `, [gameId, teamId]),
 
-        // ДОБАВЛЕНО: u.middle_name
-        const tRosterRes = await pool.query(`
-            SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position
-            FROM tournament_rosters tr
-            JOIN users u ON tr.player_id = u.id
-            WHERE tr.tournament_team_id = $1 AND tr.application_status = 'approved' AND tr.period_end IS NULL
-            ORDER BY u.last_name
-        `, [tournamentTeamId]);
-
-        // ДОБАВЛЕНО: u.middle_name
-        const gRosterRes = await pool.query(`
-            SELECT gr.player_id, gr.jersey_number, gr.position_in_line, gr.is_captain, gr.is_assistant,
-                   u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
-            FROM game_rosters gr
-            JOIN users u ON gr.player_id = u.id
-            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
-            WHERE gr.game_id = $1 AND gr.team_id = $2
-            ORDER BY u.last_name
-        `, [gameId, teamId]);
-
-        // ДОБАВЛЕНО: u.middle_name
-        const staffRes = await pool.query(`
-            SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url, 
-                   string_agg(tr.role, ', ') as roles
-            FROM team_roles tr
-            JOIN team_members tm ON tr.member_id = tm.id
-            JOIN users u ON tm.user_id = u.id
-            WHERE tm.team_id = $1 AND tr.left_at IS NULL
-            GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
-        `, [teamId]);
+            // 3. Персонал
+            pool.query(`
+                SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url, 
+                       string_agg(tr.role, ', ') as roles
+                FROM team_roles tr
+                JOIN team_members tm ON tr.member_id = tm.id
+                JOIN users u ON tm.user_id = u.id
+                WHERE tm.team_id = $1 AND tr.left_at IS NULL
+                GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+            `, [teamId])
+        ]);
 
         res.json({
             success: true,
@@ -275,25 +276,39 @@ export const saveGameRoster = async (req, res) => {
         const { roster } = req.body;
 
         await client.query('BEGIN');
+        
+        // Удаляем старый состав
         await client.query('DELETE FROM game_rosters WHERE game_id = $1 AND team_id = $2', [gameId, teamId]);
 
-        for (const player of roster) {
-            let posInLine = 'C'; 
-            if (player.position === 'goalie') posInLine = 'G';
-            if (player.position === 'defense') posInLine = 'LD';
-            if (player.position === 'forward') posInLine = 'C';
+        // Собираем данные для массовой вставки (Bulk Insert)
+        if (roster && roster.length > 0) {
+            const values = [];
+            const params = [];
+            let paramIndex = 1;
 
+            roster.forEach(player => {
+                let posInLine = 'C'; 
+                if (player.position === 'goalie') posInLine = 'G';
+                else if (player.position === 'defense') posInLine = 'LD';
+                else if (player.position === 'forward') posInLine = 'C';
+
+                values.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, true, 1, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+                params.push(
+                    gameId, teamId, player.player_id, posInLine,
+                    player.jersey_number || null, player.is_captain || false, player.is_assistant || false
+                );
+            });
+
+            // Один запрос на всех игроков
             await client.query(`
                 INSERT INTO game_rosters (
                     game_id, team_id, player_id, is_in_lineup,
                     line_number, position_in_line, jersey_number, is_captain, is_assistant
-                ) VALUES ($1, $2, $3, true, 1, $4, $5, $6, $7)
-            `, [
-                gameId, teamId, player.player_id, posInLine,
-                player.jersey_number || null, player.is_captain || false, player.is_assistant || false
-            ]);
+                ) VALUES ${values.join(', ')}
+            `, params);
         }
 
+        // Обновляем статус подтверждения состава
         const gameRes = await client.query('SELECT home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
         if (gameRes.rows.length > 0) {
             const g = gameRes.rows[0];
@@ -316,7 +331,7 @@ export const saveGameRoster = async (req, res) => {
 // ЭНДПОИНТЫ ДЛЯ СУДЕЙ И МЕДИА
 // ==========================================
 
-// Получить доступный персонал лиги (с АВАТАРКАМИ)
+// Получить доступный персонал лиги
 export const getGameStaff = async (req, res) => {
     try {
         const { gameId } = req.params;
@@ -362,18 +377,27 @@ export const updateGameOfficials = async (req, res) => {
         await client.query('DELETE FROM game_referee WHERE game_id = $1', [gameId]);
         await client.query('DELETE FROM game_media WHERE game_id = $1', [gameId]);
 
-        // Вставляем судей и секретаря
+        // Собираем судей в один запрос
         const refRoles = ['head_1', 'head_2', 'linesman_1', 'linesman_2', 'scorekeeper'];
-        for (const role of refRoles) {
+        const refValues = [];
+        const refParams = [];
+        let paramIdx = 1;
+
+        refRoles.forEach(role => {
             if (officials[role] && officials[role] !== '') {
-                await client.query(`
-                    INSERT INTO game_referee (game_id, user_id, role) 
-                    VALUES ($1, $2, $3)
-                `, [gameId, officials[role], role]);
+                refValues.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++})`);
+                refParams.push(gameId, officials[role], role);
             }
+        });
+
+        if (refValues.length > 0) {
+            await client.query(`
+                INSERT INTO game_referee (game_id, user_id, role) 
+                VALUES ${refValues.join(', ')}
+            `, refParams);
         }
 
-        // Вставляем медиа
+        // Медиа вставляем отдельно (так как это другая таблица)
         if (officials.media && officials.media !== '') {
             await client.query(`
                 INSERT INTO game_media (game_id, user_id) 
@@ -391,3 +415,4 @@ export const updateGameOfficials = async (req, res) => {
         client.release();
     }
 };
+

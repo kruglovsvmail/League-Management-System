@@ -221,7 +221,7 @@ export function DisqualificationsPage() {
             ) : (
               filteredData.map((d) => {
                 const isExpanded = expandedId === d.id;
-                const playerPhoto = getImageUrl(d.member_photo || d.avatar_url || '/default/user_default.webp');
+                const playerPhoto = getImageUrl(d.member_photo || '/default/user_default.webp'); // d.avatar_url - вставить если нужно фото из users 
                 const teamLogo = getImageUrl(d.team_logo || '/default/Logo_team_default.webp');
 
                 let penaltyText = '';

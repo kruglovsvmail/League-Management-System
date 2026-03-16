@@ -29,50 +29,72 @@ export const getSeasons = async (req, res) => {
 export const getDivisions = async (req, res) => {
     try {
         const { seasonId } = req.params;
+        
+        // ОПТИМИЗАЦИЯ: Использование CTE (WITH) для предварительного подсчета
+        // Это избавляет от N+1 проблемы и сохраняет точную структуру JSON, нужную фронтенду.
         const result = await pool.query(`
+            WITH DivTeams AS (
+                SELECT division_id, COUNT(*) as cnt 
+                FROM tournament_teams 
+                WHERE status = 'approved' 
+                GROUP BY division_id
+            ),
+            DivPlayers AS (
+                SELECT tt.division_id, COUNT(*) as cnt
+                FROM tournament_rosters tr
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                WHERE tt.status = 'approved' AND tr.application_status = 'approved' AND tr.period_end IS NULL
+                GROUP BY tt.division_id
+            ),
+            DivGames AS (
+                SELECT division_id, COUNT(*) as cnt 
+                FROM games 
+                WHERE status = 'finished' 
+                GROUP BY division_id
+            ),
+            TeamStats AS (
+                SELECT tt.division_id, json_agg(json_build_object(
+                    'id', tt.id,
+                    'team_id', t.id,
+                    'status', tt.status,
+                    'name', t.name,
+                    'short_name', t.short_name,
+                    'city', t.city,
+                    'logo_url', t.logo_url,
+                    'custom_jersey_light_url', tt.custom_jersey_light_url,
+                    'custom_jersey_dark_url', tt.custom_jersey_dark_url,
+                    'jersey_light_url', t.jersey_light_url,
+                    'jersey_dark_url', t.jersey_dark_url,
+                    'custom_description', tt.custom_description,
+                    'description', t.description,
+                    'custom_team_photo_url', tt.custom_team_photo_url,
+                    'team_photo_url', t.team_photo_url,
+                    'players_count', (
+                        SELECT COUNT(*) FROM tournament_rosters tr2 
+                        WHERE tr2.tournament_team_id = tt.id AND tr2.application_status = 'approved' AND tr2.period_end IS NULL
+                    ),
+                    'avg_age', (
+                        SELECT ROUND(AVG(EXTRACT(YEAR FROM age(CURRENT_DATE, u.birth_date))))
+                        FROM tournament_rosters tr3 
+                        JOIN users u ON tr3.player_id = u.id 
+                        WHERE tr3.tournament_team_id = tt.id AND tr3.application_status = 'approved' AND tr3.period_end IS NULL
+                    )
+                ) ORDER BY t.name) as teams
+                FROM tournament_teams tt
+                JOIN teams t ON tt.team_id = t.id
+                GROUP BY tt.division_id
+            )
             SELECT 
                 d.*,
-                (SELECT COUNT(*) FROM tournament_teams tt WHERE tt.division_id = d.id AND tt.status = 'approved') as approved_teams_count,
-                (SELECT COUNT(*) FROM tournament_rosters tr 
-                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id 
-                 WHERE tt.division_id = d.id 
-                   AND tt.status = 'approved' 
-                   AND tr.application_status = 'approved' 
-                   AND tr.period_end IS NULL) as approved_players_count,
-                (SELECT COUNT(*) FROM games g WHERE g.division_id = d.id AND g.status = 'finished') as finished_games_count,
-                COALESCE((
-                    SELECT json_agg(json_build_object(
-                        'id', tt.id,
-                        'team_id', t.id,
-                        'status', tt.status,
-                        'name', t.name,
-                        'short_name', t.short_name,
-                        'city', t.city,
-                        'logo_url', t.logo_url,
-                        'custom_jersey_light_url', tt.custom_jersey_light_url,
-                        'custom_jersey_dark_url', tt.custom_jersey_dark_url,
-                        'jersey_light_url', t.jersey_light_url,
-                        'jersey_dark_url', t.jersey_dark_url,
-                        'custom_description', tt.custom_description,
-                        'description', t.description,
-                        'custom_team_photo_url', tt.custom_team_photo_url,
-                        'team_photo_url', t.team_photo_url,
-                        'players_count', (
-                            SELECT COUNT(*) FROM tournament_rosters tr2 
-                            WHERE tr2.tournament_team_id = tt.id AND tr2.application_status = 'approved' AND tr2.period_end IS NULL
-                        ),
-                        'avg_age', (
-                            SELECT ROUND(AVG(EXTRACT(YEAR FROM age(CURRENT_DATE, u.birth_date))))
-                            FROM tournament_rosters tr3 
-                            JOIN users u ON tr3.player_id = u.id 
-                            WHERE tr3.tournament_team_id = tt.id AND tr3.application_status = 'approved' AND tr3.period_end IS NULL
-                        )
-                    ) ORDER BY t.name)
-                    FROM tournament_teams tt
-                    JOIN teams t ON tt.team_id = t.id
-                    WHERE tt.division_id = d.id
-                ), '[]'::json) as teams
+                COALESCE(dt.cnt, 0) as approved_teams_count,
+                COALESCE(dp.cnt, 0) as approved_players_count,
+                COALESCE(dg.cnt, 0) as finished_games_count,
+                COALESCE(ts.teams, '[]'::json) as teams
             FROM divisions d
+            LEFT JOIN DivTeams dt ON d.id = dt.division_id
+            LEFT JOIN DivPlayers dp ON d.id = dp.division_id
+            LEFT JOIN DivGames dg ON d.id = dg.division_id
+            LEFT JOIN TeamStats ts ON d.id = ts.division_id
             WHERE d.season_id = $1
             ORDER BY d.id
         `, [seasonId]);

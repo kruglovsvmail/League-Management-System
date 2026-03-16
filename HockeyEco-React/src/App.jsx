@@ -13,6 +13,7 @@ import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
 import { TeamManagementPage } from './pages/TeamManagementPage';
 import { GamesPage } from './pages/GamesPage';
 import { GamePage } from './pages/GamePage';
+import { GameLiveDesk } from './pages/GameLiveDesk'; // <-- НОВЫЙ ИМПОРТ ПАНЕЛИ СЕКРЕТАРЯ
 
 // Импорт каркаса и UI
 import { AdminLayout } from './AdminLayout';
@@ -114,6 +115,16 @@ export default function App() {
           <Route 
             path="/login" 
             element={ isAuthenticated ? <Navigate to="/divisions" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} /> } 
+          />
+
+          {/* === НОВЫЙ РОУТ ДЛЯ ПАНЕЛИ СЕКРЕТАРЯ (БЕЗ ADMIN LAYOUT) === */}
+          <Route 
+            path="/games/:gameId/live-desk" 
+            element={
+              isAuthenticated 
+                ? <GameLiveDesk user={currentUser} /> 
+                : <Navigate to="/login" replace />
+            } 
           />
 
           <Route 

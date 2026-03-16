@@ -5,37 +5,35 @@ export const getTransfers = async (req, res) => {
     try {
         const { seasonId } = req.params;
         
+        // ОПТИМИЗАЦИЯ N+1: Использование LEFT JOIN LATERAL и избавление от вложенных селектов
         const result = await pool.query(`
             SELECT 
                 rr.id, rr.division_id, rr.team_id, rr.player_id, 
                 rr.request_type, rr.status, rr.created_at, rr.resolved_at, 
                 
-                CASE WHEN rr.request_type = 'add' THEN rr.jersey_number 
-                ELSE (
-                    SELECT tr.jersey_number FROM tournament_rosters tr 
-                    JOIN tournament_teams tt ON tr.tournament_team_id = tt.id 
-                    WHERE tt.division_id = rr.division_id AND tt.team_id = rr.team_id 
-                      AND tr.player_id = rr.player_id AND tr.application_status = 'approved' 
-                    ORDER BY tr.id DESC LIMIT 1
-                ) END as jersey_number,
-                
-                CASE WHEN rr.request_type = 'add' THEN rr.position 
-                ELSE (
-                    SELECT tr.position FROM tournament_rosters tr 
-                    JOIN tournament_teams tt ON tr.tournament_team_id = tt.id 
-                    WHERE tt.division_id = rr.division_id AND tt.team_id = rr.team_id 
-                      AND tr.player_id = rr.player_id AND tr.application_status = 'approved' 
-                    ORDER BY tr.id DESC LIMIT 1
-                ) END as position,
+                COALESCE(rr.jersey_number, last_roster.jersey_number) as jersey_number,
+                COALESCE(rr.position, last_roster.position) as position,
 
                 u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date,
-                (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = rr.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1) as member_photo,
+                tm.photo_url as member_photo,
                 t.name as team_name, t.logo_url as team_logo,
                 d.name as division_name, d.application_start, d.application_end, d.transfer_start, d.transfer_end
             FROM roster_requests rr
             JOIN users u ON rr.player_id = u.id
             JOIN teams t ON rr.team_id = t.id
             JOIN divisions d ON rr.division_id = d.id
+            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = rr.team_id
+            
+            -- Получаем данные из последней заявки только если это не 'add'
+            LEFT JOIN LATERAL (
+                SELECT tr.jersey_number, tr.position 
+                FROM tournament_rosters tr 
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id 
+                WHERE tt.division_id = rr.division_id AND tt.team_id = rr.team_id 
+                  AND tr.player_id = rr.player_id AND tr.application_status = 'approved' 
+                ORDER BY tr.id DESC LIMIT 1
+            ) last_roster ON rr.request_type != 'add'
+            
             WHERE d.season_id = $1
             ORDER BY rr.created_at DESC
         `, [seasonId]);
@@ -177,10 +175,11 @@ export const getTransferPlayers = async (req, res) => {
 
         if (type === 'add') {
             const pRes = await pool.query(`
-                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url as member_photo
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date, tm.photo_url as member_photo, tr_base.position
                 FROM team_members tm
                 JOIN users u ON tm.user_id = u.id
-                WHERE tm.team_id = $1 AND u.id NOT IN (
+                LEFT JOIN team_rosters tr_base ON tr_base.member_id = tm.id
+                WHERE tm.team_id = $1 AND tm.left_at IS NULL AND u.id NOT IN (
                     SELECT tr.player_id FROM tournament_rosters tr
                     JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
                     WHERE tt.division_id = $2 AND tt.team_id = $1 AND tr.period_end IS NULL
@@ -189,7 +188,7 @@ export const getTransferPlayers = async (req, res) => {
             players = pRes.rows;
         } else if (type === 'remove') {
             const pRes = await pool.query(`
-                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url as member_photo, tr.position, tr.jersey_number
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date, tm.photo_url as member_photo, tr.position, tr.jersey_number
                 FROM tournament_rosters tr
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
                 JOIN users u ON tr.player_id = u.id
