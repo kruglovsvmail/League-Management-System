@@ -255,7 +255,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               <svg className="w-6 h-6 text-status-rejected shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
               <div className="flex flex-col">
                 <span className="text-[13px] font-bold text-status-rejected">Редактирование заблокировано</span>
-                <span className="text-[12px] text-status-rejected/70">Турнир уже стартовал. Только Властелин (admin) может менять настройки.</span>
+                <span className="text-[12px] text-status-rejected/70">Турнир уже стартовал. Только Админ LMS (admin) может менять настройки.</span>
               </div>
             </div>
           )}

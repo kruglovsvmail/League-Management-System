@@ -1,5 +1,31 @@
 import pool from '../config/db.js';
 
+// =======================================================
+// ПУБЛИЧНЫЙ ЭНДПОИНТ ДЛЯ OBS ГРАФИКИ (БЕЗ АВТОРИЗАЦИИ)
+// =======================================================
+export const getPublicGameById = async (req, res) => {
+    try {
+        const query = `
+            SELECT g.id, g.home_score, g.away_score, 
+                   t1.name as home_team_name, 
+                   t2.name as away_team_name
+            FROM games g
+            JOIN teams t1 ON g.home_team_id = t1.id
+            LEFT JOIN teams t2 ON g.away_team_id = t2.id
+            WHERE g.id = $1
+        `;
+        const result = await pool.query(query, [req.params.gameId]);
+        if (result.rows.length > 0) {
+            res.json({ success: true, data: result.rows[0] });
+        } else {
+            res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+    } catch (err) {
+        console.error('Ошибка публичного эндпоинта:', err.message);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+
 // --- СПИСОК МАТЧЕЙ (ДЛЯ СТРАНИЦЫ GAMES) ---
 export const getGames = async (req, res) => {
     try {
@@ -415,4 +441,3 @@ export const updateGameOfficials = async (req, res) => {
         client.release();
     }
 };
-

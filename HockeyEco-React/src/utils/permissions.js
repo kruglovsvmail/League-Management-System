@@ -1,25 +1,34 @@
 export const PERMISSIONS = {
-  // Персонал
-  VIEW_STAFF: ['top_manager', 'league_admin', 'referee'], // Просмотр
+  // --- ДИВИЗИОНЫ ---
+  VIEW_DIVISIONS: ['top_manager', 'league_admin'], // Просмотр раздела (вкладка в сайдбаре)
+  MANAGE_DIVISIONS: ['top_manager', 'league_admin'], // Настройки, публикация, составы, статусы, допуски, взносы
+
+  // --- МАТЧИ И ПРОТОКОЛ ---
+  // Примечание: VIEW_GAMES не делаем, так как смотреть матчи могут все авторизованные пользователи
+  CREATE_GAMES: ['top_manager', 'league_admin'],           // Создание матча
+  EDIT_GAMES: ['top_manager', 'league_admin'],             // Редактирование времени/арены (настроек)
+  MANAGE_GAME_STATUS: ['top_manager', 'league_admin'],     // Смена статуса матча (плюс динамически главный судья и секретарь матча)
+  MANAGE_GAME_ROSTER: ['top_manager', 'league_admin'],     // Изменение составов на матч (плюс динамически секретарь матча)
+  MANAGE_GAME_REFEREES: ['top_manager', 'league_admin'],   // Назначение судейской бригады
+  MANAGE_PROTOCOL: ['top_manager', 'league_admin'],        // Доступ в панель Live Desk (плюс динамически секретарь матча)
+  MANAGE_GRAPHICS: ['top_manager', 'league_admin'],        // Управление ТВ-графикой (плюс динамически media)
+
+  // --- ПЕРСОНАЛ ---
+  VIEW_STAFF: ['top_manager', 'league_admin', 'referee', 'media'], // Просмотр
   MANAGE_STAFF: ['top_manager'],                          // Добавлять/менять роли
   
-  // Квалификации
+  // --- КВАЛИФИКАЦИИ ---
   VIEW_QUALIFICATIONS: ['top_manager', 'league_admin', 'referee', 'media'], // Просмотр
-  ADD_QUALIFICATIONS: ['top_manager', 'league_admin'],             // Добавлять
-  DELETE_QUALIFICATIONS: ['top_manager'],                           // Удалять
+  ADD_QUALIFICATIONS: ['top_manager', 'league_admin'],                      // Добавлять
+  DELETE_QUALIFICATIONS: ['top_manager'],                                   // Удалять
 
-  // Трансферы
+  // --- ТРАНСФЕРЫ ---
   VIEW_TRANSFERS: ['top_manager', 'league_admin', 'referee', 'media'], // Просмотр
-  CREATE_TRANSFER: ['top_manager'],                           // Создавать запросы
-  ACTION_TRANSFER: ['top_manager', 'league_admin'],            // Одобрять/отклонять
+  CREATE_TRANSFER: ['top_manager'],                                    // Создавать запросы
+  ACTION_TRANSFER: ['top_manager', 'league_admin'],                    // Одобрять/отклонять
 
-  // Дисквалификации
-  VIEW_DISQUALIFICATIONS: ['top_manager', 'league_admin', 'referee'], // Просмотр
-  CREATE_DISQUALIFICATION: ['top_manager', 'league_admin'],           // Назначать
+  // --- ДИСКВАЛИФИКАЦИИ ---
+  VIEW_DISQUALIFICATIONS: ['top_manager', 'league_admin', 'referee', 'media'],  // Просмотр
+  CREATE_DISQUALIFICATION: ['top_manager', 'league_admin'],            // Назначать
   ACTION_DISQUALIFICATION: ['top_manager', 'league_admin'],            // Отменять / Отбыл
-
-  // Матчи и Протокол
-  VIEW_GAMES: ['top_manager', 'league_admin', 'referee', 'media'], // Просмотр матчей
-  MANAGE_GAMES: ['top_manager', 'league_admin'],                   // Редактировать время/арену/статус
-  MANAGE_PROTOCOL: ['top_manager', 'league_admin'],                // Ведение live-протокола (в дополнение к секретарю матча)
 };

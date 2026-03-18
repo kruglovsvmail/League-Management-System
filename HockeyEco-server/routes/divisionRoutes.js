@@ -1,6 +1,13 @@
 import express from 'express';
-import multer from 'multer';
-import { verifyToken } from '../controllers/authController.js';
+import upload from '../config/upload.js';
+
+import { 
+    verifyToken, 
+    requireGlobalAdmin, 
+    requireRoleBySeason, 
+    requireRoleByDivision 
+} from '../controllers/authController.js';
+
 import {
     getSeasons,
     getDivisions,
@@ -9,30 +16,32 @@ import {
     deleteDivision,
     updateDivisionPublish,
     uploadDivisionFile,
-    getDivisionTeams // <-- ДОБАВИЛИ ИМПОРТ СЮДА
+    getDivisionTeams
 } from '../controllers/divisionController.js';
 
 const router = express.Router();
-// Храним файл в памяти перед отправкой в S3
-const upload = multer({ storage: multer.memoryStorage() });
 
-// Глобальный охранник для всех эндпоинтов дивизионов
+// Глобальный охранник для всех эндпоинтов дивизионов (пользователь должен быть авторизован)
 router.use(verifyToken);
 
-// Сезоны для выпадающего списка
+// Сезоны для выпадающего списка (могут читать все авторизованные)
 router.get('/leagues/:leagueId/seasons', getSeasons);
 
-// Управление дивизионами
-router.get('/seasons/:seasonId/divisions', getDivisions);
-router.post('/seasons/:seasonId/divisions', createDivision);
-router.put('/divisions/:id', updateDivision);
-router.delete('/divisions/:id', deleteDivision);
-router.patch('/divisions/:id/publish', updateDivisionPublish);
+// --- УПРАВЛЕНИЕ ДИВИЗИОНАМИ ---
 
-// Загрузка команд дивизиона (для модалки трансферов)
+// Просмотр и создание дивизионов (требуются права менеджера/админа лиги в конкретном сезоне)
+router.get('/seasons/:seasonId/divisions', requireRoleBySeason(['top_manager', 'league_admin']), getDivisions);
+router.post('/seasons/:seasonId/divisions', requireRoleBySeason(['top_manager', 'league_admin']), createDivision);
+
+// Редактирование, публикация и загрузка файлов (требуются права менеджера/админа лиги для конкретного дивизиона)
+router.put('/divisions/:id', requireRoleByDivision(['top_manager', 'league_admin']), updateDivision);
+router.patch('/divisions/:id/publish', requireRoleByDivision(['top_manager', 'league_admin']), updateDivisionPublish);
+router.post('/divisions/:id/upload/:type', upload.single('file'), requireRoleByDivision(['top_manager', 'league_admin']), uploadDivisionFile);
+
+// Удаление дивизиона (ТОЛЬКО ДЛЯ ГЛОБАЛЬНОГО АДМИНА)
+router.delete('/divisions/:id', requireGlobalAdmin, deleteDivision);
+
+// Загрузка команд дивизиона (используется для модалки трансферов, доступно авторизованным)
 router.get('/divisions/:id/teams', getDivisionTeams);
-
-// Загрузка файлов (type = 'logo' или 'regulations')
-router.post('/divisions/:id/upload/:type', upload.single('file'), uploadDivisionFile);
 
 export default router;

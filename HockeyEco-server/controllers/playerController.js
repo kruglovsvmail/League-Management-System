@@ -8,11 +8,20 @@ export const getPlayerProfile = async (req, res) => {
       SELECT 
         u.id, u.first_name, u.last_name, u.middle_name, 
         u.birth_date, u.height, u.weight, u.grip, u.avatar_url,
-        array_remove(array_agg(DISTINCT tm.photo_url), NULL) as photos
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object('url', sub.photo_url, 'teamLogo', sub.logo_url))
+            FROM (
+              SELECT DISTINCT tm.photo_url, t.logo_url
+              FROM team_members tm
+              JOIN teams t ON tm.team_id = t.id
+              WHERE tm.user_id = u.id AND tm.photo_url IS NOT NULL
+            ) sub
+          ),
+          '[]'::json
+        ) as team_photos
       FROM users u
-      LEFT JOIN team_members tm ON u.id = tm.user_id
       WHERE u.id = $1
-      GROUP BY u.id
     `;
 
     const statsQuery = `

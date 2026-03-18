@@ -13,11 +13,14 @@ import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
 import { TeamManagementPage } from './pages/TeamManagementPage';
 import { GamesPage } from './pages/GamesPage';
 import { GamePage } from './pages/GamePage';
-import { GameLiveDesk } from './pages/GameLiveDesk'; // <-- НОВЫЙ ИМПОРТ ПАНЕЛИ СЕКРЕТАРЯ
+import { GameLiveDesk } from './pages/GameLiveDesk';
+import { WebGraphics } from './pages/WebGraphics'; // <-- НОВЫЙ ИМПОРТ OBS ОВЕРЛЕЯ
+import { WebGraphicsPanel } from './pages/WebGraphicsPanel'; // <-- НОВЫЙ ИМПОРТ ПАНЕЛИ УПРАВЛЕНИЯ ГРАФИКОЙ
 
-// Импорт каркаса и UI
+// Импорт каркаса, UI и прав
 import { AdminLayout } from './AdminLayout';
 import { Loader } from './ui/Loader';
+import { PERMISSIONS } from './utils/permissions';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -89,17 +92,28 @@ export default function App() {
     }
   }, []); 
 
+  const canViewDivisions = currentUser?.globalRole === 'admin' || 
+    (selectedLeague?.role && selectedLeague.role.split(',').some(r => PERMISSIONS.VIEW_DIVISIONS?.includes(r.trim())));
+  
+  const defaultRoute = canViewDivisions ? '/divisions' : '/games';
+
   const handleLoginSuccess = (userData) => {
     setCurrentUser(userData);
     setIsAuthenticated(true);
     initLeague(userData);
-    navigate('/divisions'); 
+    
+    const canView = userData?.globalRole === 'admin' || 
+      (userData?.leagues?.[0]?.role && userData.leagues[0].role.split(',').some(r => PERMISSIONS.VIEW_DIVISIONS?.includes(r.trim())));
+    navigate(canView ? '/divisions' : '/games'); 
   };
 
   const handleLeagueChange = (league) => {
     setSelectedLeague(league);
     localStorage.setItem('hockeyeco_selected_league', league.id);
-    navigate('/divisions'); 
+    
+    const canView = currentUser?.globalRole === 'admin' || 
+      (league?.role && league.role.split(',').some(r => PERMISSIONS.VIEW_DIVISIONS?.includes(r.trim())));
+    navigate(canView ? '/divisions' : '/games'); 
   };
 
   return (
@@ -114,17 +128,22 @@ export default function App() {
         <Routes>
           <Route 
             path="/login" 
-            element={ isAuthenticated ? <Navigate to="/divisions" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} /> } 
+            element={ isAuthenticated ? <Navigate to={defaultRoute} replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} /> } 
           />
 
-          {/* === НОВЫЙ РОУТ ДЛЯ ПАНЕЛИ СЕКРЕТАРЯ (БЕЗ ADMIN LAYOUT) === */}
+          {/* === ПУБЛИЧНЫЙ РОУТ ДЛЯ OBS (БЕЗ АВТОРИЗАЦИИ) === */}
+          <Route path="/games/:gameId/graphics" element={<WebGraphics />} />
+
+          {/* === РОУТ ПАНЕЛИ СЕКРЕТАРЯ (БЕЗ ADMIN LAYOUT) === */}
           <Route 
             path="/games/:gameId/live-desk" 
-            element={
-              isAuthenticated 
-                ? <GameLiveDesk user={currentUser} /> 
-                : <Navigate to="/login" replace />
-            } 
+            element={ isAuthenticated ? <GameLiveDesk user={currentUser} /> : <Navigate to="/login" replace /> } 
+          />
+
+          {/* === РОУТ ПАНЕЛИ УПРАВЛЕНИЯ ГРАФИКОЙ (БЕЗ ADMIN LAYOUT) === */}
+          <Route 
+            path="/games/:gameId/graphics-panel" 
+            element={ isAuthenticated ? <WebGraphicsPanel user={currentUser} /> : <Navigate to="/login" replace /> } 
           />
 
           <Route 
@@ -140,26 +159,18 @@ export default function App() {
                 : <Navigate to="/login" replace />
             }
           >
-            <Route index element={<Navigate to="/divisions" replace />} />
+            <Route index element={<Navigate to={defaultRoute} replace />} />
             
-            {/* ЗАЩИТА: Только для global_role === 'admin' */}
-            <Route 
-              path="registry" 
-              element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to="/divisions" replace />} 
-            />
-            <Route 
-              path="teams" 
-              element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to="/divisions" replace />} 
-            />
-            
-            <Route path="divisions" element={<DivisionsPage />} />
+            <Route path="registry" element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to={defaultRoute} replace />} />
+            <Route path="teams" element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to={defaultRoute} replace />} />
+            <Route path="divisions" element={canViewDivisions ? <DivisionsPage /> : <Navigate to="/games" replace />} />
             <Route path="games" element={<GamesPage />} />
             <Route path="handbook" element={<HandbookPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="transfers" element={<TransfersPage />} />
             <Route path="games/:gameId" element={<GamePage />} />
             <Route path="disqualifications" element={<DisqualificationsPage />} />
-            <Route path="*" element={<Navigate to="/divisions" replace />} />
+            <Route path="*" element={<Navigate to={defaultRoute} replace />} />
           </Route>
         </Routes>
       )}

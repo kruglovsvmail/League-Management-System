@@ -22,7 +22,11 @@ export function Icon({ name, className = "w-6 h-6" }) {
     handbook: <svg {...baseProps}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
     divisions: <svg {...baseProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 2v20"/></svg>,
     disqualifications: <svg {...baseProps}><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
-    registry: <svg {...baseProps}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+    registry: <svg {...baseProps}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
+    
+    // Новые иконки для таймлайна матча
+    puck: <svg {...baseProps} fill="currentColor" stroke="none" viewBox="0 0 24 24"><ellipse cx="12" cy="7" rx="9" ry="4"></ellipse><path d="M3 7v10c0 2.21 4.03 4 9 4s9-1.79 9-4V7"></path></svg>,
+    whistle: <svg {...baseProps}><path d="M12 4H8v4c0 4.42 3.58 8 8 8a4 4 0 1 0 0-8h-2V4h-2z"/><circle cx="16" cy="12" r="1"/><path d="M21 4l-3 3"/></svg>
   };
 
   return icons[name] || null;

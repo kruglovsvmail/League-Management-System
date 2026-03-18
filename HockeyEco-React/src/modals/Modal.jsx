@@ -23,7 +23,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'default' }) {
     medium: 'max-w-[550px]',
     wide: 'max-w-[800px]',
     wide2: 'max-w-[1100px]',
-    'extra-wide': 'max-w-[1500px]',
+    'extra-wide': 'max-w-[1200px]',
   };
 
   return createPortal(

@@ -1,6 +1,7 @@
 import express from 'express';
-import multer from 'multer';
-import { verifyToken } from '../controllers/authController.js';
+import upload from '../config/upload.js';
+
+import { verifyToken, requireGlobalAdmin } from '../controllers/authController.js'; 
 import {
     searchTeams,
     searchUsers,
@@ -19,9 +20,10 @@ import {
 } from '../controllers/teamManagementController.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
 
-router.use(verifyToken);
+// Защищаем весь раздел "Управление командой" проверкой на глобального админа,
+// СТРОГО указывая префикс '/teams-manage', чтобы не блокировать остальные роуты в приложении!
+router.use('/teams-manage', verifyToken, requireGlobalAdmin);
 
 router.get('/teams-manage/search', searchTeams);
 router.get('/teams-manage/users/search', searchUsers);

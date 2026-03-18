@@ -28,8 +28,26 @@ const FILE_MAP = {
 // ==========================================
 export const getArenas = async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM arenas ORDER BY name ASC');
-        res.json({ success: true, data: result.rows });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 30;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+
+        let query = 'SELECT * FROM arenas WHERE 1=1';
+        const params = [];
+        let paramIdx = 1;
+
+        if (search) {
+            query += ` AND (name ILIKE $${paramIdx} OR city ILIKE $${paramIdx})`;
+            params.push(`%${search}%`);
+            paramIdx++;
+        }
+
+        query += ` ORDER BY name ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        params.push(limit, offset);
+
+        const result = await pool.query(query, params);
+        res.json({ success: true, data: result.rows, hasMore: result.rows.length === limit });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
@@ -61,8 +79,26 @@ export const updateArena = async (req, res) => {
 // ==========================================
 export const getLeagues = async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM leagues ORDER BY name ASC');
-        res.json({ success: true, data: result.rows });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 30;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+
+        let query = 'SELECT * FROM leagues WHERE 1=1';
+        const params = [];
+        let paramIdx = 1;
+
+        if (search) {
+            query += ` AND (name ILIKE $${paramIdx} OR city ILIKE $${paramIdx} OR short_name ILIKE $${paramIdx})`;
+            params.push(`%${search}%`);
+            paramIdx++;
+        }
+
+        query += ` ORDER BY name ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        params.push(limit, offset);
+
+        const result = await pool.query(query, params);
+        res.json({ success: true, data: result.rows, hasMore: result.rows.length === limit });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
@@ -94,13 +130,31 @@ export const updateLeague = async (req, res) => {
 // ==========================================
 export const getSeasons = async (req, res) => {
     try {
-        const result = await pool.query(`
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 30;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+
+        let query = `
             SELECT s.*, l.name as league_name 
             FROM seasons s 
             LEFT JOIN leagues l ON s.league_id = l.id 
-            ORDER BY s.start_date DESC
-        `);
-        res.json({ success: true, data: result.rows });
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIdx = 1;
+
+        if (search) {
+            query += ` AND (s.name ILIKE $${paramIdx} OR l.name ILIKE $${paramIdx})`;
+            params.push(`%${search}%`);
+            paramIdx++;
+        }
+
+        query += ` ORDER BY s.start_date DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        params.push(limit, offset);
+
+        const result = await pool.query(query, params);
+        res.json({ success: true, data: result.rows, hasMore: result.rows.length === limit });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
@@ -132,8 +186,33 @@ export const updateSeason = async (req, res) => {
 // ==========================================
 export const getTeams = async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM teams ORDER BY name ASC');
-        res.json({ success: true, data: result.rows });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 30;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+        const type = parseInt(req.query.type) || 0; // 0=Все, 1=Реальные, 2=Виртуальные
+
+        let query = 'SELECT * FROM teams WHERE 1=1';
+        const params = [];
+        let paramIdx = 1;
+
+        if (search) {
+            query += ` AND (name ILIKE $${paramIdx} OR city ILIKE $${paramIdx} OR short_name ILIKE $${paramIdx})`;
+            params.push(`%${search}%`);
+            paramIdx++;
+        }
+
+        if (type === 1) { // Реальные
+            query += ` AND is_virtual = false`;
+        } else if (type === 2) { // Виртуальные
+            query += ` AND is_virtual = true`;
+        }
+
+        query += ` ORDER BY name ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        params.push(limit, offset);
+
+        const result = await pool.query(query, params);
+        res.json({ success: true, data: result.rows, hasMore: result.rows.length === limit });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
@@ -165,17 +244,38 @@ export const updateTeam = async (req, res) => {
 // ==========================================
 export const getUsers = async (req, res) => {
     try {
-        // ДОБАВЛЕНО: phone
-        const result = await pool.query(
-            'SELECT id, first_name, last_name, middle_name, email, phone, virtual_code, avatar_url, birth_date, gender, height, weight, grip FROM users ORDER BY id DESC'
-        );
-        res.json({ success: true, data: result.rows });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 30;
+        const offset = (page - 1) * limit;
+        const search = req.query.search || '';
+        const type = parseInt(req.query.type) || 0; // 0=Все, 1=Реальные, 2=Виртуальные
+
+        let query = 'SELECT id, first_name, last_name, middle_name, email, phone, virtual_code, avatar_url, birth_date, gender, height, weight, grip FROM users WHERE 1=1';
+        const params = [];
+        let paramIdx = 1;
+
+        if (search) {
+            query += ` AND (first_name ILIKE $${paramIdx} OR last_name ILIKE $${paramIdx} OR phone ILIKE $${paramIdx} OR email ILIKE $${paramIdx} OR virtual_code ILIKE $${paramIdx})`;
+            params.push(`%${search}%`);
+            paramIdx++;
+        }
+
+        if (type === 1) { // Реальные (нет виртуального кода)
+            query += ` AND virtual_code IS NULL`;
+        } else if (type === 2) { // Виртуальные (есть код)
+            query += ` AND virtual_code IS NOT NULL`;
+        }
+
+        query += ` ORDER BY id DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        params.push(limit, offset);
+
+        const result = await pool.query(query, params);
+        res.json({ success: true, data: result.rows, hasMore: result.rows.length === limit });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
 export const createUser = async (req, res) => {
     try {
-        // ДОБАВЛЕНО: phone
         let { first_name, last_name, middle_name, email, phone, is_virtual, birth_date, gender, height, weight, grip } = req.body;
         let virtual_code = null;
 
@@ -214,7 +314,6 @@ export const createUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        // ДОБАВЛЕНО: phone
         let { first_name, last_name, middle_name, email, phone, is_virtual, birth_date, gender, height, weight, grip } = req.body;
         
         const userRes = await pool.query('SELECT virtual_code FROM users WHERE id = $1', [id]);

@@ -7,7 +7,7 @@ import { Tooltip } from '../ui/Tooltip';
 
 const STATUS_KEYS = ['approved', 'pending', 'revision', 'rejected'];
 
-export function DivisionTeamsList({ teams, onOpenModal, selectedTeamId, onTeamSelect, userRole, activeTab, onTabChange, isAppWindowOpen }) {
+export function DivisionTeamsList({ teams, onOpenModal, selectedTeamId, onTeamSelect, userRole, activeTab, onTabChange, isAppWindowOpen, canManageDivisions }) {
   const isCompact = !!selectedTeamId;
   const filteredTeams = teams.filter(t => t.status === STATUS_KEYS[activeTab]);
 
@@ -35,29 +35,56 @@ export function DivisionTeamsList({ teams, onOpenModal, selectedTeamId, onTeamSe
     )},
     { label: 'ID', sortKey: 'id', width: 'w-[60px]', render: (row) => <span className="text-[12px] text-graphite/50 font-mono" title="ID заявки в БД">{row.id}</span> },
     
-    // ДОБАВЛЯЕМ align: 'center' И УБИРАЕМ text-center ИЗ width
     { label: 'Абр.', sortKey: 'short_name', width: 'w-[150px]', align: 'center', render: (row) => <span className="text-graphite-light font-medium">{row.short_name || '-'}</span> },
     { label: 'Город', sortKey: 'city', width: 'w-[150px]', align: 'center', render: (row) => <span className="text-graphite">{row.city || '-'}</span> },
     { label: 'Форма', width: 'w-[80px]', align: 'center', render: (row) => {
       const hasLight = !!(row.custom_jersey_light_url || row.jersey_light_url); const hasDark = !!(row.custom_jersey_dark_url || row.jersey_dark_url);
       let badgeType = 'empty'; if (hasLight && hasDark) badgeType = 'filled'; else if (hasLight || hasDark) badgeType = 'half';
-      return <div onClick={() => onOpenModal(row, 'uniform')} className={`cursor-pointer hover:scale-105 transition-transform inline-block ${row.status === 'revision' && userRole !== 'admin' ? 'opacity-70' : ''}`}><Badge label="Форма" type={badgeType} /></div>;
+      
+      const isClickable = canManageDivisions && (userRole === 'admin' || row.status !== 'revision');
+      
+      return (
+        <div 
+          onClick={() => isClickable && onOpenModal(row, 'uniform')} 
+          className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+        >
+          <Badge label="Форма" type={badgeType} />
+        </div>
+      );
     }},
     { label: 'Описание', width: 'w-[80px]', align: 'center', render: (row) => {
       const hasDesc = !!(row.custom_description || row.description);
-      return <div onClick={() => onOpenModal(row, 'desc')} className={`cursor-pointer hover:scale-105 transition-transform inline-block ${row.status === 'revision' && userRole !== 'admin' ? 'opacity-70' : ''}`}><Badge label="Инфо" type={hasDesc ? 'filled' : 'empty'} /></div>;
+      const isClickable = canManageDivisions && (userRole === 'admin' || row.status !== 'revision');
+      
+      return (
+        <div 
+          onClick={() => isClickable && onOpenModal(row, 'desc')} 
+          className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+        >
+          <Badge label="Инфо" type={hasDesc ? 'filled' : 'empty'} />
+        </div>
+      );
     }},
     { label: 'Фото', width: 'w-[80px]', align: 'center', render: (row) => {
       const hasPhoto = !!(row.custom_team_photo_url || row.team_photo_url);
-      return <div onClick={() => onOpenModal(row, 'photo')} className={`cursor-pointer hover:scale-105 transition-transform inline-block ${row.status === 'revision' && userRole !== 'admin' ? 'opacity-70' : ''}`}><Badge label="Фото" type={hasPhoto ? 'filled' : 'empty'} /></div>;
+      const isClickable = canManageDivisions && (userRole === 'admin' || row.status !== 'revision');
+      
+      return (
+        <div 
+          onClick={() => isClickable && onOpenModal(row, 'photo')} 
+          className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+        >
+          <Badge label="Фото" type={hasPhoto ? 'filled' : 'empty'} />
+        </div>
+      );
     }},
     { label: 'Игроки', sortKey: 'players_count', width: 'w-[80px]', align: 'center', render: (row) => <span className="font-bold text-orange text-[15px]">{row.players_count}</span> },
     { label: 'Ср. возр.', sortKey: 'avg_age', width: 'w-[120px]', align: 'center', render: (row) => <span className="font-semibold text-graphite text-[14px]">{row.avg_age ? formatAge(row.avg_age) : '-'}</span> },
     
-    // Кнопкам действий обычно ставят align: 'right' (или оставляют text-right в width)
     { label: '', width: 'w-[50px]', align: 'right', render: (row) => {
       const isAdmin = userRole === 'admin';
-      const canChangeStatus = isAdmin || (isAppWindowOpen && row.status !== 'revision');
+      // Проверяем наличие прав MANAGE_DIVISIONS + логику статуса/окна
+      const canChangeStatus = canManageDivisions && (isAdmin || (isAppWindowOpen && row.status !== 'revision'));
 
       if (!canChangeStatus) return null;
 
@@ -67,7 +94,7 @@ export function DivisionTeamsList({ teams, onOpenModal, selectedTeamId, onTeamSe
         </button>
       );
     }}
-];
+  ];
 
   const compactColumns = [
     { 

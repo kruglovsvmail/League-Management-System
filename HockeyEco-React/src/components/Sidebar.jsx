@@ -4,6 +4,7 @@ import { Icon } from '../ui/Icon';
 import { LeagueSelectModal } from '../modals/LeagueSelectModal';
 import { ProfileDrawer } from '../modals/ProfileDrawer';
 import { getImageUrl } from '../utils/helpers';
+import { PERMISSIONS } from '../utils/permissions'; // <-- ИМПОРТ МАТРИЦЫ ПРАВ
 
 const ROLE_NAMES = {
   'top_manager': 'Руководитель',
@@ -26,18 +27,28 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     setLogoError(false);
   }, [selectedLeague]);
 
+  // --- ПРОВЕРКА ПРАВ ДЛЯ ДИВИЗИОНОВ ---
+  const userRolesStr = selectedLeague?.role || '';
+  const userRolesArr = userRolesStr.split(',').map(r => r.trim());
+  const isGlobalAdmin = user?.globalRole === 'admin';
+  
+  const canViewDivisions = isGlobalAdmin || userRolesArr.some(role => 
+    PERMISSIONS.VIEW_DIVISIONS?.includes(role)
+  );
+
+  // Формируем список меню, исключая null элементы
   const baseMenuItems = [
     { name: "Матчи", path: "/games", icon: "matches" },
-    { name: "Дивизионы", path: "/divisions", icon: "divisions" },
+    canViewDivisions ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
     { name: "Трансферы", path: "/transfers", icon: "transfers" },
     { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" },
     { name: "Справочник", path: "/handbook", icon: "handbook" },
     { name: "Настройки", path: "/settings", icon: "settings" }
-  ];
+  ].filter(Boolean);
 
   let displayRole = 'Пользователь';
   if (user?.globalRole === 'admin') {
-    displayRole = 'Властелин';
+    displayRole = 'Админ LMS';
   } else if (selectedLeague && selectedLeague.role) {
     displayRole = translateRoles(selectedLeague.role);
   }

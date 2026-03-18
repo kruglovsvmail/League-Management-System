@@ -1,6 +1,7 @@
 import express from 'express';
-import multer from 'multer';
-import { verifyToken } from '../controllers/authController.js';
+import upload from '../config/upload.js';
+
+import { verifyToken, requireGlobalAdmin } from '../controllers/authController.js'; // <-- ДОБАВИЛИ ИМПОРТ
 import {
     getArenas, createArena, updateArena,
     getLeagues, createLeague, updateLeague,
@@ -13,10 +14,10 @@ import {
 const router = express.Router();
 
 // Храним загружаемые файлы в оперативной памяти перед отправкой в S3
-const upload = multer({ storage: multer.memoryStorage() });
 
-// Защищаем все маршруты реестра токеном администратора
-router.use('/registry', verifyToken);
+
+// Защищаем все маршруты реестра токеном авторизации И проверкой на глобального админа
+router.use('/registry', verifyToken, requireGlobalAdmin);
 
 // --- АРЕНЫ ---
 router.get('/registry/arenas', getArenas);

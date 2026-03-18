@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom'; // Добавили импорт
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Table } from '../ui/Table'; 
@@ -15,7 +15,6 @@ import { getImageUrl, getToken } from '../utils/helpers';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
-// --- Функция для форматирования телефона на лету ---
 const formatPhoneDynamic = (raw) => {
   if (!raw) return '';
   let res = '';
@@ -27,7 +26,6 @@ const formatPhoneDynamic = (raw) => {
 };
 
 export function GlobalRegistryPage() {
-  // === НАСТРОЙКА URL-ПАРАМЕТРОВ ===
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = parseInt(searchParams.get('tab') || '0', 10);
@@ -37,8 +35,8 @@ export function GlobalRegistryPage() {
   const setActiveTab = (index) => {
     setSearchParams(prev => {
       prev.set('tab', index);
-      prev.delete('q');    // Сбрасываем поиск при смене вкладки
-      prev.delete('type'); // Сбрасываем фильтр при смене вкладки
+      prev.delete('q');    
+      prev.delete('type'); 
       return prev;
     }, { replace: true });
   };
@@ -57,7 +55,6 @@ export function GlobalRegistryPage() {
       return prev;
     }, { replace: true });
   };
-  // ================================
 
   const [tableData, setTableData] = useState([]);
   const [leaguesList, setLeaguesList] = useState([]);
@@ -73,7 +70,24 @@ export function GlobalRegistryPage() {
   const [formData, setFormData] = useState(defaultForm);
   
   const [isLoading, setIsLoading] = useState(false); 
-  const [isFetchingData, setIsFetchingData] = useState(false); 
+
+  // === ПАГИНАЦИЯ И БЕСКОНЕЧНЫЙ СКРОЛЛ ===
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const observer = useRef();
+
+  const lastElementRef = useCallback(node => {
+    if (isLoading || isFetchingMore) return;
+    if (observer.current) observer.current.disconnect();
+    
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore) {
+        setPage(prevPage => prevPage + 1);
+      }
+    });
+    if (node) observer.current.observe(node);
+  }, [isLoading, isFetchingMore, hasMore]);
 
   const [formResetKey, setFormResetKey] = useState(0);
   const [cacheBuster, setCacheBuster] = useState(Date.now());
@@ -83,22 +97,64 @@ export function GlobalRegistryPage() {
     'Authorization': `Bearer ${getToken()}`
   });
 
-  const fetchData = async () => {
-    setIsFetchingData(true);
+  const fetchData = async (pageNum, isInitial) => {
+    if (isInitial) setIsLoading(true);
+    else setIsFetchingMore(true);
+
     const endpoints = ['arenas', 'leagues', 'seasons', 'teams', 'users'];
+    
     try {
-      const res = await fetch(`${API_BASE}/api/registry/${endpoints[activeTab]}`, { headers: getHeaders() });
+      const url = new URL(`${API_BASE}/api/registry/${endpoints[activeTab]}`);
+      url.searchParams.append('page', pageNum);
+      url.searchParams.append('limit', 30);
+      if (searchQuery) url.searchParams.append('search', searchQuery);
+      if (activeTab === 3 || activeTab === 4) url.searchParams.append('type', typeFilterIndex);
+
+      const res = await fetch(url.toString(), { headers: getHeaders() });
       const json = await res.json();
       if (json.success) {
-        setTableData(json.data);
+        if (isInitial) {
+          setTableData(json.data);
+        } else {
+          setTableData(prev => [...prev, ...json.data]);
+        }
+        setHasMore(json.hasMore);
         setCacheBuster(Date.now()); 
       }
     } catch (err) { 
       console.error(err); 
     } finally {
-      setIsFetchingData(false);
+      setIsLoading(false);
+      setIsFetchingMore(false);
     }
   };
+
+  // Сброс и загрузка первой страницы при смене вкладок или фильтров
+  useEffect(() => {
+    setPage(1);
+    setTableData([]);
+    setHasMore(true);
+    resetForm();
+
+    const timeout = setTimeout(() => {
+      fetchData(1, true);
+    }, 400); // Debounce для строки поиска
+
+    if (activeTab === 2) {
+      fetch(`${API_BASE}/api/registry/leagues?limit=1000`, { headers: getHeaders() })
+        .then(res => res.json())
+        .then(json => json.success && setLeaguesList(json.data));
+    }
+
+    return () => clearTimeout(timeout);
+  }, [activeTab, searchQuery, typeFilterIndex]);
+
+  // Загрузка следующих страниц при скролле
+  useEffect(() => {
+    if (page > 1) {
+      fetchData(page, false);
+    }
+  }, [page]);
 
   const resetForm = () => {
     setSelectedItem(null);
@@ -110,17 +166,6 @@ export function GlobalRegistryPage() {
     setClearedFiles(new Set());
     setFormResetKey(prev => prev + 1); 
   };
-
-  useEffect(() => {
-    fetchData();
-    resetForm();
-    
-    if (activeTab === 2) {
-      fetch(`${API_BASE}/api/registry/leagues`, { headers: getHeaders() })
-        .then(res => res.json())
-        .then(json => json.success && setLeaguesList(json.data));
-    }
-  }, [activeTab]);
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -243,33 +288,21 @@ export function GlobalRegistryPage() {
         const entityId = selectedItem ? selectedItem.id : json.id;
         const fileTasks = []; 
 
-        if (logoFile) {
-          fileTasks.push(uploadFileS3(entityId, 'logo', logoFile));
-        } else if (clearedFiles.has('logo') && selectedItem?.logo_url) {
-          fileTasks.push(clearFileS3(entityId, 'logo'));
-        }
+        if (logoFile) fileTasks.push(uploadFileS3(entityId, 'logo', logoFile));
+        else if (clearedFiles.has('logo') && selectedItem?.logo_url) fileTasks.push(clearFileS3(entityId, 'logo'));
 
-        if (jerseyLightFile) {
-          fileTasks.push(uploadFileS3(entityId, 'jersey_light', jerseyLightFile));
-        } else if (clearedFiles.has('jersey_light') && selectedItem?.jersey_light_url) {
-          fileTasks.push(clearFileS3(entityId, 'jersey_light'));
-        }
+        if (jerseyLightFile) fileTasks.push(uploadFileS3(entityId, 'jersey_light', jerseyLightFile));
+        else if (clearedFiles.has('jersey_light') && selectedItem?.jersey_light_url) fileTasks.push(clearFileS3(entityId, 'jersey_light'));
 
-        if (jerseyDarkFile) {
-          fileTasks.push(uploadFileS3(entityId, 'jersey_dark', jerseyDarkFile));
-        } else if (clearedFiles.has('jersey_dark') && selectedItem?.jersey_dark_url) {
-          fileTasks.push(clearFileS3(entityId, 'jersey_dark'));
-        }
+        if (jerseyDarkFile) fileTasks.push(uploadFileS3(entityId, 'jersey_dark', jerseyDarkFile));
+        else if (clearedFiles.has('jersey_dark') && selectedItem?.jersey_dark_url) fileTasks.push(clearFileS3(entityId, 'jersey_dark'));
 
-        if (avatarFile) {
-          fileTasks.push(uploadFileS3(entityId, 'avatar', avatarFile));
-        } else if (clearedFiles.has('avatar') && selectedItem?.avatar_url) {
-          fileTasks.push(clearFileS3(entityId, 'avatar'));
-        }
+        if (avatarFile) fileTasks.push(uploadFileS3(entityId, 'avatar', avatarFile));
+        else if (clearedFiles.has('avatar') && selectedItem?.avatar_url) fileTasks.push(clearFileS3(entityId, 'avatar'));
 
         await Promise.all(fileTasks);
 
-        fetchData();
+        fetchData(1, true); // Обновляем с первой страницы
         resetForm();
       } else {
         alert(`Ошибка сервера: ${json.error}`);
@@ -293,31 +326,6 @@ export function GlobalRegistryPage() {
     const fullUrl = getImageUrl(url);
     return fullUrl ? `${fullUrl}?t=${cacheBuster}` : null;
   };
-
-  const filteredData = tableData.filter(item => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !searchQuery || (
-      (item.name && item.name.toLowerCase().includes(q)) ||
-      (item.city && item.city.toLowerCase().includes(q)) ||
-      (item.first_name && item.first_name.toLowerCase().includes(q)) ||
-      (item.last_name && item.last_name.toLowerCase().includes(q)) ||
-      (item.email && item.email.toLowerCase().includes(q)) ||
-      (item.short_name && item.short_name.toLowerCase().includes(q)) ||
-      (item.virtual_code && item.virtual_code.toLowerCase().includes(q)) ||
-      (item.phone && item.phone.includes(q))
-    );
-
-    let matchesType = true;
-    if (typeFilterIndex === 1) { 
-      if (activeTab === 3) matchesType = !item.is_virtual;
-      if (activeTab === 4) matchesType = !item.virtual_code;
-    } else if (typeFilterIndex === 2) { 
-      if (activeTab === 3) matchesType = !!item.is_virtual;
-      if (activeTab === 4) matchesType = !!item.virtual_code;
-    }
-
-    return matchesSearch && matchesType;
-  });
 
   const allColumns = [
     [ 
@@ -528,7 +536,7 @@ export function GlobalRegistryPage() {
                     </div>
                   </div>
 
-                  {/* Блок: Физические параметры (убрали Пол и Хват) */}
+                  {/* Блок: Физические параметры */}
                   <div className="pb-3">
                     <div className="text-[10px] font-bold text-graphite/50 uppercase tracking-widest mb-3">параметры</div>
                     
@@ -566,18 +574,22 @@ export function GlobalRegistryPage() {
 
         {/* ПРАВАЯ ЧАСТЬ - ТАБЛИЦА */}
         <div className="flex-1 relative z-10 min-h-[500px]">
-          {isFetchingData && (
+          {isLoading && tableData.length === 0 && (
             <div className="absolute inset-0 z-30 flex items-start pt-32 justify-center pointer-events-none">
               <Loader text="Загрузка реестра..." />
             </div>
           )}
-          <div className={`transition-opacity duration-300 ease-in-out ${isFetchingData ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
+          <div className={`transition-opacity duration-300 ease-in-out ${isLoading && tableData.length === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
             <Table 
               columns={allColumns[activeTab]} 
-              data={filteredData} 
+              data={tableData} 
               onRowClick={handleRowClick}
               rowClassName={(r) => r.id === selectedItem?.id ? 'bg-orange/5 shadow-[inset_4px_0_0_0_#FF7A00]' : ''}
             />
+            {/* Элемент-сенсор для бесконечного скролла */}
+            <div ref={lastElementRef} className="h-10 w-full flex items-center justify-center mt-2">
+              {isFetchingMore && <span className="text-graphite-light text-sm font-bold animate-pulse">Загрузка данных...</span>}
+            </div>
           </div>
         </div>
 

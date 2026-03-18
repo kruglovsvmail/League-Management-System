@@ -10,10 +10,12 @@ import { Toast } from '../modals/Toast';
 import { WeekCalendar } from '../ui/WeekCalendar';
 import { GamesCard } from '../components/GamesCard';
 import { CreateGameDrawer } from '../modals/CreateGameDrawer';
+import { useAccess } from '../hooks/useAccess'; // <-- ИМПОРТ ХУКА ПРАВ
 
 export function GamesPage() {
   const { user, selectedLeague } = useOutletContext();
-  const navigate = useNavigate(); // <-- Добавлен хук навигации
+  const navigate = useNavigate(); 
+  const { checkAccess } = useAccess(); // <-- ИНИЦИАЛИЗАЦИЯ ХУКА ПРАВ
   
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
@@ -31,8 +33,10 @@ export function GamesPage() {
   const [slideDirection, setSlideDirection] = useState('none');
   const [animStatus, setAnimStatus] = useState('idle');
 
-  // --- СОСТОЯНИЕ ШТОРКИ ---
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+
+  // --- ПРОВЕРКА ПРАВ НА СОЗДАНИЕ МАТЧЕЙ ---
+  const canCreateGames = checkAccess('CREATE_GAMES');
 
   useEffect(() => {
     if (selectedLeague?.id) fetchSeasons(selectedLeague.id);
@@ -167,7 +171,10 @@ export function GamesPage() {
                 />
               </div>
             )}
-            <Button onClick={() => setIsCreateDrawerOpen(true)}>+ Создать матч</Button>
+            {/* СКРЫТИЕ КНОПКИ ДЛЯ ТЕХ, У КОГО НЕТ ПРАВ */}
+            {canCreateGames && (
+              <Button onClick={() => setIsCreateDrawerOpen(true)}>+ Создать матч</Button>
+            )}
           </div>
         }
       />
@@ -211,7 +218,6 @@ export function GamesPage() {
                   <GamesCard 
                     key={game.id} 
                     game={game} 
-                    // <-- ПЕРЕХОД В ПАНЕЛЬ МАТЧА ПО КЛИКУ НА КАРТОЧКУ
                     onClick={() => navigate(`/games/${game.id}`)}
                   />
                 ))}
