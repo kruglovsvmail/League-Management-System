@@ -4,7 +4,10 @@ import {
     getGameEvents, 
     createGameEvent,
     updateGameEvent,
-    deleteGameEvent 
+    deleteGameEvent,
+    updateTimerSettings,
+    getEventPlusMinus,
+    saveEventPlusMinus
 } from '../controllers/GameLiveDeskController.js';
 
 const router = express.Router();
@@ -18,5 +21,12 @@ router.get('/games/:gameId/events', getGameEvents);
 router.post('/games/:gameId/events', express.json(), requireGameProtocolAccess, createGameEvent);
 router.put('/games/:gameId/events/:eventId', express.json(), requireGameProtocolAccess, updateGameEvent);
 router.delete('/games/:gameId/events/:eventId', requireGameProtocolAccess, deleteGameEvent);
+
+// Управление показателем полезности (+/-)
+router.get('/games/:gameId/events/:eventId/plus-minus', getEventPlusMinus);
+router.post('/games/:gameId/events/:eventId/plus-minus', express.json(), requireGameProtocolAccess, saveEventPlusMinus);
+
+// Сохранение настроек таймера (период, овертайм)
+router.put('/games/:gameId/timer-settings', express.json(), requireGameProtocolAccess, updateTimerSettings);
 
 export default router;
