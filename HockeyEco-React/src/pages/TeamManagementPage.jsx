@@ -9,7 +9,7 @@ import { Badge } from '../ui/Badge';
 import { Loader } from '../ui/Loader';
 import { SegmentButton } from '../ui/SegmentButton';
 import { getImageUrl, getToken } from '../utils/helpers';
-import { AddMemberDrawer } from '../components/team-management/AddMemberDrawer';
+import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { ConfirmModal } from '../modals/ConfirmModal';

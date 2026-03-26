@@ -1,173 +1,305 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { getToken } from '../utils/helpers';
-import { io } from 'socket.io-client';
+import { useWebGraphicsPanel } from '../components/WebGraphicsPanel/useWebGraphicsPanel';
+import { ScoreBoardWidget } from '../components/WebGraphicsPanel/ScoreBoardWidget';
+import { EventBroadcastButton } from '../components/WebGraphicsPanel/EventBroadcastButton';
+import { StaticBroadcastButton } from '../components/WebGraphicsPanel/StaticBroadcastButton';
+import { AutoPlaylistWidget } from '../components/WebGraphicsPanel/AutoPlaylistWidget';
 
 export function WebGraphicsPanel() {
   const { gameId } = useParams();
-
-  const [game, setGame] = useState(null);
-  const [timerSeconds, setTimerSeconds] = useState(0); 
-  const [currentPeriod, setCurrentPeriod] = useState('1');
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [activePenalties, setActivePenalties] = useState([]);
   
-  const [periodLength, setPeriodLength] = useState(20);
-  const [otLength, setOtLength] = useState(5);
+  const {
+    game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
+    periodLength, otLength, socket, broadcastedGoals, broadcastedPenalties, 
+    triggerOverlay, toggleStaticOverlay, activeStaticOverlay,
+    isScoreboardVisible, toggleScoreboard
+  } = useWebGraphicsPanel(gameId);
 
-  const [socket, setSocket] = useState(null);
-  const [graphicCue, setGraphicCue] = useState([]);
-  const [lastShownId, setLastShownId] = useState(null);
+  // --- СТЕЙТЫ И ЛОГИКА ДЛЯ ПЕРЕРЫВА И ПРЕДМАТЧЕВОЙ ---
+  const [intermissionMins, setIntermissionMins] = useState(15);
+  const [intermissionTimeLeft, setIntermissionTimeLeft] = useState(15 * 60);
+  const [isIntermissionRunning, setIsIntermissionRunning] = useState(false);
 
-  const loadGameData = async () => {
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}`, {
-        headers: { 'Authorization': `Bearer ${getToken()}` }
-      });
-      const data = await res.json();
-      if (data.success) setGame(data.data);
-    } catch (err) { console.error(err); }
-  };
+  const [prematchMins, setPrematchMins] = useState(10);
+  const [prematchTimeLeft, setPrematchTimeLeft] = useState(10 * 60);
+  const [isPrematchRunning, setIsPrematchRunning] = useState(false);
 
-  useEffect(() => { loadGameData(); }, [gameId]);
-
+  // Таймеры перерыва и предматчевой
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_API_URL);
-    setSocket(newSocket);
-    newSocket.emit('join_game', gameId);
-
-    newSocket.on('timer_state', (state) => {
-        setTimerSeconds(state.seconds);
-        if (state.period) setCurrentPeriod(state.period);
-        setIsTimerRunning(state.isRunning);
-        setActivePenalties(state.penalties || []);
-        if (state.periodLength) setPeriodLength(state.periodLength);
-        if (state.otLength) setOtLength(state.otLength);
-    });
-
-    newSocket.on('timer_tick', (state) => {
-      setTimerSeconds(state.seconds);
-      if (state.isRunning !== undefined) setIsTimerRunning(state.isRunning);
-      if (state.penalties) setActivePenalties(state.penalties);
-    });
-
-    newSocket.on('new_event_saved', (eventData) => {
-      setGraphicCue(prev => [...prev, { ...eventData, cueId: Date.now() }]);
-      if (eventData.type === 'goal') loadGameData(); 
-    });
-
-    newSocket.on('score_updated', () => loadGameData());
-    newSocket.on('game_updated', () => loadGameData());
-
-    return () => newSocket.disconnect();
-  }, [gameId]);
+    let interval = null;
+    if (isIntermissionRunning && intermissionTimeLeft > 0) {
+      interval = setInterval(() => setIntermissionTimeLeft(prev => (prev <= 1 ? (setIsIntermissionRunning(false), 0) : prev - 1)), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isIntermissionRunning, intermissionTimeLeft]);
 
   useEffect(() => {
     let interval = null;
-    if (isTimerRunning) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-        setActivePenalties(prev => prev.map(p => ({ ...p, remaining: p.remaining > 0 ? p.remaining - 1 : 0 })));
-      }, 1000);
+    if (isPrematchRunning && prematchTimeLeft > 0) {
+      interval = setInterval(() => setPrematchTimeLeft(prev => (prev <= 1 ? (setIsPrematchRunning(false), 0) : prev - 1)), 1000);
     }
     return () => clearInterval(interval);
-  }, [isTimerRunning]);
+  }, [isPrematchRunning, prematchTimeLeft]);
 
-  const handleShowOverlay = (item) => {
-    socket?.emit('trigger_obs_overlay', { ...item, gameId });
-    setLastShownId(item.cueId);
-    setTimeout(() => {
-        setGraphicCue(prev => prev.filter(o => o.cueId !== item.cueId));
-    }, 2000);
+  // Функции синхронизации с OBS (Таймеры)
+  const syncIntermissionToObs = (running, timeLeft) => {
+    if (activeStaticOverlay === 'intermission') toggleStaticOverlay('intermission', { isPaused: !running, timeLeft: timeLeft, endTime: running ? Date.now() + timeLeft * 1000 : null }, true);
+  };
+  const syncPrematchToObs = (running, timeLeft) => {
+    if (activeStaticOverlay === 'prematch') toggleStaticOverlay('prematch', { isPaused: !running, timeLeft: timeLeft, endTime: running ? Date.now() + timeLeft * 1000 : null }, true);
   };
 
-  if (!game) return <div className="min-h-screen bg-slate-100 flex items-center justify-center">Загрузка...</div>;
+  // Хендлеры ПЕРЕРЫВА
+  const handleIntermissionStart = () => { if (intermissionTimeLeft > 0) { setIsIntermissionRunning(true); syncIntermissionToObs(true, intermissionTimeLeft); } };
+  const handleIntermissionPause = () => { setIsIntermissionRunning(false); syncIntermissionToObs(false, intermissionTimeLeft); };
+  const handleIntermissionStepper = (newMins) => { setIntermissionMins(newMins); const newTime = newMins * 60; setIsIntermissionRunning(false); setIntermissionTimeLeft(newTime); syncIntermissionToObs(false, newTime); };
+  const handleIntermissionToggle = () => {
+    if (activeStaticOverlay !== 'intermission') toggleStaticOverlay('intermission', { isPaused: !isIntermissionRunning, timeLeft: intermissionTimeLeft, endTime: isIntermissionRunning ? Date.now() + intermissionTimeLeft * 1000 : null });
+    else toggleStaticOverlay('intermission'); 
+  };
+
+  // Хендлеры ПРЕДМАТЧЕВОЙ
+  const handlePrematchStart = () => { if (prematchTimeLeft > 0) { setIsPrematchRunning(true); syncPrematchToObs(true, prematchTimeLeft); } };
+  const handlePrematchPause = () => { setIsPrematchRunning(false); syncPrematchToObs(false, prematchTimeLeft); };
+  const handlePrematchStepper = (newMins) => { setPrematchMins(newMins); const newTime = newMins * 60; setIsPrematchRunning(false); setPrematchTimeLeft(newTime); syncPrematchToObs(false, newTime); };
+  const handlePrematchToggle = () => {
+    if (activeStaticOverlay !== 'prematch') toggleStaticOverlay('prematch', { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null });
+    else toggleStaticOverlay('prematch'); 
+  };
+
+  // --- СТЕЙТЫ КАРУСЕЛЕЙ (СОСТАВЫ И ЛИДЕРЫ) ---
+  const [rosterSwitchSecs, setRosterSwitchSecs] = useState(8);
+  const handleRosterStepper = (newSecs) => { setRosterSwitchSecs(newSecs); if (activeStaticOverlay === 'team_roster') toggleStaticOverlay('team_roster', { switchDuration: newSecs }, true); };
+  const handleRosterToggle = () => { activeStaticOverlay !== 'team_roster' ? toggleStaticOverlay('team_roster', { switchDuration: rosterSwitchSecs }) : toggleStaticOverlay('team_roster'); };
+
+  const [leadersSwitchSecs, setLeadersSwitchSecs] = useState(7);
+  const handleLeadersStepper = (newSecs) => { setLeadersSwitchSecs(newSecs); if (activeStaticOverlay === 'team_leaders') toggleStaticOverlay('team_leaders', { switchDuration: newSecs }, true); };
+  const handleLeadersToggle = () => { activeStaticOverlay !== 'team_leaders' ? toggleStaticOverlay('team_leaders', { switchDuration: leadersSwitchSecs }) : toggleStaticOverlay('team_leaders'); };
+
+  // --- СТЕЙТЫ ОДНОРАЗОВЫХ ПЛАШЕК (АРЕНА, КОММЕНТАТОР, СУдьИ) ---
+  const [arenaDurationSecs, setArenaDurationSecs] = useState(10);
+  const handleArenaStepper = (newSecs) => { setArenaDurationSecs(newSecs); if (activeStaticOverlay === 'arena') toggleStaticOverlay('arena', { displayDuration: newSecs }, true); };
+  const handleArenaToggle = () => { activeStaticOverlay !== 'arena' ? toggleStaticOverlay('arena', { displayDuration: arenaDurationSecs }) : toggleStaticOverlay('arena'); };
+
+  const [commentatorDurationSecs, setCommentatorDurationSecs] = useState(10);
+  const handleCommentatorStepper = (newSecs) => { setCommentatorDurationSecs(newSecs); if (activeStaticOverlay === 'commentator') toggleStaticOverlay('commentator', { displayDuration: newSecs }, true); };
+  const handleCommentatorToggle = () => { activeStaticOverlay !== 'commentator' ? toggleStaticOverlay('commentator', { displayDuration: commentatorDurationSecs }) : toggleStaticOverlay('commentator'); };
+
+  const [refereesDurationSecs, setRefereesDurationSecs] = useState(10);
+  const handleRefereesStepper = (newSecs) => { setRefereesDurationSecs(newSecs); if (activeStaticOverlay === 'referees') toggleStaticOverlay('referees', { displayDuration: newSecs }, true); };
+  const handleRefereesToggle = () => { activeStaticOverlay !== 'referees' ? toggleStaticOverlay('referees', { displayDuration: refereesDurationSecs }) : toggleStaticOverlay('referees'); };
+
+  // АВТО-ОТКЛЮЧЕНИЕ ПЛАШЕК ПО ТАЙМЕРУ (Зеленая полоса гаснет)
+  useEffect(() => {
+    let timer;
+    if (activeStaticOverlay === 'arena') {
+      timer = setTimeout(() => toggleStaticOverlay('arena'), arenaDurationSecs * 1000);
+    } else if (activeStaticOverlay === 'commentator') {
+      timer = setTimeout(() => toggleStaticOverlay('commentator'), commentatorDurationSecs * 1000);
+    } else if (activeStaticOverlay === 'referees') {
+      timer = setTimeout(() => toggleStaticOverlay('referees'), refereesDurationSecs * 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [activeStaticOverlay, arenaDurationSecs, commentatorDurationSecs, refereesDurationSecs, toggleStaticOverlay]);
+
+  // --- ФУНКЦИЯ ДЛЯ АВТОПИЛОТА И СИНХРОНИЗАЦИИ ---
+  const getOverlayPayload = (type) => {
+    if (type === 'prematch') return { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null };
+    if (type === 'intermission') return { isPaused: !isIntermissionRunning, timeLeft: intermissionTimeLeft, endTime: isIntermissionRunning ? Date.now() + intermissionTimeLeft * 1000 : null };
+    if (type === 'team_roster') return { switchDuration: rosterSwitchSecs };
+    if (type === 'team_leaders') return { switchDuration: leadersSwitchSecs };
+    if (type === 'arena') return { displayDuration: arenaDurationSecs };
+    if (type === 'commentator') return { displayDuration: commentatorDurationSecs };
+    if (type === 'referees') return { displayDuration: refereesDurationSecs };
+    return null;
+  };
+
+  if (!game) return (
+    <div className="min-h-screen bg-gray-bg-light flex items-center justify-center font-bold text-xl uppercase tracking-widest text-graphite-light">
+      Загрузка...
+    </div>
+  );
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${('0' + (s % 60)).slice(-2)}`;
 
-  const getDisplaySeconds = () => {
-    let maxTime = 0;
-    if (currentPeriod === '1') maxTime = periodLength * 60;
-    else if (currentPeriod === '2') maxTime = periodLength * 2 * 60;
-    else if (currentPeriod === '3') maxTime = periodLength * 3 * 60;
-    else if (currentPeriod === 'OT') maxTime = (periodLength * 3 + otLength) * 60;
-    else return 0;
-    
-    const remaining = maxTime - timerSeconds;
-    return remaining > 0 ? remaining : 0;
+  const getEventDisplayTime = (secs, period) => {
+    if (period === 'SO') return 'Буллиты';
+    if (secs == null) return '';
+    const pLen = periodLength * 60;
+    let p = '1'; let relSecs = secs;
+    if (secs > pLen * 3) { p = 'ОТ'; relSecs = secs - pLen * 3; } 
+    else if (secs > pLen * 2) { p = '3'; relSecs = secs - pLen * 2; } 
+    else if (secs > pLen) { p = '2'; relSecs = secs - pLen; }
+    return `${p} пер • ${formatTime(relSecs)}`;
   };
 
-  const displaySeconds = getDisplaySeconds();
+  const sortEvents = (a, b) => {
+    const periods = { 'SO': 5, 'OT': 4, '3': 3, '2': 2, '1': 1 };
+    if (periods[b.period] !== periods[a.period]) return periods[b.period] - periods[a.period];
+    return b.time_seconds - a.time_seconds;
+  };
+
+  const getGoalSignature = (g) => `${g.id}_${g.primary_player_id || 'x'}_${g.assist1_id || 'x'}_${g.assist2_id || 'x'}`;
+  const validGoals = events.filter(e => e.event_type === 'goal' && e.primary_player_id).sort(sortEvents);
+  const lastGoal = validGoals.length > 0 ? validGoals[0] : null;
+
+  const getPenaltySignature = (p) => `${p.id}_${p.primary_player_id || 'x'}_${p.penalty_minutes || 'x'}_${p.penalty_violation || 'x'}`;
+  const validPenalties = events.filter(e => e.event_type === 'penalty' && e.primary_player_id).sort(sortEvents);
+  const lastPenalty = validPenalties.length > 0 ? validPenalties[0] : null;
+
+  const homeShortName = game.home_short_name || game.home_team_name?.substring(0, 3).toUpperCase() || 'ХОЗ';
+  const awayShortName = game.away_short_name || game.away_team_name?.substring(0, 3).toUpperCase() || 'ГОС';
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans">
-      <header className="bg-white p-4 shadow-sm border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-[1600px] mx-auto flex justify-between items-center">
-            <h1 className="text-2xl font-bold">Пульт Режиссера Графики</h1>
-            <div className="text-sm text-slate-500">Матч ID: {gameId} | {game.home_team_name} vs {game.away_team_name}</div>
-        </div>
-      </header>
-      <main className="max-w-[1600px] mx-auto p-6 grid grid-cols-1 xl:grid-cols-[1fr,2fr] gap-6">
-        <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Статус Табло (Live)</h2>
-                <div className="flex items-center justify-between border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <div className="text-center">
-                        <div className="text-4xl font-black text-slate-950">{game.home_score}</div>
-                        <div className="text-xs font-bold uppercase text-slate-600 tracking-tight">{game.home_team_name}</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="font-mono text-5xl font-black text-orange-600 tabular-nums">{formatTime(displaySeconds)}</div>
-                        <div className="text-xs font-bold uppercase text-slate-600">{currentPeriod} ПЕРИОД</div>
-                    </div>
-                    <div className="text-center">
-                        <div className="text-4xl font-black text-slate-950">{game.away_score}</div>
-                        <div className="text-xs font-bold uppercase text-slate-600 tracking-tight">{game.away_team_name}</div>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Штрафы на табло</h2>
-                {activePenalties.length === 0 && <p className="text-slate-500 text-sm">Нет активных штрафов</p>}
-                <div className="space-y-2">
-                    {activePenalties.map(p => (
-                        <div key={p.id} className="flex justify-between items-center bg-slate-50 p-3 rounded border border-slate-200 font-medium text-sm">
-                            <span className={p.team_id === game.home_team_id ? 'text-sky-700 font-bold' : 'text-red-700 font-bold'}>{p.player_name || `Игрок ID: ${p.player_id}`}</span>
-                            <span className="font-mono tabular-nums font-bold text-slate-950">{formatTime(p.remaining)}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
+    <div className="h-screen w-full bg-gray-bg-light text-graphite font-sans flex flex-col overflow-hidden relative">
+      
+      <main className="flex-1 flex w-full h-full min-h-0">
+        
+        {/* ЛЕВАЯ КОЛОНКА */}
+        <aside className="w-[30%] h-full flex flex-col min-h-0 overflow-y-auto custom-scrollbar border-r border-graphite/5 bg-graphite/5">
+          
+          <ScoreBoardWidget 
+            game={game} currentPeriod={currentPeriod} isTimerRunning={isTimerRunning}
+            activePenalties={activePenalties} timerSeconds={timerSeconds}
+            periodLength={periodLength} otLength={otLength}
+            isActive={isScoreboardVisible}
+            onToggle={toggleScoreboard}
+          />
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold flex items-center gap-2"><span className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></span> Очередь оверлеев для эфира (CG)</h2>
-                <span className="text-sm font-medium bg-slate-100 text-slate-600 px-3 py-1 rounded-full">{graphicCue.length} событий готовo</span>
+          <AutoPlaylistWidget 
+            activeStaticOverlay={activeStaticOverlay}
+            toggleStaticOverlay={toggleStaticOverlay}
+            getOverlayPayload={getOverlayPayload}
+          />
+
+          <div className="p-4 flex flex-col gap-4">
+            <EventBroadcastButton 
+              type="goal" event={lastGoal}
+              isFaded={lastGoal ? broadcastedGoals.includes(getGoalSignature(lastGoal)) : false}
+              isHome={lastGoal?.team_id === game.home_team_id}
+              homeShortName={homeShortName} awayShortName={awayShortName}
+              displayTime={lastGoal ? getEventDisplayTime(lastGoal.time_seconds, lastGoal.period) : ''}
+              onClick={() => triggerOverlay('goal', lastGoal, getGoalSignature(lastGoal))}
+            />
+
+            <EventBroadcastButton 
+              type="penalty" event={lastPenalty}
+              isFaded={lastPenalty ? broadcastedPenalties.includes(getPenaltySignature(lastPenalty)) : false}
+              isHome={lastPenalty?.team_id === game.home_team_id}
+              homeShortName={homeShortName} awayShortName={awayShortName}
+              displayTime={lastPenalty ? getEventDisplayTime(lastPenalty.time_seconds, lastPenalty.period) : ''}
+              onClick={() => triggerOverlay('penalty', lastPenalty, getPenaltySignature(lastPenalty))}
+            />
+          </div>
+
+        </aside>
+
+        {/* ПРАВАЯ КОЛОНКА */}
+        <section className="w-[70%] h-full flex flex-col min-h-0 bg-[#f8f9fa]">
+          
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="grid grid-cols-3 auto-rows-[175px] w-full border-t border-l border-graphite/10 bg-white">
+              
+              <StaticBroadcastButton 
+                title="Предматчевая" 
+                isActive={activeStaticOverlay === 'prematch'}
+                onClick={handlePrematchToggle}
+                hasTimer={true}
+                timerValue={prematchMins}
+                onTimerChange={handlePrematchStepper}
+                timerDisplay={formatTime(prematchTimeLeft)}
+                isTimerCritical={isPrematchRunning && prematchTimeLeft <= 60}
+                isTimerRunning={isPrematchRunning}
+                onTimerStart={handlePrematchStart}
+                onTimerPause={handlePrematchPause}
+              />
+
+              <StaticBroadcastButton 
+                title="Лидеры команд" 
+                isActive={activeStaticOverlay === 'team_leaders'}
+                onClick={handleLeadersToggle}
+                hasStepper={true}
+                stepperLabel="Смена (сек)"
+                stepperValue={leadersSwitchSecs}
+                stepperMin={3}
+                stepperMax={30}
+                onStepperChange={handleLeadersStepper}
+              />
+
+              <StaticBroadcastButton 
+                title="Составы" 
+                isActive={activeStaticOverlay === 'team_roster'}
+                onClick={handleRosterToggle}
+                hasStepper={true}
+                stepperLabel="Смена (сек)"
+                stepperValue={rosterSwitchSecs}
+                stepperMin={3}
+                stepperMax={30}
+                onStepperChange={handleRosterStepper}
+              />
+
+              <StaticBroadcastButton 
+                title="Облет арены" 
+                isActive={activeStaticOverlay === 'arena'}
+                onClick={handleArenaToggle}
+                hasStepper={true}
+                stepperLabel="Показ (сек)"
+                stepperValue={arenaDurationSecs}
+                stepperMin={3}
+                stepperMax={60}
+                onStepperChange={handleArenaStepper}
+                progressType="once"
+                progressDuration={arenaDurationSecs}
+              />
+
+              {/* Новая кнопка Комментатор */}
+              <StaticBroadcastButton 
+                title="Комментатор" 
+                isActive={activeStaticOverlay === 'commentator'}
+                onClick={handleCommentatorToggle}
+                hasStepper={true}
+                stepperLabel="Показ (сек)"
+                stepperValue={commentatorDurationSecs}
+                stepperMin={3}
+                stepperMax={60}
+                onStepperChange={handleCommentatorStepper}
+                progressType="once"
+                progressDuration={commentatorDurationSecs}
+              />
+
+              {/* Новая кнопка Судьи */}
+              <StaticBroadcastButton 
+                title="Судьи матча" 
+                isActive={activeStaticOverlay === 'referees'}
+                onClick={handleRefereesToggle}
+                hasStepper={true}
+                stepperLabel="Показ (сек)"
+                stepperValue={refereesDurationSecs}
+                stepperMin={3}
+                stepperMax={60}
+                onStepperChange={handleRefereesStepper}
+                progressType="once"
+                progressDuration={refereesDurationSecs}
+              />
+
+              <StaticBroadcastButton 
+                title="Перерыв" 
+                isActive={activeStaticOverlay === 'intermission'}
+                onClick={handleIntermissionToggle}
+                hasTimer={true}
+                timerValue={intermissionMins}
+                onTimerChange={handleIntermissionStepper}
+                timerDisplay={formatTime(intermissionTimeLeft)}
+                isTimerCritical={isIntermissionRunning && intermissionTimeLeft <= 60}
+                isTimerRunning={isIntermissionRunning}
+                onTimerStart={handleIntermissionStart}
+                onTimerPause={handleIntermissionPause}
+              />
             </div>
-            <div className="space-y-4">
-                {graphicCue.length === 0 && (
-                    <div className="text-center py-20 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
-                        <div className="text-5xl mb-4">📺</div>
-                        <div className="text-slate-600 font-medium">Ждем действий секретаря...</div>
-                    </div>
-                )}
-                {[...graphicCue].reverse().map(item => (
-                    <div key={item.cueId} className={`grid grid-cols-[80px,1fr,180px] items-center gap-4 p-5 rounded-xl border ${lastShownId === item.cueId ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 shadow-sm'}`}>
-                        <div className={`text-center font-bold px-3 py-1 rounded text-xs uppercase tracking-wider ${item.type === 'goal' ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900'}`}>
-                            {item.type === 'goal' ? 'ГОЛ' : 'ШТРАФ'}
-                        </div>
-                        <div>
-                            <div className="font-bold text-slate-950 text-lg">{item.text}</div>
-                            <div className="text-xs font-bold text-slate-500 uppercase">{item.team_name}</div>
-                        </div>
-                        <button onClick={() => handleShowOverlay(item)} disabled={lastShownId === item.cueId} className={`w-full font-bold py-3 rounded-lg text-sm transition ${lastShownId === item.cueId ? 'bg-slate-200 text-slate-500' : 'bg-slate-900 hover:bg-black text-white'}`}>
-                            {lastShownId === item.cueId ? 'В ЭФИРЕ...' : 'SHOW ON AIR'}
-                        </button>
-                    </div>
-                ))}
-            </div>
-        </div>
+          </div>
+        </section>
+
       </main>
     </div>
   );

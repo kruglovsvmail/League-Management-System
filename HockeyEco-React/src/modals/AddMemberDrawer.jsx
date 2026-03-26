@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Input } from '../../ui/Input';
-import { Button } from '../../ui/Button';
-import { Select } from '../../ui/Select';
-import { getImageUrl, getToken } from '../../utils/helpers';
+import { Input } from '../ui/Input';
+import { Button } from '../ui/Button';
+import { Select } from '../ui/Select';
+import { getImageUrl, getToken } from '../utils/helpers';
 
 const POSITIONS = ['goalie', 'defense', 'forward'];
 const POS_LABELS = { 'goalie': 'Вратарь', 'defense': 'Защитник', 'forward': 'Нападающий' };
