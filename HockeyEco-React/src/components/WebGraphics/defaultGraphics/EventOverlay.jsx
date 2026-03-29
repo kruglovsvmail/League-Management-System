@@ -24,6 +24,23 @@ export default function EventOverlay({ game, overlay }) {
     ? 'shadow-[0_0_40px_rgba(255,87,34,0.35)]' 
     : 'shadow-[0_0_40px_rgba(14,165,233,0.35)]';
 
+  // ==========================================
+  // ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ПОИСКА НОМЕРА
+  // ==========================================
+  const currentRoster = isHomeEvent ? game.home_roster : game.away_roster;
+  
+  const matchedPlayer = currentRoster?.find(p => 
+      p.last_name === overlay.data?.primary_last_name && 
+      p.first_name === overlay.data?.primary_first_name
+  );
+
+  const playerNumber = 
+      matchedPlayer?.jersey_number || 
+      overlay.data?.player_number || 
+      overlay.data?.jersey_number || 
+      overlay.data?.primary_jersey_number || 
+      '00';
+
   return (
     <AnimationWrapper
       type="event"
@@ -63,8 +80,9 @@ export default function EventOverlay({ game, overlay }) {
         </div>
 
         <div className="flex-1 px-8 py-5 flex flex-col justify-center relative overflow-hidden">
+            {/* Вот здесь теперь выводится playerNumber вместо жестко заданного primary_jersey_number */}
             <div className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-[140px] italic text-white/[0.03] tabular-nums leading-none pointer-events-none select-none">
-              {overlay.data.primary_jersey_number || '00'}
+              {playerNumber}
             </div>
             
             <div className="relative z-10 flex flex-col gap-1.5">

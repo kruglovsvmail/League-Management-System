@@ -13,19 +13,18 @@ export function WebGraphicsPanel() {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
     periodLength, otLength, socket, broadcastedGoals, broadcastedPenalties, 
     triggerOverlay, toggleStaticOverlay, activeStaticOverlay,
-    isScoreboardVisible, toggleScoreboard
+    isScoreboardVisible, toggleScoreboard, activeEventOverlay
   } = useWebGraphicsPanel(gameId);
 
   // --- СТЕЙТЫ И ЛОГИКА ДЛЯ ПЕРЕРЫВА И ПРЕДМАТЧЕВОЙ ---
-  const [intermissionMins, setIntermissionMins] = useState(15);
-  const [intermissionTimeLeft, setIntermissionTimeLeft] = useState(15 * 60);
+  const [intermissionMins, setIntermissionMins] = useState(2);
+  const [intermissionTimeLeft, setIntermissionTimeLeft] = useState(2 * 60);
   const [isIntermissionRunning, setIsIntermissionRunning] = useState(false);
 
   const [prematchMins, setPrematchMins] = useState(10);
   const [prematchTimeLeft, setPrematchTimeLeft] = useState(10 * 60);
   const [isPrematchRunning, setIsPrematchRunning] = useState(false);
 
-  // Таймеры перерыва и предматчевой
   useEffect(() => {
     let interval = null;
     if (isIntermissionRunning && intermissionTimeLeft > 0) {
@@ -42,7 +41,6 @@ export function WebGraphicsPanel() {
     return () => clearInterval(interval);
   }, [isPrematchRunning, prematchTimeLeft]);
 
-  // Функции синхронизации с OBS (Таймеры)
   const syncIntermissionToObs = (running, timeLeft) => {
     if (activeStaticOverlay === 'intermission') toggleStaticOverlay('intermission', { isPaused: !running, timeLeft: timeLeft, endTime: running ? Date.now() + timeLeft * 1000 : null }, true);
   };
@@ -50,7 +48,6 @@ export function WebGraphicsPanel() {
     if (activeStaticOverlay === 'prematch') toggleStaticOverlay('prematch', { isPaused: !running, timeLeft: timeLeft, endTime: running ? Date.now() + timeLeft * 1000 : null }, true);
   };
 
-  // Хендлеры ПЕРЕРЫВА
   const handleIntermissionStart = () => { if (intermissionTimeLeft > 0) { setIsIntermissionRunning(true); syncIntermissionToObs(true, intermissionTimeLeft); } };
   const handleIntermissionPause = () => { setIsIntermissionRunning(false); syncIntermissionToObs(false, intermissionTimeLeft); };
   const handleIntermissionStepper = (newMins) => { setIntermissionMins(newMins); const newTime = newMins * 60; setIsIntermissionRunning(false); setIntermissionTimeLeft(newTime); syncIntermissionToObs(false, newTime); };
@@ -59,7 +56,6 @@ export function WebGraphicsPanel() {
     else toggleStaticOverlay('intermission'); 
   };
 
-  // Хендлеры ПРЕДМАТЧЕВОЙ
   const handlePrematchStart = () => { if (prematchTimeLeft > 0) { setIsPrematchRunning(true); syncPrematchToObs(true, prematchTimeLeft); } };
   const handlePrematchPause = () => { setIsPrematchRunning(false); syncPrematchToObs(false, prematchTimeLeft); };
   const handlePrematchStepper = (newMins) => { setPrematchMins(newMins); const newTime = newMins * 60; setIsPrematchRunning(false); setPrematchTimeLeft(newTime); syncPrematchToObs(false, newTime); };
@@ -68,7 +64,7 @@ export function WebGraphicsPanel() {
     else toggleStaticOverlay('prematch'); 
   };
 
-  // --- СТЕЙТЫ КАРУСЕЛЕЙ (СОСТАВЫ И ЛИДЕРЫ) ---
+  // --- СТЕЙТЫ КАРУСЕЛЕЙ ---
   const [rosterSwitchSecs, setRosterSwitchSecs] = useState(8);
   const handleRosterStepper = (newSecs) => { setRosterSwitchSecs(newSecs); if (activeStaticOverlay === 'team_roster') toggleStaticOverlay('team_roster', { switchDuration: newSecs }, true); };
   const handleRosterToggle = () => { activeStaticOverlay !== 'team_roster' ? toggleStaticOverlay('team_roster', { switchDuration: rosterSwitchSecs }) : toggleStaticOverlay('team_roster'); };
@@ -77,7 +73,7 @@ export function WebGraphicsPanel() {
   const handleLeadersStepper = (newSecs) => { setLeadersSwitchSecs(newSecs); if (activeStaticOverlay === 'team_leaders') toggleStaticOverlay('team_leaders', { switchDuration: newSecs }, true); };
   const handleLeadersToggle = () => { activeStaticOverlay !== 'team_leaders' ? toggleStaticOverlay('team_leaders', { switchDuration: leadersSwitchSecs }) : toggleStaticOverlay('team_leaders'); };
 
-  // --- СТЕЙТЫ ОДНОРАЗОВЫХ ПЛАШЕК (АРЕНА, КОММЕНТАТОР, СУдьИ) ---
+  // --- СТЕЙТЫ ОДНОРАЗОВЫХ ПЛАШЕК ---
   const [arenaDurationSecs, setArenaDurationSecs] = useState(10);
   const handleArenaStepper = (newSecs) => { setArenaDurationSecs(newSecs); if (activeStaticOverlay === 'arena') toggleStaticOverlay('arena', { displayDuration: newSecs }, true); };
   const handleArenaToggle = () => { activeStaticOverlay !== 'arena' ? toggleStaticOverlay('arena', { displayDuration: arenaDurationSecs }) : toggleStaticOverlay('arena'); };
@@ -90,7 +86,6 @@ export function WebGraphicsPanel() {
   const handleRefereesStepper = (newSecs) => { setRefereesDurationSecs(newSecs); if (activeStaticOverlay === 'referees') toggleStaticOverlay('referees', { displayDuration: newSecs }, true); };
   const handleRefereesToggle = () => { activeStaticOverlay !== 'referees' ? toggleStaticOverlay('referees', { displayDuration: refereesDurationSecs }) : toggleStaticOverlay('referees'); };
 
-  // АВТО-ОТКЛЮЧЕНИЕ ПЛАШЕК ПО ТАЙМЕРУ (Зеленая полоса гаснет)
   useEffect(() => {
     let timer;
     if (activeStaticOverlay === 'arena') {
@@ -103,7 +98,6 @@ export function WebGraphicsPanel() {
     return () => clearTimeout(timer);
   }, [activeStaticOverlay, arenaDurationSecs, commentatorDurationSecs, refereesDurationSecs, toggleStaticOverlay]);
 
-  // --- ФУНКЦИЯ ДЛЯ АВТОПИЛОТА И СИНХРОНИЗАЦИИ ---
   const getOverlayPayload = (type) => {
     if (type === 'prematch') return { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null };
     if (type === 'intermission') return { isPaused: !isIntermissionRunning, timeLeft: intermissionTimeLeft, endTime: isIntermissionRunning ? Date.now() + intermissionTimeLeft * 1000 : null };
@@ -131,7 +125,7 @@ export function WebGraphicsPanel() {
     if (secs > pLen * 3) { p = 'ОТ'; relSecs = secs - pLen * 3; } 
     else if (secs > pLen * 2) { p = '3'; relSecs = secs - pLen * 2; } 
     else if (secs > pLen) { p = '2'; relSecs = secs - pLen; }
-    return `${p} пер • ${formatTime(relSecs)}`;
+    return `${p} пер - ${formatTime(relSecs)}`;
   };
 
   const sortEvents = (a, b) => {
@@ -157,8 +151,9 @@ export function WebGraphicsPanel() {
       <main className="flex-1 flex w-full h-full min-h-0">
         
         {/* ЛЕВАЯ КОЛОНКА */}
-        <aside className="w-[30%] h-full flex flex-col min-h-0 overflow-y-auto custom-scrollbar border-r border-graphite/5 bg-graphite/5">
+        <aside className="w-[35%] h-full flex flex-col min-h-0 overflow-y-auto custom-scrollbar border-r border-graphite/5 bg-[#e8e8e8ff]">
           
+          {/* БЛОК 1: Главное табло */}
           <ScoreBoardWidget 
             game={game} currentPeriod={currentPeriod} isTimerRunning={isTimerRunning}
             activePenalties={activePenalties} timerSeconds={timerSeconds}
@@ -167,135 +162,121 @@ export function WebGraphicsPanel() {
             onToggle={toggleScoreboard}
           />
 
+          {/* БЛОК 2: Горячие события */}
+          <div className="bg-white border-b border-graphite/10 mb-3 flex flex-col shrink-0">
+            {/* ШАПКА ВИДЖЕТА (с внутренним паддингом) */}
+            <div className="flex items-center justify-between px-4 py-3">
+               <div className="flex items-center gap-2">
+                   <svg className="w-4 h-4 text-graphite/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                   </svg>
+                   <h3 className="text-[11px] font-black uppercase tracking-widest text-graphite/80 leading-none mt-0.5">
+                      Горячие события
+                   </h3>
+               </div>
+               <div className="flex items-center">
+                   <span className="text-[10px] font-bold text-graphite/30 uppercase tracking-widest leading-none">
+                       Авто-захват
+                   </span>
+               </div>
+            </div>
+
+            {/* КОНТЕЙНЕР КНОПОК (без гэпа и внешнего паддинга, с верхней линией) */}
+            <div className="flex min-w-0 border-t border-graphite/10">
+              <div className="flex-1 min-w-0">
+                 <EventBroadcastButton 
+                   type="goal" event={lastGoal}
+                   isActive={activeEventOverlay === (lastGoal ? getGoalSignature(lastGoal) : null)}
+                   isFaded={lastGoal ? broadcastedGoals.includes(getGoalSignature(lastGoal)) : false}
+                   isHome={lastGoal?.team_id === game.home_team_id}
+                   homeShortName={homeShortName} awayShortName={awayShortName}
+                   displayTime={lastGoal ? getEventDisplayTime(lastGoal.time_seconds, lastGoal.period) : ''}
+                   onClick={() => triggerOverlay('goal', lastGoal, getGoalSignature(lastGoal))}
+                 />
+              </div>
+              <div className="flex-1 min-w-0">
+                 <EventBroadcastButton 
+                   type="penalty" event={lastPenalty}
+                   isActive={activeEventOverlay === (lastPenalty ? getPenaltySignature(lastPenalty) : null)}
+                   isFaded={lastPenalty ? broadcastedPenalties.includes(getPenaltySignature(lastPenalty)) : false}
+                   isHome={lastPenalty?.team_id === game.home_team_id}
+                   homeShortName={homeShortName} awayShortName={awayShortName}
+                   displayTime={lastPenalty ? getEventDisplayTime(lastPenalty.time_seconds, lastPenalty.period) : ''}
+                   onClick={() => triggerOverlay('penalty', lastPenalty, getPenaltySignature(lastPenalty))}
+                 />
+              </div>
+            </div>
+          </div>
+
+          {/* БЛОК 3: Автопилот */}
           <AutoPlaylistWidget 
             activeStaticOverlay={activeStaticOverlay}
             toggleStaticOverlay={toggleStaticOverlay}
             getOverlayPayload={getOverlayPayload}
           />
 
-          <div className="p-4 flex flex-col gap-4">
-            <EventBroadcastButton 
-              type="goal" event={lastGoal}
-              isFaded={lastGoal ? broadcastedGoals.includes(getGoalSignature(lastGoal)) : false}
-              isHome={lastGoal?.team_id === game.home_team_id}
-              homeShortName={homeShortName} awayShortName={awayShortName}
-              displayTime={lastGoal ? getEventDisplayTime(lastGoal.time_seconds, lastGoal.period) : ''}
-              onClick={() => triggerOverlay('goal', lastGoal, getGoalSignature(lastGoal))}
-            />
-
-            <EventBroadcastButton 
-              type="penalty" event={lastPenalty}
-              isFaded={lastPenalty ? broadcastedPenalties.includes(getPenaltySignature(lastPenalty)) : false}
-              isHome={lastPenalty?.team_id === game.home_team_id}
-              homeShortName={homeShortName} awayShortName={awayShortName}
-              displayTime={lastPenalty ? getEventDisplayTime(lastPenalty.time_seconds, lastPenalty.period) : ''}
-              onClick={() => triggerOverlay('penalty', lastPenalty, getPenaltySignature(lastPenalty))}
-            />
-          </div>
-
         </aside>
 
         {/* ПРАВАЯ КОЛОНКА */}
-        <section className="w-[70%] h-full flex flex-col min-h-0 bg-[#f8f9fa]">
+        <section className="w-[65%] h-full flex flex-col min-h-0 bg-[#f8f9fa]">
           
           <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <div className="grid grid-cols-3 auto-rows-[175px] w-full border-t border-l border-graphite/10 bg-white">
+            <div className="grid grid-cols-4 auto-rows-[187px] w-full border-t border-l border-graphite/10 bg-white">
               
               <StaticBroadcastButton 
-                title="Предматчевая" 
-                isActive={activeStaticOverlay === 'prematch'}
-                onClick={handlePrematchToggle}
-                hasTimer={true}
-                timerValue={prematchMins}
-                onTimerChange={handlePrematchStepper}
-                timerDisplay={formatTime(prematchTimeLeft)}
-                isTimerCritical={isPrematchRunning && prematchTimeLeft <= 60}
-                isTimerRunning={isPrematchRunning}
-                onTimerStart={handlePrematchStart}
-                onTimerPause={handlePrematchPause}
+                title="Предматчевая" dragType="prematch"
+                isActive={activeStaticOverlay === 'prematch'} onClick={handlePrematchToggle}
+                hasTimer={true} timerValue={prematchMins} onTimerChange={handlePrematchStepper}
+                timerDisplay={formatTime(prematchTimeLeft)} isTimerCritical={isPrematchRunning && prematchTimeLeft <= 60}
+                isTimerRunning={isPrematchRunning} onTimerStart={handlePrematchStart} onTimerPause={handlePrematchPause}
+              />
+              
+              <StaticBroadcastButton 
+                title="Перерыв" dragType="intermission"
+                isActive={activeStaticOverlay === 'intermission'} onClick={handleIntermissionToggle}
+                hasTimer={true} timerValue={intermissionMins} onTimerChange={handleIntermissionStepper}
+                timerDisplay={formatTime(intermissionTimeLeft)} isTimerCritical={isIntermissionRunning && intermissionTimeLeft <= 60}
+                isTimerRunning={isIntermissionRunning} onTimerStart={handleIntermissionStart} onTimerPause={handleIntermissionPause}
               />
 
               <StaticBroadcastButton 
-                title="Лидеры команд" 
-                isActive={activeStaticOverlay === 'team_leaders'}
-                onClick={handleLeadersToggle}
-                hasStepper={true}
-                stepperLabel="Смена (сек)"
-                stepperValue={leadersSwitchSecs}
-                stepperMin={3}
-                stepperMax={30}
-                onStepperChange={handleLeadersStepper}
+                title="Лидеры" dragType="team_leaders"
+                isActive={activeStaticOverlay === 'team_leaders'} onClick={handleLeadersToggle}
+                hasStepper={true} stepperLabel="Смена (сек)" stepperValue={leadersSwitchSecs}
+                stepperMin={3} stepperMax={30} onStepperChange={handleLeadersStepper}
               />
 
               <StaticBroadcastButton 
-                title="Составы" 
-                isActive={activeStaticOverlay === 'team_roster'}
-                onClick={handleRosterToggle}
-                hasStepper={true}
-                stepperLabel="Смена (сек)"
-                stepperValue={rosterSwitchSecs}
-                stepperMin={3}
-                stepperMax={30}
-                onStepperChange={handleRosterStepper}
+                title="Составы" dragType="team_roster"
+                isActive={activeStaticOverlay === 'team_roster'} onClick={handleRosterToggle}
+                hasStepper={true} stepperLabel="Смена (сек)" stepperValue={rosterSwitchSecs}
+                stepperMin={3} stepperMax={30} onStepperChange={handleRosterStepper}
               />
 
               <StaticBroadcastButton 
-                title="Облет арены" 
-                isActive={activeStaticOverlay === 'arena'}
-                onClick={handleArenaToggle}
-                hasStepper={true}
-                stepperLabel="Показ (сек)"
-                stepperValue={arenaDurationSecs}
-                stepperMin={3}
-                stepperMax={60}
-                onStepperChange={handleArenaStepper}
-                progressType="once"
-                progressDuration={arenaDurationSecs}
-              />
-
-              {/* Новая кнопка Комментатор */}
-              <StaticBroadcastButton 
-                title="Комментатор" 
-                isActive={activeStaticOverlay === 'commentator'}
-                onClick={handleCommentatorToggle}
-                hasStepper={true}
-                stepperLabel="Показ (сек)"
-                stepperValue={commentatorDurationSecs}
-                stepperMin={3}
-                stepperMax={60}
-                onStepperChange={handleCommentatorStepper}
-                progressType="once"
-                progressDuration={commentatorDurationSecs}
-              />
-
-              {/* Новая кнопка Судьи */}
-              <StaticBroadcastButton 
-                title="Судьи матча" 
-                isActive={activeStaticOverlay === 'referees'}
-                onClick={handleRefereesToggle}
-                hasStepper={true}
-                stepperLabel="Показ (сек)"
-                stepperValue={refereesDurationSecs}
-                stepperMin={3}
-                stepperMax={60}
-                onStepperChange={handleRefereesStepper}
-                progressType="once"
-                progressDuration={refereesDurationSecs}
+                title="Арена" dragType="arena"
+                isActive={activeStaticOverlay === 'arena'} onClick={handleArenaToggle}
+                hasStepper={true} stepperLabel="Показ (сек)" stepperValue={arenaDurationSecs}
+                stepperMin={3} stepperMax={60} onStepperChange={handleArenaStepper}
+                progressType="once" progressDuration={arenaDurationSecs}
               />
 
               <StaticBroadcastButton 
-                title="Перерыв" 
-                isActive={activeStaticOverlay === 'intermission'}
-                onClick={handleIntermissionToggle}
-                hasTimer={true}
-                timerValue={intermissionMins}
-                onTimerChange={handleIntermissionStepper}
-                timerDisplay={formatTime(intermissionTimeLeft)}
-                isTimerCritical={isIntermissionRunning && intermissionTimeLeft <= 60}
-                isTimerRunning={isIntermissionRunning}
-                onTimerStart={handleIntermissionStart}
-                onTimerPause={handleIntermissionPause}
+                title="Комментатор" dragType="commentator"
+                isActive={activeStaticOverlay === 'commentator'} onClick={handleCommentatorToggle}
+                hasStepper={true} stepperLabel="Показ (сек)" stepperValue={commentatorDurationSecs}
+                stepperMin={3} stepperMax={60} onStepperChange={handleCommentatorStepper}
+                progressType="once" progressDuration={commentatorDurationSecs}
               />
+
+              <StaticBroadcastButton 
+                title="Судьи" dragType="referees"
+                isActive={activeStaticOverlay === 'referees'} onClick={handleRefereesToggle}
+                hasStepper={true} stepperLabel="Показ (сек)" stepperValue={refereesDurationSecs}
+                stepperMin={3} stepperMax={60} onStepperChange={handleRefereesStepper}
+                progressType="once" progressDuration={refereesDurationSecs}
+              />
+
             </div>
           </div>
         </section>

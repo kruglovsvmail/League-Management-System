@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { getToken } from '../../utils/helpers';
 
@@ -18,9 +18,10 @@ export function useWebGraphicsPanel(gameId) {
   const [broadcastedPenalties, setBroadcastedPenalties] = useState([]);
   
   const [activeStaticOverlay, setActiveStaticOverlay] = useState(null);
+  const [activeEventOverlay, setActiveEventOverlay] = useState(null); 
   const [isScoreboardVisible, setIsScoreboardVisible] = useState(true);
 
-  const loadGameData = async () => {
+  const loadGameData = useCallback(async () => {
     try {
       const [resGame, resEvents] = await Promise.all([
         fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}`, { headers: { 'Authorization': `Bearer ${getToken()}` } }),
@@ -39,9 +40,9 @@ export function useWebGraphicsPanel(gameId) {
         setEvents(dataEvents.data);
       }
     } catch (err) { console.error(err); }
-  };
+  }, [gameId]);
 
-  useEffect(() => { loadGameData(); }, [gameId]);
+  useEffect(() => { loadGameData(); }, [loadGameData]);
 
   useEffect(() => {
     const storedGoals = localStorage.getItem(`graphics_goals_${gameId}`);
@@ -78,7 +79,7 @@ export function useWebGraphicsPanel(gameId) {
     newSocket.on('game_updated', () => loadGameData());
 
     return () => newSocket.disconnect();
-  }, [gameId]);
+  }, [gameId, loadGameData]);
 
   useEffect(() => {
     let interval = null;
@@ -91,47 +92,60 @@ export function useWebGraphicsPanel(gameId) {
     return () => clearInterval(interval);
   }, [isTimerRunning]);
 
-  const triggerOverlay = (type, data, signature) => {
+  const triggerOverlay = useCallback((type, data, signature) => {
     socket?.emit('trigger_obs_overlay', { type, gameId, data });
+
+    setActiveEventOverlay(signature);
+    setTimeout(() => {
+      setActiveEventOverlay(prev => prev === signature ? null : prev);
+    }, 10000);
+
     if (type === 'goal') {
-      const updated = [...broadcastedGoals, signature];
-      setBroadcastedGoals(updated);
-      localStorage.setItem(`graphics_goals_${gameId}`, JSON.stringify(updated));
+      setBroadcastedGoals(prev => {
+        if (prev.includes(signature)) return prev;
+        const updated = [...prev, signature];
+        localStorage.setItem(`graphics_goals_${gameId}`, JSON.stringify(updated));
+        return updated;
+      });
     } else if (type === 'penalty') {
-      const updated = [...broadcastedPenalties, signature];
-      setBroadcastedPenalties(updated);
-      localStorage.setItem(`graphics_penalties_${gameId}`, JSON.stringify(updated));
+      setBroadcastedPenalties(prev => {
+        if (prev.includes(signature)) return prev;
+        const updated = [...prev, signature];
+        localStorage.setItem(`graphics_penalties_${gameId}`, JSON.stringify(updated));
+        return updated;
+      });
     }
-  };
+  }, [socket, gameId]);
 
-  // ДОБАВЛЕН ФЛАГ forceUpdate ДЛЯ ОБНОВЛЕНИЯ ДАННЫХ БЕЗ ЗАКРЫТИЯ ПЛАШКИ
-  const toggleStaticOverlay = (type, data = null, forceUpdate = false) => {
-    if (activeStaticOverlay === type) {
-        if (forceUpdate) {
-            // Если графика уже в эфире и мы принудительно обновляем данные
-            socket?.emit('trigger_obs_overlay', { action: 'show', type, gameId, duration: 'infinite', data });
-        } else {
-            // Обычный клик по активной кнопке - выключаем графику
-            socket?.emit('trigger_obs_overlay', { action: 'hide', type, gameId });
-            setActiveStaticOverlay(null);
-        }
-    } else {
-        // Включаем новую графику
-        socket?.emit('trigger_obs_overlay', { action: 'show', type, gameId, duration: 'infinite', data });
-        setActiveStaticOverlay(type);
-    }
-  };
+  const toggleStaticOverlay = useCallback((type, data = null, forceUpdate = false) => {
+    setActiveStaticOverlay(prevActive => {
+      if (prevActive === type) {
+          if (forceUpdate) {
+              socket?.emit('trigger_obs_overlay', { action: 'show', type, gameId, duration: 'infinite', data });
+              return prevActive;
+          } else {
+              socket?.emit('trigger_obs_overlay', { action: 'hide', type, gameId });
+              return null;
+          }
+      } else {
+          socket?.emit('trigger_obs_overlay', { action: 'show', type, gameId, duration: 'infinite', data });
+          return type;
+      }
+    });
+  }, [socket, gameId]);
 
-  const toggleScoreboard = () => {
-    const newState = !isScoreboardVisible;
-    setIsScoreboardVisible(newState);
-    socket?.emit('trigger_obs_overlay', { type: 'scoreboard', action: newState ? 'show' : 'hide', gameId });
-  };
+  const toggleScoreboard = useCallback(() => {
+    setIsScoreboardVisible(prev => {
+      const newState = !prev;
+      socket?.emit('trigger_obs_overlay', { type: 'scoreboard', action: newState ? 'show' : 'hide', gameId });
+      return newState;
+    });
+  }, [socket, gameId]);
 
   return {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
     periodLength, otLength, socket, broadcastedGoals, broadcastedPenalties, 
     triggerOverlay, toggleStaticOverlay, activeStaticOverlay,
-    isScoreboardVisible, toggleScoreboard
+    isScoreboardVisible, toggleScoreboard, activeEventOverlay
   };
 }

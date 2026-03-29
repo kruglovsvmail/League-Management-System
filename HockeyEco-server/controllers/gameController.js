@@ -101,21 +101,37 @@ export const getPublicGameById = async (req, res) => {
             game.home_roster = rosterRes.rows.filter(r => r.team_id === game.home_team_id);
             game.away_roster = rosterRes.rows.filter(r => r.team_id === game.away_team_id);
 
-            // 3. Получение всех голов
+           // 3. Получение всех голов
             const goalsQuery = `
                 SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.goal_strength,
                        u_scorer.last_name as scorer_last_name, u_scorer.first_name as scorer_first_name,
                        u_a1.last_name as a1_last_name, u_a1.first_name as a1_first_name,
-                       u_a2.last_name as a2_last_name, u_a2.first_name as a2_first_name
+                       u_a2.last_name as a2_last_name, u_a2.first_name as a2_first_name,
+                       gr.jersey_number as player_number
                 FROM game_events ge
                 LEFT JOIN users u_scorer ON ge.scorer_id = u_scorer.id
                 LEFT JOIN users u_a1 ON ge.assist1_id = u_a1.id
                 LEFT JOIN users u_a2 ON ge.assist2_id = u_a2.id
+                LEFT JOIN game_rosters gr ON gr.player_id = u_scorer.id AND gr.game_id = $1 AND gr.team_id = ge.team_id
                 WHERE ge.game_id = $1 AND ge.event_type = 'goal'
                 ORDER BY ge.time_seconds ASC
             `;
             const goalsRes = await pool.query(goalsQuery, [game.id]);
             game.goals = goalsRes.rows;
+
+            // 3.1. Получение всех удалений (Добавлено для графики OBS)
+            const penaltiesQuery = `
+                SELECT ge.*, 
+                       u_pen.last_name as player_last_name, u_pen.first_name as player_first_name,
+                       gr.jersey_number as player_number
+                FROM game_events ge
+                LEFT JOIN users u_pen ON ge.penalty_player_id = u_pen.id
+                LEFT JOIN game_rosters gr ON gr.player_id = u_pen.id AND gr.game_id = $1 AND gr.team_id = ge.team_id
+                WHERE ge.game_id = $1 AND ge.event_type = 'penalty'
+                ORDER BY ge.time_seconds ASC
+            `;
+            const penaltiesRes = await pool.query(penaltiesQuery, [game.id]);
+            game.penalties = penaltiesRes.rows;
 
             // 4. Получение судей и комментатора
             const [refRes, mediaRes] = await Promise.all([

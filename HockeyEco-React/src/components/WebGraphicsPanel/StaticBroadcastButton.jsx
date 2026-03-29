@@ -3,6 +3,7 @@ import { Stepper } from '../../ui/Stepper';
 
 export function StaticBroadcastButton({ 
   title, description, isActive, onClick, 
+  dragType, // Идентификатор для Drag & Drop
   hasTimer = false, timerValue = 2, onTimerChange, timerDisplay, isTimerCritical,
   isTimerRunning, onTimerStart, onTimerPause,
   hasStepper = false, stepperLabel = "", stepperValue = 0, onStepperChange, stepperMin = 0, stepperMax = 99,
@@ -14,7 +15,7 @@ export function StaticBroadcastButton({
         onClick={onClick}
         role="button"
         tabIndex={0}
-        className={`relative cursor-pointer flex flex-col items-center justify-center text-center transition-colors duration-200 border-r border-b border-graphite/20 outline-none select-none overflow-hidden
+        className={`relative cursor-pointer flex flex-col items-center justify-center text-center transition-colors duration-200 border-r border-b border-graphite/20 outline-none select-none overflow-hidden group
           ${hasTimer ? 'p-2' : hasStepper ? 'p-3' : 'p-5'} 
           ${isActive 
             ? 'bg-status-accepted/10 shadow-[inset_0_0_20px_rgba(34,197,94,0.1)]' 
@@ -23,6 +24,29 @@ export function StaticBroadcastButton({
         `}
         title={isActive ? "Нажмите, чтобы убрать из эфира" : "Нажмите, чтобы вывести графику в эфир"}
       >
+        
+        {/* Хваталка для перетаскивания (Drag & Drop) */}
+        {dragType && (
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('playlist-item', dragType);
+              e.dataTransfer.setData('playlist-label', title);
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className={`absolute top-2 left-2 p-1.5 rounded cursor-grab active:cursor-grabbing z-10 transition-opacity duration-200 
+              ${isActive ? 'text-status-accepted/50 hover:bg-status-accepted/10 hover:text-status-accepted' : 'text-graphite/20 hover:bg-graphite/10 hover:text-graphite/60 opacity-0 group-hover:opacity-100'}
+            `}
+            title="Потяните, чтобы добавить в плейлист автопилота"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/>
+              <circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>
+            </svg>
+          </div>
+        )}
+
         {/* Маркер активного состояния (Статичный или Анимированный для Арены) */}
         {isActive && (
           <div className="absolute top-0 left-0 right-0 h-1 bg-status-accepted/20">
@@ -44,23 +68,31 @@ export function StaticBroadcastButton({
         
         {hasTimer ? (
           <>
-            <div className="flex items-center justify-center gap-3 mb-2" onClick={e => e.stopPropagation()}>
-              <span className={`font-mono text-3xl font-black leading-none ${isTimerCritical ? 'text-status-rejected animate-pulse' : 'text-graphite/50'}`}>
+            <div className="flex items-center justify-center gap-4 mb-3" onClick={e => e.stopPropagation()}>
+              <span className={`font-mono text-2xl font-black leading-none min-w-[70px] text-right ${isTimerCritical ? 'text-status-rejected animate-pulse' : 'text-graphite/60'}`}>
                 {timerDisplay}
               </span>
               
               {isTimerRunning ? (
-                <button onClick={onTimerPause} className="w-8 h-8 rounded bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white transition-colors flex items-center justify-center shadow-sm" title="Пауза">
-                   <svg className="w-1 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                <button 
+                  onClick={onTimerPause} 
+                  className="h-6 px-2 rounded-full bg-status-rejected text-white hover:bg-status-rejected/90 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95" 
+                  title="Поставить таймер на паузу"
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest mt-0.5">Пауза</span>
                 </button>
               ) : (
-                <button onClick={onTimerStart} className="w-8 h-8 rounded bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white transition-colors flex items-center justify-center shadow-sm" title="Старт">
-                   <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                <button 
+                  onClick={onTimerStart} 
+                  className="h-6 px-2 rounded-full bg-status-accepted text-white hover:bg-status-accepted/90 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95" 
+                  title="Запустить таймер"
+                >
+                 <span className="text-[10px] font-black uppercase tracking-widest mt-0.5">Старт</span>
                 </button>
               )}
             </div>
 
-            <div onClick={e => e.stopPropagation()} className="cursor-default">
+            <div onClick={e => e.stopPropagation()} className="cursor-default mt-1">
                <Stepper initialValue={timerValue} min={1} max={30} onChange={onTimerChange} />
             </div>
           </>

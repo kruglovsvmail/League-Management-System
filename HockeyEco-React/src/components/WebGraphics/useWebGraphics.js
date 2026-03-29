@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { io } from 'socket.io-client';
+import { calculatePenaltyTimelines } from '../GameLiveDesk/GameDeskShared';
 
 export function useWebGraphics(gameId) {
   const [game, setGame] = useState(null);
   const [timerSeconds, setTimerSeconds] = useState(0); 
   const [currentPeriod, setCurrentPeriod] = useState('1');
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [activePenalties, setActivePenalties] = useState([]);
   
   const [periodLength, setPeriodLength] = useState(20);
   const [otLength, setOtLength] = useState(5);
@@ -59,14 +59,12 @@ export function useWebGraphics(gameId) {
         setTimerSeconds(state.seconds);
         if (state.period) setCurrentPeriod(state.period);
         setIsTimerRunning(state.isRunning);
-        setActivePenalties(state.penalties || []);
         if (state.periodLength) setPeriodLength(state.periodLength);
         if (state.otLength) setOtLength(state.otLength);
     });
 
     socket.on('timer_tick', (state) => {
       setTimerSeconds(state.seconds);
-      if (state.penalties) setActivePenalties(state.penalties);
     });
 
     socket.on('score_updated', () => loadGameData());
@@ -113,11 +111,27 @@ export function useWebGraphics(gameId) {
     if (isTimerRunning) {
       interval = setInterval(() => {
         setTimerSeconds((prev) => prev + 1);
-        setActivePenalties(prev => prev.map(p => ({ ...p, remaining: p.remaining > 0 ? p.remaining - 1 : 0 })));
       }, 1000);
     }
     return () => clearInterval(interval);
   }, [isTimerRunning]);
+
+  // --- ВЫЧИСЛЕНИЕ АКТИВНЫХ УДАЛЕНИЙ ---
+  const activePenalties = useMemo(() => {
+    if (!game || !game.penalties) return [];
+    
+    // 1. Прогоняем все штрафы через функцию очередей
+    const timelines = calculatePenaltyTimelines(game.penalties);
+    
+    // 2. Оставляем только те, которые активны прямо сейчас
+    return timelines
+      .filter(p => timerSeconds >= p.effStart && timerSeconds < p.effEnd)
+      .map(p => ({
+        ...p,
+        remaining: p.effEnd - timerSeconds, // Остаток для графики
+        player_name: p.player_last_name ? `${p.player_last_name}` : ''
+      }));
+  }, [game, timerSeconds]);
 
   return {
     game, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
