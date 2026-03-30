@@ -164,7 +164,7 @@ export const updateDivision = async (req, res) => {
             name, short_name, tournament_type, start_date, end_date, application_start, application_end,
             transfer_start, transfer_end, description, points_win_reg, points_win_ot, points_draw, points_loss_ot,
             points_loss_reg, ranking_criteria, playoff_start_round, has_third_place, wins_needed_1_8, wins_needed_1_4,
-            wins_needed_1_2, wins_needed_final, wins_needed_3rd
+            wins_needed_1_2, wins_needed_final, wins_needed_3rd, clear_logo, clear_regulations
         } = req.body;
 
         // ВАЛИДАЦИЯ ПЕРЕСЕЧЕНИЯ ДАТ НА БЭКЕНДЕ
@@ -187,6 +187,15 @@ export const updateDivision = async (req, res) => {
             points_loss_ot, points_loss_reg, ranking_criteria ? JSON.stringify(ranking_criteria) : null, playoff_start_round, has_third_place,
             wins_needed_1_8, wins_needed_1_4, wins_needed_1_2, wins_needed_final, wins_needed_3rd, id
         ]);
+
+        // Обработка флагов сброса файлов
+        if (clear_logo) {
+            await pool.query(`UPDATE divisions SET logo_url = NULL WHERE id = $1`, [id]);
+        }
+        if (clear_regulations) {
+            await pool.query(`UPDATE divisions SET regulations_url = NULL WHERE id = $1`, [id]);
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка обновления дивизиона:', err);
@@ -223,13 +232,19 @@ export const uploadDivisionFile = async (req, res) => {
         if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
         const ext = req.file.originalname.split('.').pop();
         const prefix = type === 'logo' ? 'logo' : 'regulations';
-        const fileName = `uploads/${prefix}_divisions_${id}.${ext}`;
+        
+        // Добавляем timestamp (Date.now()), чтобы при каждой загрузке генерировалась новая уникальная ссылка. 
+        // Это решит проблему жесткого кэширования в браузере.
+        const timestamp = Date.now();
+        const fileName = `uploads/${prefix}_divisions_${id}_${timestamp}.${ext}`;
+        
         await s3.send(new PutObjectCommand({
             Bucket: 'hockeyeco-uploads',
             Key: fileName,
             Body: req.file.buffer,
             ContentType: req.file.mimetype
         }));
+        
         const url = `https://s3.twcstorage.ru/hockeyeco-uploads/${fileName}`;
         const column = type === 'logo' ? 'logo_url' : 'regulations_url';
         await pool.query(`UPDATE divisions SET ${column} = $1 WHERE id = $2`, [url, id]);

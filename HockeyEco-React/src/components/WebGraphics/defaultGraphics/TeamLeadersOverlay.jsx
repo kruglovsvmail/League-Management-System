@@ -4,33 +4,26 @@ import { getSafeUrl } from '../../../utils/graphicsHelpers';
 import { AnimationWrapper } from './AnimationWrapper';
 
 const CATEGORIES = [
-  { key: 'points', label: 'Лучшие бомбардиры', highlight: 'Очки' },
-  { key: 'goals', label: 'Лучшие снайперы', highlight: 'Голы' },
-  { key: 'assists', label: 'Лучшие ассистенты', highlight: 'Передачи' },
-  { key: 'plus_minus', label: 'Лучшая полезность', highlight: '+ / -' }
+  { key: 'points', label: 'ОЧКИ' },
+  { key: 'goals', label: 'ГОЛЫ' },
+  { key: 'assists', label: 'ПЕРЕДАЧИ' },
+  { key: 'plus_minus', label: '+ / -' }
 ];
 
 export default function TeamLeadersOverlay({ game, overlay }) {
   const isVisible = overlay.visible && overlay.type === 'team_leaders';
 
   const [catIndex, setCatIndex] = useState(0);
-  const [isFading, setIsFading] = useState(false);
-
   const switchDuration = overlay.data?.switchDuration || 7;
 
   useEffect(() => {
     if (!isVisible) {
       setCatIndex(0);
-      setIsFading(false);
       return;
     }
 
     const interval = setInterval(() => {
-      setIsFading(true);
-      setTimeout(() => {
-        setCatIndex(prev => (prev + 1) % CATEGORIES.length);
-        setIsFading(false);
-      }, 500);
+      setCatIndex(prev => (prev + 1) % CATEGORIES.length);
     }, switchDuration * 1000);
 
     return () => clearInterval(interval);
@@ -38,13 +31,18 @@ export default function TeamLeadersOverlay({ game, overlay }) {
 
   if (!game) return null;
 
-  const leagueLogo = getImageUrl(game.league_logo);
+  const divisionLogo = getImageUrl(game.division_logo);
   const homeLogo = getImageUrl(game.home_team_logo);
   const awayLogo = getImageUrl(game.away_team_logo);
   const defaultAvatar = getImageUrl('default/user_default.webp');
 
-  const activeCategory = CATEGORIES[catIndex];
+  const dateObj = game.game_date ? new Date(game.game_date) : null;
+  const dateStr = dateObj ? dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
+  const cityText = game.arena_city ? game.arena_city.toUpperCase() : 'ГОРОД НЕ УКАЗАН';
+  const arenaText = (game.arena_name || game.location_text || 'ЛЕДОВАЯ АРЕНА').toUpperCase();
+  const displayDate = dateStr ? dateStr.toUpperCase() : 'ДАТА НЕ УКАЗАНА';
 
+  // Функция поиска лучшего игрока по категории
   const getBestPlayer = (roster, statKey, fallbackLeader) => {
     if (!roster || !Array.isArray(roster) || roster.length === 0) return fallbackLeader;
     
@@ -55,109 +53,206 @@ export default function TeamLeadersOverlay({ game, overlay }) {
     });
     
     const best = sorted[0];
-    
     if (best && (parseFloat(best[statKey]) !== 0 || statKey === 'plus_minus')) {
       return best;
     }
-    
     return fallbackLeader || best;
   };
 
-  const currentHomeLeader = getBestPlayer(game.home_roster, activeCategory.key, game.home_leader);
-  const currentAwayLeader = getBestPlayer(game.away_roster, activeCategory.key, game.away_leader);
+  // Вычисляем лидеров для КАЖДОЙ категории заранее
+  const homeLeaders = CATEGORIES.map(cat => getBestPlayer(game.home_roster, cat.key, game.home_leader));
+  const awayLeaders = CATEGORIES.map(cat => getBestPlayer(game.away_roster, cat.key, game.away_leader));
 
-  const StatRow = ({ label, homeValue, awayValue, highlight }) => (
-    <div className={`flex items-center w-full py-4 px-10 transition-colors duration-500 ${highlight ? 'bg-blue-500/10 border-y border-blue-500/20 shadow-inner' : 'even:bg-white/[0.02] border-y border-transparent'}`}>
-       <div className={`w-1/3 text-right text-4xl font-black tabular-nums transition-all duration-500 ${highlight ? 'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.5)] scale-110 origin-right' : 'text-white'}`}>
-         {homeValue ?? '-'}
-       </div>
-       <div className={`w-1/3 text-center text-sm font-bold uppercase tracking-[0.25em] transition-colors duration-500 ${highlight ? 'text-blue-300' : 'text-white/50'}`}>
-         {label}
-       </div>
-       <div className={`w-1/3 text-left text-4xl font-black tabular-nums transition-all duration-500 ${highlight ? 'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.5)] scale-110 origin-left' : 'text-white'}`}>
-         {awayValue ?? '-'}
-       </div>
-    </div>
-  );
+  // Рендер карточки игрока для карусели
+  const renderPlayerCard = (leader, idx, isHome) => {
+    const isActive = idx === catIndex;
+    const isPrev = idx === (catIndex - 1 + CATEGORIES.length) % CATEGORIES.length;
 
-  const PlayerProfile = ({ leader, teamLogo, isHome }) => {
+    // Анимация: сверху выезжает, вниз заезжает
+    let positionClass = '-translate-y-full opacity-0 pointer-events-none z-0'; // Ждет сверху
+    if (isActive) {
+      positionClass = 'translate-y-0 opacity-100 z-10'; // В центре
+    } else if (isPrev) {
+      positionClass = 'translate-y-full opacity-0 pointer-events-none z-0'; // Уехал вниз
+    }
+
     const photo = leader ? (getSafeUrl(leader.avatar_url) || defaultAvatar) : defaultAvatar;
-    const firstName = leader?.first_name || 'Игрок';
-    const lastName = leader?.last_name || 'Неизвестен';
+    const firstName = leader?.first_name || 'НЕТ ДАННЫХ';
+    const lastName = leader?.last_name || '';
     const number = leader?.jersey_number || '00';
+    const teamLogo = isHome ? homeLogo : awayLogo;
 
     return (
-        <div className={`flex flex-col items-center w-[480px] transition-all duration-500 ease-in-out ${isFading ? (isHome ? 'opacity-0 -translate-x-16 blur-sm' : 'opacity-0 translate-x-16 blur-sm') : 'opacity-100 translate-x-0 blur-0'}`}>
-            <div className="relative mb-6">
-                <div className="w-48 h-48 rounded-[2.5rem] overflow-hidden border-2 border-white/10 shadow-2xl relative z-10 bg-[#0a0b0c]">
-                    <img 
-                      src={photo} 
-                      alt="Player" 
-                      className="w-full h-full object-cover object-top" 
-                      onError={(e) => { e.target.src = defaultAvatar; }} 
-                    />
-                </div>
-                {teamLogo && (
-                    <div className={`absolute -bottom-5 ${isHome ? '-right-10' : '-left-10'} w-16 h-16 bg-[#0a0b0c]/50 rounded-full shadow-xl flex items-center justify-center p-2 z-20`}>
-                        <img src={teamLogo} alt="Team" className="w-full h-full object-contain" />
-                    </div>
-                )}
-            </div>
+      <div 
+        key={`player_${isHome ? 'home' : 'away'}_${idx}`} 
+        className={`absolute inset-0 flex flex-col items-center justify-center p-8 transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${positionClass}`}
+      >
+         {/* Полупрозрачный номер на фоне */}
+         <span className={`absolute top-10 ${isHome ? 'left-10' : 'right-10'} text-[100px] font-black italic text-white/10 leading-none select-none z-0`}>
+           #{number}
+         </span>
 
-            <div className="flex items-center justify-center gap-6 w-full px-2">
-                <div className="flex flex-col items-end text-right">
-                    <span className="text-xl font-bold text-white/80 uppercase tracking-tight max-w-[270px] truncate leading-none mb-1.5">
-                        {firstName}
-                    </span>
-                    <span className="text-4xl font-black text-white uppercase tracking-tight max-w-[270px] truncate leading-none drop-shadow-md">
-                        {lastName}
-                    </span>
-                </div>
-                <span className="w-0.5 h-12 bg-white/20 shrink-0"></span>
-                <span className="text-5xl font-black italic text-blue-400 drop-shadow-md shrink-0">
-                    #{number}
-                </span>
-            </div>
-        </div>
+         {/* Фотография игрока */}
+         <div className="relative w-56 h-56 mb-6 z-10">
+            <img 
+              src={photo} 
+              alt="Player" 
+              className="w-full h-full rounded-[24%] object-cover object-top" 
+              onError={(e) => { e.target.src = defaultAvatar; }} 
+            />
+            {teamLogo && (
+               <div className={`absolute -bottom-5 ${isHome ? '-right-5' : '-left-5'} w-16 h-16 bg-zinc-950 rounded-full border border-zinc-800 p-2 shadow-xl flex items-center justify-center`}>
+                  <img src={teamLogo} alt="Team" className="w-full h-full object-contain" onError={(e) => e.target.style.display = 'none'} />
+               </div>
+            )}
+         </div>
+
+         {/* Имя и фамилия */}
+         <div className="flex flex-col items-center text-center z-10 w-full px-4">
+            <span className="text-4xl font-black text-white uppercase tracking-tight leading-none truncate w-full drop-shadow-md mb-2">
+               {lastName}
+            </span>
+            <span className="text-xl font-bold text-zinc-400 uppercase tracking-widest leading-none truncate w-full">
+               {firstName}
+            </span>
+         </div>
+      </div>
     );
   };
 
   return (
-    <AnimationWrapper type="team_leaders" isVisible={isVisible} className="absolute inset-0 flex items-center justify-center z-50">
-      <div className="absolute inset-0 bg-black/0 backdrop-blur-md pointer-events-none"></div>
+    <AnimationWrapper type="team_leaders" isVisible={isVisible} className="absolute inset-0 flex items-center justify-center z-50 p-20">
+      <div className="flex flex-col items-center w-full max-w-[1500px] relative overflow-hidden rounded-xxl shadow-2xl transform-gpu">
+        
+        {/* ГЛОБАЛЬНЫЙ БЛИК */}
+        <div className="absolute top-0 bottom-0 w-[80%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
 
-      <div className="relative flex flex-col items-center w-[1400px] h-[1000px] bg-[#000000ff]/[98%] rounded-[3rem] border border-white/10 shadow-[0_0_120px_rgba(0,0,0,0.8)] overflow-hidden pb-10">
-
-        <div className="w-full bg-white/5 border-b border-white/10 flex items-center justify-center py-6 relative shrink-0 mb-12">
-          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50"></div>
-          {leagueLogo && <img src={leagueLogo} alt="League" className="absolute left-12 h-12 object-contain drop-shadow-lg" />}
+        {/* ШАПКА */}
+        <div className="flex justify-between items-center bg-zinc-800 text-zinc-300 px-8 py-3 w-full relative z-10">
+          <div className="flex items-center gap-4">
+             {divisionLogo && (
+               <img src={divisionLogo} alt="Division" className="h-10 object-contain" onError={(e) => e.target.style.display = 'none'} />
+             )}
+             <div className="flex flex-col">
+               <span className="font-black uppercase tracking-[0.2em] text-sm leading-tight text-white">
+                 {game.league_name}
+               </span>
+               <span className="font-bold uppercase tracking-[0.15em] text-xs text-zinc-400">
+                 {game.division_name || 'ДИВИЗИОН'}
+               </span>
+             </div>
+          </div>
           
-          <span className={`text-2xl font-black text-white uppercase tracking-[0.3em] drop-shadow-sm transition-all duration-500 ease-in-out ${isFading ? 'opacity-0 scale-90 blur-sm' : 'opacity-100 scale-100 blur-0'}`}>
-            {activeCategory.label}
-          </span>
+          <div className="flex flex-col text-right justify-center">
+             <span className="font-black uppercase tracking-[0.15em] text-sm text-white">
+               ЛИДЕРЫ КОМАНД
+             </span>
+          </div>
         </div>
 
-        <div className="w-full flex-1">
-            <div className="flex justify-between items-end w-full px-24 mb-10 overflow-hidden">
-                <PlayerProfile leader={currentHomeLeader} teamLogo={homeLogo} isHome={true} />
-                <PlayerProfile leader={currentAwayLeader} teamLogo={awayLogo} isHome={false} />
-            </div>
+        {/* ТЕЛО ПЛАШКИ (3 КОЛОНКИ: Игрок - Статистика - Игрок) */}
+        <div className="flex w-full h-[550px] bg-zinc-950 overflow-hidden relative z-0">
+          
+          {/* ЛЕВАЯ КОЛОНКА: Игрок Хозяев (35%) */}
+          <div className="w-[35%] flex flex-col relative overflow-hidden bg-zinc-950 group">
+             {/* Крупный логотип на фоне (с сильным затемнением) */}
+             {homeLogo && (
+               <img src={homeLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-xl scale-[150%] z-0 pointer-events-none" />
+             )}
+             
+             {/* Карусель игроков хозяев */}
+             <div className="relative w-full h-full">
+               {CATEGORIES.map((cat, idx) => renderPlayerCard(homeLeaders[idx], idx, true))}
+             </div>
+          </div>
 
-            <div className={`w-full px-24 transition-all duration-500 ease-in-out ${isFading ? 'opacity-0 translate-y-12 blur-sm' : 'opacity-100 translate-y-0 blur-0'}`}>
-                <div className="flex flex-col w-full bg-black/40 rounded-3xl border border-white/5 overflow-hidden py-4 shadow-inner">
-                    <StatRow label="Игры" homeValue={currentHomeLeader?.games_played} awayValue={currentAwayLeader?.games_played} highlight={activeCategory.highlight === 'Игры'} />
-                    <StatRow label="Очки" homeValue={currentHomeLeader?.points} awayValue={currentAwayLeader?.points} highlight={activeCategory.highlight === 'Очки'} />
-                    <StatRow label="Голы" homeValue={currentHomeLeader?.goals} awayValue={currentAwayLeader?.goals} highlight={activeCategory.highlight === 'Голы'} />
-                    <StatRow label="Передачи" homeValue={currentHomeLeader?.assists} awayValue={currentAwayLeader?.assists} highlight={activeCategory.highlight === 'Передачи'} />
-                    <StatRow 
-                      label="+ / -" 
-                      homeValue={currentHomeLeader?.plus_minus > 0 ? `+${currentHomeLeader?.plus_minus}` : currentHomeLeader?.plus_minus} 
-                      awayValue={currentAwayLeader?.plus_minus > 0 ? `+${currentAwayLeader?.plus_minus}` : currentAwayLeader?.plus_minus} 
-                      highlight={activeCategory.highlight === '+ / -'}
-                    />
-                    <StatRow label="Штраф (мин)" homeValue={currentHomeLeader?.penalty_minutes} awayValue={currentAwayLeader?.penalty_minutes} highlight={activeCategory.highlight === 'Штраф'} />
-                </div>
-            </div>
+          {/* ЦЕНТРАЛЬНАЯ КОЛОНКА: Динамический список (30%) */}
+          <div className="w-[30%] flex flex-col items-center justify-center bg-zinc-900 relative z-10 shadow-[0_0_50px_rgba(0,0,0,0.8)] px-6">
+             
+             <span className="text-zinc-500/20 font-black uppercase tracking-[0.3em] text-xs mb-8 z-20">
+               СРАВНЕНИЕ СТАТИСТИКИ
+             </span>
+
+             <div className="relative flex flex-col w-full gap-2 z-10">
+                
+                {/* Физический скользящий бегунок */}
+                <div 
+                  className="absolute left-0 right-0 h-[72px] bg-zinc-100/5 shadow-[0_10px_30px_rgba(0,0,0,0.3)] transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] z-0 rounded-xl"
+                  style={{ transform: `translateY(${catIndex * 80}px)` }} // 72px (высота) + 8px (отступ gap-2) = 80px шаг
+                />
+
+                {/* Статический список категорий (значения обновляются под игроков) */}
+                {CATEGORIES.map((cat, idx) => {
+                  const isActive = idx === catIndex;
+                  
+                  // Берем статистику АКТИВНЫХ в данный момент игроков для всех строк
+                  const currentHLeader = homeLeaders[catIndex];
+                  const currentALeader = awayLeaders[catIndex];
+                  
+                  let hStat = currentHLeader ? currentHLeader[cat.key] : '-';
+                  let aStat = currentALeader ? currentALeader[cat.key] : '-';
+                  
+                  if (cat.key === 'plus_minus') {
+                    if (hStat > 0) hStat = `+${hStat}`;
+                    if (aStat > 0) aStat = `+${aStat}`;
+                  }
+
+                  return (
+                    <div 
+                      key={cat.key} 
+                      className="flex items-center justify-between w-full h-[72px] px-6 relative z-10"
+                    >
+                       <span className={`w-16 text-center text-3xl font-black tabular-nums transition-colors duration-700 ${isActive ? 'text-white' : 'text-white/30'}`}>
+                         {hStat}
+                       </span>
+                       <span className={`text-xl font-black uppercase tracking-widest transition-colors duration-700 ${isActive ? 'text-white' : 'text-zinc-500'}`}>
+                         {cat.label}
+                       </span>
+                       <span className={`w-16 text-center text-3xl font-black tabular-nums transition-colors duration-700 ${isActive ? 'text-white' : 'text-white/30'}`}>
+                         {aStat}
+                       </span>
+                    </div>
+                  );
+                })}
+             </div>
+          </div>
+
+          {/* ПРАВАЯ КОЛОНКА: Игрок Гостей (35%) */}
+          <div className="w-[35%] flex flex-col relative overflow-hidden bg-zinc-950 group">
+             {/* Крупный логотип на фоне (с сильным затемнением) */}
+             {awayLogo && (
+               <img src={awayLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 blur-xl scale-[150%] z-0 pointer-events-none" />
+             )}
+
+             {/* Карусель игроков гостей */}
+             <div className="relative w-full h-full">
+               {CATEGORIES.map((cat, idx) => renderPlayerCard(awayLeaders[idx], idx, false))}
+             </div>
+          </div>
+
+        </div>
+
+        {/* ПОДВАЛ */}
+        <div className="flex justify-between items-center bg-zinc-800 text-zinc-300 px-12 py-4 w-full relative z-10">
+          <div className="flex items-center gap-4 text-left w-[33%]">
+             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+             </svg>
+             <span className={`font-bold uppercase tracking-widest text-base ${dateStr ? 'text-zinc-200' : 'text-zinc-500'}`}>
+               {displayDate}
+             </span>
+          </div>
+          <div className="text-center w-[33%] px-4">
+             <span className={`font-bold uppercase tracking-widest text-base ${game.arena_city ? 'text-zinc-200' : 'text-zinc-500'}`}>
+               {cityText}
+             </span>
+          </div>
+          <div className="text-right w-[33%]">
+             <span className={`font-bold uppercase tracking-widest text-base ${(game.arena_name || game.location_text) ? 'text-zinc-200' : 'text-zinc-500'}`}>
+               {arenaText}
+             </span>
+          </div>
         </div>
 
       </div>

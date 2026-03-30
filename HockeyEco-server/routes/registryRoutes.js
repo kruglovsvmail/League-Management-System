@@ -1,20 +1,20 @@
 import express from 'express';
 import upload from '../config/upload.js';
 
-import { verifyToken, requireGlobalAdmin } from '../controllers/authController.js'; // <-- ДОБАВИЛИ ИМПОРТ
+import { verifyToken, requireGlobalAdmin } from '../controllers/authController.js';
 import {
     getArenas, createArena, updateArena,
     getLeagues, createLeague, updateLeague,
     getSeasons, createSeason, updateSeason,
     getTeams, createTeam, updateTeam,
     getUsers, createUser, updateUser,
-    uploadRegistryFile, deleteRegistryFile
+    uploadRegistryFile, deleteRegistryFile,
+    importUsers
 } from '../controllers/registryController.js';
 
 const router = express.Router();
 
 // Храним загружаемые файлы в оперативной памяти перед отправкой в S3
-
 
 // Защищаем все маршруты реестра токеном авторизации И проверкой на глобального админа
 router.use('/registry', verifyToken, requireGlobalAdmin);
@@ -42,6 +42,7 @@ router.put('/registry/teams/:id', updateTeam);
 // --- ПОЛЬЗОВАТЕЛИ ---
 router.get('/registry/users', getUsers);
 router.post('/registry/users', createUser);
+router.post('/registry/users/import', upload.single('file'), importUsers);
 router.put('/registry/users/:id', updateUser);
 
 // --- ФАЙЛЫ (Универсальные маршруты для всех сущностей) ---

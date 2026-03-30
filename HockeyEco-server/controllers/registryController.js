@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
+import * as xlsx from 'xlsx';
 
 // --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: Генерация 5-значного кода ---
 const generateVirtualCode = () => {
@@ -386,5 +387,138 @@ export const deleteRegistryFile = async (req, res) => {
     } catch (err) { 
         console.error('Ошибка удаления файла:', err);
         res.status(500).json({ success: false, error: err.message }); 
+    }
+};
+
+// ==========================================
+//               ИМПОРТ ИЗ EXCEL
+// ==========================================
+export const importUsers = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
+
+        const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+        
+        let rawRows = [];
+        // Ищем первый лист, на котором реально есть данные
+        for (const sheetName of workbook.SheetNames) {
+            const sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+            if (sheetData && sheetData.length > 0) {
+                rawRows = sheetData;
+                break;
+            }
+        }
+
+        if (!rawRows || rawRows.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Excel файл пуст (нет строк с данными).' 
+            });
+        }
+
+        // ПРОВЕРКА НА НАЛИЧИЕ ЗАГОЛОВКОВ (Защита от "БезИмени")
+        const firstRowKeys = Object.keys(rawRows[0]).map(k => k.toLowerCase().trim());
+        const hasValidHeaders = firstRowKeys.some(k => 
+            k === 'имя' || k === 'first_name' || k === 'фамилия' || k === 'last_name'
+        );
+
+        if (!hasValidHeaders) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'В первой строке файла не найдены правильные заголовки. Убедитесь, что первая строка содержит названия колонок.' 
+            });
+        }
+
+        // Очищаем ключи (удаляем случайные пробелы до и после названия колонок)
+        const rows = rawRows.map(row => {
+            const cleanRow = {};
+            for (const key in row) {
+                cleanRow[key.trim()] = row[key];
+            }
+            return cleanRow;
+        });
+
+        let importedCount = 0;
+
+        await client.query('BEGIN');
+
+        for (const row of rows) {
+            const firstName = row['Имя'] || row['first_name'] || 'БезИмени';
+            const lastName = row['Фамилия'] || row['last_name'] || 'БезФамилии';
+            const middleName = row['Отчество'] || row['middle_name'] || null;
+            let email = row['Email'] || row['email'] || null;
+            const phone = row['Телефон'] || row['phone'] || null;
+            const isVirtual = String(row['Виртуальный'] || '').toLowerCase() === 'да' || row['is_virtual'] === true;
+
+            // --- НОВЫЕ ПОЛЯ (Рост, Вес, Дата рождения) ---
+            const rawBirthDate = row['Дата рождения'] || row['birth_date'] || null;
+            let parsedBirthDate = null;
+            
+            if (rawBirthDate) {
+                if (typeof rawBirthDate === 'number') {
+                    // Обработка Excel формата даты (дни от 1900 года)
+                    const d = new Date(Math.round((rawBirthDate - 25569) * 86400 * 1000));
+                    if (!isNaN(d.getTime())) {
+                        parsedBirthDate = d.toISOString().split('T')[0];
+                    }
+                } else if (typeof rawBirthDate === 'string') {
+                    // Попытка разобрать строковую дату (напр. 15.05.1990 или 15-05-1990)
+                    const parts = rawBirthDate.split(/[.,/ -]/);
+                    if (parts.length === 3) {
+                        let [day, month, year] = parts;
+                        if (year.length === 2) year = '20' + year; // Защита для двузначного года
+                        if (year.length === 4) {
+                            parsedBirthDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                        }
+                    }
+                }
+            }
+
+            const rawHeight = row['Рост'] || row['height'] || null;
+            const parsedHeight = rawHeight ? parseInt(String(rawHeight).replace(/\D/g, ''), 10) : null;
+
+            const rawWeight = row['Вес'] || row['weight'] || null;
+            const parsedWeight = rawWeight ? parseInt(String(rawWeight).replace(/\D/g, ''), 10) : null;
+            // ---------------------------------------------
+
+            let virtual_code = isVirtual ? generateVirtualCode() : null;
+            let needsEmailUpdate = false;
+
+            if (!email || email.trim() === '') {
+                email = `temp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@users.lms`;
+                needsEmailUpdate = true; 
+            }
+
+            // Обновленный INSERT с новыми колонками
+            const result = await client.query(
+                `INSERT INTO users (first_name, last_name, middle_name, email, phone, virtual_code, birth_date, height, weight) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+                [firstName, lastName, middleName, email, phone ? String(phone) : null, virtual_code, parsedBirthDate, parsedHeight || null, parsedWeight || null]
+            );
+            
+            const newId = result.rows[0].id;
+
+            if (needsEmailUpdate) {
+                const now = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                const dateStr = `${pad(now.getDate())}${pad(now.getMonth() + 1)}${now.getFullYear()}${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+                
+                const finalEmail = `${dateStr}_${newId}@users.lms`;
+                await client.query('UPDATE users SET email = $1 WHERE id = $2', [finalEmail, newId]);
+            }
+            
+            importedCount++;
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, count: importedCount, message: `Успешно импортировано ${importedCount} пользователей` });
+
+    } catch (err) { 
+        await client.query('ROLLBACK');
+        console.error('Ошибка импорта:', err);
+        res.status(500).json({ success: false, error: err.message }); 
+    } finally {
+        client.release();
     }
 };

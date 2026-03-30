@@ -20,13 +20,8 @@ export default function EventOverlay({ game, overlay }) {
   const awayColorHex = '#0EA5E9';
   const isHomeEvent = overlay.data?.team_id === game.home_team_id;
   const overlayAccentColor = isHomeEvent ? homeColorHex : awayColorHex;
-  const overlayShadowGlow = isHomeEvent 
-    ? 'shadow-[0_0_40px_rgba(255,87,34,0.35)]' 
-    : 'shadow-[0_0_40px_rgba(14,165,233,0.35)]';
 
-  // ==========================================
-  // ЖЕЛЕЗОБЕТОННАЯ ЛОГИКА ПОИСКА НОМЕРА
-  // ==========================================
+  // Железобетонная логика поиска номера
   const currentRoster = isHomeEvent ? game.home_roster : game.away_roster;
   
   const matchedPlayer = currentRoster?.find(p => 
@@ -45,88 +40,97 @@ export default function EventOverlay({ game, overlay }) {
     <AnimationWrapper
       type="event"
       isVisible={isVisible}
-      className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center"
+      className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center transform-gpu"
     >
-      <div className={`flex items-stretch h-[130px] bg-[#0a0b0c]/95 backdrop-blur-xl border border-white/10 rounded-2xl min-w-[800px] overflow-hidden ${overlayShadowGlow}`}>
+      {/* ГЛАВНЫЙ КОНТЕЙНЕР ПЛАШКИ (Теперь со скосом) */}
+      <div className="flex items-stretch h-[150px] bg-zinc-950 skew-x-[-10deg] overflow-hidden rounded-lg shadow-2xl min-w-[1000px] relative">
         
-        <div className="flex items-center relative overflow-hidden w-[140px] bg-gradient-to-br from-white/5 to-transparent border-r border-white/5">
-          <div 
-            className="absolute left-0 top-0 bottom-0 w-3 shadow-[2px_0_10px_rgba(0,0,0,0.5)] z-20"
-            style={{ backgroundColor: overlayAccentColor }}
-          ></div>
-          <div className="flex-1 flex items-center justify-center pl-3 relative z-10">
-            {overlayTeamLogo && (
-              <img 
-                src={overlayTeamLogo} 
-                className="w-20 h-20 object-contain drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)]" 
-                alt="TeamLogo"
-              />
-            )}
-          </div>
+        {/* Пробегающий блик */}
+        <div className="absolute top-0 bottom-0 w-[200%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
+
+        {/* Цветовой маркер команды */}
+        <div className="w-3 shrink-0 z-20" style={{ backgroundColor: overlayAccentColor }}></div>
+
+        {/* Блок Логотипа (компенсация скоса) */}
+        <div className="flex items-center justify-center w-[150px] bg-zinc-900 z-10 skew-x-[10deg]">
+          {overlayTeamLogo && (
+            <img 
+              src={overlayTeamLogo} 
+              className="w-24 h-24 object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.6)]" 
+              alt="TeamLogo"
+            />
+          )}
         </div>
 
-        <div className="w-[140px] shrink-0 h-full relative border-r border-white/5 bg-gradient-to-t from-[#0a0b0c] to-slate-800">
+        {/* Блок Фото (компенсация скоса, оverflow-hidden, h-full, relative) */}
+        <div className="w-[150px] shrink-0 h-full relative border-r-4 border-zinc-950 bg-[#0a0b0c] z-10 skew-x-[10deg] overflow-hidden">
             <img 
               key={overlay.data.id || overlay.data.primary_player_id}
               src={playerPhoto} 
               alt="Player"
-              className="absolute inset-0 w-full h-full object-cover object-top z-10"
+              className="absolute inset-0 w-full h-full object-cover object-top"
               onError={(e) => { 
                 e.target.onerror = null; 
                 e.target.src = defaultPhoto; 
               }}
             />
-            <div className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-[#0a0b0c]/95 to-transparent z-20"></div>
         </div>
 
-        <div className="flex-1 px-8 py-5 flex flex-col justify-center relative overflow-hidden">
-            {/* Вот здесь теперь выводится playerNumber вместо жестко заданного primary_jersey_number */}
-            <div className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-[140px] italic text-white/[0.03] tabular-nums leading-none pointer-events-none select-none">
-              {playerNumber}
+        {/* Основной инфо-блок (компенсация скоса) */}
+        <div className="flex-1 px-10 py-5 flex flex-col justify-center relative overflow-hidden bg-zinc-950 z-10 skew-x-[10deg]">
+            
+            {/* ГЛУБИНА: Размытый логотип команды на фоне (ЦВЕТНОЙ) */}
+            {overlayTeamLogo && (
+               <img src={overlayTeamLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-10 blur-xl scale-150 z-0 pointer-events-none" />
+            )}
+
+            {/* Гигантский номер на фоне */}
+            <div className="absolute right-8 top-1/2 -translate-y-1/2 font-black italic text-[180px] text-zinc-800/40 tabular-nums leading-none pointer-events-none select-none z-0">
+              #{playerNumber}
             </div>
             
-            <div className="relative z-10 flex flex-col gap-1.5">
-                <div className="flex items-center gap-3 mb-0.5">
+            <div className="relative z-10 flex flex-col">
+                <div className="flex items-center gap-3 mb-1.5">
                   <div 
-                    className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-widest text-white shadow-md"
-                    style={{ backgroundColor: isGoal ? overlayAccentColor : '#ef4444' }}
+                    className={`px-3 py-0.5 rounded-sm text-[11px] font-black uppercase tracking-widest text-white shadow-md ${!isGoal && 'bg-red-600'}`}
+                    style={isGoal ? { backgroundColor: overlayAccentColor } : {}}
                   >
                       {isGoal ? 'ГОЛ' : 'ШТРАФ'}
                   </div>
-                  <div className="text-white/40 text-[11px] font-bold uppercase tracking-widest">
+                  <div className="text-zinc-400 text-xs font-bold uppercase tracking-widest">
                       {isHomeEvent ? homeShortName : awayShortName}
                   </div>
                 </div>
 
-                <div className="flex items-end gap-3 drop-shadow-md">
-                  <span className="text-[38px] font-black uppercase tracking-tight leading-none text-white">
+                <div className="flex items-end gap-3 drop-shadow-md mt-1">
+                  <span className="text-4xl font-black uppercase tracking-tight leading-none text-white">
                     {overlay.data.primary_last_name}
                   </span>
-                  <span className="text-[22px] font-bold uppercase tracking-tight text-white/70 mb-0.5">
+                  <span className="text-xl font-bold uppercase tracking-widest text-zinc-400 mb-0.5">
                     {overlay.data.primary_first_name}
                   </span>
                 </div>
 
-                <div className="mt-1">
+                <div className="mt-3 border-t-2 border-zinc-800 pt-3">
                   {isGoal && (
                       (overlay.data.assist1_last_name || overlay.data.assist2_last_name) ? (
-                        <div className="text-[13px] font-semibold uppercase tracking-widest text-white/90 flex gap-2 items-center">
-                            <span className="text-white/40">АСТ:</span>
-                            <span className="text-white/80 drop-shadow-sm">
+                        <div className="text-xs font-bold uppercase tracking-widest text-zinc-300 flex gap-2 items-center">
+                            <span className="text-zinc-500">АСТ:</span>
+                            <span>
                                 {[overlay.data.assist1_last_name, overlay.data.assist2_last_name].filter(Boolean).join(', ')}
                             </span>
                         </div>
                       ) : (
-                        <span className="text-[13px] font-semibold uppercase tracking-widest text-white/30 italic">БЕЗ АССИСТЕНТОВ</span>
+                        <span className="text-xs font-bold uppercase tracking-widest text-zinc-600 italic">БЕЗ АССИСТЕНТОВ</span>
                       )
                   )}
 
                   {!isGoal && (
                       <div className="flex items-center gap-3">
-                        <span className="font-black text-3xl tabular-nums leading-none drop-shadow-sm text-red-500">
-                            {overlay.data.penalty_minutes} <span className="text-[16px] ml-0.5">МИН</span>
+                        <span className="font-mono font-black text-3xl tabular-nums leading-none drop-shadow-sm text-red-500">
+                            {overlay.data.penalty_minutes} <span className="text-lg font-bold tracking-widest ml-1">МИН</span>
                         </span>
-                        <span className="text-[14px] font-bold uppercase tracking-widest text-white/80 drop-shadow-sm">
+                        <span className="text-xs font-bold uppercase tracking-widest text-zinc-300">
                             — {overlay.data.penalty_violation}
                         </span>
                       </div>

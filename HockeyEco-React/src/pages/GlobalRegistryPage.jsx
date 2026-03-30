@@ -71,6 +71,10 @@ export function GlobalRegistryPage() {
   
   const [isLoading, setIsLoading] = useState(false); 
 
+  // Стейты и реф для импорта Excel
+  const fileImportRef = useRef(null);
+  const [isImporting, setIsImporting] = useState(false);
+
   // === ПАГИНАЦИЯ И БЕСКОНЕЧНЫЙ СКРОЛЛ ===
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -311,13 +315,43 @@ export function GlobalRegistryPage() {
     setIsLoading(false);
   };
 
+  const handleImportExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const fd = new FormData();
+    fd.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/registry/users/import`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: fd
+      });
+      const json = await res.json();
+      
+      if (json.success) {
+        alert(json.message);
+        fetchData(1, true); 
+      } else {
+        alert(`Ошибка импорта: ${json.error}`);
+      }
+    } catch (err) {
+      alert('Ошибка сети при импорте файла');
+    } finally {
+      setIsImporting(false);
+      if (fileImportRef.current) fileImportRef.current.value = '';
+    }
+  };
+
   const isFormValid = () => {
     switch (activeTab) {
       case 0: return !!formData.name?.trim() && !!formData.city?.trim() && !!formData.address?.trim();
       case 1: return !!formData.name?.trim() && !!formData.city?.trim();
       case 2: return !!formData.uiLeague && !!formData.name?.trim() && !!formData.start_date && !!formData.end_date;
       case 3: return !!formData.name?.trim() && !!formData.short_name?.trim() && !!formData.city?.trim();
-      case 4: return !!formData.last_name?.trim() && !!formData.first_name?.trim() && !!formData.middle_name?.trim();
+      case 4: return !!formData.last_name?.trim() && !!formData.first_name?.trim(); // Убрали проверку отчества
       default: return false;
     }
   };
@@ -368,6 +402,27 @@ export function GlobalRegistryPage() {
         title="Глобальный реестр" 
         actions={
           <div className="flex items-center gap-4">
+            
+            {/* Скрытый инпут для файла */}
+            <input 
+              type="file" 
+              hidden 
+              ref={fileImportRef} 
+              accept=".xlsx, .xls" 
+              onChange={handleImportExcel} 
+            />
+
+            {/* Кнопка показывается ТОЛЬКО на вкладке Пользователи (activeTab === 4) */}
+            {activeTab === 4 && (
+              <Button 
+                onClick={() => fileImportRef.current.click()} 
+                isLoading={isImporting}
+                className="bg-status-pending hover:bg-status-pending-hover border-none px-4 shrink-0"
+              >
+                Импорт Excel
+              </Button>
+            )}
+
             {(activeTab === 3 || activeTab === 4) && (
               <div className="w-[320px] shrink-0">
                 <SegmentButton 
@@ -510,7 +565,8 @@ export function GlobalRegistryPage() {
                     <div className="grid grid-cols-3 gap-3">
                       <Input placeholder="Фамилия *" value={formData.last_name || ''} onChange={e => handleChange('last_name', e.target.value)} />
                       <Input placeholder="Имя *" value={formData.first_name || ''} onChange={e => handleChange('first_name', e.target.value)} />
-                      <Input placeholder="Отчество *" value={formData.middle_name || ''} onChange={e => handleChange('middle_name', e.target.value)} />
+                      {/* Убрали звездочку из Отчества */}
+                      <Input placeholder="Отчество" value={formData.middle_name || ''} onChange={e => handleChange('middle_name', e.target.value)} />
                     </div>
                     <div className="flex items-center gap-3 mt-4">
                       <Switch checked={formData.is_virtual || false} onChange={(e) => handleChange('is_virtual', e.target.checked)} />

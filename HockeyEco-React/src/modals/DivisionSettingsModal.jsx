@@ -45,6 +45,10 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
   // Файлы
   const [logoFile, setLogoFile] = useState(null);
   const [regFile, setRegFile] = useState(null);
+  
+  // Флаги сброса файлов
+  const [logoCleared, setLogoCleared] = useState(false);
+  const [regCleared, setRegCleared] = useState(false);
 
   // Стейт формы
   const [formData, setFormData] = useState({
@@ -121,6 +125,11 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
         wins_needed_final: division.wins_needed_final ?? 2,
         wins_needed_3rd: division.wins_needed_3rd ?? 1
       });
+      
+      setLogoCleared(false);
+      setRegCleared(false);
+      setLogoFile(null);
+      setRegFile(null);
     } else if (isOpen && !division) {
       // Сброс при создании нового
       setFormData({
@@ -133,6 +142,8 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
       setCurrentStep(0);
       setLogoFile(null);
       setRegFile(null);
+      setLogoCleared(false);
+      setRegCleared(false);
     }
   }, [isOpen, division]);
 
@@ -189,7 +200,9 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
       const payload = {
         ...formData,
         tournament_type: TYPE_MAP[formData.tournament_type],
-        playoff_start_round: ROUND_MAP[formData.playoff_start_round]
+        playoff_start_round: ROUND_MAP[formData.playoff_start_round],
+        clear_logo: logoCleared,
+        clear_regulations: regCleared
       };
 
       let divId = division?.id;
@@ -294,8 +307,12 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Uploader 
                   label="Логотип дивизиона" heightClass="h-[210px]" accept=".jpg,.png,.webp"
-                  initialUrl={division?.logo_url ? getImageUrl(division.logo_url) : null}
-                  onFileSelect={(f) => !isLocked && setLogoFile(f)}
+                  initialUrl={division?.logo_url && !logoCleared ? getImageUrl(division.logo_url) : null}
+                  onFileSelect={(f, isClear) => {
+                    if (isLocked) return;
+                    setLogoFile(f);
+                    setLogoCleared(isClear);
+                  }}
                   emptyImage="/img/Logo_division_default.webp"
                 />
                 <div className="flex flex-col gap-4">
@@ -307,8 +324,12 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                 <Uploader 
                   label="Регламент (PDF, DOC)" heightClass="h-[150px]" accept=".pdf,.doc,.docx"
-                  initialUrl={division?.regulations_url ? getImageUrl(division.regulations_url) : null}
-                  onFileSelect={(f) => !isLocked && setRegFile(f)}
+                  initialUrl={division?.regulations_url && !regCleared ? getImageUrl(division.regulations_url) : null}
+                  onFileSelect={(f, isClear) => {
+                    if (isLocked) return;
+                    setRegFile(f);
+                    setRegCleared(isClear);
+                  }}
                   isDefaultPreview={true} mockText="Загрузить регламент"
                 />
                 <div className="flex flex-col w-full h-[150px]">
