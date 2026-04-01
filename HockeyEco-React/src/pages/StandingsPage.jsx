@@ -196,7 +196,7 @@ export function StandingsPage() {
       <div className={`flex items-center overflow-hidden ${isCompactMode ? 'gap-2 pr-1' : 'gap-2'}`}>
         {logo ? <img src={getImageUrl(logo)} className={`object-contain shrink-0 ${isCompactMode ? 'w-4 h-4' : 'w-5 h-5'}`} /> : <div className={`bg-graphite/5 rounded-full shrink-0 ${isCompactMode ? 'w-4 h-4' : 'w-5 h-5'}`} />}
         <span className={`font-bold truncate ${isCompactMode ? 'text-[11px]' : 'text-[13px]'} ${isWinner ? 'text-orange' : 'text-graphite/90'}`}>
-          {name || 'Ожидает соперника'}
+          {name || ''}
         </span>
       </div>
       <span className={`font-black text-center shrink-0 ${isWinner ? 'text-orange' : 'text-graphite-light'} ${isCompactMode ? 'w-4 text-[12px]' : 'w-5 text-[13px]'}`}>
