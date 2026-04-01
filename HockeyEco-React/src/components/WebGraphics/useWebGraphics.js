@@ -1,15 +1,18 @@
+// src/components/WebGraphics/useWebGraphics.js
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { calculatePenaltyTimelines } from '../GameLiveDesk/GameDeskShared';
 
 export function useWebGraphics(gameId) {
   const [game, setGame] = useState(null);
+  const [events, setEvents] = useState([]); 
   const [timerSeconds, setTimerSeconds] = useState(0); 
   const [currentPeriod, setCurrentPeriod] = useState('1');
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   
   const [periodLength, setPeriodLength] = useState(20);
   const [otLength, setOtLength] = useState(5);
+  const [soLength, setSoLength] = useState(3);
   
   const [isScoreboardVisible, setIsScoreboardVisible] = useState(true);
 
@@ -19,12 +22,10 @@ export function useWebGraphics(gameId) {
     data: null
   });
 
-  // Рефы для безопасной работы с таймаутами внутри сокетов
   const overlayTimeoutRef = useRef(null);
   const transitionTimeoutRef = useRef(null);
-  
-  // Реф для получения актуального состояния оверлея внутри socket.on (чтобы не было замыканий)
   const overlayStateRef = useRef(overlay);
+  
   useEffect(() => {
     overlayStateRef.current = overlay;
   }, [overlay]);
@@ -47,14 +48,24 @@ export function useWebGraphics(gameId) {
 
   const loadGameData = async () => {
     try {
+      // Грузим саму игру через публичный роут
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/public/games/${gameId}`);
       const data = await res.json();
+      
       if (data.success) {
         setGame(data.data);
         if (data.data.period_length) setPeriodLength(data.data.period_length);
         if (data.data.ot_length) setOtLength(data.data.ot_length);
+        
+        // Бэкенд теперь сам отдает массив всех событий внутри data.data.events
+        if (data.data.events) {
+            setEvents(data.data.events);
+        }
       }
-    } catch (err) { console.error('Ошибка загрузки игры:', err); }
+      
+    } catch (err) { 
+        console.error('Ошибка загрузки игры:', err); 
+    }
   };
 
   useEffect(() => { loadGameData(); }, [gameId]);
@@ -64,12 +75,13 @@ export function useWebGraphics(gameId) {
     socket.emit('join_game', gameId);
 
     socket.on('timer_state', (state) => {
-        if (!state) return; // Защита от null
+        if (!state) return; 
         setTimerSeconds(state.seconds || 0);
         if (state.period) setCurrentPeriod(state.period);
         setIsTimerRunning(!!state.isRunning);
         if (state.periodLength) setPeriodLength(state.periodLength);
         if (state.otLength) setOtLength(state.otLength);
+        if (state.soLength) setSoLength(state.soLength);
     });
 
     socket.on('timer_tick', (state) => {
@@ -78,11 +90,11 @@ export function useWebGraphics(gameId) {
       }
     });
 
+    // Перезапрашиваем события при обновлении счета
     socket.on('score_updated', () => loadGameData());
     socket.on('game_updated', () => loadGameData());
 
     socket.on('trigger_obs_overlay', (payload) => {
-      // Оборачиваем в try-catch, чтобы ошибка сокета не роняла React
       try {
           if (!payload) return;
           if (String(payload.gameId) !== String(gameId)) return;
@@ -97,16 +109,13 @@ export function useWebGraphics(gameId) {
               if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current);
               if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
           } else {
-              
               const showNewOverlay = () => {
                   setOverlay({
                     visible: true,
                     type: payload.type,
-                    data: payload.data || null // Защита на случай отсутствия data
+                    data: payload.data || null
                   });
-
                   if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current);
-
                   if (payload.duration !== 'infinite') {
                     overlayTimeoutRef.current = setTimeout(() => {
                       setOverlay(prev => ({ ...prev, visible: false }));
@@ -115,20 +124,15 @@ export function useWebGraphics(gameId) {
               };
 
               const currentOverlay = overlayStateRef.current;
-
-              // ЛОГИКА ТРАНЗИШЕНОВ С ЗАЩИТОЙ
               if (currentOverlay && currentOverlay.visible && currentOverlay.type && currentOverlay.type !== payload.type) {
-                  // 1. Прячем текущую плашку
                   setOverlay(prev => ({ ...prev, visible: false }));
                   if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current);
                   if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
                   
-                  // 2. Ждем завершения CSS-анимации скрытия (0.45 сек)
                   transitionTimeoutRef.current = setTimeout(() => {
                       showNewOverlay(); 
                   }, 450);
               } else {
-                  // Если экран пуст, показываем мгновенно
                   showNewOverlay();
               }
           }
@@ -156,7 +160,6 @@ export function useWebGraphics(gameId) {
 
   const activePenalties = useMemo(() => {
     if (!game || !game.penalties) return [];
-    
     try {
         const timelines = calculatePenaltyTimelines(game.penalties);
         return timelines
@@ -166,14 +169,11 @@ export function useWebGraphics(gameId) {
             remaining: p.effEnd - timerSeconds,
             player_name: p.player_last_name ? `${p.player_last_name}` : ''
           }));
-    } catch (e) {
-        console.error('Ошибка вычисления штрафов:', e);
-        return [];
-    }
+    } catch (e) { return []; }
   }, [game, timerSeconds]);
 
   return {
-    game, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
-    periodLength, otLength, overlay, isScoreboardVisible
+    game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
+    periodLength, otLength, soLength, overlay, isScoreboardVisible
   };
 }

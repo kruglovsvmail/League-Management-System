@@ -1,3 +1,4 @@
+// src/components/GameLiveDesk/GameDeskShared.jsx
 import React, { useState, useEffect, useRef } from 'react';
 
 // --- Утилиты форматирования ---
@@ -33,18 +34,41 @@ export const localizePosition = (pos) => {
 };
 
 // --- Логика таймеров и штрафов ---
-export const getPeriodLimits = (period, pLen, otLen) => {
+export const getPeriodLimits = (period, pLen, otLen, pCount = 3) => {
   const p = parseInt(pLen, 10) || 20;
   const o = isNaN(parseInt(otLen, 10)) ? 5 : parseInt(otLen, 10);
-  const soTime = (p * 3 + o) * 60;
+  const c = parseInt(pCount, 10) || 3;
   
-  if (period === '1') return { start: 0, end: p * 60 };
-  if (period === '2') return { start: p * 60, end: p * 2 * 60 };
-  if (period === '3') return { start: p * 2 * 60, end: p * 3 * 60 };
-  if (period === 'OT') return { start: p * 3 * 60, end: soTime };
+  const regTime = p * c * 60;
+  const soTime = regTime + (o * 60);
+  
+  if (period === 'OT') return { start: regTime, end: soTime };
   if (period === 'SO') return { start: soTime, end: soTime };
   
+  const periodNum = parseInt(period, 10);
+  if (!isNaN(periodNum) && periodNum >= 1 && periodNum <= c) {
+    return { start: (periodNum - 1) * p * 60, end: periodNum * p * 60 };
+  }
+  
   return { start: 0, end: 0 };
+};
+
+export const calculatePeriodFromTime = (seconds, pLen, otLen, pCount = 3) => {
+  const p = parseInt(pLen, 10) || 20;
+  const o = isNaN(parseInt(otLen, 10)) ? 5 : parseInt(otLen, 10);
+  const c = parseInt(pCount, 10) || 3;
+  
+  if (seconds === null || seconds === undefined) return '1';
+  
+  for (let i = 1; i <= c; i++) {
+    if (seconds <= i * p * 60) return String(i);
+  }
+
+  const regTime = p * c * 60;
+  const otTime = regTime + (o * 60);
+
+  if (o > 0 && seconds <= otTime) return 'OT';
+  return 'SO';
 };
 
 export const calculatePenaltyTimelines = (penalties) => {
@@ -103,6 +127,11 @@ export const penaltyMinsOptions = [
 ];
 
 export const penaltyReasonOptions = PENALTY_REASONS.map(r => ({ value: r, label: r }));
+
+export const shootoutOptions = [
+  { value: 'shootout_goal', label: 'Гол' },
+  { value: 'shootout_miss', label: 'Мимо/Вр.' }
+];
 
 // --- Компоненты UI ---
 export const CustomSelect = ({ value, onChange, options, className, placeholder = "", dropdownWidth = "min-w-[100%]" }) => {
@@ -210,5 +239,26 @@ export const PlusIcon = () => (
 export const UsersIcon = () => (
   <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+  </svg>
+);
+
+// --- ИКОНКИ БУЛЛИТОВ ИЗ ПРЕДОСТАВЛЕННОГО SVG ---
+
+// Зеленая шайба (Гол)
+export const ShootoutGoalIcon = ({ className = "w-5 h-5 text-status-accepted" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse>
+    <path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path>
+    <polyline points="14 17 17 20 23 13"></polyline>
+  </svg>
+);
+
+// Красная шайба (Мимо)
+export const ShootoutMissIcon = ({ className = "w-5 h-5 text-status-rejected" }) => (
+  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse>
+    <path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path>
+    <line x1="16" y1="14" x2="22" y2="20"></line>
+    <line x1="22" y1="14" x2="16" y2="20"></line>
   </svg>
 );

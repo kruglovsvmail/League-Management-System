@@ -1,7 +1,8 @@
+// src/components/GameLiveDesk/TimerPanel.jsx
 import React, { useState } from 'react';
 import { formatTime, formatTimeMask, getPeriodLimits, parseTime } from './GameDeskShared';
 import { TimerSettingsDrawer } from '../../modals/TimerSettingsDrawer';
-import { getImageUrl } from '../../utils/helpers'; // ДОБАВЛЕН ИМПОРТ
+import { getImageUrl } from '../../utils/helpers';
 
 // --- Иконки ---
 const GearIcon = () => (
@@ -31,7 +32,7 @@ const PauseIcon = () => (
 
 export const TimerPanel = ({
   game, currentPeriod, changePeriod, timerSeconds, isTimerRunning, handleTimerAction,
-  periodLength, setPeriodLength, otLength, setOtLength, saveTimerSettings,
+  periodsCount, setPeriodsCount, periodLength, setPeriodLength, otLength, setOtLength, soLength, setSoLength, saveTimerSettings,
   isPlusMinusEnabled, setIsPlusMinusEnabled, socketConnected, onSetTime
 }) => {
   const [isEditingTimer, setIsEditingTimer] = useState(false);
@@ -41,7 +42,6 @@ export const TimerPanel = ({
   const homeShortName = game?.home_short_name || game?.home_team_name?.substring(0, 3).toUpperCase() || 'ХОЗ';
   const awayShortName = game?.away_short_name || game?.away_team_name?.substring(0, 3).toUpperCase() || 'ГОС';
   
-  // ИСПОЛЬЗУЕМ ФУНКЦИЮ getImageUrl
   const homeLogo = getImageUrl(game?.home_team_logo || game?.home_logo_url || game?.home_logo);
   const awayLogo = getImageUrl(game?.away_team_logo || game?.away_logo_url || game?.away_logo);
 
@@ -64,13 +64,15 @@ export const TimerPanel = ({
     handleTimerAction(isTimerRunning ? 'stop' : 'start');
   };
 
-  const currentLimits = getPeriodLimits(currentPeriod, periodLength, otLength);
+  const currentLimits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
   const countdownSecs = Math.max(0, currentLimits.end - timerSeconds);
+
+  // Динамически генерируем список кнопок периодов
+  const periodsArray = Array.from({ length: periodsCount }, (_, i) => String(i + 1)).concat(['OT', 'SO']);
 
   return (
     <div className="w-[20%] h-full flex flex-col z-10 border-l border-white/5 shadow-[-4px_0_24px_rgba(0,0,0,0.2)] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white p-6 overflow-y-auto custom-scrollbar">
       
-      {/* Счет с логотипами и короткими названиями */}
       <div className="flex justify-center items-center gap-4 mb-8 bg-white/5 py-5 px-3 border border-white/10 rounded-xl shadow-inner">
         <div className="flex flex-col items-center w-1/3 gap-1">
           {homeLogo && <img src={homeLogo} alt={homeShortName} className="w-16 h-16 object-contain drop-shadow-md mb-1" />}
@@ -89,18 +91,20 @@ export const TimerPanel = ({
         </div>
       </div>
 
-      {/* Периоды */}
       <div className="mb-8">
         <div className="text-[10px] text-white/40 uppercase font-bold mb-2 tracking-widest text-center">Период</div>
-        <div className="grid grid-cols-5 gap-1.5 bg-white/5 p-1.5 border border-white/10 rounded-lg">
-          {['1', '2', '3', 'OT', 'SO'].map(p => {
+        <div 
+          className="grid gap-1.5 bg-white/5 p-1 border border-white/10 rounded-lg"
+          style={{ gridTemplateColumns: `repeat(${Math.min(periodsArray.length, 5)}, minmax(0, 1fr))` }}
+        >
+          {periodsArray.map(p => {
             const isOTDisabled = p === 'OT' && parseInt(otLength, 10) === 0;
             return (
               <button 
                 key={p} 
                 onClick={() => !isOTDisabled && changePeriod(p)} 
                 disabled={isOTDisabled}
-                className={`py-1.5 text-xs font-black rounded transition-colors ${
+                className={`py-1.5 text-xs font-black rounded-md transition-colors ${
                   isOTDisabled 
                     ? 'opacity-20 cursor-not-allowed text-white/20' 
                     : currentPeriod === p 
@@ -115,10 +119,7 @@ export const TimerPanel = ({
         </div>
       </div>
 
-      {/* Блок Таймеров */}
       <div className="mb-6">
-        
-        {/* Главный таймер (Сквозное) */}
         <div className="text-[10px] text-status-accepted uppercase font-bold mb-2 tracking-widest text-center flex items-center justify-center gap-1.5">
            <span className={`w-2 h-2 rounded-full ${isTimerRunning ? 'bg-status-accepted animate-pulse' : 'bg-white/20'}`}></span>
            Сквозное время
@@ -151,9 +152,7 @@ export const TimerPanel = ({
           )}
         </div>
 
-        {/* Нижний ряд: Остаток (34%) + СТАРТ/СТОП (66%) */}
         <div className="flex items-stretch gap-3">
-          
           <div className="w-[34%] flex flex-col justify-center items-center bg-white/5 border border-dashed border-white/20 rounded-lg py-2 select-none">
             <span className="text-[9px] text-white/40 uppercase font-bold mb-0.5 tracking-widest">Остаток</span>
             <span className={`font-mono text-2xl font-bold tracking-tighter ${countdownSecs <= 60 && isTimerRunning ? 'text-status-rejected animate-pulse' : 'text-white/60'}`}>
@@ -176,11 +175,9 @@ export const TimerPanel = ({
                <><PlayIcon /> СТАРТ</>
              )}
           </button>
-
         </div>
       </div>
 
-      {/* Шапка: шестеренка настроек */}
       <div className="flex justify-end mb-6">
         <button 
           onClick={() => setIsSettingsOpen(true)} 
@@ -191,7 +188,6 @@ export const TimerPanel = ({
         </button>
       </div>
 
-      {/* Статус соединения */}
       <div className="mt-auto pt-4 border-t border-white/10 text-[10px] text-white/40 text-center uppercase tracking-widest font-bold">
         <div className="flex items-center justify-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-status-accepted' : 'bg-status-rejected'}`}></span>
@@ -199,17 +195,15 @@ export const TimerPanel = ({
         </div>
       </div>
 
-      {/* Шторка настроек */}
       <TimerSettingsDrawer 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)}
-        periodLength={periodLength} 
-        setPeriodLength={setPeriodLength}
-        otLength={otLength} 
-        setOtLength={setOtLength}
+        periodsCount={periodsCount} setPeriodsCount={setPeriodsCount}
+        periodLength={periodLength} setPeriodLength={setPeriodLength}
+        otLength={otLength} setOtLength={setOtLength}
+        soLength={soLength} setSoLength={setSoLength}
         saveTimerSettings={saveTimerSettings}
-        isPlusMinusEnabled={isPlusMinusEnabled} 
-        setIsPlusMinusEnabled={setIsPlusMinusEnabled}
+        isPlusMinusEnabled={isPlusMinusEnabled} setIsPlusMinusEnabled={setIsPlusMinusEnabled}
       />
     </div>
   );

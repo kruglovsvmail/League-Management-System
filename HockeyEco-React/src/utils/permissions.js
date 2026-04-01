@@ -2,6 +2,8 @@ export const PERMISSIONS = {
   // --- ДИВИЗИОНЫ ---
   VIEW_DIVISIONS: ['top_manager', 'league_admin'], // Просмотр раздела (вкладка в сайдбаре)
   MANAGE_DIVISIONS: ['top_manager', 'league_admin'], // Настройки, публикация, составы, статусы, допуски, взносы
+  GENERATE_PLAYOFF: ['top_manager', 'league_admin'], // Создание/обновление сетки
+  EDIT_PLAYOFF_MATCHUP: ['top_manager'], // Точечная замена команд
 
   // --- МАТЧИ И ПРОТОКОЛ ---
   // Примечание: VIEW_GAMES не делаем, так как смотреть матчи могут все авторизованные пользователи

@@ -1,12 +1,12 @@
+// HockeyEco-server/controllers/gameController.js
 import pool from '../config/db.js';
+import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
+import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 
-// =======================================================
-// ПУБЛИЧНЫЙ ЭНДПОИНТ ДЛЯ OBS ГРАФИКИ (БЕЗ АВТОРИЗАЦИИ)
-// =======================================================
 export const getPublicGameById = async (req, res) => {
     try {
         const query = `
-            SELECT g.id, g.home_score, g.away_score, 
+            SELECT g.id, g.home_score, g.away_score, g.end_type, g.status,
                    g.game_date, g.stage_type, g.stage_label, g.series_number,
                    g.home_jersey_type, g.away_jersey_type,
                    g.division_id, g.home_team_id, g.away_team_id,
@@ -30,8 +30,21 @@ export const getPublicGameById = async (req, res) => {
                    COALESCE(a.name, g.location_text) as location_text,
                    a.name as arena_name,
                    a.city as arena_city,
-                   a.address as arena_address
+                   a.address as arena_address,
+                   gt.periods_count,
+                   (
+                       SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
+                       FROM (
+                           SELECT period, 
+                                  SUM(CASE WHEN team_id = g.home_team_id THEN 1 ELSE 0 END) as home_goals,
+                                  SUM(CASE WHEN team_id = g.away_team_id THEN 1 ELSE 0 END) as away_goals
+                           FROM game_events ge
+                           WHERE ge.game_id = g.id AND ge.event_type IN ('goal', 'shootout_goal')
+                           GROUP BY period
+                       ) sub
+                   ) as period_scores
             FROM games g
+            LEFT JOIN game_timers gt ON g.id = gt.game_id
             JOIN teams t1 ON g.home_team_id = t1.id
             LEFT JOIN tournament_teams htt ON htt.team_id = t1.id AND htt.division_id = g.division_id
             LEFT JOIN teams t2 ON g.away_team_id = t2.id
@@ -47,7 +60,6 @@ export const getPublicGameById = async (req, res) => {
         if (result.rows.length > 0) {
             const game = result.rows[0];
 
-            // 1. Поиск лидеров команд
             const leaderQuery = `
                 SELECT u.first_name, u.last_name, 
                        COALESCE(tm.photo_url, u.avatar_url) as avatar_url, 
@@ -74,7 +86,6 @@ export const getPublicGameById = async (req, res) => {
             game.home_leader = homeLeaderRes.rows[0] || null;
             game.away_leader = awayLeaderRes.rows[0] || null;
 
-            // 2. Получение составов на матч
             const rosterQuery = `
                 SELECT gr.team_id, u.first_name, u.last_name, gr.jersey_number, 
                        gr.position_in_line, gr.line_number,
@@ -101,7 +112,6 @@ export const getPublicGameById = async (req, res) => {
             game.home_roster = rosterRes.rows.filter(r => r.team_id === game.home_team_id);
             game.away_roster = rosterRes.rows.filter(r => r.team_id === game.away_team_id);
 
-           // 3. Получение всех голов
             const goalsQuery = `
                 SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.goal_strength,
                        u_scorer.last_name as scorer_last_name, u_scorer.first_name as scorer_first_name,
@@ -119,7 +129,6 @@ export const getPublicGameById = async (req, res) => {
             const goalsRes = await pool.query(goalsQuery, [game.id]);
             game.goals = goalsRes.rows;
 
-            // 3.1. Получение всех удалений (Добавлено для графики OBS)
             const penaltiesQuery = `
                 SELECT ge.*, 
                        u_pen.last_name as player_last_name, u_pen.first_name as player_first_name,
@@ -133,7 +142,18 @@ export const getPublicGameById = async (req, res) => {
             const penaltiesRes = await pool.query(penaltiesQuery, [game.id]);
             game.penalties = penaltiesRes.rows;
 
-            // 4. Получение судей и комментатора
+            // =============================================================
+            // [НОВОЕ] ВЫГРУЖАЕМ ВСЕ СОБЫТИЯ (ВКЛЮЧАЯ БУЛЛИТЫ) ДЛЯ ТАБЛО
+            // =============================================================
+            const eventsQuery = `
+                SELECT * FROM game_events 
+                WHERE game_id = $1 
+                ORDER BY id ASC
+            `;
+            const eventsRes = await pool.query(eventsQuery, [game.id]);
+            game.events = eventsRes.rows;
+            // =============================================================
+
             const [refRes, mediaRes] = await Promise.all([
                 pool.query(`
                     SELECT gr.role, u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
@@ -179,7 +199,6 @@ export const getPublicGameById = async (req, res) => {
     }
 };
 
-// --- СПИСОК МАТЧЕЙ (ДЛЯ СТРАНИЦЫ GAMES) ---
 export const getGames = async (req, res) => {
     try {
         const { seasonId } = req.params;
@@ -192,8 +211,21 @@ export const getGames = async (req, res) => {
                 COALESCE(a.name, g.location_text) as location_text,
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
                 at.name as away_team_name, at.logo_url as away_team_logo,
-                d.name as division_name
+                d.name as division_name,
+                gt.periods_count,
+                (
+                    SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
+                    FROM (
+                        SELECT period, 
+                               SUM(CASE WHEN team_id = g.home_team_id THEN 1 ELSE 0 END) as home_goals,
+                               SUM(CASE WHEN team_id = g.away_team_id THEN 1 ELSE 0 END) as away_goals
+                        FROM game_events ge
+                        WHERE ge.game_id = g.id AND ge.event_type IN ('goal', 'shootout_goal')
+                        GROUP BY period
+                    ) sub
+                ) as period_scores
             FROM games g
+            LEFT JOIN game_timers gt ON g.id = gt.game_id
             JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN teams at ON g.away_team_id = at.id
             JOIN divisions d ON g.division_id = d.id
@@ -229,13 +261,13 @@ export const getGames = async (req, res) => {
     }
 };
 
-// --- ПОЛУЧЕНИЕ ОДНОГО МАТЧА (ДЛЯ GAMEPAGE) ---
 export const getGameById = async (req, res) => {
     try {
         const { gameId } = req.params;
         const query = `
             SELECT 
                 g.*,
+                gt.period_length, gt.ot_length, gt.so_length, gt.periods_count,
                 COALESCE(a.name, g.location_text) as location_text,
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
                 COALESCE(htt.custom_jersey_dark_url, ht.jersey_dark_url) as home_jersey_dark,
@@ -243,8 +275,20 @@ export const getGameById = async (req, res) => {
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 COALESCE(att.custom_jersey_dark_url, at.jersey_dark_url) as away_jersey_dark,
                 COALESCE(att.custom_jersey_light_url, at.jersey_light_url) as away_jersey_light,
-                d.name as division_name
+                d.name as division_name,
+                (
+                    SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
+                    FROM (
+                        SELECT period, 
+                               SUM(CASE WHEN team_id = g.home_team_id THEN 1 ELSE 0 END) as home_goals,
+                               SUM(CASE WHEN team_id = g.away_team_id THEN 1 ELSE 0 END) as away_goals
+                        FROM game_events ge
+                        WHERE ge.game_id = g.id AND ge.event_type IN ('goal', 'shootout_goal')
+                        GROUP BY period
+                    ) sub
+                ) as period_scores
             FROM games g
+            LEFT JOIN game_timers gt ON g.id = gt.game_id
             JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN tournament_teams htt ON htt.team_id = ht.id AND htt.division_id = g.division_id
             LEFT JOIN teams at ON g.away_team_id = at.id
@@ -302,7 +346,6 @@ export const getGameById = async (req, res) => {
     }
 };
 
-// --- СПРАВОЧНИК АРЕН ---
 export const getArenas = async (req, res) => {
     try {
         const result = await pool.query(`SELECT id, name, city FROM arenas WHERE status = 'active' ORDER BY name`);
@@ -313,7 +356,6 @@ export const getArenas = async (req, res) => {
     }
 };
 
-// --- СОЗДАНИЕ МАТЧА ---
 export const createGame = async (req, res) => {
     try {
         const { seasonId } = req.params;
@@ -343,7 +385,6 @@ export const createGame = async (req, res) => {
     }
 };
 
-// --- ОБНОВЛЕНИЕ ИНФОРМАЦИИ И ТРАНСЛЯЦИЙ ---
 export const updateGameInfo = async (req, res) => {
     try {
         const { gameId } = req.params;
@@ -376,20 +417,79 @@ export const updateGameInfo = async (req, res) => {
     }
 };
 
-// --- СМЕНА СТАТУСА МАТЧА ---
 export const updateGameStatus = async (req, res) => {
+    const client = await pool.connect();
     try {
         const { gameId } = req.params;
         const { status } = req.body;
-        await pool.query('UPDATE games SET status = $1 WHERE id = $2', [status, gameId]);
+
+        await client.query('BEGIN');
+
+        const gameRes = await client.query('SELECT division_id, status, stage_type, home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+        if (gameRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        const game = gameRes.rows[0];
+
+        const goalsRes = await client.query(`SELECT team_id, event_type, period FROM game_events WHERE game_id = $1`, [gameId]);
+        let homeRegGoals = 0, awayRegGoals = 0;
+        let homeSOGoals = 0, awaySOGoals = 0;
+        let hasOTGoal = false, hasSO = false;
+
+        goalsRes.rows.forEach(e => {
+            if (e.event_type === 'goal') {
+                if (e.team_id === game.home_team_id) homeRegGoals++;
+                else if (e.team_id === game.away_team_id) awayRegGoals++;
+                if (e.period === 'OT') hasOTGoal = true;
+            } else if (e.event_type === 'shootout_goal' || e.event_type === 'shootout_miss') {
+                hasSO = true;
+                if (e.event_type === 'shootout_goal') {
+                    if (e.team_id === game.home_team_id) homeSOGoals++;
+                    else if (e.team_id === game.away_team_id) awaySOGoals++;
+                }
+            }
+        });
+
+        let endType = 'regular';
+        if (hasSO) endType = 'so';
+        else if (hasOTGoal) endType = 'ot';
+
+        let finalHomeScore = homeRegGoals;
+        let finalAwayScore = awayRegGoals;
+
+        if (status === 'finished' && hasSO) {
+            if (homeSOGoals > awaySOGoals) finalHomeScore++;
+            else if (awaySOGoals > homeSOGoals) finalAwayScore++;
+        }
+
+        await client.query(`
+            UPDATE games 
+            SET status = $1, end_type = $2, home_score = $3, away_score = $4 
+            WHERE id = $5
+        `, [status, status === 'finished' ? endType : null, finalHomeScore, finalAwayScore, gameId]);
+
+        await client.query('COMMIT');
+
+        if ((status === 'finished' || game.status === 'finished') && game.division_id) {
+            try {
+                if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
+                else await recalculateDivisionStandings(game.division_id);
+            } catch (calcErr) {
+                console.error(`Ошибка при автоматическом пересчете для дивизиона ${game.division_id}:`, calcErr);
+            }
+        }
+
         res.json({ success: true });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Ошибка смены статуса:', err);
         res.status(500).json({ success: false, error: 'Ошибка смены статуса' });
+    } finally {
+        client.release();
     }
 };
 
-// --- ПОЛУЧЕНИЕ РОСТЕРОВ НА МАТЧ ---
 export const getGameRoster = async (req, res) => {
     try {
         const { gameId, teamId } = req.params;
@@ -442,7 +542,6 @@ export const getGameRoster = async (req, res) => {
     }
 };
 
-// --- СОХРАНЕНИЕ СОСТАВА НА МАТЧ ---
 export const saveGameRoster = async (req, res) => {
     const client = await pool.connect();
     try {
@@ -497,9 +596,6 @@ export const saveGameRoster = async (req, res) => {
     }
 };
 
-// ==========================================
-// ЭНДПОИНТЫ ДЛЯ СУДЕЙ И МЕДИА
-// ==========================================
 export const getGameStaff = async (req, res) => {
     try {
         const { gameId } = req.params;

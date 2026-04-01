@@ -9,8 +9,6 @@ export function GamesCard({ game, onClick }) {
   const dateStr = gameDate.isValid() ? gameDate.format('DD.MM.YYYY') : '--.--.----';
   const timeStr = gameDate.isValid() ? gameDate.format('HH:mm') : '--:--';
 
-  // Разбираем стадию на массив из 3 параметров без дополнительных приставок, 
-  // так как теперь stage_label и так красиво отформатирован из БД ("1-й круг", "Финал" и т.д.)
   const getStageLines = () => {
     if (!game.stage_type) return [];
     
@@ -35,7 +33,47 @@ export function GamesCard({ game, onClick }) {
 
   const stageLines = getStageLines();
 
-  // Рендер центрального блока (Только счет)
+  // Логика формирования строки со счетом по периодам с тонкими разделителями и пометкой ОТ
+  const getPeriodScoresString = () => {
+    if (!game.period_scores || game.status === 'scheduled' || game.status === 'cancelled') return null;
+    
+    const pCount = game.periods_count || 3;
+    const scores = game.period_scores;
+    const parts = [];
+
+    // Основные периоды
+    for (let i = 1; i <= pCount; i++) {
+        const h = scores[i]?.home || 0;
+        const a = scores[i]?.away || 0;
+        parts.push({ text: `${h}:${a}` });
+    }
+
+    // Овертайм
+    if (scores['OT'] && (scores['OT'].home > 0 || scores['OT'].away > 0)) {
+        parts.push({ text: `${scores['OT'].home}:${scores['OT'].away}`, label: 'ОТ' });
+    }
+
+    if (parts.length === 0) return null;
+
+    return (
+        <div className="flex items-center justify-center gap-2 mt-2">
+            {/* Начальный разделитель */}
+            <div className="w-[1px] h-2.5 bg-graphite/20 rounded-full"></div>
+            
+            {parts.map((part, index) => (
+                <React.Fragment key={index}>
+                    <span className="flex items-center gap-1.5 text-[12px] font-bold text-graphite/80 tracking-widest leading-none">
+                        {part.label && <span className="text-[10px] font-black text-graphite/40 tracking-normal uppercase">{part.label}</span>}
+                        {part.text}
+                    </span>
+                    {/* Разделитель после каждого периода */}
+                    <div className="w-[1px] h-2.5 bg-graphite/20 rounded-full"></div>
+                </React.Fragment>
+            ))}
+        </div>
+    );
+  };
+
   const renderScoreBlock = () => {
     if (game.status === 'cancelled') {
       return <span className="text-[13px] font-bold text-status-rejected/70 uppercase tracking-widest bg-status-rejected/10 px-3 py-1.5 rounded-md">Отменен</span>;
@@ -44,16 +82,26 @@ export function GamesCard({ game, onClick }) {
       return <span className="text-[32px] font-black text-graphite/30 tracking-widest">- : -</span>;
     }
 
+    const isHomeSO = game.status === 'finished' && game.end_type === 'so' && game.home_score > game.away_score;
+    const isAwaySO = game.status === 'finished' && game.end_type === 'so' && game.away_score > game.home_score;
+
     return (
-      <div className="flex flex-col items-center justify-center mt-[-8px]">
-        {/* Для LIVE счет тоже делаем синим */}
-        <div className={`flex items-center gap-2 text-[32px] font-black tracking-tighter leading-none ${game.status === 'live' ? 'text-blue-500' : 'text-graphite'}`}>
-          <span>{game.home_score || 0}</span>
+      <div className="flex flex-col items-center justify-center mt-[-4px]">
+        {/* Счет с абсолютным позиционированием буквы "Б" для идеальной центровки */}
+        <div className={`relative inline-flex items-center justify-center gap-1.5 text-[32px] font-black tracking-tighter leading-none ${game.status === 'live' ? 'text-blue-500' : 'text-graphite'}`}>
+          {isHomeSO && <span className="absolute right-full mt-1 mr-2 text-[16px] font-black text-orange uppercase tracking-normal top-1/2 -translate-y-1/2">Б</span>}
+          
+          <span className="w-8 text-right">{game.home_score || 0}</span>
           <span className={`pb-1.5 ${game.status === 'live' ? 'text-blue-500/50' : 'text-graphite/40'}`}>:</span>
-          <span>{game.away_score || 0}</span>
+          <span className="w-8 text-left">{game.away_score || 0}</span>
+          
+          {isAwaySO && <span className="absolute left-full mt-1 ml-2 text-[16px] font-black text-orange uppercase tracking-normal top-1/2 -translate-y-1/2">Б</span>}
         </div>
+
+        {/* Счет по периодам */}
+        {getPeriodScoresString()}
         
-        {/* Индикатор LIVE стал синим */}
+        {/* Индикатор LIVE */}
         {game.status === 'live' && (
           <div className="flex items-center gap-2 mt-2">
             <span className="relative flex h-2.5 w-2.5">
@@ -62,12 +110,6 @@ export function GamesCard({ game, onClick }) {
             </span>
             <span className="text-[12px] font-black text-blue-500 tracking-widest leading-none">LIVE</span>
           </div>
-        )}
-        {/* Индикатор ОТ/Буллитов */}
-        {game.status === 'finished' && game.end_type && game.end_type !== 'regular' && (
-          <span className="text-[11px] font-bold text-graphite/50 uppercase mt-1">
-            {game.end_type === 'ot' ? 'ОТ' : 'Б'}
-          </span>
         )}
       </div>
     );
@@ -78,17 +120,12 @@ export function GamesCard({ game, onClick }) {
       onClick={onClick}
       className="bg-white/70 rounded-xl overflow-hidden transition-all duration-300 h-fit select-none border border-graphite/10 shadow-sm hover:border-orange/40 hover:shadow-md cursor-pointer group flex flex-col"
     >
-      {/* ВЕРХНЯЯ СТРОКА: Дивизион (Слева), Дата/Время (По центру), Арена (Справа) */}
       <div className="flex justify-between items-start px-4 pt-4 pb-2">
-        
-        {/* Левая часть: Дивизион */}
         <div className="flex-1 max-w-[40%]">
           <span className="text-[10px] font-bold text-graphite/50 uppercase tracking-wider truncate block text-left" title={game.division_name}>
             {game.division_name || 'Дивизион'}
           </span>
         </div>
-
-        {/* Центральная часть: Дата и Время */}
         <div className="flex-1 flex flex-col items-center justify-center gap-0.5">
           <span className="text-[12px] font-bold text-graphite/50">
             {dateStr}
@@ -97,20 +134,14 @@ export function GamesCard({ game, onClick }) {
             {timeStr}
           </span>
         </div>
-
-        {/* Правая часть: Место проведения (Тот же стиль, что и у дивизиона, выравнивание вправо) */}
         <div className="flex-1 max-w-[40%]">
           <span className="text-[10px] font-bold text-graphite/50 uppercase tracking-wider truncate block text-right" title={game.location_text}>
             {game.location_text || 'Арена не указана'}
           </span>
         </div>
-
       </div>
 
-      {/* СЕРЕДИНА: Команды и Центральный блок (Счет) */}
       <div className="flex items-start justify-between gap-2 px-4 pb-4">
-        
-        {/* Хозяева */}
         <div className="flex flex-col items-center gap-2 flex-1 w-[30%]">
           <div className="w-16 h-16 shrink-0 rounded-xl">
             <img src={getImageUrl(game.home_team_logo || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="Home" />
@@ -122,12 +153,10 @@ export function GamesCard({ game, onClick }) {
           </div>
         </div>
 
-        {/* Блок счета (отцентрирован по высоте 104px = лого 64px + отступ 8px + текст 32px) */}
         <div className="w-[140px] h-[104px] shrink-0 flex items-center justify-center">
           {renderScoreBlock()}
         </div>
 
-        {/* Гости */}
         <div className="flex flex-col items-center gap-2 flex-1 w-[30%]">
           <div className="w-16 h-16 shrink-0 rounded-xl">
             <img src={getImageUrl(game.away_team_logo || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="Away" />
@@ -138,10 +167,8 @@ export function GamesCard({ game, onClick }) {
             </span>
           </div>
         </div>
-
       </div>
 
-      {/* ПОДВАЛ: Стадия турнира (3 блока) */}
       {stageLines.length === 3 && (
         <div className="px-4 py-3 bg-graphite/[0.02] border-t border-graphite/5 flex items-center justify-between">
           <div className="flex-1 text-left truncate pr-2">

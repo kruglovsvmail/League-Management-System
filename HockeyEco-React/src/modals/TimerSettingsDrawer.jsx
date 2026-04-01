@@ -1,3 +1,4 @@
+// src/modals/TimerSettingsDrawer.jsx
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../ui/Button';
@@ -6,10 +7,14 @@ import { Switch } from '../ui/Switch';
 export function TimerSettingsDrawer({
   isOpen, 
   onClose,
+  periodsCount,
+  setPeriodsCount,
   periodLength, 
   setPeriodLength,
   otLength, 
   setOtLength,
+  soLength,
+  setSoLength,
   isPlusMinusEnabled, 
   setIsPlusMinusEnabled,
   saveTimerSettings
@@ -40,7 +45,22 @@ export function TimerSettingsDrawer({
           
           <div className="bg-white border border-graphite/5 shadow-sm p-5 rounded-xl space-y-5">
             <div className="flex justify-between items-center">
-              <span className="text-[13px] font-bold text-graphite">Длительность периода (мин):</span>
+              <span className="text-[13px] font-bold text-graphite">Количество периодов:</span>
+              <input 
+                type="number" 
+                min="1"
+                max="10"
+                value={periodsCount} 
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setPeriodsCount(isNaN(val) || val < 1 ? 1 : val);
+                }} 
+                className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
+              />
+            </div>
+
+            <div className="flex justify-between items-center pt-5 border-t border-graphite/10">
+              <span className="text-[13px] font-bold text-graphite">Длительность (мин):</span>
               <input 
                 type="number" 
                 min="1"
@@ -62,6 +82,20 @@ export function TimerSettingsDrawer({
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
                   setOtLength(isNaN(val) || val < 0 ? 0 : val);
+                }} 
+                className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
+              />
+            </div>
+
+            <div className="flex justify-between items-center pt-5 border-t border-graphite/10">
+              <span className="text-[13px] font-bold text-graphite">Бросков в серии буллитов:</span>
+              <input 
+                type="number" 
+                min="1"
+                value={soLength} 
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setSoLength(isNaN(val) || val < 1 ? 1 : val);
                 }} 
                 className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
               />
