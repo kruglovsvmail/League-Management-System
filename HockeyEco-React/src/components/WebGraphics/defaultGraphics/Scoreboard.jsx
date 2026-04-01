@@ -1,3 +1,4 @@
+// src/components/WebGraphics/defaultGraphics/Scoreboard.jsx
 import React, { useState, useEffect } from 'react';
 import { getSafeUrl } from '../../../utils/graphicsHelpers';
 import { AnimationWrapper } from './AnimationWrapper';
@@ -7,8 +8,22 @@ const formatTime = (s) => {
   return `${Math.floor(s / 60)}:${('0' + (s % 60)).slice(-2)}`;
 };
 
+// Иконки для буллитов
+const ShootoutGoalIcon = () => (
+  <svg className="w-3.5 h-3.5 text-status-accepted drop-shadow-md" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="12" r="10" />
+    <path fill="white" d="M10.5 16.5l-4-4 1.41-1.41L10.5 13.67l7.09-7.09L19 8l-8.5 8.5z" />
+  </svg>
+);
+const ShootoutMissIcon = () => (
+  <svg className="w-3.5 h-3.5 text-status-rejected drop-shadow-md" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="12" r="10" />
+    <path fill="white" d="M15.5 14.09L14.09 15.5 12 13.41 9.91 15.5 8.5 14.09 10.59 12 8.5 9.91 9.91 8.5 12 10.59 14.09 8.5 15.5 9.91 13.41 12 15.5 14.09z" />
+  </svg>
+);
+
 export default function Scoreboard({ 
-  game, timerSeconds, currentPeriod, isTimerRunning, 
+  game, events = [], soLength = 3, timerSeconds, currentPeriod, isTimerRunning, 
   activePenalties, periodLength, otLength, overlay, isScoreboardVisible 
 }) {
 
@@ -37,8 +52,30 @@ export default function Scoreboard({
   const homeLogo = getSafeUrl(game.home_team_logo);
   const awayLogo = getSafeUrl(game.away_team_logo);
 
-  const homeColorHex = '#FF5722'; // Можно заменить на динамические из game.home_color
-  const awayColorHex = '#0EA5E9'; // Можно заменить на динамические из game.away_color
+  const homeColorHex = '#FF5722'; 
+  const awayColorHex = '#0EA5E9'; 
+
+  // =======================================================================
+  // ЛОГИКА СЕРИИ БУЛЛИТОВ
+  // =======================================================================
+  const homeShootout = events.filter(e => e.period === 'SO' && e.team_id === game.home_team_id && ['shootout_goal', 'shootout_miss'].includes(e.event_type));
+  const awayShootout = events.filter(e => e.period === 'SO' && e.team_id === game.away_team_id && ['shootout_goal', 'shootout_miss'].includes(e.event_type));
+  
+  let displaySlots = soLength;
+
+  if (currentPeriod === 'SO') {
+    const maxTaken = Math.max(homeShootout.length, awayShootout.length);
+    const isRoundComplete = homeShootout.length === maxTaken && awayShootout.length === maxTaken;
+    const homeSOGoals = homeShootout.filter(s => s.event_type === 'shootout_goal').length;
+    const awaySOGoals = awayShootout.filter(s => s.event_type === 'shootout_goal').length;
+    
+    // Если раунд завершен, счет равный, и бросков сделано не меньше базового soLength - добавляем слот для sudden death
+    if (isRoundComplete && homeSOGoals === awaySOGoals && maxTaken >= displaySlots) {
+        displaySlots = maxTaken + 1; 
+    } else {
+        displaySlots = Math.max(displaySlots, maxTaken);
+    }
+  }
 
   // =======================================================================
   // УМНАЯ ЛОГИКА СКРЫТИЯ ТАБЛО (ЗАЩИТА ОТ МИГАНИЯ ПРИ ТРАНЗИШЕНАХ)
@@ -49,27 +86,19 @@ export default function Scoreboard({
   const [hideForOverlay, setHideForOverlay] = useState(false);
 
   useEffect(() => {
-    if (isFullScreenActive) {
-      // Если появилась большая плашка — прячем табло мгновенно
-      setHideForOverlay(true);
-    } else {
-      // Если плашка пропала, ждем 600мс. 
-      // Это покрывает время транзишена (450мс) при смене плашек в автопилоте,
-      // а также дает красивую паузу перед возвращением табло в эфир.
-      const timer = setTimeout(() => {
-        setHideForOverlay(false);
-      }, 600);
+    if (isFullScreenActive) setHideForOverlay(true);
+    else {
+      const timer = setTimeout(() => setHideForOverlay(false), 600);
       return () => clearTimeout(timer);
     }
   }, [isFullScreenActive]);
 
-  // Табло скрыто, если его выключил режиссер ИЛИ если висит большая плашка
   const isHidden = !isScoreboardVisible || hideForOverlay;
-  // =======================================================================
 
+  // =======================================================================
+  // ЛОГИКА ШТРАФОВ
+  // =======================================================================
   const safePenalties = Array.isArray(activePenalties) ? activePenalties : [];
-  
-  // Берем до 2 штрафов на команду
   const visibleHome = safePenalties.filter(p => p.team_id === game.home_team_id).slice(0, 2);
   const visibleAway = safePenalties.filter(p => p.team_id === game.away_team_id).slice(0, 2);
 
@@ -82,31 +111,23 @@ export default function Scoreboard({
   if (homePlayers < 5 || awayPlayers < 5) {
     if (homePlayers === awayPlayers) {
         strengthText = `${homePlayers} НА ${awayPlayers}`;
-    } else if (homePlayers > awayPlayers) {
-        isPP = true;
-        strengthText = `БОЛЬШИНСТВО`;
     } else {
         isPP = true;
         strengthText = `БОЛЬШИНСТВО`;
     }
   }
 
-  // Внутренний компонент для отрисовки строки команды (чтобы не дублировать код)
-  const TeamRow = ({ logo, shortName, score, color, penalties, isTopRow }) => (
+  // =======================================================================
+  // ВНУТРЕННИЙ КОМПОНЕНТ СТРОКИ КОМАНДЫ
+  // =======================================================================
+  const TeamRow = ({ logo, shortName, score, color, penalties, shootoutShots, isTopRow }) => (
     <div className={`flex items-stretch h-[44px] bg-zinc-900 relative ${isTopRow ? 'border-b border-zinc-800' : ''}`}>
-      {/* Цветовой маркер команды */}
       <div className="w-2 shrink-0 z-10" style={{ backgroundColor: color }}></div>
       
-      {/* Название и счет (компенсация скоса для текста) */}
       <div className="flex items-center justify-between w-[200px] px-4 skew-x-[10deg] z-10">
         <div className="flex items-center gap-3">
           {logo && (
-            <img 
-              src={logo} 
-              alt="logo" 
-              className="w-8 h-8 object-contain"
-              onError={(e) => { e.target.style.display = 'none'; }} 
-            />
+            <img src={logo} alt="logo" className="w-8 h-8 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
           )}
           <span className="font-bold text-lg uppercase tracking-wider text-white">
             {shortName}
@@ -117,8 +138,19 @@ export default function Scoreboard({
         </span>
       </div>
 
-      {/* Штрафы (если есть, прилипают справа) */}
-      {penalties.length > 0 && (
+      {/* Отрисовываем либо слоты Буллитов, либо таймеры Штрафов */}
+      {currentPeriod === 'SO' ? (
+        <div className="flex items-center bg-zinc-900/80 px-4 border-l border-zinc-800 z-0">
+          <div className="skew-x-[10deg] flex gap-2 items-center justify-center">
+            {Array.from({ length: displaySlots }).map((_, i) => {
+              const shot = shootoutShots[i];
+              if (!shot) return <div key={i} className="w-2.5 h-2.5 rounded-full border-2 border-zinc-600/50"></div>; // Пустой слот
+              if (shot.event_type === 'shootout_goal') return <ShootoutGoalIcon key={i} />; // Гол
+              return <ShootoutMissIcon key={i} />; // Мимо
+            })}
+          </div>
+        </div>
+      ) : penalties.length > 0 && (
         <div className="flex items-center bg-yellow-400 px-3 border-l border-zinc-800 z-0">
           <div className="skew-x-[10deg] flex gap-3 text-black font-mono font-black text-xl tracking-tighter">
             {penalties.map(p => (
@@ -136,27 +168,22 @@ export default function Scoreboard({
       isVisible={!isHidden}
       className="absolute top-10 left-12 flex flex-col items-start z-50 drop-shadow-2xl"
     >
-      {/* Главный контейнер со скосом */}
       <div className="flex items-stretch skew-x-[-10deg] overflow-hidden rounded-md bg-zinc-950">
         
-        {/* Левый блок: Команды (в две строки) */}
         <div className="flex flex-col">
           <TeamRow 
             logo={homeLogo} shortName={homeShortName} score={game.home_score} 
-            color={homeColorHex} penalties={visibleHome} isTopRow={true} 
+            color={homeColorHex} penalties={visibleHome} shootoutShots={homeShootout} isTopRow={true} 
           />
           <TeamRow 
             logo={awayLogo} shortName={awayShortName} score={game.away_score} 
-            color={awayColorHex} penalties={visibleAway} isTopRow={false} 
+            color={awayColorHex} penalties={visibleAway} shootoutShots={awayShootout} isTopRow={false} 
           />
         </div>
 
-        {/* Правый блок: Таймер и Период */}
         <div className="flex flex-col items-center justify-center w-[120px] bg-zinc-950 relative overflow-hidden">
-          {/* Блик, пробегающий по блоку времени */}
           <div className="absolute top-0 bottom-0 w-[200%] bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-[-20deg] animate-glare pointer-events-none z-0"></div>
           
-          {/* Компенсация скоса */}
           <div className="skew-x-[10deg] flex flex-col items-center z-10 w-full px-2">
             <span className={`font-mono text-3xl font-black tabular-nums leading-none tracking-tight transition-colors ${isTimerRunning ? 'text-white' : 'text-zinc-500'}`}>
               {currentPeriod === 'SO' ? '0:00' : formatTime(displaySeconds)}
@@ -168,8 +195,7 @@ export default function Scoreboard({
         </div>
       </div>
 
-      {/* Плашка "Большинство / Формат", выезжающая снизу */}
-      {strengthText && (
+      {strengthText && currentPeriod !== 'SO' && (
         <div className="flex justify-start ml-8 -mt-1 z-[-1]">
           <div className={`skew-x-[-10deg] px-5 py-1 rounded-b-sm border-x border-b border-zinc-950 shadow-md ${isPP ? 'bg-yellow-400 text-black' : 'bg-zinc-800 text-white'}`}>
             <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em]">

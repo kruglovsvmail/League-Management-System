@@ -4,7 +4,7 @@ import { Icon } from '../ui/Icon';
 import { LeagueSelectModal } from '../modals/LeagueSelectModal';
 import { ProfileDrawer } from '../modals/ProfileDrawer';
 import { getImageUrl } from '../utils/helpers';
-import { PERMISSIONS } from '../utils/permissions'; // <-- ИМПОРТ МАТРИЦЫ ПРАВ
+import { PERMISSIONS } from '../utils/permissions'; 
 
 const ROLE_NAMES = {
   'top_manager': 'Руководитель',
@@ -27,7 +27,6 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     setLogoError(false);
   }, [selectedLeague]);
 
-  // --- ПРОВЕРКА ПРАВ ДЛЯ ДИВИЗИОНОВ ---
   const userRolesStr = selectedLeague?.role || '';
   const userRolesArr = userRolesStr.split(',').map(r => r.trim());
   const isGlobalAdmin = user?.globalRole === 'admin';
@@ -36,9 +35,10 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     PERMISSIONS.VIEW_DIVISIONS?.includes(role)
   );
 
-  // Формируем список меню, исключая null элементы
+  // ФОРМИРОВАНИЕ МЕНЮ (ДОБАВЛЕН РОУТ ТАБЛИЦ)
   const baseMenuItems = [
     { name: "Матчи", path: "/games", icon: "matches" },
+    { name: "Таблицы", path: "/standings", icon: "chevron" },
     canViewDivisions ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
     { name: "Трансферы", path: "/transfers", icon: "transfers" },
     { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" },
@@ -55,7 +55,6 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
   const hasValidLogo = selectedLeague?.logo_url && !logoError;
 
-  // Вспомогательная функция для рендера кнопок меню
   const renderNavLink = (item) => (
     <NavLink
       key={item.path}
@@ -115,20 +114,16 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
         {/* Навигация */}
         <nav className="flex-1 overflow-y-auto px-4 mt-4 custom-scrollbar">
-          
-          {/* Основные разделы */}
           <div className="space-y-1">
             {baseMenuItems.map(renderNavLink)}
           </div>
 
-          {/* Разделитель и админские разделы */}
           {user?.globalRole === 'admin' && (
             <div className="mt-6 pt-4 border-t border-white/10 space-y-1">
               {renderNavLink({ name: "Глобальный Реестр", path: "/registry", icon: "registry" })}
               {renderNavLink({ name: "Упр. командой", path: "/teams", icon: "team" })}
             </div>
           )}
-          
         </nav>
 
         {/* Нижний блок: профиль и выход */}

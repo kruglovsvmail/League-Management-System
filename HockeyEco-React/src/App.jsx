@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage';
 import { HandbookPage } from './pages/HandbookPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DivisionsPage } from './pages/DivisionsPage';
+import { StandingsPage } from './pages/StandingsPage'; // <-- ИМПОРТ НОВОЙ СТРАНИЦЫ
 import { TransfersPage } from './pages/TransfersPage';
 import { DisqualificationsPage } from './pages/DisqualificationsPage';
 import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
@@ -14,8 +15,8 @@ import { TeamManagementPage } from './pages/TeamManagementPage';
 import { GamesPage } from './pages/GamesPage';
 import { GamePage } from './pages/GamePage';
 import { GameLiveDesk } from './pages/GameLiveDesk';
-import { WebGraphics } from './pages/WebGraphics'; // <-- НОВЫЙ ИМПОРТ OBS ОВЕРЛЕЯ
-import { WebGraphicsPanel } from './pages/WebGraphicsPanel'; // <-- НОВЫЙ ИМПОРТ ПАНЕЛИ УПРАВЛЕНИЯ ГРАФИКОЙ
+import { WebGraphics } from './pages/WebGraphics'; 
+import { WebGraphicsPanel } from './pages/WebGraphicsPanel'; 
 
 // Импорт каркаса, UI и прав
 import { AdminLayout } from './AdminLayout';
@@ -131,16 +132,13 @@ export default function App() {
             element={ isAuthenticated ? <Navigate to={defaultRoute} replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} /> } 
           />
 
-          {/* === ПУБЛИЧНЫЙ РОУТ ДЛЯ OBS (БЕЗ АВТОРИЗАЦИИ) === */}
           <Route path="/games/:gameId/graphics" element={<WebGraphics />} />
 
-          {/* === РОУТ ПАНЕЛИ СЕКРЕТАРЯ (БЕЗ ADMIN LAYOUT) === */}
           <Route 
             path="/games/:gameId/live-desk" 
             element={ isAuthenticated ? <GameLiveDesk user={currentUser} /> : <Navigate to="/login" replace /> } 
           />
 
-          {/* === РОУТ ПАНЕЛИ УПРАВЛЕНИЯ ГРАФИКОЙ (БЕЗ ADMIN LAYOUT) === */}
           <Route 
             path="/games/:gameId/graphics-panel" 
             element={ isAuthenticated ? <WebGraphicsPanel user={currentUser} /> : <Navigate to="/login" replace /> } 
@@ -164,6 +162,7 @@ export default function App() {
             <Route path="registry" element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="teams" element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="divisions" element={canViewDivisions ? <DivisionsPage /> : <Navigate to="/games" replace />} />
+            <Route path="standings" element={<StandingsPage />} /> {/* <-- РЕГИСТРАЦИЯ НОВОГО РОУТА */}
             <Route path="games" element={<GamesPage />} />
             <Route path="handbook" element={<HandbookPage />} />
             <Route path="settings" element={<SettingsPage />} />

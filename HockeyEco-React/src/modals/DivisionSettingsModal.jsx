@@ -27,6 +27,57 @@ const CRITERIA_OPTIONS = [
   'Количество побед'
 ];
 
+// Функция для мгновенной инициализации данных (решает баг со Stepper'ами)
+const getInitialFormData = (div) => {
+  if (div) {
+    let parsedCriteria = CRITERIA_OPTIONS;
+    try {
+      if (div.ranking_criteria) {
+        const parsed = typeof div.ranking_criteria === 'string' ? JSON.parse(div.ranking_criteria) : div.ranking_criteria;
+        if (Array.isArray(parsed) && parsed.length === 5) parsedCriteria = parsed;
+      }
+    } catch (e) {}
+
+    return {
+      name: div.name || '',
+      short_name: div.short_name || '',
+      tournament_type: REV_TYPE_MAP[div.tournament_type] || 'Регулярный чемпионат',
+      description: div.description || '',
+      
+      start_date: div.start_date ? div.start_date.split('T')[0] : null,
+      end_date: div.end_date ? div.end_date.split('T')[0] : null,
+      application_start: div.application_start ? div.application_start.split('T')[0] : null,
+      application_end: div.application_end ? div.application_end.split('T')[0] : null,
+      transfer_start: div.transfer_start ? div.transfer_start.split('T')[0] : null,
+      transfer_end: div.transfer_end ? div.transfer_end.split('T')[0] : null,
+
+      points_win_reg: div.points_win_reg ?? 2,
+      points_win_ot: div.points_win_ot ?? 2,
+      points_draw: div.points_draw ?? 1,
+      points_loss_ot: div.points_loss_ot ?? 1,
+      points_loss_reg: div.points_loss_reg ?? 0,
+      
+      ranking_criteria: parsedCriteria,
+
+      playoff_start_round: REV_ROUND_MAP[div.playoff_start_round] || '1/4 Финала',
+      has_third_place: div.has_third_place || false,
+      wins_needed_1_8: div.wins_needed_1_8 ?? 2,
+      wins_needed_1_4: div.wins_needed_1_4 ?? 2,
+      wins_needed_1_2: div.wins_needed_1_2 ?? 2,
+      wins_needed_final: div.wins_needed_final ?? 2,
+      wins_needed_3rd: div.wins_needed_3rd ?? 1
+    };
+  }
+  
+  return {
+    name: '', short_name: '', tournament_type: 'Регулярный чемпионат', description: '',
+    start_date: null, end_date: null, application_start: null, application_end: null, transfer_start: null, transfer_end: null,
+    points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
+    ranking_criteria: [CRITERIA_OPTIONS[0], CRITERIA_OPTIONS[1], CRITERIA_OPTIONS[2], CRITERIA_OPTIONS[3], CRITERIA_OPTIONS[4]],
+    playoff_start_round: '1/4 Финала', has_third_place: false, wins_needed_1_8: 2, wins_needed_1_4: 2, wins_needed_1_2: 2, wins_needed_final: 2, wins_needed_3rd: 1
+  };
+};
+
 export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onSuccess, setGlobalToast }) {
   const { user } = useOutletContext();
   const [currentStep, setCurrentStep] = useState(0);
@@ -50,36 +101,8 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
   const [logoCleared, setLogoCleared] = useState(false);
   const [regCleared, setRegCleared] = useState(false);
 
-  // Стейт формы
-  const [formData, setFormData] = useState({
-    name: '',
-    short_name: '',
-    tournament_type: 'Регулярный чемпионат',
-    description: '',
-    
-    start_date: null,
-    end_date: null,
-    application_start: null,
-    application_end: null,
-    transfer_start: null,
-    transfer_end: null,
-
-    points_win_reg: 2,
-    points_win_ot: 2,
-    points_draw: 1,
-    points_loss_ot: 1,
-    points_loss_reg: 0,
-    
-    ranking_criteria: [CRITERIA_OPTIONS[0], CRITERIA_OPTIONS[1], CRITERIA_OPTIONS[2], CRITERIA_OPTIONS[3], CRITERIA_OPTIONS[4]],
-
-    playoff_start_round: '1/4 Финала',
-    has_third_place: false,
-    wins_needed_1_8: 2,
-    wins_needed_1_4: 2,
-    wins_needed_1_2: 2,
-    wins_needed_final: 2,
-    wins_needed_3rd: 1
-  });
+  // Стейт формы (теперь инициализируется мгновенно с правильными данными)
+  const [formData, setFormData] = useState(() => getInitialFormData(division));
 
   // Проверка прав на редактирование
   const isAdmin = user?.globalRole === 'admin';
@@ -87,63 +110,16 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
   const isLocked = !isAdmin && hasStarted;
 
   useEffect(() => {
-    if (isOpen && division) {
-      let parsedCriteria = CRITERIA_OPTIONS;
-      try {
-        if (division.ranking_criteria) {
-          const parsed = typeof division.ranking_criteria === 'string' ? JSON.parse(division.ranking_criteria) : division.ranking_criteria;
-          if (Array.isArray(parsed) && parsed.length === 5) parsedCriteria = parsed;
-        }
-      } catch (e) {}
-
-      setFormData({
-        name: division.name || '',
-        short_name: division.short_name || '',
-        tournament_type: REV_TYPE_MAP[division.tournament_type] || 'Регулярный чемпионат',
-        description: division.description || '',
-        
-        start_date: division.start_date ? division.start_date.split('T')[0] : null,
-        end_date: division.end_date ? division.end_date.split('T')[0] : null,
-        application_start: division.application_start ? division.application_start.split('T')[0] : null,
-        application_end: division.application_end ? division.application_end.split('T')[0] : null,
-        transfer_start: division.transfer_start ? division.transfer_start.split('T')[0] : null,
-        transfer_end: division.transfer_end ? division.transfer_end.split('T')[0] : null,
-
-        points_win_reg: division.points_win_reg ?? 2,
-        points_win_ot: division.points_win_ot ?? 2,
-        points_draw: division.points_draw ?? 1,
-        points_loss_ot: division.points_loss_ot ?? 1,
-        points_loss_reg: division.points_loss_reg ?? 0,
-        
-        ranking_criteria: parsedCriteria,
-
-        playoff_start_round: REV_ROUND_MAP[division.playoff_start_round] || '1/4 Финала',
-        has_third_place: division.has_third_place || false,
-        wins_needed_1_8: division.wins_needed_1_8 ?? 2,
-        wins_needed_1_4: division.wins_needed_1_4 ?? 2,
-        wins_needed_1_2: division.wins_needed_1_2 ?? 2,
-        wins_needed_final: division.wins_needed_final ?? 2,
-        wins_needed_3rd: division.wins_needed_3rd ?? 1
-      });
+    if (isOpen) {
+      setFormData(getInitialFormData(division));
+      setLogoCleared(false);
+      setRegCleared(false);
+      setLogoFile(null);
+      setRegFile(null);
       
-      setLogoCleared(false);
-      setRegCleared(false);
-      setLogoFile(null);
-      setRegFile(null);
-    } else if (isOpen && !division) {
-      // Сброс при создании нового
-      setFormData({
-        name: '', short_name: '', tournament_type: 'Регулярный чемпионат', description: '',
-        start_date: null, end_date: null, application_start: null, application_end: null, transfer_start: null, transfer_end: null,
-        points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
-        ranking_criteria: [CRITERIA_OPTIONS[0], CRITERIA_OPTIONS[1], CRITERIA_OPTIONS[2], CRITERIA_OPTIONS[3], CRITERIA_OPTIONS[4]],
-        playoff_start_round: '1/4 Финала', has_third_place: false, wins_needed_1_8: 2, wins_needed_1_4: 2, wins_needed_1_2: 2, wins_needed_final: 2, wins_needed_3rd: 1
-      });
-      setCurrentStep(0);
-      setLogoFile(null);
-      setRegFile(null);
-      setLogoCleared(false);
-      setRegCleared(false);
+      if (!division) {
+        setCurrentStep(0);
+      }
     }
   }, [isOpen, division]);
 
@@ -167,7 +143,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
     const te = formData.transfer_end ? new Date(formData.transfer_end) : null;
 
     if (as && ae && ts && te) {
-      // Пересечение происходит, если Старт_А <= Конец_Б И Конец_А >= Старт_Б
       return (as <= te) && (ae >= ts);
     }
     return false;
@@ -177,7 +152,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
   const isFormValid = () => {
     if (!formData.name || !formData.tournament_type) return false;
     if (!formData.start_date || !formData.end_date) return false;
-    if (isOverlap()) return false; // Блокируем кнопку, если даты пересекаются
+    if (isOverlap()) return false;
     return true;
   };
 
@@ -218,10 +193,8 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
       
       if (!data.success) throw new Error(data.error);
 
-      // Получаем ID созданного дивизиона
       if (!division) divId = data.id;
 
-      // Если есть файлы — загружаем
       if (logoFile) await uploadFileS3(divId, 'logo', logoFile);
       if (regFile) await uploadFileS3(divId, 'regulations', regFile);
 
@@ -381,11 +354,11 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="flex flex-col gap-4 bg-white/50 p-5 rounded-xl border border-graphite/10">
                   <span className="text-[14px] font-bold text-graphite uppercase mb-2">Начисление очков</span>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в осн. время</span> <Stepper initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в ОТ / Буллиты</span> <Stepper initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Ничья</span> <Stepper initialValue={formData.points_draw} onChange={(v) => handleChange('points_draw', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в ОТ / Буллиты</span> <Stepper initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в осн. время</span> <Stepper initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} min={0} max={10} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в осн. время</span> <Stepper value={formData.points_win_reg} initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} min={0} max={10} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в ОТ / Буллиты</span> <Stepper value={formData.points_win_ot} initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} min={0} max={10} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Ничья</span> <Stepper value={formData.points_draw} initialValue={formData.points_draw} onChange={(v) => handleChange('points_draw', v)} min={0} max={10} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в ОТ / Буллиты</span> <Stepper value={formData.points_loss_ot} initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} min={0} max={10} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в осн. время</span> <Stepper value={formData.points_loss_reg} initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} min={0} max={10} /></div>
                 </div>
                 
                 <div className="flex flex-col gap-4 bg-white/50 p-5 rounded-xl border border-graphite/10 relative z-50">
@@ -418,12 +391,12 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
 
                 <div className="flex flex-col gap-4 bg-white/50 p-5 rounded-xl border border-graphite/10">
                   <span className="text-[14px] font-bold text-graphite uppercase mb-2">Побед в серии до</span>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">1/8 Финала</span> <Stepper initialValue={formData.wins_needed_1_8} onChange={(v) => handleChange('wins_needed_1_8', v)} min={1} max={7} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">1/4 Финала</span> <Stepper initialValue={formData.wins_needed_1_4} onChange={(v) => handleChange('wins_needed_1_4', v)} min={1} max={7} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">1/2 Финала</span> <Stepper initialValue={formData.wins_needed_1_2} onChange={(v) => handleChange('wins_needed_1_2', v)} min={1} max={7} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">Финал</span> <Stepper initialValue={formData.wins_needed_final} onChange={(v) => handleChange('wins_needed_final', v)} min={1} max={7} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">1/8 Финала</span> <Stepper value={formData.wins_needed_1_8} initialValue={formData.wins_needed_1_8} onChange={(v) => handleChange('wins_needed_1_8', v)} min={1} max={7} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">1/4 Финала</span> <Stepper value={formData.wins_needed_1_4} initialValue={formData.wins_needed_1_4} onChange={(v) => handleChange('wins_needed_1_4', v)} min={1} max={7} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">1/2 Финала</span> <Stepper value={formData.wins_needed_1_2} initialValue={formData.wins_needed_1_2} onChange={(v) => handleChange('wins_needed_1_2', v)} min={1} max={7} /></div>
+                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite-light">Финал</span> <Stepper value={formData.wins_needed_final} initialValue={formData.wins_needed_final} onChange={(v) => handleChange('wins_needed_final', v)} min={1} max={7} /></div>
                   {formData.has_third_place && (
-                    <div className="flex justify-between items-center border-t border-graphite/10 pt-4 mt-1"><span className="text-[13px] font-bold text-orange">Матч за 3-е место</span> <Stepper initialValue={formData.wins_needed_3rd} onChange={(v) => handleChange('wins_needed_3rd', v)} min={1} max={7} /></div>
+                    <div className="flex justify-between items-center border-t border-graphite/10 pt-4 mt-1"><span className="text-[13px] font-bold text-orange">Матч за 3-е место</span> <Stepper value={formData.wins_needed_3rd} initialValue={formData.wins_needed_3rd} onChange={(v) => handleChange('wins_needed_3rd', v)} min={1} max={7} /></div>
                   )}
                 </div>
               </div>
@@ -447,7 +420,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
                 onClick={() => {
                   let nextStep = currentStep + 1;
                   if (!hasRegular && nextStep === 2) nextStep = 3;
-                  if (!hasPlayoff && nextStep === 3) return; // Некуда идти
+                  if (!hasPlayoff && nextStep === 3) return;
                   setCurrentStep(nextStep);
                 }} 
                 className="bg-white/50 border border-graphite/20 text-graphite hover:border-orange hover:text-orange"

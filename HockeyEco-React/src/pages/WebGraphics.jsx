@@ -9,15 +9,15 @@ const preMatchOverlays = import.meta.glob('../components/WebGraphics/*/PreMatchO
 const teamLeadersOverlays = import.meta.glob('../components/WebGraphics/*/TeamLeadersOverlay.jsx');
 const teamRosterOverlays = import.meta.glob('../components/WebGraphics/*/TeamRosterOverlay.jsx');
 const intermissionOverlays = import.meta.glob('../components/WebGraphics/*/IntermissionOverlay.jsx');
-const commentatorOverlays = import.meta.glob('../components/WebGraphics/*/CommentatorOverlay.jsx'); // НОВЫЙ ИМПОРТ
-const refereesOverlays = import.meta.glob('../components/WebGraphics/*/RefereesOverlay.jsx'); // НОВЫЙ ИМПОРТ
+const commentatorOverlays = import.meta.glob('../components/WebGraphics/*/CommentatorOverlay.jsx'); 
+const refereesOverlays = import.meta.glob('../components/WebGraphics/*/RefereesOverlay.jsx'); 
 
 export function WebGraphics() {
   const { gameId } = useParams();
   
   const { 
-    game, timerSeconds, currentPeriod, isTimerRunning, 
-    activePenalties, periodLength, otLength, overlay,
+    game, events, timerSeconds, currentPeriod, isTimerRunning, 
+    activePenalties, periodLength, otLength, soLength, overlay,
     isScoreboardVisible
   } = useWebGraphics(gameId);
 
@@ -130,6 +130,8 @@ export function WebGraphics() {
           {ScoreboardComponent && (
             <ScoreboardComponent 
               game={game}
+              events={events}
+              soLength={soLength}
               timerSeconds={timerSeconds}
               currentPeriod={currentPeriod}
               isTimerRunning={isTimerRunning}
