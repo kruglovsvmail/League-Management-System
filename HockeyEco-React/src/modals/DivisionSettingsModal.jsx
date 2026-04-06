@@ -27,7 +27,6 @@ const CRITERIA_OPTIONS = [
   'Количество побед'
 ];
 
-// Функция для мгновенной инициализации данных (решает баг со Stepper'ами)
 const getInitialFormData = (div) => {
   if (div) {
     let parsedCriteria = CRITERIA_OPTIONS;
@@ -57,6 +56,10 @@ const getInitialFormData = (div) => {
       points_loss_ot: div.points_loss_ot ?? 1,
       points_loss_reg: div.points_loss_reg ?? 0,
       
+      points_tech_win: div.points_tech_win ?? 3,
+      points_tech_loss: div.points_tech_loss ?? 0,
+      points_tech_draw: div.points_tech_draw ?? 0,
+      
       ranking_criteria: parsedCriteria,
 
       playoff_start_round: REV_ROUND_MAP[div.playoff_start_round] || '1/4 Финала',
@@ -73,6 +76,7 @@ const getInitialFormData = (div) => {
     name: '', short_name: '', tournament_type: 'Регулярный чемпионат', description: '',
     start_date: null, end_date: null, application_start: null, application_end: null, transfer_start: null, transfer_end: null,
     points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
+    points_tech_win: 3, points_tech_loss: 0, points_tech_draw: 0,
     ranking_criteria: [CRITERIA_OPTIONS[0], CRITERIA_OPTIONS[1], CRITERIA_OPTIONS[2], CRITERIA_OPTIONS[3], CRITERIA_OPTIONS[4]],
     playoff_start_round: '1/4 Финала', has_third_place: false, wins_needed_1_8: 2, wins_needed_1_4: 2, wins_needed_1_2: 2, wins_needed_final: 2, wins_needed_3rd: 1
   };
@@ -93,18 +97,14 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
     }
   }, [isOpen]);
 
-  // Файлы
   const [logoFile, setLogoFile] = useState(null);
   const [regFile, setRegFile] = useState(null);
   
-  // Флаги сброса файлов
   const [logoCleared, setLogoCleared] = useState(false);
   const [regCleared, setRegCleared] = useState(false);
 
-  // Стейт формы (теперь инициализируется мгновенно с правильными данными)
   const [formData, setFormData] = useState(() => getInitialFormData(division));
 
-  // Проверка прав на редактирование
   const isAdmin = user?.globalRole === 'admin';
   const hasStarted = division?.start_date && new Date() >= new Date(division.start_date);
   const isLocked = !isAdmin && hasStarted;
@@ -135,7 +135,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
     setFormData(prev => ({ ...prev, ranking_criteria: newCriteria }));
   };
 
-  // ФУНКЦИЯ ПРОВЕРКИ ПЕРЕСЕЧЕНИЯ ДАТ ЗАЯВКИ И ТРАНСФЕРА
   const isOverlap = () => {
     const as = formData.application_start ? new Date(formData.application_start) : null;
     const ae = formData.application_end ? new Date(formData.application_end) : null;
@@ -148,7 +147,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
     return false;
   };
 
-  // Валидация
   const isFormValid = () => {
     if (!formData.name || !formData.tournament_type) return false;
     if (!formData.start_date || !formData.end_date) return false;
@@ -156,7 +154,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
     return true;
   };
 
-  // Универсальная загрузка файлов
   const uploadFileS3 = async (divId, type, file) => {
     const fd = new FormData();
     fd.append('file', file);
@@ -225,7 +222,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
       <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={handleClose}></div>
       <div className={`absolute top-0 right-0 h-full w-full max-w-[800px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${animate ? 'translate-x-0' : 'translate-x-full'}`}>
         
-        {/* Header */}
         <div className="flex items-center justify-between px-8 py-5 border-b border-graphite/10 bg-white shrink-0">
           <h2 className="font-black text-xl text-graphite uppercase tracking-wide">{division ? "Настройки дивизиона" : "Создание дивизиона"}</h2>
           <button onClick={handleClose} className="text-graphite-light hover:text-orange transition-colors">
@@ -233,7 +229,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar flex flex-col">
           
           {isLocked && (
@@ -246,7 +241,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
             </div>
           )}
 
-          {/* ШАГИ (STEPPER) */}
           <div className="w-full max-w-[600px] mx-auto flex justify-between items-center mb-8 relative px-2 shrink-0">
             <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[2px] bg-graphite/10 z-0"></div>
             {STEPS.map((step, idx) => {
@@ -275,7 +269,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
           </div>
 
           <div className="mt-8 flex-1">
-            {/* ШАГ 1: ЛОГО И НАЗВАНИЕ */}
+            {/* ШАГ 1 */}
             <div className={`transition-all duration-300 ${currentStep === 0 ? 'block animate-fade-in-down' : 'hidden'}`}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Uploader 
@@ -315,7 +309,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               </div>
             </div>
 
-            {/* ШАГ 2: ВРЕМЕННЫЕ РАМКИ */}
+            {/* ШАГ 2 */}
             <div className={`transition-all duration-300 ${currentStep === 1 ? 'block animate-fade-in-down' : 'hidden'}`}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                 <div className="flex flex-col gap-2">
@@ -339,7 +333,6 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
                     <DatePicker placeholder="Конец трансферов" value={formData.transfer_end} onChange={(val) => handleChange('transfer_end', val)} />
                   </div>
                   
-                  {/* СООБЩЕНИЕ ОБ ОШИБКЕ ПЕРЕСЕЧЕНИЯ ДАТ */}
                   {isOverlap() && (
                     <div className="md:col-span-2 mt-2 p-3 bg-status-rejected/10 border border-status-rejected/20 rounded-xl text-[12px] font-bold text-status-rejected text-center">
                       Периоды заявочной кампании и трансферного окна не могут пересекаться!
@@ -349,16 +342,26 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               </div>
             </div>
 
-            {/* ШАГ 3: РЕГУЛЯРКА */}
+            {/* ШАГ 3 */}
             <div className={`transition-all duration-300 ${currentStep === 2 ? 'block animate-fade-in-down' : 'hidden'}`}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="flex flex-col gap-4 bg-white/50 p-5 rounded-xl border border-graphite/10">
-                  <span className="text-[14px] font-bold text-graphite uppercase mb-2">Начисление очков</span>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в осн. время</span> <Stepper value={formData.points_win_reg} initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в ОТ / Буллиты</span> <Stepper value={formData.points_win_ot} initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Ничья</span> <Stepper value={formData.points_draw} initialValue={formData.points_draw} onChange={(v) => handleChange('points_draw', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в ОТ / Буллиты</span> <Stepper value={formData.points_loss_ot} initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} min={0} max={10} /></div>
-                  <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в осн. время</span> <Stepper value={formData.points_loss_reg} initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} min={0} max={10} /></div>
+                <div className="flex flex-col">
+                  <div className="flex flex-col gap-4 bg-white/50 p-5 rounded-xl border border-graphite/10">
+                    <span className="text-[14px] font-bold text-graphite uppercase mb-2">Начисление очков</span>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в осн. время</span> <Stepper value={formData.points_win_reg} initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} min={0} max={10} /></div>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Победа в ОТ / Буллиты</span> <Stepper value={formData.points_win_ot} initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} min={0} max={10} /></div>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Ничья</span> <Stepper value={formData.points_draw} initialValue={formData.points_draw} onChange={(v) => handleChange('points_draw', v)} min={0} max={10} /></div>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в ОТ / Буллиты</span> <Stepper value={formData.points_loss_ot} initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} min={0} max={10} /></div>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold">Поражение в осн. время</span> <Stepper value={formData.points_loss_reg} initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} min={0} max={10} /></div>
+                  </div>
+
+                  {/* ДОБАВЛЕН БЛОК НАСТРОЙКИ ТЕХ. РЕЗУЛЬТАТОВ */}
+                  <div className="flex flex-col gap-4 bg-status-rejected/5 p-5 rounded-xl border border-status-rejected/20 mt-6">
+                    <span className="text-[14px] font-bold text-status-rejected uppercase mb-2">Технические результаты</span>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническая победа (+/-)</span> <Stepper value={formData.points_tech_win} initialValue={formData.points_tech_win} onChange={(v) => handleChange('points_tech_win', v)} min={0} max={10} /></div>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническое поражение (-/+)</span> <Stepper value={formData.points_tech_loss} initialValue={formData.points_tech_loss} onChange={(v) => handleChange('points_tech_loss', v)} min={0} max={10} /></div>
+                    <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Обоюдное поражение (-/-)</span> <Stepper value={formData.points_tech_draw} initialValue={formData.points_tech_draw} onChange={(v) => handleChange('points_tech_draw', v)} min={0} max={10} /></div>
+                  </div>
                 </div>
                 
                 <div className="flex flex-col gap-4 bg-white/50 p-5 rounded-xl border border-graphite/10 relative z-50">
@@ -373,7 +376,7 @@ export function DivisionSettingsModal({ isOpen, onClose, division, seasonId, onS
               </div>
             </div>
 
-            {/* ШАГ 4: ПЛЕЙ-ОФФ */}
+            {/* ШАГ 4 */}
             <div className={`transition-all duration-300 ${currentStep === 3 ? 'block animate-fade-in-down' : 'hidden'}`}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="flex flex-col gap-6">

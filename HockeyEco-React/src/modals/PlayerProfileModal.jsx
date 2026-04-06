@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Modal } from './Modal';
 import { Loader } from '../ui/Loader';
 import { Table } from '../ui/Table2';
@@ -9,6 +10,7 @@ import { Tooltip } from '../ui/Tooltip';
 import { getImageUrl, getToken, formatAge } from '../utils/helpers';
 
 export function PlayerProfileModal({ isOpen, onClose, playerId }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -89,6 +91,11 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     return Math.abs(new Date(diff).getUTCFullYear() - 1970);
   };
 
+  const goToGame = (gameId) => {
+    onClose();
+    navigate(`/games/${gameId}`);
+  };
+
   if (!isOpen) return null;
 
   const skaterColumns = [
@@ -136,8 +143,8 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
 
   const matchColumns = [
     { label: 'Сезон', width: 'w-[20px] text-center', render: r => (
-    <span className="text-[13px] text-graphite">{r.season_name || '-'}</span> 
-)},
+      <span className="text-[13px] text-graphite">{r.season_name || '-'}</span> 
+    )},
     { label: 'Лига / Дивизион', width: 'w-[180px]', render: r => (
         <div className="whitespace-nowrap flex gap-1.5 items-center">
            <Tooltip logo={getImageUrl(r.league_logo || '/default/Logo_league_default.webp')} title={r.league_full_name || r.league_name} subtitle={r.league_city}>
@@ -158,6 +165,14 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
       if (playerScore > opponentScore) scoreColorClass = 'text-status-accepted bg-status-accepted/10'; 
       else if (playerScore < opponentScore) scoreColorClass = 'text-status-rejected bg-status-rejected/10'; 
 
+      if (r.is_technical) {
+        return (
+          <span className={`font-black px-2.5 py-1 rounded-md shadow-sm ${scoreColorClass}`} title="Технический результат">
+            {playerScore > opponentScore ? '+' : '-'}:{opponentScore > playerScore ? '+' : '-'}
+          </span>
+        );
+      }
+
       return (
         <span className={`font-black px-2.5 py-1 rounded-md shadow-sm ${scoreColorClass}`}>
           {playerScore} : {opponentScore}
@@ -165,19 +180,29 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
       );
     }},
     { label: 'Соперник', width: 'w-[250px]', render: r => {
-    const [full, logo, city] = r.player_team_id === r.home_team_id ? [r.away_team_full, r.away_team_logo, r.away_team_city] : [r.home_team_full, r.home_team_logo, r.home_team_city];
-    return (
-        <Tooltip logo={getImageUrl(logo || '/default/Logo_team_default.webp')} title={full} subtitle={city}>
-            <span className="text-[13px] hover:text-orange text-graphite-light">{full || '-'}</span>
-        </Tooltip>
-    );
+      const [full, logo, city] = r.player_team_id === r.home_team_id ? [r.away_team_full, r.away_team_logo, r.away_team_city] : [r.home_team_full, r.home_team_logo, r.home_team_city];
+      return (
+          <Tooltip logo={getImageUrl(logo || '/default/Logo_team_default.webp')} title={full} subtitle={city}>
+              <span className="text-[13px] hover:text-orange text-graphite-light">{full || '-'}</span>
+          </Tooltip>
+      );
     }},
     { label: 'Дата', width: 'w-[40px] text-center', render: r => (
-    <span className="text-[13px] text-graphite">
-        {r.game_date ? new Date(r.game_date).toLocaleDateString('ru-RU') : '-'}
-    </span> 
-)},
-    { label: '', width: 'w-[50px] text-right', render: r => <a href={`/games/${r.game_id}`} target="_blank" rel="noreferrer" className="text-orange text-[12px] underline hover:no-underline"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#ff9500ff"><path d="m560-240-56-58 142-142H160v-80h486L504-662l56-58 240 240-240 240Z"/></svg></a> }
+      <span className="text-[13px] text-graphite">
+          {r.game_date ? new Date(r.game_date).toLocaleDateString('ru-RU') : '-'}
+      </span> 
+    )},
+    { label: '', width: 'w-[50px] text-right', render: r => (
+      <button 
+        onClick={() => goToGame(r.game_id)}
+        className="text-orange text-[12px] underline hover:no-underline transition-transform hover:scale-110 inline-flex"
+        title="Перейти к матчу"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+          <path d="m560-240-56-58 142-142H160v-80h486L504-662l56-58 240 240-240 240Z"/>
+        </svg>
+      </button>
+    )}
   ];
 
   const currentPhoto = data?.info?.allPhotos?.[photoIndex];
@@ -212,18 +237,13 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     return true;
   });
 
-  // Элегантный компонент для одного элемента статистики
-  const StatItem = ({ label, value }) => (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase font-bold text-graphite-light/70 tracking-wider mb-0.5">{label}</span>
-      <span className="text-[15px] font-black text-graphite">{value || '-'}</span>
-    </div>
+  const StatItem = ({ value }) => (
+    <span className="text-[14px] font-black text-graphite/50">{value || '-'}</span>
   );
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="extra-wide" title="Профиль игрока">
-      {/* Гибкий контейнер, который не разрывает экран */}
-      <div className="flex flex-col w-full h-[80vh] min-h-[600px] max-h-[850px] font-sans">
+      <div className="flex flex-col w-full h-[700px] max-h-[calc(100vh-170px)] min-h-0 overflow-hidden px-0 pb-0 pt-0 font-sans">
         
         {loading ? (
           <div className="flex-1 flex items-center justify-center"><Loader /></div>
@@ -231,100 +251,94 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
           <div className="flex-1 flex items-center justify-center text-status-rejected">Ошибка загрузки профиля</div>
         ) : (
           <>
-            {/* 1. HERO HEADER (Шапка не скроллится, прибита к верху) */}
-            <div className="shrink-0 flex gap-5 sm:gap-8 items-center bg-white border border-graphite/10 p-5 sm:p-6 rounded-2xl shadow-sm mb-5 relative overflow-hidden">
+            {/* 1. HERO HEADER */}
+            <div className="shrink-0 flex gap-4 items-center bg-white border border-graphite/10 p-4 rounded-2xl shadow-sm mb-4 relative overflow-hidden mx-6 mt-4">
               
-              {/* Фотография с логотипом команды */}
               <div 
-                className={`relative w-[120px] h-[120px] sm:w-[140px] sm:h-[140px] shrink-0 rounded-2xl overflow-hidden border border-graphite/10 shadow-sm bg-graphite/5 ${data.info.allPhotos.length > 1 ? 'cursor-pointer group' : ''}`}
+                className={`relative w-[90px] h-[90px] shrink-0 rounded-xl overflow-hidden border border-graphite/10 shadow-sm bg-graphite/5 ${data.info.allPhotos.length > 1 ? 'cursor-pointer group' : ''}`}
                 onClick={handlePhotoClick}
               >
                 <img src={currentPhotoUrl} alt="Игрок" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                 
                 {currentPhoto?.type === 'team' && (
-                  <div className="absolute bottom-1.5 left-1.5 w-10 h-10 bg-white/90 backdrop-blur-md rounded-full p-1 shadow-sm border border-graphite/10 z-10 flex items-center justify-center">
+                  <div className="absolute bottom-1 left-1 w-7 h-7 bg-white/90 backdrop-blur-md rounded-full p-1 shadow-sm border border-graphite/10 z-10 flex items-center justify-center">
                     <img src={getImageUrl(currentPhoto.teamLogo || '/default/Logo_team_default.webp')} alt="Лого" className="w-full h-full object-contain" />
                   </div>
                 )}
 
                 {data.info.allPhotos.length > 1 && (
-                  <div className="absolute top-1.5 right-1.5 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded-md text-[10px] font-bold shadow-sm z-10">
-                    {photoIndex + 1} / {data.info.allPhotos.length}
+                  <div className="absolute top-1 right-1 bg-black/70 backdrop-blur-sm text-white px-1 py-0.5 rounded text-[8px] font-bold shadow-sm z-10">
+                    {photoIndex + 1}/{data.info.allPhotos.length}
                   </div>
                 )}
               </div>
 
-              {/* Основная информация */}
               <div className="flex-1 flex flex-col justify-center">
-                <h2 className="text-[24px] sm:text-[30px] font-black text-graphite leading-none mb-1">
-                  {data.info.last_name} {data.info.first_name}
-                </h2>
-                <p className="text-[14px] sm:text-[16px] font-bold text-graphite-light mb-1">{data.info.middle_name}</p>
+                <h2 className="text-[22px] font-bold text-graphite/80 leading-tight mb-2 truncate">
+  {data.info.last_name} {data.info.first_name} <span className="text-graphite/80 font-bold">{data.info.middle_name}</span>
+</h2>
                 
-                {/* Аккуратная строка с физическими данными вместо разбросанных квадратов */}
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-3 bg-graphite/5 px-4 py-3 rounded-xl border border-graphite/10 w-fit mt-3">
-                  <StatItem label="Возраст" value={ageInt ? formatAge(ageInt) : null} />
-                  <div className="w-px h-8 bg-graphite/15 hidden sm:block"></div>
-                  <StatItem label="Дата рожд." value={data.info.birth_date ? new Date(data.info.birth_date).toLocaleDateString('ru-RU') : null} />
-                  <div className="w-px h-8 bg-graphite/15 hidden sm:block"></div>
-                  <StatItem label="Рост" value={data.info.height ? `${data.info.height} см` : null} />
-                  <div className="w-px h-8 bg-graphite/15 hidden sm:block"></div>
-                  <StatItem label="Вес" value={data.info.weight ? `${data.info.weight} кг` : null} />
-                  <div className="w-px h-8 bg-graphite/15 hidden sm:block"></div>
-                  <StatItem label="Хват" value={data.info.grip === 'left' ? 'Левый' : (data.info.grip === 'right' ? 'Правый' : null)} />
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-graphite/5 px-4 py-2.5 rounded-xl border border-graphite/10 w-fit">
+                  <StatItem value={ageInt ? formatAge(ageInt) : null} />
+                  <div className="w-px h-4 bg-graphite/20 block"></div>
+                  <StatItem value={data.info.birth_date ? new Date(data.info.birth_date).toLocaleDateString('ru-RU') : null} />
+                  <div className="w-px h-4 bg-graphite/20 block"></div>
+                  <StatItem value={data.info.height ? `${data.info.height} см` : null} />
+                  <div className="w-px h-4 bg-graphite/20 block"></div>
+                  <StatItem value={data.info.weight ? `${data.info.weight} кг` : null} />
+                  <div className="w-px h-4 bg-graphite/20 block"></div>
+                  <StatItem value={data.info.grip === 'left' ? 'Левый хват' : (data.info.grip === 'right' ? 'Правый хват' : null)} />
                 </div>
               </div>
 
-              {/* Переключатель роли (справа) */}
-              <div className="w-[240px] shrink-0">
+              <div className="w-[180px] shrink-0">
                 <SegmentButton options={['Полевой', 'Вратарь']} defaultIndex={activeRole} onChange={setActiveRole} />
               </div>
             </div>
 
-            {/* 2. TAB NAVIGATION (Навигация) */}
-            <div className="shrink-0 flex gap-2 border-b border-graphite/15 mb-4 px-2">
+            {/* 2. TAB NAVIGATION */}
+            <div className="shrink-0 flex gap-2 border-b border-graphite/15 mb-3 px-6">
               <button 
                 onClick={() => setActiveTab('stats')}
-                className={`px-5 py-2.5 text-[14px] font-bold uppercase tracking-wider border-b-2 transition-colors duration-300 ${activeTab === 'stats' ? 'border-orange text-orange' : 'border-transparent text-graphite-light hover:text-graphite hover:border-graphite/30'}`}
+                className={`px-5 py-2.5 text-[13px] font-bold uppercase tracking-wider border-b-2 transition-colors duration-300 ${activeTab === 'stats' ? 'border-orange text-orange' : 'border-transparent text-graphite-light hover:text-graphite hover:border-graphite/30'}`}
               >
                 Статистика
               </button>
               <button 
                 onClick={() => setActiveTab('matches')}
-                className={`px-5 py-2.5 text-[14px] font-bold uppercase tracking-wider border-b-2 transition-colors duration-300 ${activeTab === 'matches' ? 'border-orange text-orange' : 'border-transparent text-graphite-light hover:text-graphite hover:border-graphite/30'}`}
+                className={`px-5 py-2.5 text-[13px] font-bold uppercase tracking-wider border-b-2 transition-colors duration-300 ${activeTab === 'matches' ? 'border-orange text-orange' : 'border-transparent text-graphite-light hover:text-graphite hover:border-graphite/30'}`}
               >
                 История матчей
               </button>
             </div>
 
-            {/* 3. ОРГАНИЧНЫЙ КОНТЕНТ (Здесь происходит правильный скролл) */}
-            <div className="flex-1 flex flex-col min-h-0 bg-white border border-graphite/15 rounded-2xl shadow-sm overflow-hidden">
+            {/* 3. КОНТЕНТ */}
+            <div className="flex-1 flex flex-col min-h-0 bg-white border border-graphite/15 rounded-2xl shadow-sm overflow-hidden mx-6 mb-6">
               
               {activeTab === 'stats' && (
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 animate-fade-in">
-                  <div className="mb-8">
-                    <h4 className="text-[13px] font-bold text-graphite-light uppercase tracking-widest border-b border-graphite/10 pb-2 mb-4">Текущие сезоны</h4>
+                <div className="flex-1 overflow-y-auto p-5 animate-fade-in [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
+                  <div className="mb-6">
+                    <h4 className="text-[12px] font-bold text-graphite-light uppercase tracking-widest border-b border-graphite/10 pb-2 mb-3">Текущие сезоны</h4>
                     {currentSeasonsStats.length > 0 ? (
                       <Table columns={isGoalieTab ? goalieColumns : skaterColumns} data={currentSeasonsStats} />
                     ) : (
-                      <div className="text-center text-graphite-light p-6 bg-graphite/5 rounded-xl border border-dashed border-graphite/20">Нет статистики в текущих сезонах</div>
+                      <div className="text-center text-graphite-light p-5 bg-graphite/5 rounded-xl border border-dashed border-graphite/20">Нет статистики в текущих сезонах</div>
                     )}
                   </div>
 
                   <div>
-                    <h4 className="text-[13px] font-bold text-graphite-light uppercase tracking-widest border-b border-graphite/10 pb-2 mb-4">Прошедшие сезоны</h4>
+                    <h4 className="text-[12px] font-bold text-graphite-light uppercase tracking-widest border-b border-graphite/10 pb-2 mb-3">Прошедшие сезоны</h4>
                     {pastSeasonsStats.length > 0 ? (
                       <Table columns={isGoalieTab ? goalieColumns : skaterColumns} data={pastSeasonsStats} />
                     ) : (
-                      <div className="text-center text-graphite-light p-6 bg-graphite/5 rounded-xl border border-dashed border-graphite/20">Нет истории в прошедших сезонах</div>
+                      <div className="text-center text-graphite-light p-5 bg-graphite/5 rounded-xl border border-dashed border-graphite/20">Нет истории в прошедших сезонах</div>
                     )}
                   </div>
                 </div>
               )}
 
               {activeTab === 'matches' && (
-                <div className="flex flex-col h-full animate-fade-in">
-                  {/* ФИЛЬТРЫ: Прибиты к верху. Не скроллятся. Z-index высокий, чтобы Select не обрезался */}
+                <div className="flex flex-col h-full min-h-0 animate-fade-in">
                   <div className="shrink-0 flex gap-4 p-4 border-b border-graphite/10 bg-graphite/5 relative z-[20]">
                     <div className="w-[160px] shrink-0">
                       <Select options={seasonOptions} value={filterSeason} onChange={setFilterSeason} />
@@ -337,8 +351,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                     </div>
                   </div>
 
-                  {/* ТАБЛИЦА: Скроллится только она. Z-index низкий, чтобы списки фильтров падали ПОВЕРХ нее */}
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 relative z-0">
+                  <div className="flex-1 overflow-y-auto p-4 relative z-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
                     {filteredMatches.length > 0 ? (
                       <Table columns={matchColumns} data={filteredMatches} />
                     ) : (

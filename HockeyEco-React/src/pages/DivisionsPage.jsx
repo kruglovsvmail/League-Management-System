@@ -6,7 +6,7 @@ import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
 import { Toast } from '../modals/Toast';
-import { DivisionCard } from '../components/DivisionCard';
+import { DivisionCard } from '../components/Divisions/DivisionCard';
 import { DivisionSettingsModal } from '../modals/DivisionSettingsModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
 

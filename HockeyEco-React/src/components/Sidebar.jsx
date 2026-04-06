@@ -37,7 +37,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
   // ФОРМИРОВАНИЕ МЕНЮ (ДОБАВЛЕН РОУТ ТАБЛИЦ)
   const baseMenuItems = [
-    { name: "Матчи", path: "/games", icon: "matches" },
+    { name: "Расписание", path: "/games", icon: "matches" },
     { name: "Таблицы", path: "/standings", icon: "chevron" },
     canViewDivisions ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
     { name: "Трансферы", path: "/transfers", icon: "transfers" },
@@ -82,9 +82,6 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
         
         {/* Логотип и выбор лиги */}
         <div className="p-7 pb-2">
-          <h1 className="text-[1.15rem] font-bold tracking-[0.1em] text-white uppercase flex items-center justify-center gap-1.5 mb-6">
-            Hockey <span className="text-orange font-medium">Eco</span>
-          </h1>
           
           {user?.leagues && user.leagues.length > 0 && (
             <div 
@@ -92,7 +89,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
               className="flex justify-center cursor-pointer group transition-all pb-2"
               title={selectedLeague?.name ? `Лига: ${selectedLeague.name} (нажмите, чтобы изменить)` : 'Выбрать лигу'}
             >
-              <div className={`w-[100px] h-[100px] shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${
+              <div className={`w-[90px] h-[90px] shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${
                 hasValidLogo ? '' : 'bg-white rounded-xl overflow-hidden shadow-md group-hover:shadow-lg'
               }`}>
                 {hasValidLogo ? (
@@ -113,8 +110,8 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
         </div>
 
         {/* Навигация */}
-        <nav className="flex-1 overflow-y-auto px-4 mt-4 custom-scrollbar">
-          <div className="space-y-1">
+        <nav className="flex-1 overflow-y-auto px-2 mt-0 custom-scrollbar">
+          <div className="space-y-0.5">
             {baseMenuItems.map(renderNavLink)}
           </div>
 

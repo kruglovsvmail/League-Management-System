@@ -1,4 +1,3 @@
-// HockeyEco-server/controllers/gameController.js
 import pool from '../config/db.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
@@ -6,8 +5,8 @@ import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 export const getPublicGameById = async (req, res) => {
     try {
         const query = `
-            SELECT g.id, g.home_score, g.away_score, g.end_type, g.status,
-                   g.game_date, g.stage_type, g.stage_label, g.series_number,
+            SELECT g.id, g.home_score, g.away_score, g.end_type, g.status, g.is_technical,
+                   g.game_date, g.stage_type, g.stage_label, g.series_number, g.game_number,
                    g.home_jersey_type, g.away_jersey_type,
                    g.division_id, g.home_team_id, g.away_team_id,
                    t1.name as home_team_name, 
@@ -142,9 +141,6 @@ export const getPublicGameById = async (req, res) => {
             const penaltiesRes = await pool.query(penaltiesQuery, [game.id]);
             game.penalties = penaltiesRes.rows;
 
-            // =============================================================
-            // [НОВОЕ] ВЫГРУЖАЕМ ВСЕ СОБЫТИЯ (ВКЛЮЧАЯ БУЛЛИТЫ) ДЛЯ ТАБЛО
-            // =============================================================
             const eventsQuery = `
                 SELECT * FROM game_events 
                 WHERE game_id = $1 
@@ -152,7 +148,6 @@ export const getPublicGameById = async (req, res) => {
             `;
             const eventsRes = await pool.query(eventsQuery, [game.id]);
             game.events = eventsRes.rows;
-            // =============================================================
 
             const [refRes, mediaRes] = await Promise.all([
                 pool.query(`
@@ -206,13 +201,20 @@ export const getGames = async (req, res) => {
 
         let query = `
             SELECT 
-                g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type,
-                g.stage_type, g.stage_label, g.series_number, 
+                g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type, g.is_technical,
+                g.stage_type, g.stage_label, g.series_number, g.game_number,
+                g.home_team_id, g.away_team_id, g.arena_id,
                 COALESCE(a.name, g.location_text) as location_text,
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 d.name as division_name,
                 gt.periods_count,
+                (
+                    EXISTS(SELECT 1 FROM game_events ge WHERE ge.game_id = g.id) OR 
+                    EXISTS(SELECT 1 FROM game_rosters gr WHERE gr.game_id = g.id) OR
+                    EXISTS(SELECT 1 FROM game_referee gre WHERE gre.game_id = g.id) OR
+                    EXISTS(SELECT 1 FROM game_media gm WHERE gm.game_id = g.id)
+                ) as has_protocol,
                 (
                     SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
                     FROM (
@@ -241,7 +243,7 @@ export const getGames = async (req, res) => {
             paramIndex += 2;
         }
 
-        if (division && division !== 'Все дивизионы') {
+        if (division && division !== 'Все дивизионы' && division !== '') {
             query += ` AND d.name = $${paramIndex}`;
             params.push(division);
             paramIndex++;
@@ -249,9 +251,9 @@ export const getGames = async (req, res) => {
 
         if (status === '1') query += ` AND g.status IN ('scheduled', 'live')`;
         else if (status === '2') query += ` AND g.status = 'finished'`;
-        else query += ` AND g.status IN ('scheduled', 'live', 'finished', 'cancelled')`;
+        else if (status) query += ` AND g.status IN ('scheduled', 'live', 'finished', 'cancelled')`;
 
-        query += ` ORDER BY g.game_date ASC`;
+        query += ` ORDER BY g.game_number ASC NULLS LAST, g.game_date ASC NULLS LAST, g.id ASC`;
 
         const result = await pool.query(query, params);
         res.json({ success: true, data: result.rows });
@@ -276,6 +278,12 @@ export const getGameById = async (req, res) => {
                 COALESCE(att.custom_jersey_dark_url, at.jersey_dark_url) as away_jersey_dark,
                 COALESCE(att.custom_jersey_light_url, at.jersey_light_url) as away_jersey_light,
                 d.name as division_name,
+                (
+                    EXISTS(SELECT 1 FROM game_events ge WHERE ge.game_id = g.id) OR 
+                    EXISTS(SELECT 1 FROM game_rosters gr WHERE gr.game_id = g.id) OR
+                    EXISTS(SELECT 1 FROM game_referee gre WHERE gre.game_id = g.id) OR
+                    EXISTS(SELECT 1 FROM game_media gm WHERE gm.game_id = g.id)
+                ) as has_protocol,
                 (
                     SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
                     FROM (
@@ -361,24 +369,48 @@ export const createGame = async (req, res) => {
         const { seasonId } = req.params;
         const {
             division_id, game_date, arena_id, stage_type, stage_label, series_number,
-            home_team_id, away_team_id, home_jersey_type, away_jersey_type
+            home_team_id, away_team_id, home_jersey_type, away_jersey_type, game_number
         } = req.body;
 
-        const result = await pool.query(`
+        let num = game_number;
+        if (!num) {
+            const numRes = await pool.query(`SELECT COALESCE(MAX(game_number), 0) + 1 as next_num FROM games WHERE division_id = $1`, [division_id]);
+            num = numRes.rows[0].next_num;
+        }
+
+        const insertRes = await pool.query(`
             INSERT INTO games (
-                game_type, division_id, stage_type, stage_label, series_number,
+                game_type, division_id, stage_type, stage_label, series_number, game_number,
                 home_team_id, away_team_id, game_date, arena_id, status,
                 home_jersey_type, away_jersey_type
             ) VALUES (
-                'official', $1, $2, $3, $4, $5, $6, $7, $8, 'scheduled', $9, $10
+                'official', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', $10, $11
             ) RETURNING id
         `, [
-            division_id, stage_type, stage_label || null, series_number || 1,
-            home_team_id, away_team_id, game_date || null, arena_id || null,
-            home_jersey_type, away_jersey_type
+            division_id, stage_type || 'regular', stage_label || '1-й круг', series_number || 1, num,
+            home_team_id || null, away_team_id || null, game_date || null, arena_id || null,
+            home_jersey_type || 'dark', away_jersey_type || 'light'
         ]);
 
-        res.json({ success: true, id: result.rows[0].id });
+        const fullGameRes = await pool.query(`
+            SELECT 
+                g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type,
+                g.stage_type, g.stage_label, g.series_number, g.game_number,
+                g.home_team_id, g.away_team_id, g.arena_id,
+                COALESCE(a.name, g.location_text) as location_text,
+                ht.name as home_team_name, ht.logo_url as home_team_logo,
+                at.name as away_team_name, at.logo_url as away_team_logo,
+                d.name as division_name,
+                false as has_protocol
+            FROM games g
+            LEFT JOIN teams ht ON g.home_team_id = ht.id
+            LEFT JOIN teams at ON g.away_team_id = at.id
+            JOIN divisions d ON g.division_id = d.id
+            LEFT JOIN arenas a ON g.arena_id = a.id
+            WHERE g.id = $1
+        `, [insertRes.rows[0].id]);
+
+        res.json({ success: true, data: fullGameRes.rows[0] });
     } catch (err) {
         console.error('Ошибка создания матча:', err);
         res.status(500).json({ success: false, error: 'Ошибка сервера при создании матча' });
@@ -388,31 +420,53 @@ export const createGame = async (req, res) => {
 export const updateGameInfo = async (req, res) => {
     try {
         const { gameId } = req.params;
-        const { 
-            game_date, arena_id, stage_type, stage_label, series_number, 
-            video_yt_url, video_vk_url, home_jersey_type, away_jersey_type 
-        } = req.body;
+        const updates = req.body;
         
-        const gameRes = await pool.query('SELECT status FROM games WHERE id = $1', [gameId]);
+        const gameRes = await pool.query('SELECT id, status FROM games WHERE id = $1', [gameId]);
         if(gameRes.rows.length === 0) return res.status(404).json({success: false, error: 'Матч не найден'});
         
-        if (gameRes.rows[0].status === 'scheduled') {
-            await pool.query(`
-                UPDATE games SET 
-                    game_date = $1, arena_id = $2, stage_type = $3, 
-                    stage_label = $4, series_number = $5,
-                    video_yt_url = $6, video_vk_url = $7,
-                    home_jersey_type = $8, away_jersey_type = $9
-                WHERE id = $10
-            `, [game_date || null, arena_id || null, stage_type, stage_label, series_number, video_yt_url, video_vk_url, home_jersey_type, away_jersey_type, gameId]);
-        } else {
-            await pool.query(`
-                UPDATE games SET video_yt_url = $1, video_vk_url = $2 WHERE id = $3
-            `, [video_yt_url, video_vk_url, gameId]);
+        if (updates.home_team_id !== undefined || updates.away_team_id !== undefined) {
+            const protocolCheck = await pool.query(`
+                SELECT 
+                    EXISTS(SELECT 1 FROM game_events WHERE game_id = $1) OR 
+                    EXISTS(SELECT 1 FROM game_rosters WHERE game_id = $1) OR
+                    EXISTS(SELECT 1 FROM game_referee WHERE game_id = $1) OR
+                    EXISTS(SELECT 1 FROM game_media WHERE game_id = $1)
+                as has_protocol
+            `, [gameId]);
+            
+            if (protocolCheck.rows[0].has_protocol) {
+                 return res.status(400).json({ success: false, error: 'Запрещено: очистите составы, события и судей перед сменой команд.' });
+            }
         }
+
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        const allowedFields = [
+            'game_date', 'arena_id', 'stage_type', 'stage_label', 'series_number', 
+            'video_yt_url', 'video_vk_url', 'home_jersey_type', 'away_jersey_type',
+            'home_team_id', 'away_team_id', 'game_number', 'status'
+        ];
+
+        for (const key of allowedFields) {
+            if (updates[key] !== undefined) {
+                fields.push(`${key} = $${idx++}`);
+                values.push(updates[key] === '' ? null : updates[key]);
+            }
+        }
+
+        if (fields.length === 0) {
+            return res.json({success: true, message: 'Нет полей для обновления'});
+        }
+
+        values.push(gameId);
+        await pool.query(`UPDATE games SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+        
         res.json({success: true});
     } catch (err) {
-        console.error('Ошибка обновления инфо:', err);
+        console.error('Ошибка обновления инфо матча:', err);
         res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 };
@@ -421,57 +475,89 @@ export const updateGameStatus = async (req, res) => {
     const client = await pool.connect();
     try {
         const { gameId } = req.params;
-        const { status } = req.body;
+        const { status, end_type: incomingEndType, tech_result } = req.body;
 
         await client.query('BEGIN');
 
-        const gameRes = await client.query('SELECT division_id, status, stage_type, home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+        const gameRes = await client.query('SELECT division_id, status, stage_type, home_team_id, away_team_id, is_technical FROM games WHERE id = $1', [gameId]);
         if (gameRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Матч не найден' });
         }
         const game = gameRes.rows[0];
 
-        const goalsRes = await client.query(`SELECT team_id, event_type, period FROM game_events WHERE game_id = $1`, [gameId]);
-        let homeRegGoals = 0, awayRegGoals = 0;
-        let homeSOGoals = 0, awaySOGoals = 0;
-        let hasOTGoal = false, hasSO = false;
+        let finalHomeScore = 0;
+        let finalAwayScore = 0;
+        let endType = null;
+        let isTechnical = false;
 
-        goalsRes.rows.forEach(e => {
-            if (e.event_type === 'goal') {
-                if (e.team_id === game.home_team_id) homeRegGoals++;
-                else if (e.team_id === game.away_team_id) awayRegGoals++;
-                if (e.period === 'OT') hasOTGoal = true;
-            } else if (e.event_type === 'shootout_goal' || e.event_type === 'shootout_miss') {
-                hasSO = true;
-                if (e.event_type === 'shootout_goal') {
-                    if (e.team_id === game.home_team_id) homeSOGoals++;
-                    else if (e.team_id === game.away_team_id) awaySOGoals++;
-                }
+        // ЕСЛИ ЭТО ТЕХНИЧЕСКОЕ ПОРАЖЕНИЕ
+        if (incomingEndType === 'tech') {
+            isTechnical = true;
+            endType = 'tech';
+            
+            // Проставляем формальный счет для базы
+            if (tech_result === 'home_win') {
+                finalHomeScore = 5;
+                finalAwayScore = 0;
+            } else if (tech_result === 'away_win') {
+                finalHomeScore = 0;
+                finalAwayScore = 5;
+            } else if (tech_result === 'both_lose') {
+                finalHomeScore = 0;
+                finalAwayScore = 0;
             }
-        });
 
-        let endType = 'regular';
-        if (hasSO) endType = 'so';
-        else if (hasOTGoal) endType = 'ot';
+            // ПРИМЕЧАНИЕ: Мы больше НЕ удаляем game_events и game_rosters.
+            // Статистика (standingsCalculator и т.д.) просто игнорирует матчи, где is_technical = true
 
-        let finalHomeScore = homeRegGoals;
-        let finalAwayScore = awayRegGoals;
+        } else {
+            // ОБЫЧНОЕ ЗАВЕРШЕНИЕ
+            const goalsRes = await client.query(`SELECT team_id, event_type, period FROM game_events WHERE game_id = $1`, [gameId]);
+            let homeRegGoals = 0, awayRegGoals = 0;
+            let homeSOGoals = 0, awaySOGoals = 0;
+            let hasOTGoal = false, hasSO = false;
 
-        if (status === 'finished' && hasSO) {
-            if (homeSOGoals > awaySOGoals) finalHomeScore++;
-            else if (awaySOGoals > homeSOGoals) finalAwayScore++;
+            goalsRes.rows.forEach(e => {
+                if (e.event_type === 'goal') {
+                    if (e.team_id === game.home_team_id) homeRegGoals++;
+                    else if (e.team_id === game.away_team_id) awayRegGoals++;
+                    if (e.period === 'OT') hasOTGoal = true;
+                } else if (e.event_type === 'shootout_goal' || e.event_type === 'shootout_miss') {
+                    hasSO = true;
+                    if (e.event_type === 'shootout_goal') {
+                        if (e.team_id === game.home_team_id) homeSOGoals++;
+                        else if (e.team_id === game.away_team_id) awaySOGoals++;
+                    }
+                }
+            });
+
+            endType = 'regular';
+            if (hasSO) endType = 'so';
+            else if (hasOTGoal) endType = 'ot';
+
+            finalHomeScore = homeRegGoals;
+            finalAwayScore = awayRegGoals;
+
+            if (status === 'finished' && hasSO) {
+                if (homeSOGoals > awaySOGoals) finalHomeScore++;
+                else if (awaySOGoals > homeSOGoals) finalAwayScore++;
+            }
+
+            if (status !== 'finished') {
+                endType = null;
+            }
         }
 
         await client.query(`
             UPDATE games 
-            SET status = $1, end_type = $2, home_score = $3, away_score = $4 
-            WHERE id = $5
-        `, [status, status === 'finished' ? endType : null, finalHomeScore, finalAwayScore, gameId]);
+            SET status = $1, end_type = $2, home_score = $3, away_score = $4, is_technical = $5
+            WHERE id = $6
+        `, [status, endType, finalHomeScore, finalAwayScore, isTechnical, gameId]);
 
         await client.query('COMMIT');
 
-        if ((status === 'finished' || game.status === 'finished') && game.division_id) {
+        if ((status === 'finished' || game.status === 'finished' || isTechnical) && game.division_id) {
             try {
                 if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
                 else await recalculateDivisionStandings(game.division_id);
@@ -673,5 +759,43 @@ export const updateGameOfficials = async (req, res) => {
         res.status(500).json({ success: false, error: err.message || 'Ошибка сервера' });
     } finally {
         client.release();
+    }
+};
+
+export const deleteGame = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        
+        const gameRes = await pool.query('SELECT status FROM games WHERE id = $1', [gameId]);
+        if (gameRes.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        
+        if (gameRes.rows[0].status !== 'scheduled') {
+            return res.status(400).json({ success: false, error: 'Удалить можно только матч со статусом "В расписании"' });
+        }
+
+        const depRes = await pool.query(`
+            SELECT 
+                EXISTS(SELECT 1 FROM game_events WHERE game_id = $1) as has_events,
+                EXISTS(SELECT 1 FROM game_rosters WHERE game_id = $1) as has_rosters,
+                EXISTS(SELECT 1 FROM game_referee WHERE game_id = $1) as has_refs,
+                EXISTS(SELECT 1 FROM game_media WHERE game_id = $1) as has_media
+        `, [gameId]);
+        
+        const { has_events, has_rosters, has_refs, has_media } = depRes.rows[0];
+        
+        if (has_events || has_rosters || has_refs || has_media) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Нельзя удалить матч: очистите составы, события и судей перед удалением' 
+            });
+        }
+
+        await pool.query('DELETE FROM games WHERE id = $1', [gameId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка удаления матча:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера при удалении матча' });
     }
 };

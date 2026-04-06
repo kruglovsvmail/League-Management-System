@@ -69,6 +69,7 @@ export const getPlayerProfile = async (req, res) => {
       SELECT
         g.id as game_id,
         g.game_date,
+        g.is_technical,
         s.name as season_name, 
         
         l.short_name as league_name, 

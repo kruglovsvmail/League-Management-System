@@ -7,7 +7,8 @@ export const recalculateDivisionStandings = async (divisionId) => {
 
         // 1. Получаем правила начисления очков и КРИТЕРИИ СОРТИРОВКИ
         const divRes = await client.query(
-            `SELECT points_win_reg, points_win_ot, points_draw, points_loss_ot, points_loss_reg, ranking_criteria
+            `SELECT points_win_reg, points_win_ot, points_draw, points_loss_ot, points_loss_reg, 
+                    points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria
              FROM divisions 
              WHERE id = $1`,
             [divisionId]
@@ -25,7 +26,10 @@ export const recalculateDivisionStandings = async (divisionId) => {
         const ptsLossOt = Number(rules.points_loss_ot ?? 1);
         const ptsLossReg = Number(rules.points_loss_reg ?? 0);
 
-        // Парсим критерии сортировки (если они есть)
+        const ptsTechWin = Number(rules.points_tech_win ?? 3);
+        const ptsTechLoss = Number(rules.points_tech_loss ?? 0);
+        const ptsTechDraw = Number(rules.points_tech_draw ?? 0);
+
         let rankingCriteria = [];
         if (rules.ranking_criteria) {
             rankingCriteria = typeof rules.ranking_criteria === 'string' 
@@ -42,6 +46,7 @@ export const recalculateDivisionStandings = async (divisionId) => {
                 g.home_score, 
                 g.away_score,
                 g.end_type,
+                g.is_technical,
                 EXISTS(
                     SELECT 1 FROM game_events ge 
                     WHERE ge.game_id = g.id AND ge.period IN ('OT', 'SO')
@@ -80,6 +85,20 @@ export const recalculateDivisionStandings = async (divisionId) => {
             stats[home].games_played += 1;
             stats[away].games_played += 1;
 
+            if (game.is_technical) {
+                if (hScore > aScore) {
+                    stats[home].wins_reg += 1; stats[home].points += ptsTechWin;
+                    stats[away].losses_reg += 1; stats[away].points += ptsTechLoss;
+                } else if (aScore > hScore) {
+                    stats[away].wins_reg += 1; stats[away].points += ptsTechWin;
+                    stats[home].losses_reg += 1; stats[home].points += ptsTechLoss;
+                } else {
+                    stats[home].losses_reg += 1; stats[home].points += ptsTechDraw;
+                    stats[away].losses_reg += 1; stats[away].points += ptsTechDraw;
+                }
+                return; // Технический матч дальше не обрабатываем (голы не считаем)
+            }
+
             stats[home].goals_for += hScore;
             stats[home].goals_against += aScore;
             stats[away].goals_for += aScore;
@@ -107,10 +126,8 @@ export const recalculateDivisionStandings = async (divisionId) => {
             }
         });
 
-        // 4. ПРЕОБРАЗОВАНИЕ В МАССИВ ДЛЯ СЛОЖНОЙ СОРТИРОВКИ
         const statsArray = Object.values(stats);
 
-        // Функция для вычисления очных встреч (Head-to-Head)
         const compareH2H = (a, b) => {
             let ptsA = 0, ptsB = 0;
             let gdA = 0, gdB = 0;
@@ -124,6 +141,19 @@ export const recalculateDivisionStandings = async (divisionId) => {
                 const aScore = Number(g.away_score || 0);
                 const isOt = g.has_ot_events || ['ot', 'so'].includes(g.end_type);
                 
+                if (g.is_technical) {
+                    if (isHomeA) {
+                        if (hScore > aScore) { ptsA += ptsTechWin; ptsB += ptsTechLoss; }
+                        else if (aScore > hScore) { ptsB += ptsTechWin; ptsA += ptsTechLoss; }
+                        else { ptsA += ptsTechDraw; ptsB += ptsTechDraw; }
+                    } else {
+                        if (hScore > aScore) { ptsB += ptsTechWin; ptsA += ptsTechLoss; }
+                        else if (aScore > hScore) { ptsA += ptsTechWin; ptsB += ptsTechLoss; }
+                        else { ptsA += ptsTechDraw; ptsB += ptsTechDraw; }
+                    }
+                    return;
+                }
+
                 if (isHomeA) {
                     gdA += (hScore - aScore); gdB += (aScore - hScore);
                     if (hScore > aScore) { ptsA += isOt ? ptsWinOt : ptsWinReg; ptsB += isOt ? ptsLossOt : ptsLossReg; }
@@ -142,7 +172,6 @@ export const recalculateDivisionStandings = async (divisionId) => {
             return 0;
         };
 
-        // Карта критериев сортировки
         const criteriaComparators = {
             'Разница шайб': (a, b) => (b.goals_for - b.goals_against) - (a.goals_for - a.goals_against),
             'Заброшенные шайбы': (a, b) => b.goals_for - a.goals_for,
@@ -151,30 +180,24 @@ export const recalculateDivisionStandings = async (divisionId) => {
             'Очные встречи': compareH2H
         };
 
-        // Запуск движка сортировки
         statsArray.sort((a, b) => {
-            // Абсолютный приоритет 1: Очки
             if (b.points !== a.points) return b.points - a.points;
 
-            // При равенстве очков идем по массиву настроек дивизиона
             for (const criteria of rankingCriteria) {
                 const cmpFunc = criteriaComparators[criteria];
                 if (cmpFunc) {
                     const res = cmpFunc(a, b);
-                    if (res !== 0) return res; // Если критерий выявил победителя — прекращаем проверки
+                    if (res !== 0) return res;
                 }
             }
             
-            // Если всё абсолютно равно — запасной вариант (чтобы таблица не "прыгала")
             return (b.wins_reg - a.wins_reg); 
         });
 
-        // 5. РАСПРЕДЕЛЕНИЕ МЕСТ (RANKS)
         statsArray.forEach((teamStats, index) => {
             teamStats.rank = index + 1;
         });
 
-        // 6. ЗАПИСЬ В БАЗУ
         await client.query(`DELETE FROM division_standings WHERE division_id = $1`, [divisionId]);
 
         const insertQuery = `
@@ -189,7 +212,7 @@ export const recalculateDivisionStandings = async (divisionId) => {
                 tStats.wins_reg, tStats.wins_ot, tStats.draws, 
                 tStats.losses_ot, tStats.losses_reg, 
                 tStats.goals_for, tStats.goals_against, tStats.points,
-                tStats.rank // Сохраняем вычисленное место
+                tStats.rank
             ]);
         }
 

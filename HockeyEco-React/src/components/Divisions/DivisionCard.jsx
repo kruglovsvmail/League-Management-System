@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../../utils/helpers';
 import { DivisionTeamsList } from './DivisionTeamsList';
 import { TeamRosterTable } from './TeamRosterTable';
-import { Loader } from '../ui/Loader';
-import { Tabs } from '../ui/Tabs';
-import { PlayerProfileModal } from '../modals/PlayerProfileModal';
-import { useAccess } from '../hooks/useAccess'; // <-- ИМПОРТ ХУКА ПРАВ
+import { Loader } from '../../ui/Loader';
+import { Tabs } from '../../ui/Tabs';
+import { PlayerProfileModal } from '../../modals/PlayerProfileModal';
+import { useAccess } from '../../hooks/useAccess'; // <-- ИМПОРТ ХУКА ПРАВ
 
 // Модалки команд
-import { TeamUniformModal } from '../modals/TeamUniformModal';
-import { TeamDescriptionModal } from '../modals/TeamDescriptionModal';
-import { TeamPhotoModal } from '../modals/TeamPhotoModal';
-import { PublishStatusModal } from '../modals/PublishStatusModal';
-import { TeamStatusModal } from '../modals/TeamStatusModal';
+import { TeamUniformModal } from '../../modals/TeamUniformModal';
+import { TeamDescriptionModal } from '../../modals/TeamDescriptionModal';
+import { TeamPhotoModal } from '../../modals/TeamPhotoModal';
+import { PublishStatusModal } from '../../modals/PublishStatusModal';
+import { TeamStatusModal } from '../../modals/TeamStatusModal';
 
 // Модалки игроков
-import { QualSelectModal } from '../modals/QualSelectModal';
-import { MedicalDocsModal } from '../modals/MedicalDocsModal';
-import { FeeModal } from '../modals/FeeModal';
+import { QualSelectModal } from '../../modals/QualSelectModal';
+import { MedicalDocsModal } from '../../modals/MedicalDocsModal';
+import { FeeModal } from '../../modals/FeeModal';
 
 const TOURNAMENT_TYPES = {
   regular: 'Регулярный чемпионат',

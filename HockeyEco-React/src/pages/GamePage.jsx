@@ -358,17 +358,35 @@ export function GamePage() {
                 <div className="w-[160px] md:w-[220px] shrink-0 flex flex-col items-center justify-center">
                   <span className="text-[10px] font-bold text-graphite-light uppercase tracking-widest mb-2 text-center truncate w-full">{game.division_name}</span>
                   
-                  <div className="relative inline-flex items-center justify-center gap-3 text-[40px] md:text-[52px] font-black tracking-tighter leading-none text-graphite">
-                    {isHomeSO && <span className="absolute right-full mt-2 mr-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">Б</span>}
-                    
-                    <span className="w-12 md:w-16 text-right">{game.status === 'scheduled' ? '-' : game.home_score}</span>
-                    <span className="text-graphite/20 pb-2 md:pb-3">:</span>
-                    <span className="w-12 md:w-16 text-left">{game.status === 'scheduled' ? '-' : game.away_score}</span>
-                    
-                    {isAwaySO && <span className="absolute left-full mt-2 ml-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">Б</span>}
-                  </div>
-                  
-                  {getPeriodScoresString()}
+                  {game.is_technical ? (
+                    <>
+                      <div className="relative inline-flex items-center justify-center gap-3 text-[40px] md:text-[52px] font-black tracking-tighter leading-none text-status-rejected">
+                        <span className="text-center w-12 md:w-16 text-right">
+                          {game.home_score > game.away_score ? '+' : '-'}
+                        </span>
+                        <span className="text-graphite/20 pb-2 md:pb-3">:</span>
+                        <span className="text-center w-12 md:w-16 text-left">
+                          {game.away_score > game.home_score ? '+' : '-'}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-[10px] font-black text-status-rejected uppercase tracking-widest bg-status-rejected/10 px-3 py-1.5 rounded-lg border border-status-rejected/20 text-center leading-tight">
+                        Технический результат
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative inline-flex items-center justify-center gap-3 text-[40px] md:text-[52px] font-black tracking-tighter leading-none text-graphite">
+                        {isHomeSO && <span className="absolute right-full mt-2 mr-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                        
+                        <span className="w-12 md:w-16 text-right">{game.status === 'scheduled' ? '-' : game.home_score}</span>
+                        <span className="text-graphite/20 pb-2 md:pb-3">:</span>
+                        <span className="w-12 md:w-16 text-left">{game.status === 'scheduled' ? '-' : game.away_score}</span>
+                        
+                        {isAwaySO && <span className="absolute left-full mt-2 ml-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                      </div>
+                      {getPeriodScoresString()}
+                    </>
+                  )}
                 </div>
 
                 {/* Гости */}
@@ -477,7 +495,6 @@ export function GamePage() {
                               const isSOMiss = ev.event_type === 'shootout_miss';
                               const isHome = ev.team_id === game.home_team_id;
 
-                              // Логика цвета и иконки центрального бейджа времени
                               let badgeBg = 'bg-orange text-white';
                               let iconName = 'whistle';
                               if (isGoal || isSOGoal) {

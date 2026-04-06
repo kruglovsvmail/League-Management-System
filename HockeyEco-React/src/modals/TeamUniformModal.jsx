@@ -24,20 +24,22 @@ export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initia
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Экипировка команды" size="medium">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-[30px] mb-6">
+        {/* Темная форма теперь первая */}
         <Uploader 
-          label="Светлая форма<br/>(Домашняя)" heightClass="h-[232px]" accept=".jpg,.png,.webp"
-          isDefaultPreview={true} mockText=""
-          onFileSelect={(f, cleared) => { setLightFile(f); setLightCleared(cleared); }} 
-          initialUrl={initialLight} emptyImage={getImageUrl('/default/jersey_light.webp')}
-          canClear={canClearLight}
-          disabled={readOnly}
-        />
-        <Uploader 
-          label="Темная форма<br/>(Гостевая)" heightClass="h-[232px]" accept=".jpg,.png,.webp"
+          label="Темная форма<br/>(Домашняя)" heightClass="h-[232px]" accept=".jpg,.png,.webp"
           isDefaultPreview={true} mockText=""
           onFileSelect={(f, cleared) => { setDarkFile(f); setDarkCleared(cleared); }} 
           initialUrl={initialDark} emptyImage={getImageUrl('/default/jersey_dark.webp')}
           canClear={canClearDark}
+          disabled={readOnly}
+        />
+        {/* Светлая форма теперь вторая */}
+        <Uploader 
+          label="Светлая форма<br/>(Гостевая)" heightClass="h-[232px]" accept=".jpg,.png,.webp"
+          isDefaultPreview={true} mockText=""
+          onFileSelect={(f, cleared) => { setLightFile(f); setLightCleared(cleared); }} 
+          initialUrl={initialLight} emptyImage={getImageUrl('/default/jersey_light.webp')}
+          canClear={canClearLight}
           disabled={readOnly}
         />
       </div>

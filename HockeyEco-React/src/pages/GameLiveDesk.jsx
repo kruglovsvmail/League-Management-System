@@ -1,10 +1,10 @@
-// src/pages/GameLiveDesk.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getToken, getImageUrl } from '../utils/helpers';
 import { io } from 'socket.io-client';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { GamePlusMinusModal } from '../modals/GamePlusMinusModal';
+import { TechDefeatModal } from '../modals/TechDefeatModal';
 import { ProtocolSheet } from '../components/GameLiveDesk/ProtocolSheet';
 import { TimerPanel } from '../components/GameLiveDesk/TimerPanel';
 import { ShootoutAccordion } from '../components/GameLiveDesk/ShootoutAccordion';
@@ -16,7 +16,7 @@ import {
 
 export function GameLiveDesk() {
   const { gameId } = useParams();
-  const navigate = useNavigate(); // Инициализация хука навигации
+  const navigate = useNavigate(); 
 
   const [game, setGame] = useState(null);
   const [events, setEvents] = useState([]);
@@ -37,7 +37,11 @@ export function GameLiveDesk() {
   const [plusMinusModalState, setPlusMinusModalState] = useState({ isOpen: false, event: null, scoringTeam: null, concedingTeam: null });
 
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, eventId: null });
+  const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false); 
+  
+  // Состояние для нового общего аккордеона основного времени
+  const [isProtocolExpanded, setIsProtocolExpanded] = useState(true);
 
   const ignoreSocketRef = useRef(false);
   const ignoreTimeoutRef = useRef(null);
@@ -203,7 +207,6 @@ export function GameLiveDesk() {
   const saveEventRow = async (teamId, eventType, rowData, existingId = null) => {
     setIsSaving(true);
     
-    // ВЫЧИСЛЯЕМ ПЕРИОД ПО СКВОЗНОМУ ВРЕМЕНИ ДЛЯ ГОЛОВ, ШТРАФОВ И ТАЙМАУТОВ С УЧЕТОМ periodsCount
     let finalPeriod = currentPeriod;
     if (['goal', 'penalty', 'timeout'].includes(eventType) && rowData.time_seconds !== undefined) {
       finalPeriod = calculatePeriodFromTime(rowData.time_seconds, periodLength, otLength, periodsCount);
@@ -274,23 +277,52 @@ export function GameLiveDesk() {
               <h1 className="font-black text-2xl text-graphite uppercase tracking-tight">Официальный протокол матча</h1>
             </div>
             
-            {isSaving && <span className="text-status-accepted font-bold text-sm animate-pulse">Сохранение...</span>}
+            <div className="flex items-center gap-4">
+               {isSaving && <span className="text-status-accepted font-bold text-[13px] animate-pulse">Сохранение...</span>}
+            </div>
         </div>
 
         <div className="mr-2">
-          <ProtocolSheet 
-            teamId={game.home_team_id} teamLetter="А" teamName={game.home_team_name} teamLogo={getImageUrl(game.home_team_logo || game.home_logo_url || game.home_logo)}
-            roster={homeRoster} teamEvents={events.filter(e => e.team_id === game.home_team_id)} 
-            timerSeconds={timerSeconds} onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
-            onToggleLineup={toggleLineup} isPlusMinusEnabled={isPlusMinusEnabled} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
-          />
-          <ProtocolSheet 
-            teamId={game.away_team_id} teamLetter="Б" teamName={game.away_team_name} teamLogo={getImageUrl(game.away_team_logo || game.away_logo_url || game.away_logo)}
-            roster={awayRoster} teamEvents={events.filter(e => e.team_id === game.away_team_id)} 
-            timerSeconds={timerSeconds} onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
-            onToggleLineup={toggleLineup} isPlusMinusEnabled={isPlusMinusEnabled} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
-          />
+          
+          {/* ОБЩИЙ АККОРДЕОН ДЛЯ ОСНОВНОГО ПРОТОКОЛА */}
+          <div className="mb-8 bg-white border border-graphite/20 shadow-lg flex flex-col font-sans rounded-md">
+            
+            <div 
+               className="bg-gray-bg-light border-b border-graphite/20 px-5 py-3 flex justify-between items-center rounded-t-md select-none cursor-pointer hover:bg-graphite/5 transition-colors"
+               onClick={() => setIsProtocolExpanded(!isProtocolExpanded)}
+            >
+                <div className="font-bold py-1 text-graphite text-base uppercase tracking-wide flex items-center gap-3">
+                   <svg className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isProtocolExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
+                   </svg>
+                   Ход игры (Основное время и ОТ)
+                </div>
+            </div>
+            
+            <div className={`grid transition-all duration-300 ease-in-out ${isProtocolExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+               <div className={isProtocolExpanded ? 'overflow-visible' : 'overflow-hidden'}>
+                   <div className="flex flex-col gap-6 p-6 bg-graphite/[0.02] rounded-b-md">
+                      
+                      <ProtocolSheet 
+                        teamId={game.home_team_id} teamLetter="А" teamName={game.home_team_name} teamLogo={getImageUrl(game.home_team_logo || game.home_logo_url || game.home_logo)}
+                        roster={homeRoster} teamEvents={events.filter(e => e.team_id === game.home_team_id)} 
+                        timerSeconds={timerSeconds} onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
+                        onToggleLineup={toggleLineup} isPlusMinusEnabled={isPlusMinusEnabled} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
+                      />
 
+                      <ProtocolSheet 
+                        teamId={game.away_team_id} teamLetter="Б" teamName={game.away_team_name} teamLogo={getImageUrl(game.away_team_logo || game.away_logo_url || game.away_logo)}
+                        roster={awayRoster} teamEvents={events.filter(e => e.team_id === game.away_team_id)} 
+                        timerSeconds={timerSeconds} onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
+                        onToggleLineup={toggleLineup} isPlusMinusEnabled={isPlusMinusEnabled} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
+                      />
+
+                   </div>
+               </div>
+            </div>
+          </div>
+
+          {/* АККОРДЕОН БУЛЛИТОВ */}
           <ShootoutAccordion 
             game={game}
             events={events}
@@ -304,6 +336,16 @@ export function GameLiveDesk() {
             onSaveEvent={saveEventRow}
             onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
           />
+
+          <div className="mt-8 mb-12 flex justify-end">
+             <button 
+                onClick={() => setIsTechModalOpen(true)}
+                className="px-6 py-3 bg-white text-status-rejected hover:bg-status-rejected hover:text-white border border-status-rejected/20 rounded-xl text-[13px] font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2"
+             >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                Назначить технический результат
+             </button>
+          </div>
         </div>
       </div>
 
@@ -333,6 +375,16 @@ export function GameLiveDesk() {
         scoringRoster={plusMinusModalState.scoringTeam?.id === game.home_team_id ? homeRoster : awayRoster}
         concedingRoster={plusMinusModalState.concedingTeam?.id === game.home_team_id ? homeRoster : awayRoster}
         onSuccess={loadInitialData}
+      />
+      <TechDefeatModal 
+        isOpen={isTechModalOpen} 
+        onClose={() => setIsTechModalOpen(false)} 
+        game={game}
+        onSuccess={() => {
+            loadInitialData();
+            socket?.emit('score_updated', { gameId });
+            socket?.emit('game_updated', { gameId });
+        }}
       />
     </div>
   );

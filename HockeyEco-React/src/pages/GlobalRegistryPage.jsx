@@ -71,11 +71,9 @@ export function GlobalRegistryPage() {
   
   const [isLoading, setIsLoading] = useState(false); 
 
-  // Стейты и реф для импорта Excel
   const fileImportRef = useRef(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  // === ПАГИНАЦИЯ И БЕСКОНЕЧНЫЙ СКРОЛЛ ===
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -133,7 +131,6 @@ export function GlobalRegistryPage() {
     }
   };
 
-  // Сброс и загрузка первой страницы при смене вкладок или фильтров
   useEffect(() => {
     setPage(1);
     setTableData([]);
@@ -142,7 +139,7 @@ export function GlobalRegistryPage() {
 
     const timeout = setTimeout(() => {
       fetchData(1, true);
-    }, 400); // Debounce для строки поиска
+    }, 400); 
 
     if (activeTab === 2) {
       fetch(`${API_BASE}/api/registry/leagues?limit=1000`, { headers: getHeaders() })
@@ -153,7 +150,6 @@ export function GlobalRegistryPage() {
     return () => clearTimeout(timeout);
   }, [activeTab, searchQuery, typeFilterIndex]);
 
-  // Загрузка следующих страниц при скролле
   useEffect(() => {
     if (page > 1) {
       fetchData(page, false);
@@ -306,7 +302,7 @@ export function GlobalRegistryPage() {
 
         await Promise.all(fileTasks);
 
-        fetchData(1, true); // Обновляем с первой страницы
+        fetchData(1, true); 
         resetForm();
       } else {
         alert(`Ошибка сервера: ${json.error}`);
@@ -351,7 +347,7 @@ export function GlobalRegistryPage() {
       case 1: return !!formData.name?.trim() && !!formData.city?.trim();
       case 2: return !!formData.uiLeague && !!formData.name?.trim() && !!formData.start_date && !!formData.end_date;
       case 3: return !!formData.name?.trim() && !!formData.short_name?.trim() && !!formData.city?.trim();
-      case 4: return !!formData.last_name?.trim() && !!formData.first_name?.trim(); // Убрали проверку отчества
+      case 4: return !!formData.last_name?.trim() && !!formData.first_name?.trim(); 
       default: return false;
     }
   };
@@ -361,38 +357,39 @@ export function GlobalRegistryPage() {
     return fullUrl ? `${fullUrl}?t=${cacheBuster}` : null;
   };
 
+  // === ОПТИМИЗИРОВАННЫЕ КОЛОНКИ ДЛЯ НОУТБУКОВ ===
   const allColumns = [
     [ 
-      { label: 'ID', key: 'id', width: 'w-16' },
+      { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Название', key: 'name' },
-      { label: 'Город', key: 'city' },
-      { label: 'Статус', render: (r) => <Badge type={r.status === 'active' ? 'filled' : 'empty'} label={r.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'} /> }
+      { label: 'Город', key: 'city', width: 'w-40' },
+      { label: 'Статус', width: 'w-24', render: (r) => <Badge type={r.status === 'active' ? 'filled' : 'empty'} label={r.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'} /> }
     ],
     [ 
-      { label: 'ID', key: 'id', width: 'w-16' },
-      { label: 'Лого', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_league_default.webp')} className="w-8 h-8 object-contain" /> },
+      { label: 'ID', key: 'id', width: 'w-14' },
+      { label: 'Лого', width: 'w-14', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_league_default.webp')} className="w-8 h-8 object-contain" /> },
       { label: 'Название', key: 'name' },
-      { label: 'Город', key: 'city' }
+      { label: 'Город', key: 'city', width: 'w-40' }
     ],
     [ 
-      { label: 'ID', key: 'id', width: 'w-16' },
+      { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Сезон', key: 'name' },
       { label: 'Лига', key: 'league_name' },
-      { label: 'Статус', render: (r) => <Badge type={r.is_active ? 'filled' : 'empty'} label={r.is_active ? 'АКТИВЕН' : 'АРХИВ'} /> }
+      { label: 'Статус', width: 'w-28', render: (r) => <Badge type={r.is_active ? 'filled' : 'empty'} label={r.is_active ? 'АКТИВЕН' : 'АРХИВ'} /> }
     ],
     [ 
-      { label: 'ID', key: 'id', width: 'w-16' },
-      { label: 'Лого', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_team_default.webp')} className="w-8 h-8 object-contain" /> },
+      { label: 'ID', key: 'id', width: 'w-14' },
+      { label: 'Лого', width: 'w-14', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_team_default.webp')} className="w-8 h-8 object-contain" /> },
       { label: 'Название', key: 'name' },
-      { label: 'Город', key: 'city' },
-      { label: 'Тип', render: (r) => <Badge type={r.is_virtual ? 'empty' : 'filled'} label={r.is_virtual ? 'ВИРТ' : 'РЕАЛ'} /> }
+      { label: 'Город', key: 'city', width: 'w-36' },
+      { label: 'Тип', width: 'w-24', render: (r) => <Badge type={r.is_virtual ? 'empty' : 'filled'} label={r.is_virtual ? 'ВИРТ' : 'РЕАЛ'} /> }
     ],
     [ 
-      { label: 'ID', key: 'id', width: 'w-16' },
-      { label: 'Аватар', render: (r) => <img src={getCachedImageUrl(r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 bg-black/10 rounded-md object-cover shadow-sm" /> },
+      { label: 'ID', key: 'id', width: 'w-14' },
+      { label: 'Аватар', width: 'w-16', render: (r) => <img src={getCachedImageUrl(r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 bg-black/10 rounded-md object-cover shadow-sm" /> },
       { label: 'ФИО', render: (r) => <span className="font-bold">{r.last_name} {r.first_name} {r.middle_name || ''}</span> },
-      { label: 'Код', render: (r) => r.virtual_code ? <code className="bg-orange/10 text-orange px-2 py-0.5 rounded font-bold">{r.virtual_code}</code> : '-' },
-      { label: 'Статус', render: (r) => <Badge type={r.virtual_code ? 'empty' : 'filled'} label={r.virtual_code ? 'ВИРТ' : 'РЕАЛ'} /> }
+      { label: 'Код', width: 'w-24', render: (r) => r.virtual_code ? <code className="bg-orange/10 text-orange px-2 py-0.5 rounded font-bold">{r.virtual_code}</code> : '-' },
+      { label: 'Статус', width: 'w-24', render: (r) => <Badge type={r.virtual_code ? 'empty' : 'filled'} label={r.virtual_code ? 'ВИРТ' : 'РЕАЛ'} /> }
     ]
   ];
 
@@ -402,57 +399,32 @@ export function GlobalRegistryPage() {
         title="Глобальный реестр" 
         actions={
           <div className="flex items-center gap-4">
-            
-            {/* Скрытый инпут для файла */}
-            <input 
-              type="file" 
-              hidden 
-              ref={fileImportRef} 
-              accept=".xlsx, .xls" 
-              onChange={handleImportExcel} 
-            />
+            <input type="file" hidden ref={fileImportRef} accept=".xlsx, .xls" onChange={handleImportExcel} />
 
-            {/* Кнопка показывается ТОЛЬКО на вкладке Пользователи (activeTab === 4) */}
             {activeTab === 4 && (
-              <Button 
-                onClick={() => fileImportRef.current.click()} 
-                isLoading={isImporting}
-                className="bg-status-pending hover:bg-status-pending-hover border-none px-4 shrink-0"
-              >
+              <Button onClick={() => fileImportRef.current.click()} isLoading={isImporting} className="bg-status-pending hover:bg-status-pending-hover border-none px-4 shrink-0">
                 Импорт Excel
               </Button>
             )}
 
             {(activeTab === 3 || activeTab === 4) && (
               <div className="w-[320px] shrink-0">
-                <SegmentButton 
-                  options={['Все', 'Реальные', 'Виртуальные']} 
-                  defaultIndex={typeFilterIndex} 
-                  onChange={setTypeFilterIndex} 
-                />
+                <SegmentButton options={['Все', 'Реальные', 'Виртуальные']} defaultIndex={typeFilterIndex} onChange={setTypeFilterIndex} />
               </div>
             )}
             
             <div className="w-[260px] shrink-0">
-              <Input 
-                placeholder="Поиск..." 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-              />
+              <Input placeholder="Поиск..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
           </div>
         }
       />
 
-      <div className="flex items-start px-10 pt-8 gap-8 relative">
-        <div className="w-[530px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-7 flex flex-col gap-6 custom-scrollbar z-20">
+      <div className="flex items-start px-6 pt-8 gap-6 relative">
+        <div className="w-[480px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-7 flex flex-col gap-6 custom-scrollbar z-20">
           
           <div className="shrink-0">
-            <SegmentButton 
-              options={['Арены', 'Лиги', 'Сезоны', 'Команды', 'Пользов.']} 
-              defaultIndex={activeTab} 
-              onChange={setActiveTab} 
-            />
+            <SegmentButton options={['Арены', 'Лиги', 'Сезоны', 'Команды', 'Пользов.']} defaultIndex={activeTab} onChange={setActiveTab} />
           </div>
 
           <div className="flex flex-col gap-4">
@@ -494,12 +466,7 @@ export function GlobalRegistryPage() {
                     rows="3" placeholder="Описание лиги..." value={formData.description || ''} onChange={e => handleChange('description', e.target.value)} 
                   />
                   <div className="w-[180px]">
-                    <Uploader 
-                      key={`logo-${formResetKey}`}
-                      label="Логотип Лиги" 
-                      initialUrl={selectedItem ? getCachedImageUrl(selectedItem.logo_url) : null} 
-                      onFileSelect={(f) => handleFileSelect('logo', f)} 
-                    />
+                    <Uploader key={`logo-${formResetKey}`} label="Логотип Лиги" initialUrl={selectedItem ? getCachedImageUrl(selectedItem.logo_url) : null} onFileSelect={(f) => handleFileSelect('logo', f)} />
                   </div>
                 </>
               )}
@@ -534,6 +501,7 @@ export function GlobalRegistryPage() {
                     <Switch checked={formData.is_virtual || false} onChange={(e) => handleChange('is_virtual', e.target.checked)} />
                     <span className="text-[13px] font-bold text-graphite">{formData.is_virtual ? 'Виртуальная команда (заглушка)' : 'Реальная команда'}</span>
                   </div>
+                  {/* ПОРЯДОК ЭКИПИРОВКИ: ТЕМНАЯ ПЕРЕД СВЕТЛОЙ */}
                   <div className="grid grid-cols-3 gap-4 pt-4 border-t border-graphite/10 mt-2">
                     <Uploader 
                       key={`logo-${formResetKey}`}
@@ -542,16 +510,16 @@ export function GlobalRegistryPage() {
                       onFileSelect={(f) => handleFileSelect('logo', f)} 
                     />
                     <Uploader 
-                      key={`jersey_light-${formResetKey}`}
-                      label="Джерси (С)" heightClass="h-[120px]" mockText="Светлая" isDefaultPreview={true} 
-                      initialUrl={selectedItem ? getCachedImageUrl(selectedItem.jersey_light_url) : null} 
-                      onFileSelect={(f) => handleFileSelect('jersey_light', f)} 
-                    />
-                    <Uploader 
                       key={`jersey_dark-${formResetKey}`}
                       label="Джерси (Т)" heightClass="h-[120px]" mockText="Темная" isDefaultPreview={true} 
                       initialUrl={selectedItem ? getCachedImageUrl(selectedItem.jersey_dark_url) : null} 
                       onFileSelect={(f) => handleFileSelect('jersey_dark', f)} 
+                    />
+                    <Uploader 
+                      key={`jersey_light-${formResetKey}`}
+                      label="Джерси (С)" heightClass="h-[120px]" mockText="Светлая" isDefaultPreview={true} 
+                      initialUrl={selectedItem ? getCachedImageUrl(selectedItem.jersey_light_url) : null} 
+                      onFileSelect={(f) => handleFileSelect('jersey_light', f)} 
                     />
                   </div>
                 </>
@@ -559,13 +527,10 @@ export function GlobalRegistryPage() {
 
               {activeTab === 4 && ( 
                 <div className="space-y-6">
-                  
-                  {/* Блок: Основная информация */}
                   <div>
                     <div className="grid grid-cols-3 gap-3">
                       <Input placeholder="Фамилия *" value={formData.last_name || ''} onChange={e => handleChange('last_name', e.target.value)} />
                       <Input placeholder="Имя *" value={formData.first_name || ''} onChange={e => handleChange('first_name', e.target.value)} />
-                      {/* Убрали звездочку из Отчества */}
                       <Input placeholder="Отчество" value={formData.middle_name || ''} onChange={e => handleChange('middle_name', e.target.value)} />
                     </div>
                     <div className="flex items-center gap-3 mt-4">
@@ -574,28 +539,19 @@ export function GlobalRegistryPage() {
                     </div>
                   </div>
 
-                  {/* Блок: Контакты */}
                   <div>
                     <div className="text-[10px] font-bold text-graphite/50 uppercase tracking-widest mb-3">Контакты</div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="relative flex items-center w-full border border-graphite/40 rounded-md bg-white transition-all duration-300 focus-within:border-orange overflow-hidden">
                         <div className="pl-3 pr-2 text-[13px] text-graphite font-semibold border-r border-graphite/20 py-2.5 bg-graphite/5 h-full flex items-center shrink-0">+7</div>
-                        <input 
-                          type="tel" 
-                          placeholder="(000) 000-00-00" 
-                          value={formatPhoneDynamic(formData.phone)} 
-                          onChange={handlePhoneChange} 
-                          className="w-full px-3 py-2.5 bg-transparent text-graphite text-[13px] outline-none placeholder:text-graphite/40 font-medium" 
-                        />
+                        <input type="tel" placeholder="(000) 000-00-00" value={formatPhoneDynamic(formData.phone)} onChange={handlePhoneChange} className="w-full px-3 py-2.5 bg-transparent text-graphite text-[13px] outline-none placeholder:text-graphite/40 font-medium" />
                       </div>
                       <Input placeholder="Email (необязательно)" value={formData.email || ''} onChange={e => handleChange('email', e.target.value)} />
                     </div>
                   </div>
 
-                  {/* Блок: Физические параметры */}
                   <div className="pb-3">
                     <div className="text-[10px] font-bold text-graphite/50 uppercase tracking-widest mb-3">параметры</div>
-                    
                     <div className="grid grid-cols-3 gap-3">
                       <Input placeholder="Дата рождения" value={formData.birth_date || ''} onChange={handleBirthDateChange} />
                       <Input placeholder="Рост (см)" value={formData.height || ''} onChange={e => handleChange('height', e.target.value)} />
@@ -603,32 +559,19 @@ export function GlobalRegistryPage() {
                     </div>
                   </div>
 
-                  {/* Блок: Аватар */}
                   <div className="w-[150px] pt-4 border-t border-graphite/10">
-                    <Uploader 
-                      key={`avatar-${formResetKey}`}
-                      label="Аватар профиля" 
-                      initialUrl={selectedItem ? getCachedImageUrl(selectedItem.avatar_url) : null} 
-                      onFileSelect={(f) => handleFileSelect('avatar', f)} 
-                    />
+                    <Uploader key={`avatar-${formResetKey}`} label="Аватар профиля" initialUrl={selectedItem ? getCachedImageUrl(selectedItem.avatar_url) : null} onFileSelect={(f) => handleFileSelect('avatar', f)} />
                   </div>
-
                 </div>
               )}
 
-              <Button 
-                type="submit" 
-                isLoading={isLoading} 
-                disabled={!isFormValid() || isLoading}
-                className={`w-full mt-2 py-3 shadow-md transition-all duration-300 ${!isFormValid() ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
-              >
+              <Button type="submit" isLoading={isLoading} disabled={!isFormValid() || isLoading} className={`w-full mt-2 py-3 shadow-md transition-all duration-300 ${!isFormValid() ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}>
                 {selectedItem ? 'Сохранить изменения' : 'Создать запись'}
               </Button>
             </form>
           </div>
         </div>
 
-        {/* ПРАВАЯ ЧАСТЬ - ТАБЛИЦА */}
         <div className="flex-1 relative z-10 min-h-[500px]">
           {isLoading && tableData.length === 0 && (
             <div className="absolute inset-0 z-30 flex items-start pt-32 justify-center pointer-events-none">
@@ -636,19 +579,12 @@ export function GlobalRegistryPage() {
             </div>
           )}
           <div className={`transition-opacity duration-300 ease-in-out ${isLoading && tableData.length === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
-            <Table 
-              columns={allColumns[activeTab]} 
-              data={tableData} 
-              onRowClick={handleRowClick}
-              rowClassName={(r) => r.id === selectedItem?.id ? 'bg-orange/5 shadow-[inset_4px_0_0_0_#FF7A00]' : ''}
-            />
-            {/* Элемент-сенсор для бесконечного скролла */}
+            <Table columns={allColumns[activeTab]} data={tableData} onRowClick={handleRowClick} rowClassName={(r) => r.id === selectedItem?.id ? 'bg-orange/5 shadow-[inset_4px_0_0_0_#FF7A00]' : ''} />
             <div ref={lastElementRef} className="h-10 w-full flex items-center justify-center mt-2">
               {isFetchingMore && <span className="text-graphite-light text-sm font-bold animate-pulse">Загрузка данных...</span>}
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 import React from 'react';
-import { getImageUrl, formatAge } from '../utils/helpers';
-import { Table } from '../ui/Table2';
-import { Tabs } from '../ui/Tabs';
-import { Badge } from '../ui/Badge';
-import { Tooltip } from '../ui/Tooltip';
+import { getImageUrl, formatAge } from '../../utils/helpers';
+import { Table } from '../../ui/Table2';
+import { Tabs } from '../../ui/Tabs';
+import { Badge } from '../../ui/Badge';
+import { Tooltip } from '../../ui/Tooltip';
 
 const STATUS_KEYS = ['approved', 'pending', 'revision', 'rejected'];
 

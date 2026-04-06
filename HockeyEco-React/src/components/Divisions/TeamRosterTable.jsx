@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
-import { Table } from '../ui/Table2';
-import { Badge } from '../ui/Badge';
-import { Tooltip } from '../ui/Tooltip';
-import { Switch } from '../ui/Switch';
+import { Table } from '../../ui/Table2';
+import { Badge } from '../../ui/Badge';
+import { Tooltip } from '../../ui/Tooltip';
+import { Switch } from '../../ui/Switch';
 import dayjs from 'dayjs';
-import { getImageUrl } from '../utils/helpers';
+import { getImageUrl } from '../../utils/helpers';
 
 const POSITION_MAP = {
   goalie: 'Вр',

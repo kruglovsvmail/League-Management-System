@@ -110,8 +110,8 @@ export const createDivision = async (req, res) => {
             name, short_name, tournament_type, start_date, end_date,
             application_start, application_end, transfer_start, transfer_end,
             description, points_win_reg, points_win_ot, points_draw,
-            points_loss_ot, points_loss_reg, ranking_criteria,
-            playoff_start_round, has_third_place,
+            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
+            ranking_criteria, playoff_start_round, has_third_place,
             wins_needed_1_8, wins_needed_1_4, wins_needed_1_2,
             wins_needed_final, wins_needed_3rd
         } = req.body;
@@ -126,12 +126,13 @@ export const createDivision = async (req, res) => {
                 start_date, end_date, application_start, application_end,
                 transfer_start, transfer_end, description,
                 points_win_reg, points_win_ot, points_draw,
-                points_loss_ot, points_loss_reg, ranking_criteria,
+                points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
+                ranking_criteria,
                 playoff_start_round, has_third_place,
                 wins_needed_1_8, wins_needed_1_4, wins_needed_1_2,
                 wins_needed_final, wins_needed_3rd,
                 is_published
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, false)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, false)
             RETURNING id
         `, [
             seasonId, name, short_name, tournament_type,
@@ -140,7 +141,7 @@ export const createDivision = async (req, res) => {
             transfer_start || null, transfer_end || null,
             description,
             points_win_reg, points_win_ot, points_draw,
-            points_loss_ot, points_loss_reg,
+            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
             ranking_criteria ? JSON.stringify(ranking_criteria) : null,
             playoff_start_round, has_third_place,
             wins_needed_1_8, wins_needed_1_4, wins_needed_1_2,
@@ -160,8 +161,9 @@ export const updateDivision = async (req, res) => {
         const {
             name, short_name, tournament_type, start_date, end_date, application_start, application_end,
             transfer_start, transfer_end, description, points_win_reg, points_win_ot, points_draw, points_loss_ot,
-            points_loss_reg, ranking_criteria, playoff_start_round, has_third_place, wins_needed_1_8, wins_needed_1_4,
-            wins_needed_1_2, wins_needed_final, wins_needed_3rd, clear_logo, clear_regulations
+            points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria, playoff_start_round, 
+            has_third_place, wins_needed_1_8, wins_needed_1_4, wins_needed_1_2, wins_needed_final, wins_needed_3rd, 
+            clear_logo, clear_regulations
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
@@ -173,14 +175,15 @@ export const updateDivision = async (req, res) => {
                 name = $1, short_name = $2, tournament_type = $3, start_date = $4, end_date = $5,
                 application_start = $6, application_end = $7, transfer_start = $8, transfer_end = $9,
                 description = $10, points_win_reg = $11, points_win_ot = $12, points_draw = $13,
-                points_loss_ot = $14, points_loss_reg = $15, ranking_criteria = $16, playoff_start_round = $17,
-                has_third_place = $18, wins_needed_1_8 = $19, wins_needed_1_4 = $20, wins_needed_1_2 = $21,
-                wins_needed_final = $22, wins_needed_3rd = $23
-            WHERE id = $24
+                points_loss_ot = $14, points_loss_reg = $15, points_tech_win = $16, points_tech_loss = $17, points_tech_draw = $18,
+                ranking_criteria = $19, playoff_start_round = $20, has_third_place = $21, wins_needed_1_8 = $22, 
+                wins_needed_1_4 = $23, wins_needed_1_2 = $24, wins_needed_final = $25, wins_needed_3rd = $26
+            WHERE id = $27
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
             transfer_start || null, transfer_end || null, description, points_win_reg, points_win_ot, points_draw,
-            points_loss_ot, points_loss_reg, ranking_criteria ? JSON.stringify(ranking_criteria) : null, playoff_start_round, has_third_place,
+            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
+            ranking_criteria ? JSON.stringify(ranking_criteria) : null, playoff_start_round, has_third_place,
             wins_needed_1_8, wins_needed_1_4, wins_needed_1_2, wins_needed_final, wins_needed_3rd, id
         ]);
 
@@ -334,7 +337,7 @@ export const getPlayoffBracket = async (req, res) => {
         `, [id]);
 
         const gamesRes = await pool.query(`
-            SELECT id, home_team_id, away_team_id, home_score, away_score, status, series_number, end_type, game_date
+            SELECT id, home_team_id, away_team_id, home_score, away_score, status, series_number, end_type, game_date, is_technical
             FROM games
             WHERE division_id = $1 AND stage_type = 'playoff' AND status != 'cancelled'
             ORDER BY series_number ASC, game_date ASC
@@ -446,8 +449,6 @@ export const updatePlayoffMatchup = async (req, res) => {
             WHERE id = $3 AND division_id = $4
         `, [team1_id || null, team2_id || null, matchupId, id]);
         
-        // ВАЖНО: После ручного вмешательства админа мы пересчитываем дерево,
-        // чтобы сохранить консистентность, если там уже сыграны матчи.
         await recalculatePlayoffs(id);
 
         res.json({ success: true });
