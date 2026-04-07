@@ -252,16 +252,16 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
         ) : (
           <>
             {/* 1. HERO HEADER */}
-            <div className="shrink-0 flex gap-4 items-center bg-white border border-graphite/10 p-4 rounded-2xl shadow-sm mb-4 relative overflow-hidden mx-6 mt-4">
+            <div className="shrink-0 flex gap-4 items-center bg-white border border-graphite/10 pr-8 rounded-2xl shadow-sm mb-2 relative overflow-hidden mx-6 mt-4">
               
               <div 
-                className={`relative w-[90px] h-[90px] shrink-0 rounded-xl overflow-hidden border border-graphite/10 shadow-sm bg-graphite/5 ${data.info.allPhotos.length > 1 ? 'cursor-pointer group' : ''}`}
+                className={`relative w-[120px] h-[120px] shrink-0 mr-6 overflow-hidden border border-graphite/10 shadow-sm bg-graphite/15 ${data.info.allPhotos.length > 1 ? 'cursor-pointer group' : ''}`}
                 onClick={handlePhotoClick}
               >
                 <img src={currentPhotoUrl} alt="Игрок" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                 
                 {currentPhoto?.type === 'team' && (
-                  <div className="absolute bottom-1 left-1 w-7 h-7 bg-white/90 backdrop-blur-md rounded-full p-1 shadow-sm border border-graphite/10 z-10 flex items-center justify-center">
+                  <div className="absolute bottom-1 left-1 w-8 h-8 p-1 z-10 flex items-center justify-center">
                     <img src={getImageUrl(currentPhoto.teamLogo || '/default/Logo_team_default.webp')} alt="Лого" className="w-full h-full object-contain" />
                   </div>
                 )}
@@ -274,11 +274,11 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
               </div>
 
               <div className="flex-1 flex flex-col justify-center">
-                <h2 className="text-[22px] font-bold text-graphite/80 leading-tight mb-2 truncate">
+                <h2 className="text-[24px] font-bold text-graphite/80 leading-tight mb-4 truncate">
   {data.info.last_name} {data.info.first_name} <span className="text-graphite/80 font-bold">{data.info.middle_name}</span>
 </h2>
                 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-graphite/5 px-4 py-2.5 rounded-xl border border-graphite/10 w-fit">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-graphite/5 px-4 py-2.5 rounded-lg border border-graphite/0 w-fit">
                   <StatItem value={ageInt ? formatAge(ageInt) : null} />
                   <div className="w-px h-4 bg-graphite/20 block"></div>
                   <StatItem value={data.info.birth_date ? new Date(data.info.birth_date).toLocaleDateString('ru-RU') : null} />

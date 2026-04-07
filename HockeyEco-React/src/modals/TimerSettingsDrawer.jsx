@@ -1,4 +1,3 @@
-// src/modals/TimerSettingsDrawer.jsx
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../ui/Button';
@@ -28,10 +27,8 @@ export function TimerSettingsDrawer({
   const drawerContent = (
     <div className={`fixed inset-0 z-[100000] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
       
-      {/* Фон-затемнение */}
       <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={onClose}></div>
       
-      {/* Сама шторка */}
       <div className={`absolute top-0 right-0 h-full w-[400px] max-w-full bg-[#F8F9FA] transform transition-transform duration-300 ease-out flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
         <div className="flex items-center justify-between px-8 py-6 border-b border-graphite/10 bg-white shrink-0">
@@ -50,7 +47,7 @@ export function TimerSettingsDrawer({
                 type="number" 
                 min="1"
                 max="10"
-                value={periodsCount} 
+                value={periodsCount ?? ''} 
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
                   setPeriodsCount(isNaN(val) || val < 1 ? 1 : val);
@@ -64,7 +61,7 @@ export function TimerSettingsDrawer({
               <input 
                 type="number" 
                 min="1"
-                value={periodLength} 
+                value={periodLength ?? ''} 
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
                   setPeriodLength(isNaN(val) || val < 1 ? 1 : val);
@@ -78,7 +75,7 @@ export function TimerSettingsDrawer({
               <input 
                 type="number" 
                 min="0"
-                value={otLength} 
+                value={otLength ?? ''} 
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
                   setOtLength(isNaN(val) || val < 0 ? 0 : val);
@@ -92,7 +89,7 @@ export function TimerSettingsDrawer({
               <input 
                 type="number" 
                 min="1"
-                value={soLength} 
+                value={soLength ?? ''} 
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
                   setSoLength(isNaN(val) || val < 1 ? 1 : val);

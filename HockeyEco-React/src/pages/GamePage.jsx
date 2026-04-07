@@ -188,11 +188,15 @@ export function GamePage() {
       return (a.jersey_number || 999) - (b.jersey_number || 999);
     });
 
+    const countG = roster.filter(r => r.position_in_line === 'G').length;
+    const countD = roster.filter(r => ['LD', 'RD'].includes(r.position_in_line)).length;
+    const countF = roster.filter(r => ['LW', 'C', 'RW'].includes(r.position_in_line)).length;
+    const totalPlayers = roster.length;
+
     const rosterColumns = [
-      { label: '', width: 'w-[10px]', align: 'center', render: (_, idx) => <span className="font-normal text-graphite/50">{idx + 1}</span> },
-      { label: 'Фото', width: 'w-[80px]', align: 'center', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/5" alt="" /> )},
-      { label: 'Игрок',  render: (r) => (
-        <button onClick={() => setSelectedPlayerId(r.player_id)} className="text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors flex items-center gap-2 truncate text-left">
+      { label: 'Фото', width: 'w-[80px]', align: 'left', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" /> )},
+      { label: 'Игрок',  align: 'left',  render: (r) => (
+        <button onClick={() => setSelectedPlayerId(r.player_id)} className="text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors flex items-center gap-1 truncate text-left">
           <span>{r.last_name} {r.first_name}</span>
           {r.is_captain && <span className="text-orange text-[12px] font-bold ml-1">К</span>}
           {r.is_assistant && <span className="text-orange text-[12px] font-bold ml-1">А</span>}
@@ -219,7 +223,19 @@ export function GamePage() {
     return (
       <div className="bg-white/70 p-6 pt-5 rounded-xxl border border-graphite/10 shadow-sm flex flex-col h-full">
         <div className="flex items-center justify-between border-b border-graphite/10 pb-3 mb-4 shrink-0">
-          <span className="text-[12px] font-black uppercase text-graphite/40 tracking-widest">{side === 'home' ? 'Хозяева' : 'Гости'}</span>
+          <div className="flex flex-wrap items-center gap-3 w-full justify-between">
+             <span className="text-[12px] font-black uppercase text-graphite/40 tracking-widest">{side === 'home' ? 'Хозяева' : 'Гости'}</span>
+             
+             {totalPlayers > 0 && (
+               <div className="flex items-center gap-1 text-[10px] font-bold text-graphite/40 tracking-wider">
+                 <span>Вр: {countG}</span>
+                 <span className="text-graphite/30 px-0.5">|</span>
+                 <span>Защ: {countD}</span>
+                 <span className="text-graphite/30 px-0.5">|</span>
+                 <span>Нап: {countF}</span>
+               </div>
+             )}
+          </div>
         </div>
         <div className="flex-1 mb-6 flex flex-col">
           {sortedRoster.length > 0 ? (

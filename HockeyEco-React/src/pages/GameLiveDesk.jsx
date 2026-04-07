@@ -40,7 +40,6 @@ export function GameLiveDesk() {
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false); 
   
-  // Состояние для нового общего аккордеона основного времени
   const [isProtocolExpanded, setIsProtocolExpanded] = useState(true);
 
   const ignoreSocketRef = useRef(false);
@@ -69,10 +68,12 @@ export function GameLiveDesk() {
 
       if (dataGame.success) {
         setGame(dataGame.data);
-        if (dataGame.data.periods_count !== undefined) setPeriodsCount(dataGame.data.periods_count);
-        if (dataGame.data.period_length !== undefined) setPeriodLength(dataGame.data.period_length);
-        if (dataGame.data.ot_length !== undefined) setOtLength(dataGame.data.ot_length);
-        if (dataGame.data.so_length !== undefined) setSoLength(dataGame.data.so_length);
+        
+        // Исправлено: использование ?? вместо !== undefined для безопасной установки стейтов
+        setPeriodsCount(dataGame.data.periods_count ?? 3);
+        setPeriodLength(dataGame.data.period_length ?? 20);
+        setOtLength(dataGame.data.ot_length ?? 5);
+        setSoLength(dataGame.data.so_length ?? 3);
 
         if (dataEvents.success) setEvents(dataEvents.data);
 
@@ -106,10 +107,12 @@ export function GameLiveDesk() {
       setTimerSeconds(state.seconds);
       setIsTimerRunning(state.isRunning);
       if (state.period) setCurrentPeriod(state.period);
-      if (state.periodsCount !== undefined) setPeriodsCount(state.periodsCount);
-      if (state.periodLength !== undefined) setPeriodLength(state.periodLength);
-      if (state.otLength !== undefined) setOtLength(state.otLength);
-      if (state.soLength !== undefined) setSoLength(state.soLength);
+      
+      // Исправлено для сокетов аналогично
+      if (state.periodsCount !== undefined) setPeriodsCount(state.periodsCount ?? 3);
+      if (state.periodLength !== undefined) setPeriodLength(state.periodLength ?? 20);
+      if (state.otLength !== undefined) setOtLength(state.otLength ?? 5);
+      if (state.soLength !== undefined) setSoLength(state.soLength ?? 3);
     });
     
     newSocket.on('timer_tick', (state) => {
@@ -284,7 +287,6 @@ export function GameLiveDesk() {
 
         <div className="mr-2">
           
-          {/* ОБЩИЙ АККОРДЕОН ДЛЯ ОСНОВНОГО ПРОТОКОЛА */}
           <div className="mb-8 bg-white border border-graphite/20 shadow-lg flex flex-col font-sans rounded-md">
             
             <div 
@@ -322,7 +324,6 @@ export function GameLiveDesk() {
             </div>
           </div>
 
-          {/* АККОРДЕОН БУЛЛИТОВ */}
           <ShootoutAccordion 
             game={game}
             events={events}

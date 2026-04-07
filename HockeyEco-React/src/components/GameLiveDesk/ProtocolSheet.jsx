@@ -102,7 +102,6 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
   return (
     <div className={`bg-white border border-graphite/20 shadow-sm flex flex-col font-sans rounded-md ${loadingClass}`}>
       
-      {/* СТАТИЧНАЯ ШАПКА ТАБЛИЦЫ */}
       <div className="bg-gray-bg-light border-b border-graphite/20 px-4 py-3 flex justify-between items-center rounded-t-md select-none">
         <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center gap-3">
           <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center font-black rounded-sm">{teamLetter}</span>
@@ -133,33 +132,28 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
         </div>
       </div>
 
-      {/* ТЕЛО ТАБЛИЦЫ С НОВЫМИ ОПТИМИЗИРОВАННЫМИ РАЗМЕРАМИ */}
       <div className="overflow-x-visible pb-12 pt-0.5">
-        {/* Обрати внимание на min-w-[950px] */}
         <table className="w-full min-w-[950px] text-sm text-center border-collapse table-fixed select-none">
           <colgroup>
-            {/* Состав */}
-            <col className="w-8" />       {/* № */}
-            <col className="w-[140px]" /> {/* Фамилия Имя */}
-            <col className="w-8" />       {/* Поз */}
-            <col className="w-9" />       {/* ИГ */}
+            <col className="w-8" />
+            <col className="w-[140px]" />
+            <col className="w-8" />
+            <col className="w-9" />
             
-            {/* Голы */}
-            <col className="w-8" />       {/* № */}
-            <col className="w-[64px]" />  {/* Время */}
-            <col className="w-11" />      {/* Г */}
-            <col className="w-11" />      {/* П1 */}
-            <col className="w-11" />      {/* П2 */}
-            <col className="w-14" />      {/* Сост */}
-            <col className="w-[70px]" />  {/* Действия */}
+            <col className="w-8" />
+            <col className="w-[64px]" />
+            <col className="w-11" />
+            <col className="w-11" />
+            <col className="w-11" />
+            <col className="w-14" />
+            <col className="w-[70px]" />
             
-            {/* Штрафы */}
-            <col className="w-11" />      {/* Игрок */}
-            <col className="w-[52px]" />  {/* Мин */}
-            <col className="w-auto" />    {/* Причина (резиновая колонка) */}
-            <col className="w-[64px]" />  {/* Начало */}
-            <col className="w-[64px]" />  {/* Конец */}
-            <col className="w-[70px]" />  {/* Действия */}
+            <col className="w-11" />
+            <col className="w-[52px]" />
+            <col className="w-auto" />
+            <col className="w-[64px]" />
+            <col className="w-[64px]" />
+            <col className="w-[70px]" />
           </colgroup>
 
           <thead>

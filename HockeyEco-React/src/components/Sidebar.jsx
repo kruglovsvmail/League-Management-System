@@ -38,7 +38,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
   // ФОРМИРОВАНИЕ МЕНЮ (ДОБАВЛЕН РОУТ ТАБЛИЦ)
   const baseMenuItems = [
     { name: "Расписание", path: "/games", icon: "matches" },
-    { name: "Таблицы", path: "/standings", icon: "chevron" },
+    { name: "Таблицы", path: "/standings", icon: "standings" },
     canViewDivisions ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
     { name: "Трансферы", path: "/transfers", icon: "transfers" },
     { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" },

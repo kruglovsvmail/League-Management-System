@@ -406,13 +406,13 @@ export function StandingsPage() {
       <Modal isOpen={!!editingMatchup} onClose={() => setEditingMatchup(null)} title="Замена команд в серии" size="normal">
         <div className="flex flex-col gap-5">
           <Select 
-             label="Команда (Верхняя)" 
+             label="Команда А" 
              options={['Пусто (Не выбрана)', ...allTeams.map(t => t.name)]} 
              value={tempTeam1?.name || 'Пусто (Не выбрана)'} 
              onChange={(val) => setTempTeam1(val === 'Пусто (Не выбрана)' ? null : allTeams.find(t => t.name === val))} 
           />
           <Select 
-             label="Команда (Нижняя)" 
+             label="Команда Б" 
              options={['Пусто (Не выбрана)', ...allTeams.map(t => t.name)]} 
              value={tempTeam2?.name || 'Пусто (Не выбрана)'} 
              onChange={(val) => setTempTeam2(val === 'Пусто (Не выбрана)' ? null : allTeams.find(t => t.name === val))} 

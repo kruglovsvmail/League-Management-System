@@ -103,14 +103,14 @@ export function GlobalRegistryPage() {
     if (isInitial) setIsLoading(true);
     else setIsFetchingMore(true);
 
-    const endpoints = ['arenas', 'leagues', 'seasons', 'teams', 'users'];
+    const endpoints = ['leagues', 'seasons', 'teams', 'users', 'arenas'];
     
     try {
       const url = new URL(`${API_BASE}/api/registry/${endpoints[activeTab]}`);
       url.searchParams.append('page', pageNum);
       url.searchParams.append('limit', 30);
       if (searchQuery) url.searchParams.append('search', searchQuery);
-      if (activeTab === 3 || activeTab === 4) url.searchParams.append('type', typeFilterIndex);
+      if (activeTab === 2 || activeTab === 3) url.searchParams.append('type', typeFilterIndex);
 
       const res = await fetch(url.toString(), { headers: getHeaders() });
       const json = await res.json();
@@ -141,7 +141,7 @@ export function GlobalRegistryPage() {
       fetchData(1, true);
     }, 400); 
 
-    if (activeTab === 2) {
+    if (activeTab === 1) {
       fetch(`${API_BASE}/api/registry/leagues?limit=1000`, { headers: getHeaders() })
         .then(res => res.json())
         .then(json => json.success && setLeaguesList(json.data));
@@ -201,7 +201,7 @@ export function GlobalRegistryPage() {
     setFormData({
       ...item,
       uiLeague: item.league_id ? `${item.league_id} - ${item.league_name}` : '',
-      is_virtual: activeTab === 4 ? !!item.virtual_code : !!item.is_virtual,
+      is_virtual: activeTab === 3 ? !!item.virtual_code : !!item.is_virtual,
       birth_date: item.birth_date ? formatDateToRU(item.birth_date) : '',
       phone: item.phone ? item.phone.replace(/^\+?7/, '').replace(/\D/g, '') : ''
     });
@@ -228,7 +228,7 @@ export function GlobalRegistryPage() {
   };
 
   const uploadFileS3 = async (entityId, type, file) => {
-    const entities = ['arenas', 'leagues', 'seasons', 'teams', 'users'];
+    const entities = ['leagues', 'seasons', 'teams', 'users', 'arenas'];
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -241,7 +241,7 @@ export function GlobalRegistryPage() {
   };
 
   const clearFileS3 = async (entityId, type) => {
-    const entities = ['arenas', 'leagues', 'seasons', 'teams', 'users'];
+    const entities = ['leagues', 'seasons', 'teams', 'users', 'arenas'];
     try {
       await fetch(`${API_BASE}/api/registry/${entities[activeTab]}/${entityId}/upload/${type}`, {
         method: 'DELETE',
@@ -254,11 +254,11 @@ export function GlobalRegistryPage() {
     e.preventDefault();
     let payload = { ...formData };
 
-    if (activeTab === 2 && formData.uiLeague) {
+    if (activeTab === 1 && formData.uiLeague) {
       payload.league_id = parseInt(formData.uiLeague.split(' - ')[0]);
     }
 
-    if (activeTab === 4) { 
+    if (activeTab === 3) { 
       payload.height = formData.height ? parseInt(formData.height, 10) : null;
       payload.weight = formData.weight ? parseInt(formData.weight, 10) : null;
       payload.phone = formData.phone ? '+7' + formData.phone : null;
@@ -271,7 +271,7 @@ export function GlobalRegistryPage() {
     }
 
     setIsLoading(true);
-    const endpoints = ['arenas', 'leagues', 'seasons', 'teams', 'users'];
+    const endpoints = ['leagues', 'seasons', 'teams', 'users', 'arenas'];
     const url = selectedItem 
       ? `${API_BASE}/api/registry/${endpoints[activeTab]}/${selectedItem.id}` 
       : `${API_BASE}/api/registry/${endpoints[activeTab]}`;
@@ -292,7 +292,7 @@ export function GlobalRegistryPage() {
         else if (clearedFiles.has('logo') && selectedItem?.logo_url) fileTasks.push(clearFileS3(entityId, 'logo'));
 
         if (jerseyLightFile) fileTasks.push(uploadFileS3(entityId, 'jersey_light', jerseyLightFile));
-        else if (clearedFiles.has('jersey_light') && selectedItem?.jersey_light_url) fileTasks.push(clearFileS3(entityId, 'jersey_light'));
+        else if (clearedFiles.has('jersey_light') && selectedItem?.jersey_light_url) fileTasks.push(clearFileS3(entityId, 'jersey_dark'));
 
         if (jerseyDarkFile) fileTasks.push(uploadFileS3(entityId, 'jersey_dark', jerseyDarkFile));
         else if (clearedFiles.has('jersey_dark') && selectedItem?.jersey_dark_url) fileTasks.push(clearFileS3(entityId, 'jersey_dark'));
@@ -343,11 +343,11 @@ export function GlobalRegistryPage() {
 
   const isFormValid = () => {
     switch (activeTab) {
-      case 0: return !!formData.name?.trim() && !!formData.city?.trim() && !!formData.address?.trim();
-      case 1: return !!formData.name?.trim() && !!formData.city?.trim();
-      case 2: return !!formData.uiLeague && !!formData.name?.trim() && !!formData.start_date && !!formData.end_date;
-      case 3: return !!formData.name?.trim() && !!formData.short_name?.trim() && !!formData.city?.trim();
-      case 4: return !!formData.last_name?.trim() && !!formData.first_name?.trim(); 
+      case 0: return !!formData.name?.trim() && !!formData.city?.trim(); // Leagues
+      case 1: return !!formData.uiLeague && !!formData.name?.trim() && !!formData.start_date && !!formData.end_date; // Seasons
+      case 2: return !!formData.name?.trim() && !!formData.short_name?.trim() && !!formData.city?.trim(); // Teams
+      case 3: return !!formData.last_name?.trim() && !!formData.first_name?.trim(); // Users
+      case 4: return !!formData.name?.trim() && !!formData.city?.trim() && !!formData.address?.trim(); // Arenas
       default: return false;
     }
   };
@@ -359,37 +359,37 @@ export function GlobalRegistryPage() {
 
   // === ОПТИМИЗИРОВАННЫЕ КОЛОНКИ ДЛЯ НОУТБУКОВ ===
   const allColumns = [
-    [ 
-      { label: 'ID', key: 'id', width: 'w-14' },
-      { label: 'Название', key: 'name' },
-      { label: 'Город', key: 'city', width: 'w-40' },
-      { label: 'Статус', width: 'w-24', render: (r) => <Badge type={r.status === 'active' ? 'filled' : 'empty'} label={r.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'} /> }
-    ],
-    [ 
+    [ // 0: Leagues
       { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Лого', width: 'w-14', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_league_default.webp')} className="w-8 h-8 object-contain" /> },
       { label: 'Название', key: 'name' },
       { label: 'Город', key: 'city', width: 'w-40' }
     ],
-    [ 
+    [ // 1: Seasons
       { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Сезон', key: 'name' },
       { label: 'Лига', key: 'league_name' },
       { label: 'Статус', width: 'w-28', render: (r) => <Badge type={r.is_active ? 'filled' : 'empty'} label={r.is_active ? 'АКТИВЕН' : 'АРХИВ'} /> }
     ],
-    [ 
+    [ // 2: Teams
       { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Лого', width: 'w-14', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_team_default.webp')} className="w-8 h-8 object-contain" /> },
       { label: 'Название', key: 'name' },
       { label: 'Город', key: 'city', width: 'w-36' },
       { label: 'Тип', width: 'w-24', render: (r) => <Badge type={r.is_virtual ? 'empty' : 'filled'} label={r.is_virtual ? 'ВИРТ' : 'РЕАЛ'} /> }
     ],
-    [ 
+    [ // 3: Users
       { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Аватар', width: 'w-16', render: (r) => <img src={getCachedImageUrl(r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 bg-black/10 rounded-md object-cover shadow-sm" /> },
       { label: 'ФИО', render: (r) => <span className="font-bold">{r.last_name} {r.first_name} {r.middle_name || ''}</span> },
       { label: 'Код', width: 'w-24', render: (r) => r.virtual_code ? <code className="bg-orange/10 text-orange px-2 py-0.5 rounded font-bold">{r.virtual_code}</code> : '-' },
       { label: 'Статус', width: 'w-24', render: (r) => <Badge type={r.virtual_code ? 'empty' : 'filled'} label={r.virtual_code ? 'ВИРТ' : 'РЕАЛ'} /> }
+    ],
+    [ // 4: Arenas
+      { label: 'ID', key: 'id', width: 'w-14' },
+      { label: 'Название', key: 'name' },
+      { label: 'Город', key: 'city', width: 'w-40' },
+      { label: 'Статус', width: 'w-24', render: (r) => <Badge type={r.status === 'active' ? 'filled' : 'empty'} label={r.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'} /> }
     ]
   ];
 
@@ -399,18 +399,20 @@ export function GlobalRegistryPage() {
         title="Глобальный реестр" 
         actions={
           <div className="flex items-center gap-4">
-            <input type="file" hidden ref={fileImportRef} accept=".xlsx, .xls" onChange={handleImportExcel} />
 
-            {activeTab === 4 && (
-              <Button onClick={() => fileImportRef.current.click()} isLoading={isImporting} className="bg-status-pending hover:bg-status-pending-hover border-none px-4 shrink-0">
-                Импорт Excel
-              </Button>
-            )}
 
-            {(activeTab === 3 || activeTab === 4) && (
+            {(activeTab === 2 || activeTab === 3) && (
               <div className="w-[320px] shrink-0">
                 <SegmentButton options={['Все', 'Реальные', 'Виртуальные']} defaultIndex={typeFilterIndex} onChange={setTypeFilterIndex} />
               </div>
+            )}
+
+                        <input type="file" hidden ref={fileImportRef} accept=".xlsx, .xls" onChange={handleImportExcel} />
+
+            {activeTab === 3 && (
+              <Button onClick={() => fileImportRef.current.click()} isLoading={isImporting} className="bg-status-accepted text-white">
+                Импорт Excel
+              </Button>
             )}
             
             <div className="w-[260px] shrink-0">
@@ -421,10 +423,10 @@ export function GlobalRegistryPage() {
       />
 
       <div className="flex items-start px-6 pt-8 gap-6 relative">
-        <div className="w-[480px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-7 flex flex-col gap-6 custom-scrollbar z-20">
+        <div className="w-[480px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-7 flex flex-col gap-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full z-20">
           
           <div className="shrink-0">
-            <SegmentButton options={['Арены', 'Лиги', 'Сезоны', 'Команды', 'Пользов.']} defaultIndex={activeTab} onChange={setActiveTab} />
+            <SegmentButton options={['Лиги', 'Сезоны', 'Команды', 'Пользов.', 'Арены']} defaultIndex={activeTab} onChange={setActiveTab} />
           </div>
 
           <div className="flex flex-col gap-4">
@@ -440,21 +442,8 @@ export function GlobalRegistryPage() {
             </div>
 
             <form onSubmit={handleSave} className="space-y-6">
+              
               {activeTab === 0 && ( 
-                <>
-                  <Input placeholder="Название арены *" value={formData.name || ''} onChange={e => handleChange('name', e.target.value)} />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input placeholder="Город *" value={formData.city || ''} onChange={e => handleChange('city', e.target.value)} />
-                    <Input placeholder="Адрес *" value={formData.address || ''} onChange={e => handleChange('address', e.target.value)} />
-                  </div>
-                  <div className="flex items-center gap-3 mt-2">
-                    <Switch checked={formData.status === 'active'} onChange={(e) => handleChange('status', e.target.checked ? 'active' : 'inactive')} />
-                    <span className="text-[13px] font-bold text-graphite">{formData.status === 'active' ? 'Арена функционирует' : 'Арена закрыта'}</span>
-                  </div>
-                </>
-              )}
-
-              {activeTab === 1 && ( 
                 <>
                   <Input placeholder="Полное название лиги *" value={formData.name || ''} onChange={e => handleChange('name', e.target.value)} />
                   <div className="grid grid-cols-2 gap-4">
@@ -471,7 +460,7 @@ export function GlobalRegistryPage() {
                 </>
               )}
 
-              {activeTab === 2 && ( 
+              {activeTab === 1 && ( 
                 <>
                   <Select label="Связанная Лига *" options={leaguesList.map(l => `${l.id} - ${l.name}`)} value={formData.uiLeague || ''} onChange={val => handleChange('uiLeague', val)} />
                   <Input placeholder="Название сезона (например: 2024/2025) *" value={formData.name || ''} onChange={e => handleChange('name', e.target.value)} />
@@ -486,7 +475,7 @@ export function GlobalRegistryPage() {
                 </>
               )}
 
-              {activeTab === 3 && ( 
+              {activeTab === 2 && ( 
                 <>
                   <Input placeholder="Полное название команды *" value={formData.name || ''} onChange={e => handleChange('name', e.target.value)} />
                   <div className="grid grid-cols-2 gap-4">
@@ -525,7 +514,7 @@ export function GlobalRegistryPage() {
                 </>
               )}
 
-              {activeTab === 4 && ( 
+              {activeTab === 3 && ( 
                 <div className="space-y-6">
                   <div>
                     <div className="grid grid-cols-3 gap-3">
@@ -563,6 +552,20 @@ export function GlobalRegistryPage() {
                     <Uploader key={`avatar-${formResetKey}`} label="Аватар профиля" initialUrl={selectedItem ? getCachedImageUrl(selectedItem.avatar_url) : null} onFileSelect={(f) => handleFileSelect('avatar', f)} />
                   </div>
                 </div>
+              )}
+
+              {activeTab === 4 && ( 
+                <>
+                  <Input placeholder="Название арены *" value={formData.name || ''} onChange={e => handleChange('name', e.target.value)} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input placeholder="Город *" value={formData.city || ''} onChange={e => handleChange('city', e.target.value)} />
+                    <Input placeholder="Адрес *" value={formData.address || ''} onChange={e => handleChange('address', e.target.value)} />
+                  </div>
+                  <div className="flex items-center gap-3 mt-2">
+                    <Switch checked={formData.status === 'active'} onChange={(e) => handleChange('status', e.target.checked ? 'active' : 'inactive')} />
+                    <span className="text-[13px] font-bold text-graphite">{formData.status === 'active' ? 'Арена функционирует' : 'Арена закрыта'}</span>
+                  </div>
+                </>
               )}
 
               <Button type="submit" isLoading={isLoading} disabled={!isFormValid() || isLoading} className={`w-full mt-2 py-3 shadow-md transition-all duration-300 ${!isFormValid() ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}>
