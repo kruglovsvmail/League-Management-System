@@ -31,19 +31,32 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
   const userRolesArr = userRolesStr.split(',').map(r => r.trim());
   const isGlobalAdmin = user?.globalRole === 'admin';
   
+  // Проверки доступа к разделам
   const canViewDivisions = isGlobalAdmin || userRolesArr.some(role => 
     PERMISSIONS.VIEW_DIVISIONS?.includes(role)
   );
+  
+  const canViewTransfers = isGlobalAdmin || userRolesArr.some(role => 
+    PERMISSIONS.VIEW_TRANSFERS?.includes(role)
+  );
 
-  // ФОРМИРОВАНИЕ МЕНЮ (ДОБАВЛЕН РОУТ ТАБЛИЦ)
+  const canViewDisqualifications = isGlobalAdmin || userRolesArr.some(role => 
+    PERMISSIONS.VIEW_DISQUALIFICATIONS?.includes(role)
+  );
+
+  // Для доступа к настройкам лиги проверяем права на просмотр персонала
+  const canViewSettings = isGlobalAdmin || userRolesArr.some(role => 
+    PERMISSIONS.VIEW_STAFF?.includes(role)
+  );
+
+  // ФОРМИРОВАНИЕ МЕНЮ
   const baseMenuItems = [
     { name: "Расписание", path: "/games", icon: "matches" },
-    { name: "Таблицы", path: "/standings", icon: "standings" },
     canViewDivisions ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
-    { name: "Трансферы", path: "/transfers", icon: "transfers" },
-    { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" },
+    canViewTransfers ? { name: "Трансферы", path: "/transfers", icon: "transfers" } : null,
+    canViewDisqualifications ? { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" } : null,
     { name: "Справочник", path: "/handbook", icon: "handbook" },
-    { name: "Настройки", path: "/settings", icon: "settings" }
+    canViewSettings ? { name: "Управление лигой", path: "/settings", icon: "settings" } : null
   ].filter(Boolean);
 
   let displayRole = 'Пользователь';

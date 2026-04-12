@@ -30,7 +30,7 @@ export const getPublicGameById = async (req, res) => {
                    a.name as arena_name,
                    a.city as arena_city,
                    a.address as arena_address,
-                   gt.periods_count,
+                   gt.periods_count, gt.track_plus_minus,
                    (
                        SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
                        FROM (
@@ -44,7 +44,7 @@ export const getPublicGameById = async (req, res) => {
                    ) as period_scores
             FROM games g
             LEFT JOIN game_timers gt ON g.id = gt.game_id
-            JOIN teams t1 ON g.home_team_id = t1.id
+            LEFT JOIN teams t1 ON g.home_team_id = t1.id
             LEFT JOIN tournament_teams htt ON htt.team_id = t1.id AND htt.division_id = g.division_id
             LEFT JOIN teams t2 ON g.away_team_id = t2.id
             LEFT JOIN tournament_teams att ON att.team_id = t2.id AND att.division_id = g.division_id
@@ -77,10 +77,15 @@ export const getPublicGameById = async (req, res) => {
                 LIMIT 1
             `;
 
-            const [homeLeaderRes, awayLeaderRes] = await Promise.all([
-                pool.query(leaderQuery, [game.division_id, game.home_team_id, game.id]),
-                pool.query(leaderQuery, [game.division_id, game.away_team_id, game.id])
-            ]);
+            let homeLeaderRes = { rows: [] };
+            let awayLeaderRes = { rows: [] };
+
+            if (game.home_team_id && game.away_team_id) {
+                [homeLeaderRes, awayLeaderRes] = await Promise.all([
+                    pool.query(leaderQuery, [game.division_id, game.home_team_id, game.id]),
+                    pool.query(leaderQuery, [game.division_id, game.away_team_id, game.id])
+                ]);
+            }
 
             game.home_leader = homeLeaderRes.rows[0] || null;
             game.away_leader = awayLeaderRes.rows[0] || null;
@@ -208,7 +213,7 @@ export const getGames = async (req, res) => {
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 d.name as division_name,
-                gt.periods_count,
+                gt.periods_count, gt.track_plus_minus,
                 (
                     EXISTS(SELECT 1 FROM game_events ge WHERE ge.game_id = g.id) OR 
                     EXISTS(SELECT 1 FROM game_rosters gr WHERE gr.game_id = g.id) OR
@@ -228,7 +233,7 @@ export const getGames = async (req, res) => {
                 ) as period_scores
             FROM games g
             LEFT JOIN game_timers gt ON g.id = gt.game_id
-            JOIN teams ht ON g.home_team_id = ht.id
+            LEFT JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN teams at ON g.away_team_id = at.id
             JOIN divisions d ON g.division_id = d.id
             LEFT JOIN arenas a ON g.arena_id = a.id
@@ -269,7 +274,7 @@ export const getGameById = async (req, res) => {
         const query = `
             SELECT 
                 g.*,
-                gt.period_length, gt.ot_length, gt.so_length, gt.periods_count,
+                gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.track_plus_minus,
                 COALESCE(a.name, g.location_text) as location_text,
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
                 COALESCE(htt.custom_jersey_dark_url, ht.jersey_dark_url) as home_jersey_dark,
@@ -297,7 +302,7 @@ export const getGameById = async (req, res) => {
                 ) as period_scores
             FROM games g
             LEFT JOIN game_timers gt ON g.id = gt.game_id
-            JOIN teams ht ON g.home_team_id = ht.id
+            LEFT JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN tournament_teams htt ON htt.team_id = ht.id AND htt.division_id = g.division_id
             LEFT JOIN teams at ON g.away_team_id = at.id
             LEFT JOIN tournament_teams att ON att.team_id = at.id AND att.division_id = g.division_id
@@ -366,31 +371,47 @@ export const getArenas = async (req, res) => {
 
 export const createGame = async (req, res) => {
     try {
-        const { seasonId } = req.params;
-        const {
-            division_id, game_date, arena_id, stage_type, stage_label, series_number,
-            home_team_id, away_team_id, home_jersey_type, away_jersey_type, game_number
-        } = req.body;
+        const { division_id } = req.body;
 
-        let num = game_number;
-        if (!num) {
-            const numRes = await pool.query(`SELECT COALESCE(MAX(game_number), 0) + 1 as next_num FROM games WHERE division_id = $1`, [division_id]);
-            num = numRes.rows[0].next_num;
+        if (!division_id) {
+            return res.status(400).json({ success: false, error: 'Не указан дивизион' });
+        }
+
+        const numRes = await pool.query(`SELECT COALESCE(MAX(game_number), 0) + 1 as next_num FROM games WHERE division_id = $1`, [division_id]);
+        const num = numRes.rows[0].next_num;
+
+        let pCount = 3, pLen = 20, oLen = 5, sLen = 3, trackPM = false;
+        
+        const divSettingsRes = await pool.query(`
+            SELECT periods_count, period_length, has_overtime, ot_length, has_shootouts, so_length, track_plus_minus
+            FROM divisions WHERE id = $1
+        `, [division_id]);
+
+        if (divSettingsRes.rows.length > 0) {
+            const divSet = divSettingsRes.rows[0];
+            pCount = divSet.periods_count ?? 3;
+            pLen = divSet.period_length ?? 20;
+            oLen = divSet.has_overtime ? (divSet.ot_length ?? 5) : 0;
+            sLen = divSet.has_shootouts ? (divSet.so_length ?? 3) : 0;
+            trackPM = divSet.track_plus_minus ?? false;
         }
 
         const insertRes = await pool.query(`
             INSERT INTO games (
-                game_type, division_id, stage_type, stage_label, series_number, game_number,
-                home_team_id, away_team_id, game_date, arena_id, status,
+                game_type, division_id, game_number, status,
                 home_jersey_type, away_jersey_type
             ) VALUES (
-                'official', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'scheduled', $10, $11
+                'official', $1, $2, 'scheduled', 'dark', 'light'
             ) RETURNING id
-        `, [
-            division_id, stage_type || 'regular', stage_label || '1-й круг', series_number || 1, num,
-            home_team_id || null, away_team_id || null, game_date || null, arena_id || null,
-            home_jersey_type || 'dark', away_jersey_type || 'light'
-        ]);
+        `, [division_id, num]);
+
+        const newGameId = insertRes.rows[0].id;
+
+        await pool.query(`
+            INSERT INTO game_timers (
+                game_id, periods_count, period_length, ot_length, so_length, track_plus_minus, time_seconds
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [newGameId, pCount, pLen, oLen, sLen, trackPM, pLen * 60]);
 
         const fullGameRes = await pool.query(`
             SELECT 
@@ -408,7 +429,7 @@ export const createGame = async (req, res) => {
             JOIN divisions d ON g.division_id = d.id
             LEFT JOIN arenas a ON g.arena_id = a.id
             WHERE g.id = $1
-        `, [insertRes.rows[0].id]);
+        `, [newGameId]);
 
         res.json({ success: true, data: fullGameRes.rows[0] });
     } catch (err) {
@@ -422,9 +443,25 @@ export const updateGameInfo = async (req, res) => {
         const { gameId } = req.params;
         const updates = req.body;
         
-        const gameRes = await pool.query('SELECT id, status FROM games WHERE id = $1', [gameId]);
+        const gameRes = await pool.query('SELECT id, status, division_id, home_team_id, away_team_id, stage_type, stage_label FROM games WHERE id = $1', [gameId]);
         if(gameRes.rows.length === 0) return res.status(404).json({success: false, error: 'Матч не найден'});
         
+        const game = gameRes.rows[0];
+        const divisionId = game.division_id;
+
+        if (updates.game_number !== undefined && updates.game_number !== null) {
+            const numCheck = await pool.query(`
+                SELECT id FROM games 
+                WHERE division_id = $1 
+                  AND game_number = $2 
+                  AND id != $3
+            `, [divisionId, updates.game_number, gameId]);
+            
+            if (numCheck.rows.length > 0) {
+                return res.status(400).json({ success: false, error: `Матч с общим номером ${updates.game_number} уже существует в этом дивизионе.` });
+            }
+        }
+
         if (updates.home_team_id !== undefined || updates.away_team_id !== undefined) {
             const protocolCheck = await pool.query(`
                 SELECT 
@@ -439,6 +476,60 @@ export const updateGameInfo = async (req, res) => {
                  return res.status(400).json({ success: false, error: 'Запрещено: очистите составы, события и судей перед сменой команд.' });
             }
         }
+
+        // =========================================================================
+        // ИСПРАВЛЕННАЯ ВАЛИДАЦИЯ ЛИМИТА МАТЧЕЙ ДЛЯ СЕРИИ ПЛЕЙ-ОФФ
+        // =========================================================================
+        const newHome = updates.home_team_id !== undefined ? updates.home_team_id : game.home_team_id;
+        const newAway = updates.away_team_id !== undefined ? updates.away_team_id : game.away_team_id;
+        const newStage = updates.stage_type !== undefined ? updates.stage_type : game.stage_type;
+        const newStageLabel = updates.stage_label !== undefined ? updates.stage_label : game.stage_label;
+
+        // Триггерим проверку ТОЛЬКО если пользователь меняет что-то, относящееся к серии и сетке
+        const isChangingSeriesFields = updates.home_team_id !== undefined || 
+                                       updates.away_team_id !== undefined || 
+                                       updates.stage_type !== undefined || 
+                                       updates.stage_label !== undefined;
+
+        // Проверяем лимит ТОЛЬКО если выбран раунд (stage_label не пустой)
+        if (isChangingSeriesFields && newStage === 'playoff' && newStageLabel && newHome && newAway) {
+            const matchupRes = await pool.query(`
+                SELECT r.wins_needed 
+                FROM playoff_matchups m
+                JOIN playoff_rounds r ON m.round_id = r.id
+                JOIN playoff_brackets b ON r.bracket_id = b.id
+                WHERE b.division_id = $1 
+                  AND r.name = $4
+                  AND ((m.team1_id = $2 AND m.team2_id = $3) OR (m.team1_id = $3 AND m.team2_id = $2))
+                LIMIT 1
+            `, [divisionId, newHome, newAway, newStageLabel]);
+
+            if (matchupRes.rows.length > 0) {
+                const winsNeeded = matchupRes.rows[0].wins_needed;
+                const maxGames = (winsNeeded * 2) - 1; 
+
+                const countRes = await pool.query(`
+                    SELECT COUNT(*) as cnt 
+                    FROM games 
+                    WHERE division_id = $1 
+                      AND stage_type = 'playoff'
+                      AND stage_label = $4
+                      AND status != 'cancelled'
+                      AND id != $5
+                      AND ((home_team_id = $2 AND away_team_id = $3) OR (home_team_id = $3 AND away_team_id = $2))
+                `, [divisionId, newHome, newAway, newStageLabel, gameId]);
+
+                const currentCount = parseInt(countRes.rows[0].cnt, 10);
+
+                if (currentCount >= maxGames && updates.status !== 'cancelled') {
+                    return res.status(400).json({ 
+                        success: false, 
+                        error: `Превышен лимит матчей. Раунд "${newStageLabel}" играется до ${winsNeeded} побед, максимальное количество матчей: ${maxGames}.` 
+                    });
+                }
+            }
+        }
+        // =========================================================================
 
         const fields = [];
         const values = [];
@@ -491,12 +582,10 @@ export const updateGameStatus = async (req, res) => {
         let endType = null;
         let isTechnical = false;
 
-        // ЕСЛИ ЭТО ТЕХНИЧЕСКОЕ ПОРАЖЕНИЕ
         if (incomingEndType === 'tech') {
             isTechnical = true;
             endType = 'tech';
             
-            // Проставляем формальный счет для базы
             if (tech_result === 'home_win') {
                 finalHomeScore = 5;
                 finalAwayScore = 0;
@@ -507,12 +596,7 @@ export const updateGameStatus = async (req, res) => {
                 finalHomeScore = 0;
                 finalAwayScore = 0;
             }
-
-            // ПРИМЕЧАНИЕ: Мы больше НЕ удаляем game_events и game_rosters.
-            // Статистика (standingsCalculator и т.д.) просто игнорирует матчи, где is_technical = true
-
         } else {
-            // ОБЫЧНОЕ ЗАВЕРШЕНИЕ
             const goalsRes = await client.query(`SELECT team_id, event_type, period FROM game_events WHERE game_id = $1`, [gameId]);
             let homeRegGoals = 0, awayRegGoals = 0;
             let homeSOGoals = 0, awaySOGoals = 0;
@@ -580,6 +664,15 @@ export const getGameRoster = async (req, res) => {
     try {
         const { gameId, teamId } = req.params;
 
+        if (!gameId || gameId === 'null' || !teamId || teamId === 'null') {
+            return res.json({
+                success: true,
+                tournamentRoster: [],
+                gameRoster: [],
+                staffRoster: []
+            });
+        }
+
         const [tRosterRes, gRosterRes, staffRes] = await Promise.all([
             pool.query(`
                 SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position, tm.photo_url
@@ -606,14 +699,19 @@ export const getGameRoster = async (req, res) => {
             `, [gameId, teamId]),
 
             pool.query(`
-                SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url, 
-                       string_agg(tr.role, ', ') as roles
-                FROM team_roles tr
-                JOIN team_members tm ON tr.member_id = tm.id
-                JOIN users u ON tm.user_id = u.id
-                WHERE tm.team_id = $1 AND tr.left_at IS NULL
-                GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
-            `, [teamId])
+                SELECT ttr.user_id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url, 
+                       string_agg(ttr.tournament_role, ', ') as roles
+                FROM tournament_team_roles ttr
+                JOIN users u ON ttr.user_id = u.id
+                JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
+                JOIN games g ON g.division_id = tt.division_id 
+                   AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
+                LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
+                WHERE g.id = $1 
+                  AND tt.team_id = $2 
+                  AND ttr.left_at IS NULL
+                GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+            `, [gameId, teamId])
         ]);
 
         res.json({

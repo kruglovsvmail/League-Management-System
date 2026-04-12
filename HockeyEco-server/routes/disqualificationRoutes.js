@@ -17,7 +17,7 @@ const router = express.Router();
 router.use(verifyToken);
 
 // Получить все штрафы в сезоне (все кроме media)
-router.get('/seasons/:seasonId/disqualifications', requireRoleBySeason(['top_manager', 'league_admin', 'referee']), getSeasonDisqualifications);
+router.get('/seasons/:seasonId/disqualifications', requireRoleBySeason(['top_manager', 'league_admin']), getSeasonDisqualifications);
 
 // Создать новый штраф (только руководство)
 router.post('/disqualifications', requireRoleForDisqualificationCreate(['top_manager', 'league_admin']), createDisqualification);

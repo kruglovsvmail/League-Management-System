@@ -11,11 +11,11 @@ router.use(verifyToken);
 router.get('/users/lookup', lookupUserByPhone);
 
 // ПЕРСОНАЛ (Менять могут только top_manager)
-router.get('/leagues/:leagueId/settings-staff', getLeagueStaff);
+router.get('/leagues/:leagueId/settings-staff', requireLeagueRole(['top_manager', 'league_admin']), getLeagueStaff);
 router.post('/leagues/:leagueId/settings-staff', express.json(), requireLeagueRole(['top_manager']), updateLeagueStaff);
 
 // КВАЛИФИКАЦИИ
-router.get('/leagues/:leagueId/settings-qualifications', getSettingsQualifications);
+router.get('/leagues/:leagueId/settings-qualifications', requireLeagueRole(['top_manager', 'league_admin']), getSettingsQualifications);
 
 // Добавлять могут top_manager и league_admin
 router.post('/leagues/:leagueId/settings-qualifications', express.json(), requireLeagueRole(['top_manager', 'league_admin']), createQualification);

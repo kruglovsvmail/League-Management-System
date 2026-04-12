@@ -3,7 +3,7 @@ import upload from '../config/upload.js';
 
 import { 
     verifyToken,
-    requireRoleByTournamentRoster // <-- НОВЫЙ ИМПОРТ
+    requireRoleByTournamentRoster
 } from '../controllers/authController.js';
 
 import { 
@@ -27,7 +27,8 @@ router.patch('/tournament-rosters/:id/fee', requireRoleByTournamentRoster(allowe
 
 router.post('/tournament-rosters/:id/docs', upload.fields([
     { name: 'insurance', maxCount: 1 },
-    { name: 'medical', maxCount: 1 }
+    { name: 'medical', maxCount: 1 },
+    { name: 'consent', maxCount: 1 } // <-- ДОБАВЛЕНО СОГЛАСИЕ
 ]), requireRoleByTournamentRoster(allowedRoles), uploadTournamentRosterDocs);
 
 // ЭНДПОИНТ ДЛЯ ИНЛАЙН-РЕДАКТИРОВАНИЯ ВНУТРИ ЗАЯВКИ

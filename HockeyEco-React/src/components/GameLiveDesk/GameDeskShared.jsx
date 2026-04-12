@@ -1,5 +1,7 @@
 // src/components/GameLiveDesk/GameDeskShared.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
+// ИМПОРТИРУЕМ НАШ ГЛОБАЛЬНЫЙ УНИВЕРСАЛЬНЫЙ SELECT
+import { Select } from '../../ui/Select';
 
 // --- Утилиты форматирования ---
 export const formatTime = (seconds) => {
@@ -134,74 +136,38 @@ export const shootoutOptions = [
 ];
 
 // --- Компоненты UI ---
-export const CustomSelect = ({ value, onChange, options, className, placeholder = "", dropdownWidth = "min-w-[100%]" }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dropdownPos, setDropdownPos] = useState('bottom');
-  const containerRef = useRef(null);
 
-  const selectedOption = options.find(opt => String(opt.value) === String(value));
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
-        setIsOpen(false);
-        setSearchTerm('');
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (isOpen && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const dropdownHeight = 220;
-      if (spaceBelow < dropdownHeight && rect.top > dropdownHeight) setDropdownPos('top');
-      else setDropdownPos('bottom');
-    }
-  }, [isOpen]);
-
-  const filteredOptions = options.filter(opt => String(opt.label).toLowerCase().includes(searchTerm.toLowerCase()));
-  const scrollbarStyles = "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/20 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/30 [&::-webkit-scrollbar-thumb]:rounded-full";
-
-  return (
-    <div className="relative w-full h-full" ref={containerRef}>
-      <input
-        className={`w-full h-[30px] flex items-center justify-start px-2 bg-white border border-graphite/20 hover:border-orange shadow-sm rounded-md cursor-pointer transition-all text-sm font-semibold text-graphite outline-none placeholder:font-medium placeholder-graphite/40 focus:placeholder-graphite/30 select-none ${isOpen ? 'ring-2 ring-orange/20 border-orange' : ''} ${className}`}
-        placeholder={selectedOption ? selectedOption.label : placeholder}
-        value={isOpen ? searchTerm : (selectedOption ? selectedOption.label : '')}
-        onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }}
-        onClick={() => setIsOpen(true)}
-      />
-      {isOpen && (
-        <div className={`absolute z-[100] ${dropdownPos === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} ${dropdownWidth} left-0 bg-white border border-graphite/20 shadow-xl rounded-md max-h-[320px] min-w-[80px] overflow-y-auto py-1.5 ${scrollbarStyles}`}>
-          <div className="px-3 py-2 hover:bg-graphite/5 cursor-pointer text-graphite/40 text-xs text-left transition-colors" onClick={() => { onChange({ target: { value: '' } }); setIsOpen(false); setSearchTerm(''); }}>—</div>
-          {filteredOptions.length > 0 ? (
-            filteredOptions.map((opt) => (
-              <div
-                key={opt.value}
-                className={`px-5 py-2 hover:bg-graphite/5 cursor-pointer text-sm font-semibold transition-colors whitespace-nowrap text-left ${String(value) === String(opt.value) ? 'bg-orange/10 text-orange' : 'text-graphite'}`}
-                onClick={() => { onChange({ target: { value: opt.value } }); setIsOpen(false); setSearchTerm(''); }}
-              >
-                {opt.label}
-              </div>
-            ))
-          ) : (
-            <div className="px-3 py-3 text-graphite/40 text-xs text-center font-medium">Нет совпадений</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
+// Выбрасываем тонну старого кода и просто используем универсальный Select!
 export const StylishSelect = ({ value, onChange, exclude = [], className, roster }) => {
   const options = roster
     .filter(p => !exclude.includes(String(p.jersey_number)))
-    .map(p => ({ value: p.jersey_number, label: p.jersey_number }));
-  return <CustomSelect value={value} onChange={onChange} options={options} className={className} />;
+    .map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
+    
+  return (
+    <Select 
+      isSearchable={true} 
+      value={value} 
+      // Протокол исторически ожидал onChange({target: {value}}), делаем микро-адаптер
+      onChange={(val) => onChange({ target: { value: val } })} 
+      options={options} 
+      className={`h-[30px] !py-0 !px-2 ${className}`} 
+      placeholder=""
+    />
+  );
+};
+
+// Тот же финт ушами для обычного кастомного селекта в протоколе (например, для типа штрафа)
+export const CustomSelect = ({ value, onChange, options, className, placeholder = "" }) => {
+  return (
+    <Select 
+      isSearchable={true} 
+      value={value} 
+      onChange={(val) => onChange({ target: { value: val } })} 
+      options={options} 
+      className={`h-[30px] !py-0 !px-2 ${className}`} 
+      placeholder={placeholder}
+    />
+  );
 };
 
 export const StylishInput = ({ value, onChange, placeholder, onBlur, className }) => (
@@ -242,9 +208,6 @@ export const UsersIcon = () => (
   </svg>
 );
 
-// --- ИКОНКИ БУЛЛИТОВ ИЗ ПРЕДОСТАВЛЕННОГО SVG ---
-
-// Зеленая шайба (Гол)
 export const ShootoutGoalIcon = ({ className = "w-5 h-5 text-status-accepted" }) => (
   <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse>
@@ -253,7 +216,6 @@ export const ShootoutGoalIcon = ({ className = "w-5 h-5 text-status-accepted" })
   </svg>
 );
 
-// Красная шайба (Мимо)
 export const ShootoutMissIcon = ({ className = "w-5 h-5 text-status-rejected" }) => (
   <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse>

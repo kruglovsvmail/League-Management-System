@@ -19,7 +19,8 @@ const STAFF_ROLE_MAP = {
   head_coach: 'Главный тренер'
 };
 
-export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, canEditRoster = true }) {
+// Принимаем division как пропс для определения какие документы нужны
+export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, canEditRoster = true, division }) {
   
   const formatPhone = (phone) => {
     if (!phone) return '-';
@@ -39,9 +40,14 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         counts[num] = (counts[num] || 0) + 1;
       }
     });
-    // Возвращаем Set с номерами (в виде строк для надежного сравнения), которые встречаются больше 1 раза
     return new Set(Object.keys(counts).filter(num => counts[num] > 1).map(String));
   }, [roster, isStaff]);
+
+  // Считаем сколько всего документов требуется в этом дивизионе
+  const reqMed = division?.req_med_cert ?? true;
+  const reqIns = division?.req_insurance ?? true;
+  const reqConsent = division?.req_consent ?? true;
+  const totalDocsRequired = [reqMed, reqIns, reqConsent].filter(Boolean).length;
 
   const playerColumns = [
     { 
@@ -180,18 +186,36 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         );
       }
     },
-    { 
+    
+    // Динамически показываем колонку Документов только если они вообще нужны
+    ...(totalDocsRequired > 0 ? [{ 
       label: 'Докум.', 
       width: 'w-[80px]', align: 'center',
       render: (row) => {
         const hasMed = !!row.medical_url;
         const hasIns = !!row.insurance_url;
+        const hasConsent = !!row.consent_url;
+        
+        // Считаем только те документы, которые ТРЕБУЮТСЯ в настройках дивизиона
+        let providedCount = 0;
+        if (reqMed && hasMed) providedCount++;
+        if (reqIns && hasIns) providedCount++;
+        if (reqConsent && hasConsent) providedCount++;
         
         let type = 'empty';
         let text = 'Док.';
         
-        if (hasMed && hasIns) type = 'filled';
-        else if (hasMed || hasIns) type = 'half';
+        // Логика закрашивания бейджа:
+        if (providedCount === totalDocsRequired) type = 'filled'; // 2/2, 3/3, 1/1
+        else if (providedCount === 0) type = 'empty';             // 0/1, 0/2, 0/3
+        else {
+          if (totalDocsRequired === 3) {
+            if (providedCount === 1) type = 'oneThird'; // 1/3
+            if (providedCount === 2) type = 'twoThirds'; // 2/3
+          } else if (totalDocsRequired === 2) {
+            if (providedCount === 1) type = 'half'; // 1/2
+          }
+        }
 
         const today = dayjs().startOf('day');
         let isExpired = false;
@@ -209,8 +233,10 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
           }
         };
 
-        if (hasMed) checkExp(row.medical_expires_at);
-        if (hasIns) checkExp(row.insurance_expires_at);
+        // Проверяем сроки только у обязательных документов
+        if (reqMed && hasMed) checkExp(row.medical_expires_at);
+        if (reqIns && hasIns) checkExp(row.insurance_expires_at);
+        if (reqConsent && hasConsent) checkExp(row.consent_expires_at);
 
         if (isExpired) {
           type = 'expired';
@@ -226,7 +252,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
           </div>
         );
       }
-    },
+    }] : []),
+
     { 
       label: 'Оплата', 
       sortKey: 'is_fee_paid',

@@ -59,6 +59,8 @@ export const getDivisions = async (req, res) => {
                     'short_name', t.short_name,
                     'city', t.city,
                     'logo_url', t.logo_url,
+                    'paper_roster_team_url', tt.paper_roster_team_url,
+                    'paper_roster_league_url', tt.paper_roster_league_url,
                     'custom_jersey_light_url', tt.custom_jersey_light_url,
                     'custom_jersey_dark_url', tt.custom_jersey_dark_url,
                     'jersey_light_url', t.jersey_light_url,
@@ -111,9 +113,10 @@ export const createDivision = async (req, res) => {
             application_start, application_end, transfer_start, transfer_end,
             description, points_win_reg, points_win_ot, points_draw,
             points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
-            ranking_criteria, playoff_start_round, has_third_place,
-            wins_needed_1_8, wins_needed_1_4, wins_needed_1_2,
-            wins_needed_final, wins_needed_3rd
+            ranking_criteria, 
+            periods_count, period_length, has_overtime, ot_length, 
+            has_shootouts, so_length, track_plus_minus,
+            req_med_cert, req_insurance, req_consent, digital_applications_only
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
@@ -127,12 +130,14 @@ export const createDivision = async (req, res) => {
                 transfer_start, transfer_end, description,
                 points_win_reg, points_win_ot, points_draw,
                 points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
-                ranking_criteria,
-                playoff_start_round, has_third_place,
-                wins_needed_1_8, wins_needed_1_4, wins_needed_1_2,
-                wins_needed_final, wins_needed_3rd,
-                is_published
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, false)
+                ranking_criteria, is_published, 
+                periods_count, period_length, has_overtime, ot_length, 
+                has_shootouts, so_length, track_plus_minus,
+                req_med_cert, req_insurance, req_consent, digital_applications_only
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
+                false, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
+            )
             RETURNING id
         `, [
             seasonId, name, short_name, tournament_type,
@@ -143,9 +148,10 @@ export const createDivision = async (req, res) => {
             points_win_reg, points_win_ot, points_draw,
             points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
             ranking_criteria ? JSON.stringify(ranking_criteria) : null,
-            playoff_start_round, has_third_place,
-            wins_needed_1_8, wins_needed_1_4, wins_needed_1_2,
-            wins_needed_final, wins_needed_3rd
+            periods_count ?? 3, period_length ?? 20, has_overtime ?? true, ot_length ?? 5, 
+            has_shootouts ?? true, so_length ?? 3, track_plus_minus ?? false,
+            req_med_cert ?? true, req_insurance ?? true, req_consent ?? true, 
+            digital_applications_only !== undefined ? digital_applications_only : true
         ]);
 
         res.json({ success: true, id: result.rows[0].id });
@@ -161,9 +167,9 @@ export const updateDivision = async (req, res) => {
         const {
             name, short_name, tournament_type, start_date, end_date, application_start, application_end,
             transfer_start, transfer_end, description, points_win_reg, points_win_ot, points_draw, points_loss_ot,
-            points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria, playoff_start_round, 
-            has_third_place, wins_needed_1_8, wins_needed_1_4, wins_needed_1_2, wins_needed_final, wins_needed_3rd, 
-            clear_logo, clear_regulations
+            points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria, 
+            periods_count, period_length, has_overtime, ot_length, has_shootouts, so_length, track_plus_minus,
+            req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
@@ -176,15 +182,19 @@ export const updateDivision = async (req, res) => {
                 application_start = $6, application_end = $7, transfer_start = $8, transfer_end = $9,
                 description = $10, points_win_reg = $11, points_win_ot = $12, points_draw = $13,
                 points_loss_ot = $14, points_loss_reg = $15, points_tech_win = $16, points_tech_loss = $17, points_tech_draw = $18,
-                ranking_criteria = $19, playoff_start_round = $20, has_third_place = $21, wins_needed_1_8 = $22, 
-                wins_needed_1_4 = $23, wins_needed_1_2 = $24, wins_needed_final = $25, wins_needed_3rd = $26
-            WHERE id = $27
+                ranking_criteria = $19,
+                periods_count = $21, period_length = $22, has_overtime = $23, ot_length = $24, 
+                has_shootouts = $25, so_length = $26, track_plus_minus = $27,
+                req_med_cert = $28, req_insurance = $29, req_consent = $30, digital_applications_only = $31
+            WHERE id = $20
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
             transfer_start || null, transfer_end || null, description, points_win_reg, points_win_ot, points_draw,
             points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
-            ranking_criteria ? JSON.stringify(ranking_criteria) : null, playoff_start_round, has_third_place,
-            wins_needed_1_8, wins_needed_1_4, wins_needed_1_2, wins_needed_final, wins_needed_3rd, id
+            ranking_criteria ? JSON.stringify(ranking_criteria) : null, id,
+            periods_count, period_length, has_overtime, ot_length, 
+            has_shootouts, so_length, track_plus_minus,
+            req_med_cert, req_insurance, req_consent, digital_applications_only
         ]);
 
         if (clear_logo) {
@@ -309,24 +319,32 @@ export const getPlayoffBracket = async (req, res) => {
     try {
         const { id } = req.params;
         
-        const query = `
-            SELECT 
-                dp.id, ds.playoff_start_round, ds.has_third_place,
-                dp.stage, dp.matchup_number, 
-                dp.team1_id, dp.team2_id, dp.team1_wins, dp.team2_wins, dp.winner_id,
-                t1.name as team1_name, t1.short_name as team1_short, t1.logo_url as team1_logo,
-                t2.name as team2_name, t2.short_name as team2_short, t2.logo_url as team2_logo,
-                tw.name as winner_name
-            FROM division_playoff dp
-            JOIN divisions ds ON dp.division_id = ds.id
-            LEFT JOIN teams t1 ON dp.team1_id = t1.id
-            LEFT JOIN teams t2 ON dp.team2_id = t2.id
-            LEFT JOIN teams tw ON dp.winner_id = tw.id
-            WHERE dp.division_id = $1
-            ORDER BY dp.stage, dp.matchup_number ASC
-        `;
-        
-        const result = await pool.query(query, [id]);
+        // Запрашиваем сетки дивизиона
+        const bracketsRes = await pool.query('SELECT * FROM playoff_brackets WHERE division_id = $1 ORDER BY is_main DESC, id ASC', [id]);
+        const brackets = bracketsRes.rows;
+
+        // Для каждой сетки собираем вложенные раунды и пары
+        for (let b of brackets) {
+            const roundsRes = await pool.query('SELECT * FROM playoff_rounds WHERE bracket_id = $1 ORDER BY order_index ASC', [b.id]);
+            b.rounds = roundsRes.rows;
+
+            const matchupsRes = await pool.query(`
+                SELECT m.*, 
+                       t1.name as team1_name, t1.short_name as team1_short, t1.logo_url as team1_logo,
+                       t2.name as team2_name, t2.short_name as team2_short, t2.logo_url as team2_logo,
+                       tw.name as winner_name
+                FROM playoff_matchups m
+                LEFT JOIN teams t1 ON m.team1_id = t1.id
+                LEFT JOIN teams t2 ON m.team2_id = t2.id
+                LEFT JOIN teams tw ON m.winner_id = tw.id
+                WHERE m.round_id IN (SELECT id FROM playoff_rounds WHERE bracket_id = $1)
+                ORDER BY m.matchup_number ASC
+            `, [b.id]);
+            
+            b.rounds.forEach(r => {
+                r.matchups = matchupsRes.rows.filter(m => m.round_id === r.id);
+            });
+        }
         
         const teamsRes = await pool.query(`
             SELECT t.id, t.name, t.logo_url
@@ -337,7 +355,7 @@ export const getPlayoffBracket = async (req, res) => {
         `, [id]);
 
         const gamesRes = await pool.query(`
-            SELECT id, home_team_id, away_team_id, home_score, away_score, status, series_number, end_type, game_date, is_technical
+            SELECT id, home_team_id, away_team_id, home_score, away_score, status, series_number, end_type, game_date, is_technical, stage_label
             FROM games
             WHERE division_id = $1 AND stage_type = 'playoff' AND status != 'cancelled'
             ORDER BY series_number ASC, game_date ASC
@@ -345,7 +363,7 @@ export const getPlayoffBracket = async (req, res) => {
 
         res.json({ 
             success: true, 
-            bracket: result.rows, 
+            brackets, 
             allTeams: teamsRes.rows, 
             games: gamesRes.rows 
         });
@@ -355,84 +373,143 @@ export const getPlayoffBracket = async (req, res) => {
     }
 };
 
-export const generatePlayoffBracket = async (req, res) => {
+export const savePlayoffConstructor = async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
-        
+        const { brackets } = req.body; 
+
         await client.query('BEGIN');
 
-        const divRes = await client.query('SELECT playoff_start_round, has_third_place FROM divisions WHERE id = $1', [id]);
-        if (divRes.rows.length === 0) throw new Error('Дивизион не найден');
+        // =========================================================================
+        // ВАЛИДАЦИЯ И АВТО-ОТМЕНА ЛИШНИХ МАТЧЕЙ
+        // =========================================================================
+        const gamesRes = await client.query(`
+            SELECT id, home_team_id, away_team_id, status, stage_label 
+            FROM games 
+            WHERE division_id = $1 AND stage_type = 'playoff' AND status != 'cancelled'
+            ORDER BY id DESC
+        `, [id]);
         
-        const { playoff_start_round, has_third_place } = divRes.rows[0];
-        if (!playoff_start_round) throw new Error('В настройках дивизиона не указана стадия старта плей-офф');
+        const playoffGames = gamesRes.rows;
+        const gamesToCancel = [];
 
-        let teamsNeeded = 0;
-        let stages = [];
-        
-        if (playoff_start_round === '1/8') { teamsNeeded = 16; stages = ['1/8', '1/4', '1/2', 'final']; }
-        else if (playoff_start_round === '1/4') { teamsNeeded = 8; stages = ['1/4', '1/2', 'final']; }
-        else if (playoff_start_round === '1/2') { teamsNeeded = 4; stages = ['1/2', 'final']; }
-        else if (playoff_start_round === 'final') { teamsNeeded = 2; stages = ['final']; }
-        else throw new Error('Некорректная стадия старта');
+        for (const b of brackets) {
+            for (const r of b.rounds) {
+                const maxGames = (r.wins_needed * 2) - 1;
+                const roundGames = playoffGames.filter(g => g.stage_label === r.name);
+                const pairGroups = {};
+                
+                roundGames.forEach(g => {
+                    if (!g.home_team_id || !g.away_team_id) return;
+                    
+                    // Сортируем айдишники, чтобы (A-B) и (B-A) попадали в одну группу
+                    const pairKey = [g.home_team_id, g.away_team_id].sort().join('-');
+                    if (!pairGroups[pairKey]) pairGroups[pairKey] = { played: 0, scheduled: [] };
+                    
+                    if (g.status === 'live' || g.status === 'finished') {
+                        pairGroups[pairKey].played++;
+                    } else if (g.status === 'scheduled') {
+                        pairGroups[pairKey].scheduled.push(g.id);
+                    }
+                });
 
-        const standingsRes = await client.query(`
-            SELECT team_id FROM division_standings 
-            WHERE division_id = $1 ORDER BY rank ASC LIMIT $2
-        `, [id, teamsNeeded]);
-
-        const topTeams = standingsRes.rows.map(r => r.team_id);
-        
-        await client.query('DELETE FROM division_playoff WHERE division_id = $1', [id]);
-
-        const pairingsMap = {
-            16: [[1,16], [8,9], [4,13], [5,12], [2,15], [7,10], [3,14], [6,11]],
-            8:  [[1,8], [4,5], [2,7], [3,6]],
-            4:  [[1,4], [2,3]],
-            2:  [[1,2]]
-        };
-
-        const matchups = pairingsMap[teamsNeeded];
-        
-        for (let i = 0; i < matchups.length; i++) {
-            const seed1 = matchups[i][0] - 1; 
-            const seed2 = matchups[i][1] - 1;
-            
-            const team1_id = topTeams[seed1] || null;
-            const team2_id = topTeams[seed2] || null;
-
-            await client.query(`
-                INSERT INTO division_playoff (division_id, stage, matchup_number, team1_id, team2_id)
-                VALUES ($1, $2, $3, $4, $5)
-            `, [id, playoff_start_round, i + 1, team1_id, team2_id]);
-        }
-
-        const emptyStages = stages.filter(s => s !== playoff_start_round);
-        for (const stage of emptyStages) {
-            const matchCount = stage === '1/4' ? 4 : stage === '1/2' ? 2 : 1;
-            for (let i = 1; i <= matchCount; i++) {
-                await client.query(`
-                    INSERT INTO division_playoff (division_id, stage, matchup_number, team1_id, team2_id)
-                    VALUES ($1, $2, $3, NULL, NULL)
-                `, [id, stage, i]);
+                for (const pairKey in pairGroups) {
+                    const group = pairGroups[pairKey];
+                    
+                    // Жесткая блокировка, если УЖЕ СЫГРАНО больше нового лимита (на всякий случай, как бэкенд защита)
+                    if (group.played > maxGames) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            success: false,
+                            error: `В раунде "${r.name}" уже проведено ${group.played} матчей в рамках одной серии. Сначала удалите сыгранные матчи.`
+                        });
+                    }
+                    
+                    // Мягкая авто-отмена: если (Сыгранные + Запланированные) больше лимита, 
+                    // мы переводим в cancelled лишние несыгранные (scheduled) матчи.
+                    const totalActive = group.played + group.scheduled.length;
+                    if (totalActive > maxGames) {
+                        const excess = totalActive - maxGames;
+                        // Так как мы сортировали ORDER BY id DESC, первые элементы массива — это самые последние созданные матчи
+                        for (let i = 0; i < excess; i++) {
+                            gamesToCancel.push(group.scheduled[i]);
+                        }
+                    }
+                }
             }
         }
 
-        if (has_third_place) {
-            await client.query(`
-                INSERT INTO division_playoff (division_id, stage, matchup_number, team1_id, team2_id)
-                VALUES ($1, '3rd_place', 1, NULL, NULL)
-            `, [id]);
+        if (gamesToCancel.length > 0) {
+            await client.query(`UPDATE games SET status = 'cancelled' WHERE id = ANY($1::int[])`, [gamesToCancel]);
+        }
+        // =========================================================================
+
+        await client.query('DELETE FROM playoff_brackets WHERE division_id = $1', [id]);
+
+        const matchupMap = {}; 
+        const updates = []; 
+
+        for (const b of brackets) {
+            const bRes = await client.query(
+                `INSERT INTO playoff_brackets (division_id, name, is_main) VALUES ($1, $2, $3) RETURNING id`, 
+                [id, b.name, b.is_main]
+            );
+            const bracketId = bRes.rows[0].id;
+
+            for (const r of b.rounds) {
+                const rRes = await client.query(
+                    `INSERT INTO playoff_rounds (bracket_id, name, order_index, wins_needed, ui_metadata) 
+                     VALUES ($1, $2, $3, $4, $5) RETURNING id`, 
+                    [bracketId, r.name, r.order_index, r.wins_needed, r.ui_metadata || {}]
+                );
+                const roundId = rRes.rows[0].id;
+
+                for (const m of r.matchups) {
+                    const t1SourceId = ['seed', 'manual'].includes(m.team1_source_type) ? m.team1_source_id : null;
+                    const t2SourceId = ['seed', 'manual'].includes(m.team2_source_type) ? m.team2_source_id : null;
+
+                    const mRes = await client.query(`
+                        INSERT INTO playoff_matchups (
+                            round_id, matchup_number, 
+                            team1_source_type, team1_source_id, 
+                            team2_source_type, team2_source_id,
+                            ui_metadata
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+                    `, [roundId, m.matchup_number, m.team1_source_type, t1SourceId, m.team2_source_type, t2SourceId, m.ui_metadata || {}]);
+                    
+                    const matchupId = mRes.rows[0].id;
+                    
+                    if (m.tempId) matchupMap[m.tempId] = matchupId; 
+
+                    if (['winner_of', 'loser_of'].includes(m.team1_source_type)) {
+                        updates.push({ matchupId, field: 'team1_source_id', tempRef: m.team1_source_ref });
+                    }
+                    if (['winner_of', 'loser_of'].includes(m.team2_source_type)) {
+                        updates.push({ matchupId, field: 'team2_source_id', tempRef: m.team2_source_ref });
+                    }
+                }
+            }
+        } 
+
+        for (const update of updates) {
+            const realSourceId = matchupMap[update.tempRef];
+            if (realSourceId) {
+                await client.query(`
+                    UPDATE playoff_matchups SET ${update.field} = $1 WHERE id = $2
+                `, [realSourceId, update.matchupId]);
+            }
         }
 
         await client.query('COMMIT');
+        await recalculatePlayoffs(id);
+
         res.json({ success: true });
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Ошибка генерации сетки:', err);
-        res.status(500).json({ success: false, error: err.message || 'Ошибка генерации сетки' });
+        console.error('Ошибка сохранения конструктора плей-офф:', err);
+        res.status(500).json({ success: false, error: err.message || 'Ошибка сохранения сетки' });
     } finally {
         client.release();
     }
@@ -444,10 +521,10 @@ export const updatePlayoffMatchup = async (req, res) => {
         const { team1_id, team2_id } = req.body;
         
         await pool.query(`
-            UPDATE division_playoff 
+            UPDATE playoff_matchups 
             SET team1_id = $1, team2_id = $2 
-            WHERE id = $3 AND division_id = $4
-        `, [team1_id || null, team2_id || null, matchupId, id]);
+            WHERE id = $3
+        `, [team1_id || null, team2_id || null, matchupId]);
         
         await recalculatePlayoffs(id);
 

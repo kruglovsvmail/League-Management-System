@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom'; // Добавили импорт
+import { useSearchParams } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { Button } from '../ui/Button';
 import { Table } from '../ui/Table2';
@@ -8,6 +8,7 @@ import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge'; 
 import { Loader } from '../ui/Loader';
 import { SegmentButton } from '../ui/SegmentButton';
+import { Uploader } from '../ui/Uploader'; 
 import { getImageUrl, getToken } from '../utils/helpers';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
@@ -26,8 +27,14 @@ const ROLES = [
   { id: 'team_admin', label: 'Администратор' }
 ];
 
+const STAFF_ROLE_MAP = {
+  'head_coach': 'Главный тренер',
+  'coach': 'Тренер',
+  'team_manager': 'Менеджер команды',
+  'team_admin': 'Администратор'
+};
+
 export function TeamManagementPage() {
-  // === НАСТРОЙКА URL-ПАРАМЕТРОВ И ХРАНИЛИЩА ===
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = searchParams.get('tab') || 'base';
@@ -50,7 +57,6 @@ export function TeamManagementPage() {
     }, { replace: true });
   };
 
-  // Сохраняем выбранную команду в sessionStorage, чтобы не терять при F5
   const [selectedTeam, setSelectedTeamState] = useState(() => {
     const saved = sessionStorage.getItem('tm_selected_team_data');
     return saved ? JSON.parse(saved) : null;
@@ -69,7 +75,6 @@ export function TeamManagementPage() {
       }, { replace: true });
     }
   };
-  // ============================================
 
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   
@@ -98,14 +103,10 @@ export function TeamManagementPage() {
   const [addPlayerModalAppId, setAddPlayerModalAppId] = useState(null);
   const [isAddPlayerDrawerOpen, setIsAddPlayerDrawerOpen] = useState(false);
 
-  const showToast = (title, message, type = 'error') => setToastInfo({ title, message, type });
+  const [addStaffModalAppId, setAddStaffModalAppId] = useState(null);
+  const [isAddStaffDrawerOpen, setIsAddStaffDrawerOpen] = useState(false);
 
-  const formatDateToRU = (dateString) => {
-    if (!dateString) return '-';
-    const d = new Date(dateString);
-    if (isNaN(d.getTime())) return '-';
-    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-  };
+  const showToast = (title, message, type = 'error') => setToastInfo({ title, message, type });
 
   const formatPhone = (phone) => {
     if (!phone) return '-';
@@ -249,6 +250,12 @@ export function TeamManagementPage() {
         const data = await res.json();
         if (data.success) { fetchApplications(selectedTeam.id); showToast('Успешно', 'Игрок удален из заявки', 'success'); } else showToast('Ошибка', data.error);
       }
+      else if (typeStr === 'app_staff') {
+        const appId = actionArgs?.appId;
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${appId}/staff/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.success) { fetchApplications(selectedTeam.id); showToast('Успешно', 'Персонал удален из заявки', 'success'); } else showToast('Ошибка', data.error);
+      }
     } catch (err) { showToast('Ошибка', 'Не удалось удалить'); } 
     finally { setIsDeleting(false); setConfirmDelete({ isOpen: false, id: null, typeStr: null, actionArgs: null }); }
   };
@@ -273,8 +280,6 @@ export function TeamManagementPage() {
 
   const getRenderPhoto = (r) => `${getImageUrl(r.photo_url || r.avatar_url || r.team_member_photo_url || r.user_avatar_url || '/default/user_default.webp')}?t=${cacheBuster}`;
 
-  // --- МЕТОДЫ ЗАЯВОК В ЛИГУ ---
-
   const handleCreateApplicationOpen = async () => {
     setIsCreateAppDrawerOpen(true);
     try {
@@ -292,14 +297,18 @@ export function TeamManagementPage() {
     } catch (err) { showToast('Ошибка', 'Сбой сети'); }
   };
 
-  const handleAppDocsSave = async ({ medFile, medCleared, medExp, insFile, insCleared, insExp }) => {
+  const handleAppDocsSave = async ({ medFile, medCleared, medExp, insFile, insCleared, insExp, consentFile, consentCleared, consentExp }) => {
     if (!appDocsModalPlayer) return;
     setIsAppDocsSaving(true);
     const formData = new FormData();
     if (insFile) formData.append('insurance', insFile); if (insCleared) formData.append('insurance_cleared', 'true');
     if (medFile) formData.append('medical', medFile); if (medCleared) formData.append('medical_cleared', 'true');
+    if (consentFile) formData.append('consent', consentFile); if (consentCleared) formData.append('consent_cleared', 'true'); 
+    
     if (insExp !== undefined) formData.append('insurance_expires_at', insExp);
     if (medExp !== undefined) formData.append('medical_expires_at', medExp);
+    if (consentExp !== undefined) formData.append('consent_expires_at', consentExp); 
+    
     formData.append('player_id', appDocsModalPlayer.player_id);
 
     try {
@@ -333,7 +342,26 @@ export function TeamManagementPage() {
     } catch (err) { showToast('Ошибка', 'Не удалось сохранить'); fetchApplications(selectedTeam.id); }
   };
 
+  const handleUpdateAppStaffInline = async (appId, userId, newRole) => {
+    setApplications(prev => prev.map(app => {
+      if (app.id !== appId) return app;
+      return {
+        ...app,
+        staff: app.staff.map(s => s.user_id === userId ? { ...s, role: newRole } : s)
+      };
+    }));
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${appId}/staff`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ userId, roles: [newRole] })
+      });
+      const data = await res.json();
+      if (!data.success) showToast('Ошибка', data.error);
+      fetchApplications(selectedTeam.id);
+    } catch (err) { showToast('Ошибка', 'Не удалось сохранить'); fetchApplications(selectedTeam.id); }
+  };
+
   const displayedApplications = useMemo(() => {
+    if (appFilter === 'all') return applications;
     const now = dayjs();
     return applications.filter(app => {
       const isPast = app.division_end_date && dayjs(app.division_end_date).isBefore(now);
@@ -414,7 +442,6 @@ export function TeamManagementPage() {
             </div>
           ) : (
             <>
-              {/* Основной контейнер-шапка */}
               <div className={`bg-white/85 rounded-xxl shadow-sm border border-graphite/10 p-8 animate-fade-in-down ${activeTab === 'tournaments' ? 'mb-6' : ''}`}>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-black text-graphite uppercase tracking-wide">
@@ -427,8 +454,12 @@ export function TeamManagementPage() {
 
                   {activeTab === 'tournaments' && (
                     <div className="flex items-center gap-5">
-                      <div className="w-[200px]">
-                        <SegmentButton options={['Текущие', 'Прошедшие']} defaultIndex={appFilter === 'current' ? 0 : 1} onChange={(idx) => setAppFilter(idx === 0 ? 'current' : 'past')} />
+                      <div className="w-[300px]">
+                        <SegmentButton 
+                          options={['Текущие', 'Прошедшие', 'Все']} 
+                          defaultIndex={appFilter === 'current' ? 0 : (appFilter === 'past' ? 1 : 2)} 
+                          onChange={(idx) => setAppFilter(idx === 0 ? 'current' : (idx === 1 ? 'past' : 'all'))} 
+                        />
                       </div>
                       <Button onClick={handleCreateApplicationOpen}>+ Создать заявку</Button>
                     </div>
@@ -440,7 +471,6 @@ export function TeamManagementPage() {
                 {activeTab === 'staff' && <Table columns={staffColumns} data={staff} />}
               </div>
 
-              {/* Карточки заявок вне белого контейнера */}
               {activeTab === 'tournaments' && (
                 <div className="flex flex-col gap-5 animate-fade-in-down">
                   {displayedApplications.length > 0 ? displayedApplications.map(app => (
@@ -449,10 +479,13 @@ export function TeamManagementPage() {
                       onSendReview={() => handleSendAppReview(app.id)}
                       onDeleteApp={() => requestRemove(app.id, 'application')}
                       onDeletePlayer={(rosterId) => requestRemove(rosterId, 'app_roster', { appId: app.id })}
+                      onDeleteStaff={(userId) => requestRemove(userId, 'app_staff', { appId: app.id })}
                       onOpenDocs={(player) => setAppDocsModalPlayer({ ...player, appStatus: app.status })}
                       onAddPlayer={() => { setAddPlayerModalAppId(app.id); setIsAddPlayerDrawerOpen(true); }}
+                      onAddStaff={() => { setAddStaffModalAppId(app.id); setIsAddStaffDrawerOpen(true); }}
                       onOpenProfile={(id) => setProfileModalUserId(id)}
                       onUpdatePlayer={(rosterId, overrides) => handleUpdateAppPlayerInline(app.id, rosterId, overrides)}
+                      onUpdateStaff={(userId, newRole) => handleUpdateAppStaffInline(app.id, userId, newRole)}
                     />
                   )) : <div className="text-center py-10 text-graphite-light bg-white/40 border border-graphite/10 rounded-xl">Заявок не найдено</div>}
                 </div>
@@ -472,8 +505,10 @@ export function TeamManagementPage() {
         onClose={() => setAppDocsModalPlayer(null)} 
         initialMed={appDocsModalPlayer?.medical_url ? getImageUrl(appDocsModalPlayer.medical_url) : null} 
         initialIns={appDocsModalPlayer?.insurance_url ? getImageUrl(appDocsModalPlayer.insurance_url) : null} 
+        initialConsent={appDocsModalPlayer?.consent_url ? getImageUrl(appDocsModalPlayer.consent_url) : null} 
         initialMedExp={appDocsModalPlayer?.medical_expires_at} 
         initialInsExp={appDocsModalPlayer?.insurance_expires_at} 
+        initialConsentExp={appDocsModalPlayer?.consent_expires_at} 
         onSave={handleAppDocsSave} 
         isSaving={isAppDocsSaving} 
         readOnly={['pending', 'approved', 'rejected'].includes(appDocsModalPlayer?.appStatus)}
@@ -482,27 +517,32 @@ export function TeamManagementPage() {
       {toastInfo && <Toast title={toastInfo.title} message={toastInfo.message} type={toastInfo.type} onClose={() => setToastInfo(null)} />}
 
       <CreateApplicationDrawer isOpen={isCreateAppDrawerOpen} onClose={() => setIsCreateAppDrawerOpen(false)} leagues={availableLeagues} roster={roster} teamId={selectedTeam?.id} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsCreateAppDrawerOpen(false); showToast('Успешно', 'Заявка создана', 'success'); }} showToast={showToast} />
+      
+      {/* Модалки добавления в заявку */}
       <AddAppPlayerDrawer isOpen={isAddPlayerDrawerOpen} onClose={() => { setIsAddPlayerDrawerOpen(false); setAddPlayerModalAppId(null); }} roster={roster} teamId={selectedTeam?.id} appId={addPlayerModalAppId} currentAppRoster={applications.find(a => a.id === addPlayerModalAppId)?.roster || []} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsAddPlayerDrawerOpen(false); showToast('Успешно', 'Игроки добавлены', 'success'); }} showToast={showToast} />
+      <AddAppStaffDrawer isOpen={isAddStaffDrawerOpen} onClose={() => { setIsAddStaffDrawerOpen(false); setAddStaffModalAppId(null); }} globalStaff={staff} teamId={selectedTeam?.id} appId={addStaffModalAppId} currentAppStaff={applications.find(a => a.id === addStaffModalAppId)?.staff || []} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsAddStaffDrawerOpen(false); showToast('Успешно', 'Персонал добавлен', 'success'); }} showToast={showToast} />
+
     </div>
   );
 }
 
-// ==========================================
-// КОМПОНЕНТ КАРТОЧКИ ЗАЯВКИ
-// ==========================================
-function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDeleteApp, onDeletePlayer, onOpenDocs, onAddPlayer, onOpenProfile, onUpdatePlayer }) {
+function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDeleteApp, onDeletePlayer, onDeleteStaff, onOpenDocs, onAddPlayer, onAddStaff, onOpenProfile, onUpdatePlayer, onUpdateStaff }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [jerseyEdits, setJerseyEdits] = useState({});
+  const [appTab, setAppTab] = useState('roster'); 
 
   const canDeleteApp = app.status === 'draft' || app.status === 'rejected';
-  const canEditRoster = app.status === 'draft' || app.status === 'revision';
+  
+  const isPaperBlocked = !app.digital_applications_only && !app.paper_roster_league_url;
+  const canEditRoster = (app.status === 'draft' || app.status === 'revision') && !isPaperBlocked;
 
+  // ИЗМЕНЕНИЕ: Новые синонимы статусов для улучшения понимания интерфейса
   const statusMap = {
-    'draft': { text: 'Кнопка', btn: true },
-    'revision': { text: 'Кнопка', btn: true },
-    'pending': { text: 'Проверяется лигой', style: 'text-orange bg-orange/10' },
-    'approved': { text: 'Допущена лигой', style: 'text-status-accepted bg-status-accepted/10' },
-    'rejected': { text: 'Отклонена лигой', style: 'text-status-rejected bg-status-rejected/10' }
+    'draft': { text: 'Формируется', btn: true },
+    'revision': { btn: true },
+    'pending': { text: 'Проверяется Лигой', style: 'text-orange bg-orange/10' },
+    'approved': { text: 'Допущена', style: 'text-status-accepted bg-status-accepted/10' },
+    'rejected': { text: 'Отклонена', style: 'text-status-rejected bg-status-rejected/10' }
   };
   const statusInfo = statusMap[app.status] || statusMap['draft'];
 
@@ -515,7 +555,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
     return new Set(Object.keys(counts).filter(num => counts[num] > 1).map(Number));
   }, [app.roster, jerseyEdits]);
 
-  const columns = [
+  const playerColumns = [
     { label: '№', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
     { label: 'Фото', width: 'w-[50px]', render: (r) => ( <div className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10"><img src={getRenderPhoto(r)} className="w-full h-full object-cover" /></div> )},
     { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => onOpenProfile(r.player_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight block truncate group-hover:text-orange">{r.last_name} {r.first_name}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
@@ -541,12 +581,15 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
     { label: 'Документы', width: 'w-[100px]', render: (r) => { 
       const hasMed = !!r.medical_url;
       const hasIns = !!r.insurance_url;
+      const hasConsent = !!r.consent_url;
 
       let type = 'empty';
       let text = 'Док.';
 
-      if (hasMed && hasIns) type = 'filled';
-      else if (hasMed || hasIns) type = 'half';
+      const count = [hasMed, hasIns, hasConsent].filter(Boolean).length;
+      if (count === 3) type = 'filled';
+      else if (count === 2) type = 'twoThirds';
+      else if (count === 1) type = 'oneThird';
 
       const today = dayjs().startOf('day');
       let isExpired = false;
@@ -566,6 +609,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
 
       if (hasMed) checkExp(r.medical_expires_at);
       if (hasIns) checkExp(r.insurance_expires_at);
+      if (hasConsent) checkExp(r.consent_expires_at);
 
       if (isExpired) {
         type = 'expired';
@@ -583,35 +627,49 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
     }},
     { label: 'Допуск', sortKey: 'application_status', width: 'w-[100px]', render: (r) => ( <Badge label={r.application_status === 'approved' ? 'Доп.' : 'Не доп.'} type={r.application_status === 'approved' ? 'filled' : 'empty'} /> )},
   ];
+  if (canEditRoster) playerColumns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeletePlayer(r.id)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
 
-  if (canEditRoster) columns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeletePlayer(r.id)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
+  const appStaffColumns = [
+    { label: '№', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
+    { label: 'Фото', width: 'w-[50px]', render: (r) => ( <div className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10"><img src={getRenderPhoto(r)} className="w-full h-full object-cover" /></div> )},
+    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => onOpenProfile(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight block truncate group-hover:text-orange">{r.last_name} {r.first_name}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
+    { label: 'ID', sortKey: 'user_id', width: 'w-[60px]', render: (r) => <span className="text-[12px] text-graphite/50 font-mono" title="ID пользователя">{r.user_id}</span> },
+    { label: 'Турнирная должность', sortKey: 'role', width: 'w-[250px]', render: (r) => (
+      canEditRoster 
+        ? <Select options={ROLES.map(rl => rl.label)} value={STAFF_ROLE_MAP[r.role] || r.role} onChange={(val) => { const newRole = ROLES.find(rl => rl.label === val)?.id; if (newRole && newRole !== r.role) onUpdateStaff(r.user_id, newRole); }} className="h-8 pl-3 pr-2 bg-white border border-graphite/20" /> 
+        : <span className="text-[13px] font-semibold">{STAFF_ROLE_MAP[r.role] || r.role || '-'}</span>
+    )}
+  ];
+  if (canEditRoster) appStaffColumns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeleteStaff(r.user_id)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
 
   return (
     <div className="bg-white/70 border border-graphite/10 rounded-xxl shadow-sm hover:shadow-md transition-shadow">
       
-      {/* КЛАСС relative ДОБАВЛЕН ЗДЕСЬ ДЛЯ АБСОЛЮТНОГО ПОЗИЦИОНИРОВАНИЯ ЦЕНТРА */}
       <div className="p-5 flex items-center justify-between cursor-pointer group relative" onClick={() => setIsExpanded(!isExpanded)}>
         
-        {/* ЛЕВЫЙ БЛОК */}
         <div className="flex items-center gap-4 w-[700px] relative z-10">
           <img src={getImageUrl(app.league_logo) || '/default/Logo_division_default.webp'} className="w-12 h-12 object-contain bg-graphite/5 rounded-lg p-1" />
           <div className="flex flex-col">
             <span className="text-[11px] font-bold text-orange uppercase tracking-wider">{app.season_name}</span>
-            <span className="font-black text-[16px] text-graphite">{app.league_name}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-black text-[16px] text-graphite">{app.league_name}</span>
+            </div>
             <span className="text-[13px] text-graphite-light font-medium">{app.division_name}</span>
           </div>
         </div>
         
-        {/* ЦЕНТРАЛЬНЫЙ БЛОК (Абсолютно по центру, не зависит от кнопок) */}
+        {/* ИЗМЕНЕНИЕ: Теперь статус "Формируется" и "Доработка" отображается вместе с кнопкой */}
         <div className="absolute left-3/4 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex justify-center items-center">
           {statusInfo.btn ? ( 
-            <Button onClick={(e) => { e.stopPropagation(); onSendReview(); }} className="h-9 text-[13px]">Отправить</Button> 
+            <div className="flex flex-col items-center gap-1">
+               <span className="text-[11px] font-bold text-graphite-light uppercase">{statusInfo.text}</span>
+               <Button onClick={(e) => { e.stopPropagation(); onSendReview(); }} className="h-8 px-5 text-[12px]">Отправить</Button> 
+            </div>
           ) : ( 
             <div className={`px-4 py-2 rounded-lg font-bold text-[13px] ${statusInfo.style}`}>{statusInfo.text}</div> 
           )}
         </div>
         
-        {/* ПРАВЫЙ БЛОК С КНОПКАМИ */}
         <div className="flex items-center gap-3 shrink-0 ml-auto justify-end relative z-10">
           {canDeleteApp && ( 
             <button onClick={(e) => { e.stopPropagation(); onDeleteApp(); }} className="w-12 h-12 rounded-lg flex items-center justify-center bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white transition-colors" title="Удалить заявку">
@@ -621,7 +679,6 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
           
           {canDeleteApp && <div className="w-px h-10 bg-graphite/20 mx-1 hidden md:block"></div>}
           
-          {/* Исправил опечатку с двойным group-hover в твоем коде */}
           <button 
             className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-300 ${isExpanded ? 'text-orange bg-orange/5' : 'text-graphite/40 group-hover:text-orange group-hover:bg-orange/5'}`}
           >
@@ -633,8 +690,79 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
       <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
         <div className="overflow-hidden">
           <div className="p-5 bg-graphite/[0.02] border-t border-graphite/10">
-            <Table columns={columns} data={app.roster || []} />
-            {canEditRoster && ( <div className="mt-4 flex justify-end"><Button onClick={onAddPlayer}>+ Добавить игрока</Button></div> )}
+            
+            {(!app.digital_applications_only) && (
+              <div className="mb-5 p-4 bg-white rounded-xl border border-graphite/10 flex flex-col md:flex-row md:items-center gap-4 shadow-sm">
+                <span className="text-[13px] font-bold text-graphite uppercase tracking-wide">Документы заявки:</span>
+                
+                <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-graphite-light">Ваш оригинал:</span>
+                    {app.paper_roster_team_url ? (
+                      <a href={getImageUrl(app.paper_roster_team_url)} target="_blank" rel="noreferrer" className="text-[13px] text-orange hover:underline font-bold">
+                        Скачать файл
+                      </a>
+                    ) : (
+                      <span className="text-[13px] text-graphite/40 font-semibold">Не загружен</span>
+                    )}
+                  </div>
+
+                  <div className="w-px h-4 bg-graphite/20 hidden md:block"></div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-graphite-light">Решение Лиги:</span>
+                    {app.paper_roster_league_url ? (
+                      <a href={getImageUrl(app.paper_roster_league_url)} target="_blank" rel="noreferrer" className="text-[13px] text-status-accepted hover:underline font-bold flex items-center gap-1">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                        Утвержденный скан
+                      </a>
+                    ) : (
+                      <span className="text-[13px] text-status-pending font-semibold flex items-center gap-1">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Ожидает Лигу
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isPaperBlocked && (
+              <div className="mb-4 p-4 bg-orange/10 border border-orange/20 rounded-xl text-[13px] text-orange">
+                Ожидается проверка загруженного бумажного заявочного листа Лигой. 
+                После того как Лига прикрепит исправленный скан, вы сможете добавлять игроков и персонал в состав.
+              </div>
+            )}
+            
+            <div className="flex gap-4 mb-4 px-1 border-b border-graphite/10">
+              <button onClick={() => setAppTab('roster')} className={`pb-3 text-[13px] font-bold border-b-2 transition-colors ${appTab === 'roster' ? 'border-orange text-orange' : 'border-transparent text-graphite-light hover:text-graphite'}`}>
+                Игроки ({(app.roster || []).length})
+              </button>
+              <button onClick={() => setAppTab('staff')} className={`pb-3 text-[13px] font-bold border-b-2 transition-colors ${appTab === 'staff' ? 'border-orange text-orange' : 'border-transparent text-graphite-light hover:text-graphite'}`}>
+                Персонал ({(app.staff || []).length})
+              </button>
+            </div>
+
+            {appTab === 'roster' ? (
+              <>
+                <Table columns={playerColumns} data={app.roster || []} />
+                {canEditRoster && ( 
+                  <div className="mt-4 flex justify-end">
+                    <Button onClick={onAddPlayer}>+ Добавить игрока</Button>
+                  </div> 
+                )}
+              </>
+            ) : (
+              <>
+                <Table columns={appStaffColumns} data={app.staff || []} />
+                {canEditRoster && ( 
+                  <div className="mt-4 flex justify-end">
+                    <Button onClick={onAddStaff}>+ Добавить персонал</Button>
+                  </div> 
+                )}
+              </>
+            )}
+
           </div>
         </div>
       </div>
@@ -642,19 +770,26 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
   );
 }
 
-// ==========================================
-// ШТОРКА СОЗДАНИЯ НОВОЙ ЗАЯВКИ
-// ==========================================
 function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onSuccess, showToast }) {
   const [selectedLeagueId, setSelectedLeagueId] = useState(null);
   const [selectedDivisionId, setSelectedDivisionId] = useState(null);
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
+  const [paperFile, setPaperFile] = useState(null); 
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => { if (!isOpen) { setSelectedLeagueId(null); setSelectedDivisionId(null); setSelectedPlayers(new Set()); } }, [isOpen]);
+  useEffect(() => { 
+    if (!isOpen) { 
+      setSelectedLeagueId(null); 
+      setSelectedDivisionId(null); 
+      setSelectedPlayers(new Set()); 
+      setPaperFile(null);
+    } 
+  }, [isOpen]);
 
   const activeLeague = leagues.find(l => l.league_id === selectedLeagueId);
   const divisions = activeLeague ? activeLeague.divisions : [];
+  const currentDiv = divisions.find(d => d.id === selectedDivisionId);
+  const isPaperFirst = currentDiv && !currentDiv.digital_applications_only;
   
   const togglePlayer = (id) => { const next = new Set(selectedPlayers); if (next.has(id)) next.delete(id); else next.add(id); setSelectedPlayers(next); };
 
@@ -662,12 +797,28 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
     if (!selectedDivisionId || isSaving) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/applications`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ divisionId: selectedDivisionId, playerIds: Array.from(selectedPlayers) }) });
+      const formData = new FormData();
+      formData.append('divisionId', selectedDivisionId);
+      
+      if (!isPaperFirst) {
+        formData.append('playerIds', JSON.stringify(Array.from(selectedPlayers)));
+      } else if (paperFile) {
+        formData.append('file', paperFile);
+      }
+
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/applications`, { 
+        method: 'POST', 
+        headers: { 'Authorization': `Bearer ${getToken()}` }, 
+        body: formData 
+      });
+      
       const data = await res.json();
       if (data.success) onSuccess(); else showToast('Ошибка', data.error);
     } catch (err) { showToast('Ошибка сети', 'Не удалось связаться с сервером'); }
     setIsSaving(false);
   };
+
+  const isFormValid = selectedDivisionId && (!isPaperFirst || (isPaperFirst && paperFile));
 
   return (
     <div className={`fixed inset-0 z-[100000] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
@@ -679,20 +830,34 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
             <div className="flex-1"><label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide mb-2 block">Выберите лигу</label><Select options={leagues.map(l => l.league_name)} value={activeLeague?.league_name || ''} onChange={(val) => { const l = leagues.find(x => x.league_name === val); setSelectedLeagueId(l?.league_id); setSelectedDivisionId(null); }} /></div>
             <div className="flex-1"><label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide mb-2 block">Выберите дивизион</label><Select options={divisions.map(d => d.name)} value={divisions.find(d => d.id === selectedDivisionId)?.name || ''} onChange={(val) => { const d = divisions.find(x => x.name === val); setSelectedDivisionId(d?.id); }} disabled={!selectedLeagueId} /></div>
           </div>
-          <div className="flex-1 flex gap-6 overflow-hidden">
-            <div className="flex-1 flex flex-col bg-white border border-graphite/10 rounded-2xl overflow-hidden"><div className="p-4 bg-graphite/5 border-b border-graphite/10 font-bold text-[13px] text-graphite-light">Игровой состав ({roster.length})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5 hover:bg-orange/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div>{!selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white">→</button>}</div>))}</div></div>
-            <div className="flex-1 flex flex-col bg-white border border-orange/30 rounded-2xl overflow-hidden shadow-[0_0_15px_rgba(255,122,0,0.05)]"><div className="p-4 bg-orange/10 border-b border-orange/20 font-bold text-[13px] text-orange">В заявку ({selectedPlayers.size})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.filter(r => selectedPlayers.has(r.user_id)).map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div><button onClick={() => togglePlayer(r.user_id)} className="text-status-rejected font-bold text-[12px] bg-status-rejected/10 px-3 py-1 rounded hover:bg-status-rejected hover:text-white">✕</button></div>))}</div></div>
-          </div>
+          
+          {isPaperFirst ? (
+            <div className="flex-1 animate-fade-in space-y-6">
+              <div className="p-5 bg-orange/10 border border-orange/20 rounded-2xl text-[14px] text-orange">
+                <b>Внимание!</b> В этом дивизионе требуется предварительная отправка заявочного листа. 
+                Пожалуйста, загрузите скан подписанного заявочного листа. После его проверки Лигой, вы сможете добавить игроков в систему.
+              </div>
+              <Uploader 
+                label="Скан заявочного листа (PDF, JPG, PNG, DOC)"
+                accept=".pdf,.jpg,.jpeg,.png ,.doc,.docx"
+                onFileSelect={(file) => setPaperFile(file)}
+                heightClass="h-[300px]"
+              />
+            </div>
+          ) : (
+            <div className="flex-1 flex gap-6 overflow-hidden animate-fade-in">
+              <div className="flex-1 flex flex-col bg-white border border-graphite/10 rounded-2xl overflow-hidden"><div className="p-4 bg-graphite/5 border-b border-graphite/10 font-bold text-[13px] text-graphite-light">Игровой состав ({roster.length})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5 hover:bg-orange/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div>{!selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white">→</button>}</div>))}</div></div>
+              <div className="flex-1 flex flex-col bg-white border border-orange/30 rounded-2xl overflow-hidden shadow-[0_0_15px_rgba(255,122,0,0.05)]"><div className="p-4 bg-orange/10 border-b border-orange/20 font-bold text-[13px] text-orange">В заявку ({selectedPlayers.size})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.filter(r => selectedPlayers.has(r.user_id)).map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div><button onClick={() => togglePlayer(r.user_id)} className="text-status-rejected font-bold text-[12px] bg-status-rejected/10 px-3 py-1 rounded hover:bg-status-rejected hover:text-white">✕</button></div>))}</div></div>
+            </div>
+          )}
+
         </div>
-        <div className="p-6 bg-white border-t border-graphite/10 shrink-0"><Button onClick={handleSave} isLoading={isSaving} disabled={!selectedDivisionId || isSaving} className="w-full py-4 text-[16px]">Создать заявку</Button></div>
+        <div className="p-6 bg-white border-t border-graphite/10 shrink-0"><Button onClick={handleSave} isLoading={isSaving} disabled={!isFormValid || isSaving} className="w-full py-4 text-[16px]">Создать заявку</Button></div>
       </div>
     </div>
   );
 }
 
-// ==========================================
-// ШТОРКА ДОБАВЛЕНИЯ ИГРОКОВ В СУЩЕСТВУЮЩУЮ ЗАЯВКУ
-// ==========================================
 function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, currentAppRoster, onSuccess, showToast }) {
   const [query, setQuery] = useState('');
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
@@ -747,6 +912,97 @@ function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, currentApp
 
         <div className="p-6 bg-white border-t border-graphite/10 shrink-0">
           <Button onClick={handleSave} disabled={selectedPlayers.size === 0 || isSaving} className="w-full py-3">Добавить ({selectedPlayers.size})</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddAppStaffDrawer({ isOpen, onClose, globalStaff, teamId, appId, currentAppStaff, onSuccess, showToast }) {
+  const [query, setQuery] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState(new Map()); 
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => { if (!isOpen) { setQuery(''); setSelectedUsers(new Map()); } }, [isOpen]);
+
+  let availableStaff = globalStaff.filter(s => !currentAppStaff.some(cs => cs.user_id === s.user_id));
+  if (query) {
+    const q = query.toLowerCase();
+    availableStaff = availableStaff.filter(u => u.last_name.toLowerCase().includes(q) || u.first_name.toLowerCase().includes(q));
+  }
+
+  const toggleUser = (user) => {
+    const next = new Map(selectedUsers);
+    if (next.has(user.user_id)) {
+      next.delete(user.user_id);
+    } else {
+      const globalRoles = user.roles ? user.roles.split(', ') : [];
+      let defaultRole = globalRoles.length > 0 ? globalRoles[0] : 'team_admin';
+      next.set(user.user_id, defaultRole);
+    }
+    setSelectedUsers(next);
+  };
+
+  const handleSave = async () => {
+    if (selectedUsers.size === 0 || isSaving) return;
+    setIsSaving(true);
+    try {
+      const promises = Array.from(selectedUsers.entries()).map(([userId, role]) => {
+        return fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/applications/${appId}/staff`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+          body: JSON.stringify({ userId, roles: [role] })
+        }).then(r => r.json());
+      });
+
+      const results = await Promise.all(promises);
+      const failed = results.filter(r => !r.success);
+
+      if (failed.length === 0) {
+        onSuccess();
+      } else {
+        showToast('Внимание', 'Некоторых не удалось добавить');
+        onSuccess(); 
+      }
+    } catch (err) { showToast('Ошибка сети', 'Сбой связи с сервером'); }
+    setIsSaving(false);
+  };
+
+  return (
+    <div className={`fixed inset-0 z-[100000] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+      <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className={`absolute top-0 right-0 h-full w-[450px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-graphite/10 bg-white shrink-0">
+          <h2 className="font-black text-xl text-graphite uppercase tracking-wide">Добавить персонал</h2>
+          <button onClick={onClose} className="text-graphite-light hover:text-orange transition-colors"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+
+        <div className="p-6 bg-white border-b border-graphite/5 shrink-0">
+          <Input placeholder="Поиск по фамилии или имени..." value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+          <p className="text-[11px] text-graphite-light mt-2 px-1">Поиск только среди глобального персонала команды</p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-2">
+          {availableStaff.map(s => {
+            const isSelected = selectedUsers.has(s.user_id);
+            return (
+              <div key={s.user_id} onClick={() => toggleUser(s)} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
+                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
+                <img src={getImageUrl(s.photo_url || s.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5 shrink-0" alt="avatar" />
+                <div className="flex flex-col min-w-0">
+                  <span className="block font-bold text-graphite text-[14px] truncate">{s.last_name} {s.first_name}</span>
+                  <span className="block text-[11px] text-graphite/50 truncate max-w-[200px]">
+                    {s.roles ? s.roles.split(', ').map(r => STAFF_ROLE_MAP[r] || r).join(', ') : 'Без роли'}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          {availableStaff.length === 0 && !query && <div className="text-center text-graphite-light mt-10">Весь персонал уже в заявке или штаб пуст.</div>}
+        </div>
+
+        <div className="p-6 bg-white border-t border-graphite/10 shrink-0">
+          <Button onClick={handleSave} disabled={selectedUsers.size === 0 || isSaving} className="w-full py-3">Добавить ({selectedUsers.size})</Button>
         </div>
       </div>
     </div>

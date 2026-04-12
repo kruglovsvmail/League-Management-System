@@ -347,7 +347,7 @@ export function GamePage() {
         actions={
           canEditGameInfo && (
             <Button onClick={() => setIsEditInfoDrawerOpen(true)}>
-              Настройки матча
+              Цвет формы и ссылки
             </Button>
           )
         }

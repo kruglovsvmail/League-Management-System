@@ -14,8 +14,8 @@ export function TimerSettingsDrawer({
   setOtLength,
   soLength,
   setSoLength,
-  isPlusMinusEnabled, 
-  setIsPlusMinusEnabled,
+  trackPlusMinus, 
+  setTrackPlusMinus,
   saveTimerSettings
 }) {
   
@@ -103,8 +103,8 @@ export function TimerSettingsDrawer({
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-bold text-graphite">Учет полезности (+/-)</span>
               <Switch 
-                checked={isPlusMinusEnabled} 
-                onChange={(e) => setIsPlusMinusEnabled(e.target.checked)} 
+                checked={trackPlusMinus} 
+                onChange={(e) => setTrackPlusMinus(e.target.checked)} 
               />
             </div>
             <p className="text-[11px] text-graphite-light mt-3 leading-relaxed">

@@ -33,7 +33,7 @@ export function GameLiveDesk() {
   const [otLength, setOtLength] = useState(5);
   const [soLength, setSoLength] = useState(3);
 
-  const [isPlusMinusEnabled, setIsPlusMinusEnabled] = useState(false);
+  const [trackPlusMinus, setTrackPlusMinus] = useState(false);
   const [plusMinusModalState, setPlusMinusModalState] = useState({ isOpen: false, event: null, scoringTeam: null, concedingTeam: null });
 
   const [deleteModalState, setDeleteModalState] = useState({ isOpen: false, eventId: null });
@@ -69,11 +69,12 @@ export function GameLiveDesk() {
       if (dataGame.success) {
         setGame(dataGame.data);
         
-        // Исправлено: использование ?? вместо !== undefined для безопасной установки стейтов
         setPeriodsCount(dataGame.data.periods_count ?? 3);
         setPeriodLength(dataGame.data.period_length ?? 20);
         setOtLength(dataGame.data.ot_length ?? 5);
         setSoLength(dataGame.data.so_length ?? 3);
+        
+        setTrackPlusMinus(dataGame.data.track_plus_minus ?? false);
 
         if (dataEvents.success) setEvents(dataEvents.data);
 
@@ -108,11 +109,11 @@ export function GameLiveDesk() {
       setIsTimerRunning(state.isRunning);
       if (state.period) setCurrentPeriod(state.period);
       
-      // Исправлено для сокетов аналогично
       if (state.periodsCount !== undefined) setPeriodsCount(state.periodsCount ?? 3);
       if (state.periodLength !== undefined) setPeriodLength(state.periodLength ?? 20);
       if (state.otLength !== undefined) setOtLength(state.otLength ?? 5);
       if (state.soLength !== undefined) setSoLength(state.soLength ?? 3);
+      if (state.trackPlusMinus !== undefined) setTrackPlusMinus(state.trackPlusMinus ?? false);
     });
     
     newSocket.on('timer_tick', (state) => {
@@ -162,10 +163,18 @@ export function GameLiveDesk() {
 
   const saveTimerSettings = async () => {
     lockSocketUpdates();
-    socket?.emit('timer_action', { gameId, action: 'update_settings', periodsCount, periodLength, otLength, soLength });
+    socket?.emit('timer_action', { gameId, action: 'update_settings', periodsCount, periodLength, otLength, soLength, trackPlusMinus });
     try {
       await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/timer-settings`, {
-        method: 'PUT', headers, body: JSON.stringify({ periods_count: periodsCount, period_length: periodLength, ot_length: otLength, so_length: soLength })
+        method: 'PUT', 
+        headers, 
+        body: JSON.stringify({ 
+          periods_count: periodsCount, 
+          period_length: periodLength, 
+          ot_length: otLength, 
+          so_length: soLength,
+          track_plus_minus: trackPlusMinus
+        })
       });
     } catch(e) { console.error(e); }
   };
@@ -266,7 +275,8 @@ export function GameLiveDesk() {
   return (
     <div className={`flex w-full h-screen bg-gray-bg-light font-sans overflow-hidden text-graphite ${isSaving ? 'cursor-wait' : ''}`}>
       
-      <div className="w-[80%] h-full overflow-y-scroll p-6 pl-8 pr-4 scroll-smooth bg-gray-light [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full transition-colors relative">
+      {/* ИЗМЕНЕНИЕ: Встроили классы скролла прямо в div, точно как в Select, убрав тег <style> */}
+      <div className="w-[80%] h-full overflow-y-scroll p-6 pl-8 pr-4 scroll-smooth bg-gray-light [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/20 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/30 [&::-webkit-scrollbar-thumb]:rounded-full transition-colors relative">
         
         <div className="mb-5 border-b border-graphite/20 pb-3 flex justify-between items-end mr-2">
             <div className="flex flex-col gap-1 items-start">
@@ -309,14 +319,14 @@ export function GameLiveDesk() {
                         teamId={game.home_team_id} teamLetter="А" teamName={game.home_team_name} teamLogo={getImageUrl(game.home_team_logo || game.home_logo_url || game.home_logo)}
                         roster={homeRoster} teamEvents={events.filter(e => e.team_id === game.home_team_id)} 
                         timerSeconds={timerSeconds} onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
-                        onToggleLineup={toggleLineup} isPlusMinusEnabled={isPlusMinusEnabled} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
+                        onToggleLineup={toggleLineup} isPlusMinusEnabled={trackPlusMinus} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
                       />
 
                       <ProtocolSheet 
                         teamId={game.away_team_id} teamLetter="Б" teamName={game.away_team_name} teamLogo={getImageUrl(game.away_team_logo || game.away_logo_url || game.away_logo)}
                         roster={awayRoster} teamEvents={events.filter(e => e.team_id === game.away_team_id)} 
                         timerSeconds={timerSeconds} onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, eventId: id })}
-                        onToggleLineup={toggleLineup} isPlusMinusEnabled={isPlusMinusEnabled} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
+                        onToggleLineup={toggleLineup} isPlusMinusEnabled={trackPlusMinus} onRequestPlusMinus={handleRequestPlusMinus} isSaving={isSaving}
                       />
 
                    </div>
@@ -357,7 +367,8 @@ export function GameLiveDesk() {
         periodLength={periodLength} setPeriodLength={setPeriodLength} 
         otLength={otLength} setOtLength={setOtLength}
         soLength={soLength} setSoLength={setSoLength}
-        saveTimerSettings={saveTimerSettings} isPlusMinusEnabled={isPlusMinusEnabled} setIsPlusMinusEnabled={setIsPlusMinusEnabled}
+        saveTimerSettings={saveTimerSettings} 
+        trackPlusMinus={trackPlusMinus} setTrackPlusMinus={setTrackPlusMinus}
         socketConnected={socket?.connected} 
         onSetTime={(secs) => {
           lockSocketUpdates();

@@ -34,8 +34,8 @@ const TECH_OPTIONS = [
   { 
     value: 'none', 
     styles: {
-      bg: 'bg-graphite/5', border: 'border-graphite/40', 
-      text: 'text-graphite', hover: 'hover:border-graphite/60', 
+      bg: 'bg-graphite/5', border: 'border-graphite/10', 
+      text: 'text-graphite', hover: 'hover:border-graphite/40', 
       dot: 'bg-graphite'
     },
     desc: 'Нет технического результата' 
@@ -87,23 +87,24 @@ export function TechDefeatModal({ isOpen, onClose, game, onSuccess }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Технический результат" size="normal">
-      <div className="flex flex-col gap-3 mb-2 font-sans px-6">
+    <Modal isOpen={isOpen} onClose={onClose} title="Технический результат" size="medium">
+      <div className="flex flex-col gap-3 mb-6">
         {TECH_OPTIONS.map(opt => (
           <div 
             key={opt.value}
             onClick={() => setSelectedResult(opt.value)}
-            className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all border ${
+            className={`flex items-center gap-4 p-3 rounded-xl transition-all border ${
               selectedResult === opt.value 
                 ? `${opt.styles.border} ${opt.styles.bg}` 
-                : `border-graphite/10 ${opt.styles.hover} hover:bg-black/5`
+                : `border-graphite/10 cursor-pointer ${opt.styles.hover} hover:bg-black/5`
             }`}
           >
-            <div className="flex flex-col flex-1">
-              <span className={`font-bold text-[15px] ${selectedResult === opt.value ? opt.styles.text : 'text-graphite'}`}>
+            <div className="flex flex-col flex-1 min-w-0">
+              <span className={`font-bold text-[14px] leading-[1.3] ${selectedResult === opt.value ? opt.styles.text : 'text-graphite'}`}>
                 {opt.desc}
               </span>
             </div>
+            
             <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
               selectedResult === opt.value ? opt.styles.border : 'border-graphite-light'
             }`}>
@@ -113,12 +114,12 @@ export function TechDefeatModal({ isOpen, onClose, game, onSuccess }) {
         ))}
       </div>
 
-      <div className="flex justify-end p-6 pt-5 border-t border-graphite/5 mt-6">
+      <div className="flex justify-end pt-5 border-t border-graphite/10">
         <Button 
           onClick={handleSave} 
           isLoading={isSaving} 
           disabled={isSaving} 
-          className="w-full sm:w-auto"
+          className="w-full md:w-auto"
         >
           Сохранить изменения
         </Button>

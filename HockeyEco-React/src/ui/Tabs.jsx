@@ -73,7 +73,7 @@ export function Tabs({ tabs = [], activeTab, onChange }) {
             
             {/* Анимированная линия подчеркивания */}
             <div 
-              className={`absolute bottom-0 left-0 w-full h-[2px] rounded-t-full transition-all duration-300 origin-center
+              className={`absolute bottom-1 left-0 w-full h-[1px] rounded-t-full transition-all duration-300 origin-center
                 ${isActive 
                   ? 'bg-orange scale-x-100 shadow-[0_-2px_8px_rgba(255,122,0,0.3)]' 
                   : 'bg-graphite/20 scale-x-0 group-hover:scale-x-100'

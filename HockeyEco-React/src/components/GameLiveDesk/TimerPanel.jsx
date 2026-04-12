@@ -1,4 +1,3 @@
-// src/components/GameLiveDesk/TimerPanel.jsx
 import React, { useState } from 'react';
 import { formatTime, formatTimeMask, getPeriodLimits, parseTime } from './GameDeskShared';
 import { TimerSettingsDrawer } from '../../modals/TimerSettingsDrawer';
@@ -33,7 +32,7 @@ const PauseIcon = () => (
 export const TimerPanel = ({
   game, currentPeriod, changePeriod, timerSeconds, isTimerRunning, handleTimerAction,
   periodsCount, setPeriodsCount, periodLength, setPeriodLength, otLength, setOtLength, soLength, setSoLength, saveTimerSettings,
-  isPlusMinusEnabled, setIsPlusMinusEnabled, socketConnected, onSetTime
+  trackPlusMinus, setTrackPlusMinus, socketConnected, onSetTime
 }) => {
   const [isEditingTimer, setIsEditingTimer] = useState(false);
   const [manualTimerInput, setManualTimerInput] = useState('');
@@ -203,7 +202,7 @@ export const TimerPanel = ({
         otLength={otLength} setOtLength={setOtLength}
         soLength={soLength} setSoLength={setSoLength}
         saveTimerSettings={saveTimerSettings}
-        isPlusMinusEnabled={isPlusMinusEnabled} setIsPlusMinusEnabled={setIsPlusMinusEnabled}
+        trackPlusMinus={trackPlusMinus} setTrackPlusMinus={setTrackPlusMinus}
       />
     </div>
   );

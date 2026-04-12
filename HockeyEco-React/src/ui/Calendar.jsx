@@ -41,10 +41,6 @@ export function Calendar({ label = "Календарь", value, onChange, disabl
 
   return (
     <div className={`bg-white/60 border border-black/5 rounded-lg p-4 flex flex-col font-sans backdrop-blur-md shadow-sm h-[360px] w-full max-w-sm overflow-hidden mx-auto ${disabled ? 'opacity-80' : ''}`}>
-      <div className="text-[0.75rem] font-bold text-graphite-light mb-2 text-center uppercase tracking-[0.15em]">
-        {label}
-      </div>
-      
       <div className="flex justify-between items-center mb-3 font-bold text-sm text-graphite">
         <button 
           onClick={() => !disabled && changeMonth(-1)} 

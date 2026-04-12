@@ -115,7 +115,6 @@ export const addTeamMember = async (req, res) => {
             else if (type === 'staff' && Array.isArray(roles)) {
                 await client.query(`UPDATE team_roles SET left_at = NOW() WHERE member_id = $1 AND left_at IS NULL`, [memberId]);
                 
-                // Оптимизация Bulk Insert для ролей
                 if (roles.length > 0) {
                     const rValues = [];
                     const rParams = [];
@@ -171,7 +170,8 @@ export const getAvailableLeaguesAndDivisions = async (req, res) => {
             SELECT l.id as league_id, l.name as league_name, l.logo_url as league_logo,
                    json_agg(json_build_object(
                        'id', d.id, 'name', d.name, 
-                       'app_start', d.application_start, 'app_end', d.application_end
+                       'app_start', d.application_start, 'app_end', d.application_end,
+                       'digital_applications_only', d.digital_applications_only
                    )) as divisions
             FROM divisions d
             JOIN seasons s ON d.season_id = s.id
@@ -187,17 +187,19 @@ export const getTeamApplications = async (req, res) => {
     try {
         const { teamId } = req.params;
         const result = await pool.query(`
-            SELECT tt.id, tt.status, tt.created_at, 
-                   d.name as division_name, d.end_date as division_end_date,
+            SELECT tt.id, tt.status, tt.created_at, tt.paper_roster_team_url, tt.paper_roster_league_url,
+                   d.name as division_name, d.end_date as division_end_date, d.digital_applications_only,
                    s.name as season_name, 
                    l.name as league_name, l.logo_url as league_logo,
+                   
+                   -- Игроки
                    COALESCE(
                        (SELECT json_agg(json_build_object(
                            'id', tr.id, 'player_id', tr.player_id, 'jersey_number', tr.jersey_number,
                            'position', tr.position, 'is_captain', tr.is_captain, 'is_assistant', tr.is_assistant,
                            'application_status', tr.application_status,
-                           'medical_url', tr.medical_url, 'insurance_url', tr.insurance_url,
-                           'medical_expires_at', tr.medical_expires_at, 'insurance_expires_at', tr.insurance_expires_at,
+                           'medical_url', tr.medical_url, 'insurance_url', tr.insurance_url, 'consent_url', tr.consent_url,
+                           'medical_expires_at', tr.medical_expires_at, 'insurance_expires_at', tr.insurance_expires_at, 'consent_expires_at', tr.consent_expires_at,
                            'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
                            'user_avatar_url', u.avatar_url,
                            'team_member_photo_url', tm.photo_url
@@ -206,7 +208,23 @@ export const getTeamApplications = async (req, res) => {
                        JOIN users u ON tr.player_id = u.id
                        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
                        WHERE tr.tournament_team_id = tt.id AND tr.period_end IS NULL), 
-                   '[]'::json) as roster
+                   '[]'::json) as roster,
+
+                   -- Персонал
+                   COALESCE(
+                       (SELECT json_agg(json_build_object(
+                           'user_id', ttr.user_id,
+                           'role', ttr.tournament_role,
+                           'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
+                           'user_avatar_url', u.avatar_url,
+                           'team_member_photo_url', tm.photo_url
+                       ) ORDER BY u.last_name ASC)
+                       FROM tournament_team_roles ttr
+                       JOIN users u ON ttr.user_id = u.id
+                       LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
+                       WHERE ttr.tournament_team_id = tt.id AND ttr.left_at IS NULL), 
+                   '[]'::json) as staff
+
             FROM tournament_teams tt
             JOIN divisions d ON tt.division_id = d.id
             JOIN seasons s ON d.season_id = s.id
@@ -223,18 +241,38 @@ export const createTeamApplication = async (req, res) => {
     try {
         await client.query('BEGIN');
         const { teamId } = req.params;
-        const { divisionId, playerIds } = req.body;
+        let { divisionId, playerIds } = req.body;
+
+        if (typeof playerIds === 'string') {
+            try { playerIds = JSON.parse(playerIds); } catch(e) { playerIds = []; }
+        }
 
         const checkApp = await client.query(`SELECT id FROM tournament_teams WHERE team_id = $1 AND division_id = $2`, [teamId, divisionId]);
         if (checkApp.rows.length > 0) throw new Error('Заявка в этот дивизион уже существует');
 
+        const status = req.file ? 'pending' : 'draft';
+
         const appRes = await client.query(
-            `INSERT INTO tournament_teams (division_id, team_id, status) VALUES ($1, $2, 'draft') RETURNING id`,
-            [divisionId, teamId]
+            `INSERT INTO tournament_teams (division_id, team_id, status) VALUES ($1, $2, $3) RETURNING id`,
+            [divisionId, teamId, status]
         );
         const appId = appRes.rows[0].id;
 
-        // ОПТИМИЗАЦИЯ N+1: Вставляем всех игроков одним SQL-запросом (INSERT INTO ... SELECT)
+        if (req.file) {
+            const ext = req.file.originalname.split('.').pop();
+            const fileName = `uploads/paper_application_tournament_teams_${appId}.${ext}`;
+
+            await s3.send(new PutObjectCommand({
+                Bucket: 'hockeyeco-uploads',
+                Key: fileName,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype
+            }));
+
+            const url = `/${fileName}`;
+            await client.query(`UPDATE tournament_teams SET paper_roster_team_url = $1 WHERE id = $2`, [url, appId]);
+        }
+
         if (playerIds && playerIds.length > 0) {
             await client.query(`
                 INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
@@ -264,9 +302,33 @@ export const deleteTeamApplication = async (req, res) => {
 export const sendApplicationForReview = async (req, res) => {
     try {
         const { appId } = req.params;
+
+        const checkRes = await pool.query(`
+            SELECT 
+                tt.paper_roster_league_url, 
+                d.digital_applications_only,
+                (SELECT COUNT(*) FROM tournament_team_roles WHERE tournament_team_id = tt.id AND left_at IS NULL) as staff_count
+            FROM tournament_teams tt
+            JOIN divisions d ON tt.division_id = d.id
+            WHERE tt.id = $1
+        `, [appId]);
+
+        if (checkRes.rows.length > 0) {
+            const appData = checkRes.rows[0];
+            
+            if (appData.digital_applications_only || appData.paper_roster_league_url !== null) {
+                if (parseInt(appData.staff_count) === 0) {
+                    throw new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или менеджера).');
+                }
+            }
+        }
+
         await pool.query(`UPDATE tournament_teams SET status = 'pending' WHERE id = $1`, [appId]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+        
+    } catch (err) { 
+        res.status(400).json({ success: false, error: err.message }); 
+    }
 };
 
 export const addPlayerToApplication = async (req, res) => {
@@ -276,10 +338,21 @@ export const addPlayerToApplication = async (req, res) => {
         const { teamId, appId } = req.params;
         const { playerIds } = req.body;
         
+        const checkApp = await client.query(`
+            SELECT tt.paper_roster_league_url, d.digital_applications_only 
+            FROM tournament_teams tt
+            JOIN divisions d ON tt.division_id = d.id
+            WHERE tt.id = $1
+        `, [appId]);
+
+        if (checkApp.rows.length > 0) {
+            const appData = checkApp.rows[0];
+            if (!appData.digital_applications_only && !appData.paper_roster_league_url) {
+                throw new Error('Добавление игроков заблокировано: ожидается проверка бумажной заявки лигой');
+            }
+        }
+
         if (playerIds && playerIds.length > 0) {
-            // ОПТИМИЗАЦИЯ N+1: Решаем задачу через Bulk Updates & Inserts
-            
-            // 1. Получаем данные обо всех запрашиваемых игроках одним запросом
             const pRes = await client.query(`
                 SELECT tm.user_id as pid, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant 
                 FROM team_rosters tr 
@@ -287,7 +360,6 @@ export const addPlayerToApplication = async (req, res) => {
                 WHERE tm.team_id = $1 AND tm.user_id = ANY($2::int[])
             `, [teamId, playerIds]);
             
-            // 2. Проверяем, кто уже есть в заявке (чтобы воскресить)
             const checkRes = await client.query(`
                 SELECT player_id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = ANY($2::int[])
             `, [appId, playerIds]);
@@ -301,7 +373,6 @@ export const addPlayerToApplication = async (req, res) => {
             const updateParams = [];
             let updateIdx = 1;
 
-            // Распределяем игроков: кого обновить, а кого вставить
             for (const row of pRes.rows) {
                 if (existingPids.has(row.pid)) {
                     updateValues.push(`($${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++})`);
@@ -312,7 +383,6 @@ export const addPlayerToApplication = async (req, res) => {
                 }
             }
 
-            // Выполняем массовое обновление одним запросом (UPSERT/VALUES паттерн)
             if (updateValues.length > 0) {
                 await client.query(`
                     UPDATE tournament_rosters AS tr
@@ -328,7 +398,6 @@ export const addPlayerToApplication = async (req, res) => {
                 `, updateParams);
             }
 
-            // Выполняем массовую вставку одним запросом
             if (insertValues.length > 0) {
                 await client.query(`
                     INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
@@ -352,4 +421,71 @@ export const removePlayerFromApplication = async (req, res) => {
         await pool.query(`DELETE FROM tournament_rosters WHERE id = $1`, [rosterId]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+};
+
+export const addStaffToApplication = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { appId } = req.params;
+        const { userId, roles } = req.body;
+
+        if (!userId) return res.status(400).json({ success: false, error: 'User ID обязателен' });
+
+        await client.query('BEGIN');
+
+        if (!roles || roles.length === 0) {
+            await client.query(`
+                UPDATE tournament_team_roles 
+                SET left_at = NOW() 
+                WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+            `, [appId, userId]);
+            await client.query('COMMIT');
+            return res.json({ success: true });
+        }
+
+        const primaryRole = roles[0]; 
+
+        // ИЗМЕНЕНИЕ: Безопасный UPSERT через транзакцию (обходим проблему с ON CONFLICT и индексами)
+        const checkRes = await client.query(`
+            SELECT id FROM tournament_team_roles
+            WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+        `, [appId, userId]);
+
+        if (checkRes.rows.length > 0) {
+            await client.query(`
+                UPDATE tournament_team_roles
+                SET tournament_role = $1
+                WHERE id = $2
+            `, [primaryRole, checkRes.rows[0].id]);
+        } else {
+            await client.query(`
+                INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
+                VALUES ($1, $2, $3)
+            `, [appId, userId, primaryRole]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка добавления персонала в заявку:', err);
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        client.release();
+    }
+};
+
+export const removeStaffFromApplication = async (req, res) => {
+    try {
+        const { appId, userId } = req.params;
+        await pool.query(`
+            UPDATE tournament_team_roles 
+            SET left_at = NOW() 
+            WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+        `, [appId, userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка удаления персонала из заявки:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 };

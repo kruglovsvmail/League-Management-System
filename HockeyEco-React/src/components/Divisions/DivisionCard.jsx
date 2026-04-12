@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../../utils/helpers';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../../utils/helpers';
 import { DivisionTeamsList } from './DivisionTeamsList';
 import { TeamRosterTable } from './TeamRosterTable';
+import { DivisionStandings } from './DivisionStandings';
+import { DivisionPlayoffs } from './DivisionPlayoffs';
 import { Loader } from '../../ui/Loader';
 import { Tabs } from '../../ui/Tabs';
 import { PlayerProfileModal } from '../../modals/PlayerProfileModal';
-import { useAccess } from '../../hooks/useAccess'; // <-- ИМПОРТ ХУКА ПРАВ
+import { useAccess } from '../../hooks/useAccess'; 
 
 // Модалки команд
 import { TeamUniformModal } from '../../modals/TeamUniformModal';
@@ -25,9 +27,9 @@ const TOURNAMENT_TYPES = {
   mixed: 'Регулярный + Плей-офф'
 };
 
-export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, onRefresh, setGlobalToast }) {
+export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh, setGlobalToast }) {
   const { checkAccess } = useAccess();
-  const canManageDivisions = checkAccess('MANAGE_DIVISIONS'); // <-- ПРОВЕРКА ПРАВ
+  const canManageDivisions = checkAccess('MANAGE_DIVISIONS'); 
 
   const initialExpanded = getExpiringStorage(`div_${division.id}_expanded`) === true;
   const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTab`)) || 0;
@@ -38,6 +40,7 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
   const initialTeam = initialTeamId ? teams.find(t => t.id === Number(initialTeamId)) : null;
 
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
+  const [viewMode, setViewMode] = useState('management'); // 'management' | 'sport'
   const [teamsTab, setTeamsTab] = useState(initialTeamsTab); 
   const [rosterTab, setRosterTab] = useState(initialRosterTab);
 
@@ -182,14 +185,18 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
     } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сохранения', type: 'error' }); } finally { setIsPlayerSaving(false); }
   };
 
-  const handlePlayerDocsSave = async ({ medFile, medCleared, medExp, insFile, insCleared, insExp }) => {
+  const handlePlayerDocsSave = async ({ medFile, medCleared, medExp, insFile, insCleared, insExp, consentFile, consentCleared, consentExp }) => {
     if (!activePlayerForModal) return;
     setIsPlayerSaving(true);
     const formData = new FormData();
     if (insFile) formData.append('insurance', insFile); if (insCleared) formData.append('insurance_cleared', 'true');
     if (medFile) formData.append('medical', medFile); if (medCleared) formData.append('medical_cleared', 'true');
-    if (insExp !== undefined) formData.append('insurance_expires_at', insExp);
-    if (medExp !== undefined) formData.append('medical_expires_at', medExp);
+    if (consentFile) formData.append('consent', consentFile); if (consentCleared) formData.append('consent_cleared', 'true'); 
+    
+    if (insExp !== undefined && insExp !== null) formData.append('insurance_expires_at', insExp);
+    if (medExp !== undefined && medExp !== null) formData.append('medical_expires_at', medExp);
+    if (consentExp !== undefined && consentExp !== null) formData.append('consent_expires_at', consentExp); 
+    
     formData.append('player_id', activePlayerForModal.player_id);
 
     try {
@@ -200,8 +207,10 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
           ...p, 
           insurance_url: data.insurance_url !== undefined ? data.insurance_url : p.insurance_url, 
           medical_url: data.medical_url !== undefined ? data.medical_url : p.medical_url,
-          insurance_expires_at: insExp || null,
-          medical_expires_at: medExp || null
+          consent_url: data.consent_url !== undefined ? data.consent_url : p.consent_url,
+          insurance_expires_at: insExp !== null ? insExp : p.insurance_expires_at,
+          medical_expires_at: medExp !== null ? medExp : p.medical_expires_at,
+          consent_expires_at: consentExp !== null ? consentExp : p.consent_expires_at
         } : p));
         setGlobalToast({ title: 'Успешно', message: 'Документы загружены', type: 'success' });
         setPlayerModalType(null);
@@ -287,9 +296,11 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
   const isAppWindowOpen = appStart && appEnd ? (now >= appStart && now <= appEnd) : true; 
 
   const isAdmin = userRole === 'admin';
-  // Внедряем canManageDivisions в проверки доступа:
   const canEditRoster = canManageDivisions && (isAdmin || (selectedTeam && selectedTeam.status !== 'revision'));
-  const canChangeTeamStatus = canManageDivisions && (isAdmin || (isAppWindowOpen && selectedTeam && selectedTeam.status !== 'revision'));
+  
+  // ПРОВЕРКА ПРАВА НА СМЕНУ СТАТУСА ТЕПЕРЬ АБСОЛЮТНАЯ И ЗАВИСИТ ТОЛЬКО ОТ РОЛИ
+  const canChangeTeamStatus = checkAccess('CHANGE_TEAM_STATUS');
+  
   const canEditActiveTeamParams = canManageDivisions && (isAdmin || (activeTeamForModal && activeTeamForModal.status !== 'revision'));
 
   const STATUS_LABELS = {
@@ -349,16 +360,52 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
         </div>
 
         <div className="flex items-center gap-5 shrink-0 ml-auto w-[400px] justify-end">
+          
+          <button 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              if (!isExpanded) setIsExpanded(true);
+              setViewMode(prev => prev === 'management' ? 'sport' : 'management'); 
+            }} 
+            className={`flex items-center gap-2 px-4 h-12 w-[130px] rounded-lg transition-all duration-300 font-bold text-[13px] border ${
+              viewMode === 'sport' 
+                ? 'bg-orange/10 text-orange border-orange/0' 
+                : 'bg-transparent text-graphite-light hover:bg-graphite/5 border-graphite/0 hover:border-graphite/0'
+            }`}
+            title="Турнирная таблица и плей-офф"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="hidden xl:inline">{viewMode === 'sport' ? 'Таблицы' : 'Команды'}</span>
+          </button>
+
           {canManageDivisions && (
-            <button onClick={(e) => { e.stopPropagation(); setIsPublishModalOpen(true); }} className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-300 ${division.is_published ? 'text-status-accepted hover:bg-graphite/5' : 'bg-orange/10 text-orange hover:bg-orange hover:text-white'}`} title={division.is_published ? "Опубликован" : "Скрыт"}>
-              {division.is_published ? <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg> : <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>}
+            <button 
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setIsPublishModalOpen(true); 
+              }} 
+              className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                division.is_published 
+                  ? 'text-status-accepted hover:bg-status-accepted/10' 
+                  : 'text-graphite/30 hover:text-graphite hover:bg-graphite/5'
+              }`}
+              title={division.is_published ? "Дивизион опубликован (Нажмите, чтобы скрыть)" : "Дивизион скрыт (Нажмите, чтобы опубликовать)"}
+            >
+              {division.is_published ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+              )}
             </button>
           )}
-          {canManageDivisions && (
-            <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="w-12 h-12 rounded-lg flex items-center justify-center text-graphite/50 hover:bg-graphite/5 hover:transition-all duration-300" title="Настройки дивизиона">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><circle cx="12" cy="12" r="3" /></svg>
-            </button>
-          )}
+
           {userRole === 'admin' && (
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="w-12 h-12 rounded-lg flex items-center justify-center text-status-rejected hover:bg-graphite/5 hover:transition-all duration-300" title="Удалить дивизион">
               <svg className="w-8 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -374,77 +421,90 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
       </div>
 
       <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
-        <div className="overflow-hidden">
-          <div className="p-6 md:p-8 pt-4 bg-gradient-to-b from-graphite/[0.03] to-transparent border-t border-graphite/5 flex gap-6 items-start transition-all duration-500 overflow-hidden w-full">
-            
-            <div className={`transition-all duration-300 ease-in-out overflow-hidden flex flex-col ${isDetailVisible ? 'w-[100px] shrink-0' : 'w-full'}`}>
-              {isCompactView && (
-                <div className="mb-6 pb-2 w-full animate-fade-in flex items-center h-[40px]">
-                  <button 
-                    onClick={closeDetailPanel}
-                    className="w-10 h-10 mx-auto rounded-lg flex items-center justify-center text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 transition-all duration-300"
-                    title="Вернуться к списку команд"
-                  >
-                    <svg className="w-6 h-6 pr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                </div>
-              )}
-              <div className={`overflow-hidden ${!isCompactView ? "w-full min-w-[1310px]" : "w-full"}`}>
-                <DivisionTeamsList 
-                  teams={teams} 
-                  onOpenModal={openModal} 
-                  selectedTeamId={isCompactView ? selectedTeam?.id : null} 
-                  onTeamSelect={handleTeamSelect} 
-                  userRole={userRole}
-                  activeTab={teamsTab}      
-                  onTabChange={setTeamsTab} 
-                  isAppWindowOpen={isAppWindowOpen}
-                  canManageDivisions={canManageDivisions} // <-- ПРОКИДЫВАЕМ ПРАВА ДЛЯ СПИСКА
-                />
-              </div>
-            </div>
-
-            {selectedTeam && (
-              <div className={`flex-1 w-0 min-w-[1px] pl-6 border-l border-graphite/20 relative transition-all duration-300 ease-in-out ${isDetailVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10 pointer-events-none'}`}>
-                <div className="mb-6 flex items-start justify-between min-h-[38px]">
-                  <div className="overflow-x-auto pb-2 custom-scrollbar flex-1">
-                    <Tabs tabs={rosterTabsCounts} activeTab={rosterTab} onChange={setRosterTab} />
-                  </div>
-                  
-                  {/* ОБНОВЛЕННАЯ ЦВЕТНАЯ КНОПКА СТАТУСА КОМАНДЫ */}
-                  <button 
-                    onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
-                    className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
-                    title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                    </svg>
-                    {STATUS_LABELS[selectedTeam.status] || 'Статус команды'}
-                  </button>
-                  
-                </div>
-                <div className="relative min-h-[500px] transition-all duration-300">
-                  {isRosterLoading && (
-                    <div className="absolute inset-0 z-10 flex items-start pt-16 justify-center transition-all duration-700">
-                      <Loader text="Загрузка состава..." />
+        <div className="overflow-hidden w-full relative">
+          
+          <div className="relative flex w-full">
+            {/* Панель 1: Управление командами */}
+            <div className={`w-full shrink-0 transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${viewMode === 'sport' ? 'absolute top-0 left-0 opacity-0 -translate-x-10 pointer-events-none' : 'relative opacity-100 translate-x-0'}`}>
+              <div className="p-6 md:p-8 pt-4 bg-gradient-to-b from-graphite/[0.03] to-transparent border-t border-graphite/5 flex gap-6 items-start w-full">
+                <div className={`transition-all duration-300 ease-in-out overflow-hidden flex flex-col ${isDetailVisible ? 'w-[100px] shrink-0' : 'w-full'}`}>
+                  {isCompactView && (
+                    <div className="mb-6 pb-2 w-full animate-fade-in flex items-center h-[40px]">
+                      <button 
+                        onClick={closeDetailPanel}
+                        className="w-10 h-10 mx-auto rounded-lg flex items-center justify-center text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 transition-all duration-300"
+                        title="Вернуться к списку команд"
+                      >
+                        <svg className="w-6 h-6 pr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
                     </div>
                   )}
-                  <div className={`transition-opacity duration-300 ${isRosterLoading ? 'opacity-5 pointer-events-none' : 'opacity-100'}`}>
-                    <TeamRosterTable 
-                      roster={currentRosterDisplay} 
-                      isStaff={rosterTab === 2} 
-                      onOpenModal={(player, type) => { setActivePlayerForModal(player); setPlayerModalType(type); }} 
-                      onToggleStatus={handleToggleRosterStatus} 
-                      onOpenProfile={(id) => setProfileModalPlayerId(id)} 
-                      canEditRoster={canEditRoster}
+                  <div className={`overflow-hidden ${!isCompactView ? "w-full min-w-[1310px]" : "w-full"}`}>
+                    <DivisionTeamsList 
+                      teams={teams}
+                      division={division} 
+                      onOpenModal={openModal} 
+                      selectedTeamId={isCompactView ? selectedTeam?.id : null} 
+                      onTeamSelect={handleTeamSelect} 
+                      userRole={userRole}
+                      activeTab={teamsTab}      
+                      onTabChange={setTeamsTab} 
+                      isAppWindowOpen={isAppWindowOpen}
+                      canManageDivisions={canManageDivisions}
                     />
                   </div>
                 </div>
+
+                {selectedTeam && (
+                  <div className={`flex-1 w-0 min-w-[1px] pl-6 border-l border-graphite/20 relative transition-all duration-300 ease-in-out ${isDetailVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10 pointer-events-none'}`}>
+                    <div className="mb-6 flex items-start justify-between min-h-[38px]">
+                      <div className="overflow-x-auto pb-2 custom-scrollbar flex-1">
+                        <Tabs tabs={rosterTabsCounts} activeTab={rosterTab} onChange={setRosterTab} />
+                      </div>
+                      <button 
+                        onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
+                        className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
+                        title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                        {STATUS_LABELS[selectedTeam.status] || 'Статус команды'}
+                      </button>
+                    </div>
+                    <div className="relative transition-all duration-300 min-h-[150px]">
+                      {isRosterLoading && (
+                        <div className="absolute inset-0 z-10 flex items-start pt-16 justify-center transition-all duration-700">
+                          <Loader text="Загрузка состава..." />
+                        </div>
+                      )}
+                      <div className={`transition-opacity duration-300 ${isRosterLoading ? 'opacity-5 pointer-events-none' : 'opacity-100'}`}>
+                        <TeamRosterTable 
+                          roster={currentRosterDisplay} 
+                          isStaff={rosterTab === 2} 
+                          onOpenModal={(player, type) => { setActivePlayerForModal(player); setPlayerModalType(type); }} 
+                          onToggleStatus={handleToggleRosterStatus} 
+                          onOpenProfile={(id) => setProfileModalPlayerId(id)} 
+                          canEditRoster={canEditRoster}
+                          division={division}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+
+            {/* Панель 2: Спорт (Таблица и Плей-офф) */}
+            <div className={`w-full shrink-0 transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${viewMode === 'sport' ? 'relative opacity-100 translate-x-0' : 'absolute top-0 left-0 opacity-0 translate-x-10 pointer-events-none'}`}>
+              <div className="p-6 md:p-8 flex flex-col gap-8 bg-gradient-to-b from-graphite/[0.03] to-transparent border-t border-graphite/5">
+                <DivisionStandings division={division} />
+                <DivisionPlayoffs divisionId={division.id} />
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -458,18 +518,25 @@ export function DivisionCard({ division, leagueId, userRole, onEdit, onDelete, o
 
       <QualSelectModal isOpen={playerModalType === 'qual'} onClose={() => setPlayerModalType(null)} qualifications={leagueQuals} currentQualId={activePlayerForModal?.qualification_id} onSelect={handlePlayerQualSave} isSaving={isPlayerSaving} readOnly={!canEditRoster} />
       <FeeModal isOpen={playerModalType === 'fee'} onClose={() => setPlayerModalType(null)} initialPaid={activePlayerForModal?.is_fee_paid} playerName={activePlayerForModal ? `${activePlayerForModal.last_name} ${activePlayerForModal.first_name}` : 'Игрок'} onSave={handlePlayerFeeSave} isSaving={isPlayerSaving} readOnly={!canEditRoster} />
+      
       <MedicalDocsModal 
         isOpen={playerModalType === 'docs'} 
         onClose={() => setPlayerModalType(null)} 
         initialMed={activePlayerForModal?.medical_url ? getImageUrl(activePlayerForModal.medical_url) : null} 
         initialIns={activePlayerForModal?.insurance_url ? getImageUrl(activePlayerForModal.insurance_url) : null} 
+        initialConsent={activePlayerForModal?.consent_url ? getImageUrl(activePlayerForModal.consent_url) : null} 
         initialMedExp={activePlayerForModal?.medical_expires_at} 
         initialInsExp={activePlayerForModal?.insurance_expires_at}
+        initialConsentExp={activePlayerForModal?.consent_expires_at}
         onSave={handlePlayerDocsSave} 
         isSaving={isPlayerSaving} 
         readOnly={!canEditRoster}
         playerName={activePlayerForModal ? `${activePlayerForModal.last_name || ''} ${activePlayerForModal.first_name || ''}`.trim() : ''}
-/>
+        reqMed={division.req_med_cert ?? true}
+        reqIns={division.req_insurance ?? true}
+        reqConsent={division.req_consent ?? true}
+      />
+      
       <PlayerProfileModal isOpen={!!profileModalPlayerId} onClose={() => setProfileModalPlayerId(null)} playerId={profileModalPlayerId} />
     </div>
   );

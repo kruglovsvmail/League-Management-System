@@ -16,7 +16,7 @@ export function Toast({ title, message, type = 'info', onClose }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       handleClose();
-    }, 2000);
+    }, 5000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -30,9 +30,10 @@ export function Toast({ title, message, type = 'info', onClose }) {
 
   return (
     <div 
+      onClick={handleClose} // ДОБАВЛЕНО: Закрытие по клику на весь блок
       onAnimationEnd={handleAnimationEnd}
-      // ДОБАВЛЕНЫ КЛАССЫ: fixed bottom-6 right-6 z-[9999]
-      className={`fixed bottom-2 right-2 z-[9999] backdrop-blur-md text-graphite p-4 rounded-lg shadow-[0_10px_40px_rgba(0,0,0,0.08)] flex items-start gap-3.5 w-[300px] font-sans ${current.bg} ${isHiding ? 'animate-slide-out' : 'animate-slide-in'}`}
+      // ДОБАВЛЕН КЛАСС cursor-pointer для смены курсора при наведении
+      className={`cursor-pointer fixed bottom-2 right-2 z-[9999] backdrop-blur-md text-graphite p-4 rounded-lg shadow-[0_10px_40px_rgba(0,0,0,0.08)] flex items-start gap-3.5 w-[300px] font-sans transition-opacity hover:opacity-90 ${current.bg} ${isHiding ? 'animate-slide-out' : 'animate-slide-in'}`}
     >
       <div className={`mt-0.5 text-[1.3rem] ${current.iconColor}`}>
         {current.icon}
@@ -41,10 +42,7 @@ export function Toast({ title, message, type = 'info', onClose }) {
         <span className="font-bold text-[0.95rem] tracking-[0.2px]">{title}</span>
         <span className="text-[0.85rem] text-graphite-light font-medium leading-[1.4]">{message}</span>
       </div>
-      <div 
-        onClick={handleClose}
-        className="cursor-pointer text-graphite-light text-[1.2rem] leading-none transition-colors duration-200 hover:text-graphite"
-      >
+      <div className="text-graphite-light text-[1.2rem] leading-none transition-colors duration-200 hover:text-graphite">
         ×
       </div>
     </div>

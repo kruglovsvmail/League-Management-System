@@ -56,8 +56,7 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Статус команды" size="medium">
       <div className="mb-4 text-center">
-        <span className="text-[13px] text-graphite-light font-semibold uppercase tracking-wide block mb-1">Команда</span>
-        <span className="text-[18px] font-black text-graphite">{teamName}</span>
+        <span className="text-[20px] font-black text-graphite">{teamName}</span>
       </div>
 
       <div className="flex flex-col gap-2 mb-6 font-sans">

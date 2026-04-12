@@ -19,7 +19,7 @@ import {
     getDivisionTeams,
     getDivisionStandings,
     getPlayoffBracket,
-    generatePlayoffBracket,
+    savePlayoffConstructor,
     updatePlayoffMatchup
 } from '../controllers/divisionController.js';
 
@@ -51,10 +51,10 @@ router.get('/divisions/:id/standings', getDivisionStandings);
 // --- ПЛЕЙ-ОФФ ---
 router.get('/divisions/:id/playoff', getPlayoffBracket);
 
-// Генерация сетки доступна top_manager и league_admin
-router.post('/divisions/:id/playoff/generate', requireRoleByDivision(['top_manager', 'league_admin']), generatePlayoffBracket);
+// Сохранение конструктора сеток доступно top_manager и league_admin
+router.post('/divisions/:id/playoff/save-constructor', requireRoleByDivision(['top_manager', 'league_admin']), savePlayoffConstructor);
 
-// Замена команд в сетке доступна ТОЛЬКО top_manager
+// Ручная замена команд в сетке доступна ТОЛЬКО top_manager
 router.put('/divisions/:id/playoff/:matchupId', requireRoleByDivision(['top_manager']), updatePlayoffMatchup);
 
 export default router;

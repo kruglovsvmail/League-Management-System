@@ -7,7 +7,6 @@ import { LoginPage } from './pages/LoginPage';
 import { HandbookPage } from './pages/HandbookPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DivisionsPage } from './pages/DivisionsPage';
-import { StandingsPage } from './pages/StandingsPage'; // <-- ИМПОРТ НОВОЙ СТРАНИЦЫ
 import { TransfersPage } from './pages/TransfersPage';
 import { DisqualificationsPage } from './pages/DisqualificationsPage';
 import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
@@ -17,6 +16,9 @@ import { GamePage } from './pages/GamePage';
 import { GameLiveDesk } from './pages/GameLiveDesk';
 import { WebGraphics } from './pages/WebGraphics'; 
 import { WebGraphicsPanel } from './pages/WebGraphicsPanel'; 
+
+// Импорт компонента конструктора плей-офф
+import { PlayoffConstructor } from './components/Settings/PlayoffConstructor';
 
 // Импорт каркаса, UI и прав
 import { AdminLayout } from './AdminLayout';
@@ -144,6 +146,16 @@ export default function App() {
             element={ isAuthenticated ? <WebGraphicsPanel user={currentUser} /> : <Navigate to="/login" replace /> } 
           />
 
+          {/* === НОВЫЙ ИЗОЛИРОВАННЫЙ РОУТ ДЛЯ КОНСТРУКТОРА ПЛЕЙ-ОФФ === */}
+          <Route 
+            path="/playoff-editor/:divisionId" 
+            element={
+              isAuthenticated 
+                ? <PlayoffConstructor /> 
+                : <Navigate to="/login" replace />
+            } 
+          />
+
           <Route 
             path="/" 
             element={
@@ -162,7 +174,6 @@ export default function App() {
             <Route path="registry" element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="teams" element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="divisions" element={canViewDivisions ? <DivisionsPage /> : <Navigate to="/games" replace />} />
-            <Route path="standings" element={<StandingsPage />} /> {/* <-- РЕГИСТРАЦИЯ НОВОГО РОУТА */}
             <Route path="games" element={<GamesPage />} />
             <Route path="handbook" element={<HandbookPage />} />
             <Route path="settings" element={<SettingsPage />} />

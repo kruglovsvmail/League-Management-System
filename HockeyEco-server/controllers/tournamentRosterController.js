@@ -59,26 +59,41 @@ export const updateTournamentRosterFee = async (req, res) => {
 export const uploadTournamentRosterDocs = async (req, res) => {
     try {
         const { id } = req.params; 
-        const { player_id, insurance_cleared, medical_cleared, insurance_expires_at, medical_expires_at } = req.body; 
+        const { 
+            player_id, 
+            insurance_cleared, medical_cleared, consent_cleared, 
+            insurance_expires_at, medical_expires_at, consent_expires_at 
+        } = req.body; 
         
         if (!player_id) return res.status(400).json({ success: false, error: 'Не передан player_id' });
 
         let insuranceUrl = undefined;
         let medicalUrl = undefined;
+        let consentUrl = undefined;
 
         const uploadFileToS3 = async (file, type) => {
             const ext = file.originalname.split('.').pop();
-            const rawFileName = `tournament_rosters_${id}_users_${player_id}_${type}.${ext}`;
+            const rawFileName = `tournament_rosters_${id}_${type}.${ext}`;
             const s3Key = `uploads/${rawFileName}`;
-            await s3.send(new PutObjectCommand({ Bucket: 'hockeyeco-uploads', Key: s3Key, Body: file.buffer, ContentType: file.mimetype }));
-            return s3Key;
+            await s3.send(new PutObjectCommand({ 
+                Bucket: 'hockeyeco-uploads', 
+                Key: s3Key, 
+                Body: file.buffer, 
+                ContentType: file.mimetype 
+            }));
+            return `/${s3Key}`;
         };
 
+        const files = req.files || {}; // Защита от undefined
+
         if (insurance_cleared === 'true') insuranceUrl = null;
-        else if (req.files['insurance'] && req.files['insurance'].length > 0) insuranceUrl = await uploadFileToS3(req.files['insurance'][0], 'insurance');
+        else if (files['insurance'] && files['insurance'].length > 0) insuranceUrl = await uploadFileToS3(files['insurance'][0], 'insurance');
 
         if (medical_cleared === 'true') medicalUrl = null;
-        else if (req.files['medical'] && req.files['medical'].length > 0) medicalUrl = await uploadFileToS3(req.files['medical'][0], 'medical');
+        else if (files['medical'] && files['medical'].length > 0) medicalUrl = await uploadFileToS3(files['medical'][0], 'medical');
+
+        if (consent_cleared === 'true') consentUrl = null;
+        else if (files['consent'] && files['consent'].length > 0) consentUrl = await uploadFileToS3(files['consent'][0], 'consent');
 
         const updates = ['updated_at = NOW()'];
         const values = [];
@@ -86,15 +101,22 @@ export const uploadTournamentRosterDocs = async (req, res) => {
 
         if (insuranceUrl !== undefined) { updates.push(`insurance_url = $${counter++}`); values.push(insuranceUrl); }
         if (insurance_expires_at !== undefined) { updates.push(`insurance_expires_at = $${counter++}`); values.push(insurance_expires_at || null); }
+        
         if (medicalUrl !== undefined) { updates.push(`medical_url = $${counter++}`); values.push(medicalUrl); }
         if (medical_expires_at !== undefined) { updates.push(`medical_expires_at = $${counter++}`); values.push(medical_expires_at || null); }
+        
+        if (consentUrl !== undefined) { updates.push(`consent_url = $${counter++}`); values.push(consentUrl); }
+        if (consent_expires_at !== undefined) { updates.push(`consent_expires_at = $${counter++}`); values.push(consent_expires_at || null); }
 
         if (updates.length > 1) {
             values.push(id);
             await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')} WHERE id = $${counter}`, values);
         }
-        res.json({ success: true, insurance_url: insuranceUrl, medical_url: medicalUrl });
-    } catch (err) { res.status(500).json({ success: false, error: 'Ошибка сохранения файлов' }); }
+        res.json({ success: true, insurance_url: insuranceUrl, medical_url: medicalUrl, consent_url: consentUrl });
+    } catch (err) { 
+        console.error(err);
+        res.status(500).json({ success: false, error: 'Ошибка сохранения файлов' }); 
+    }
 };
 
 export const updateTournamentRosterInline = async (req, res) => {

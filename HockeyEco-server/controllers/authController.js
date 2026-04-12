@@ -199,8 +199,9 @@ const checkLeagueRoleHelper = async (req, res, next, leagueId, allowedRoles) => 
   const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
   if (userRes.rows[0]?.global_role === 'admin') return next(); // Суперадмин может всё
 
+  // ДОБАВЛЕНО: AND end_date IS NULL, чтобы тянуть только действующие роли
   const result = await pool.query(
-    'SELECT role FROM league_staff WHERE user_id = $1 AND league_id = $2',
+    'SELECT role FROM league_staff WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL',
     [userId, leagueId]
   );
   
@@ -318,7 +319,7 @@ export const requireRoleByGame = (allowedRoles) => async (req, res, next) => {
   } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
 };
 
-// ОХРАННИК: Статус матча (Админы лиги + ДЕЙСТВУЮЩИЕ Главные судьи + Секретарь)
+// ОХРАННИК: Статус матча (Админы лиги + Секретарь)
 export const requireGameStatusAccess = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -356,7 +357,7 @@ export const requireGameStatusAccess = async (req, res, next) => {
     if (userRoles.includes('referee')) {
         const refRes = await pool.query(`
             SELECT 1 FROM game_referee 
-            WHERE game_id = $1 AND user_id = $2 AND role IN ('head_1', 'head_2', 'scorekeeper')
+            WHERE game_id = $1 AND user_id = $2 AND role = 'scorekeeper'
         `, [gameId, userId]);
 
         if (refRes.rows.length > 0) return next();

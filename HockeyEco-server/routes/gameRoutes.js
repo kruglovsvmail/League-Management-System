@@ -9,7 +9,7 @@ import {
 import { 
     getGames, getArenas, createGame, getGameById,
     updateGameInfo, updateGameStatus, getGameRoster, saveGameRoster,
-    getGameStaff, updateGameOfficials
+    getGameStaff, updateGameOfficials, deleteGame // <-- ДОБАВЛЕН ИМПОРТ deleteGame
 } from '../controllers/gameController.js';
 
 const router = express.Router();
@@ -42,6 +42,9 @@ router.post('/seasons/:seasonId/games', requireRoleBySeason(['top_manager', 'lea
 
 // РЕДАКТИРОВАНИЕ ИНФОРМАЦИИ МАТЧА (Только админы лиги)
 router.put('/games/:gameId/info', requireRoleByGame(['top_manager', 'league_admin']), updateGameInfo);
+
+// УДАЛЕНИЕ МАТЧА (Только админы лиги) <-- ДОБАВЛЕН МАРШРУТ
+router.delete('/games/:gameId', requireRoleByGame(['top_manager', 'league_admin']), deleteGame);
 
 // ИЗМЕНЕНИЕ СТАТУСА МАТЧА (Админы лиги + Главные судьи + Секретарь)
 router.put('/games/:gameId/status', requireGameStatusAccess, updateGameStatus);

@@ -4,7 +4,9 @@ export function Badge({ label, type = 'empty' }) {
   // Настройки для разных типов бейджей
   const types = {
     empty: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-transparent', fill: '0%' },
+    oneThird: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-graphite/30', fill: '33.33%' },
     half: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-graphite/30', fill: '50%' },
+    twoThirds: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-graphite/30', fill: '66.66%' },
     filled: { border: 'border-graphite', text: 'text-white', bg: 'bg-graphite', fill: '100%' },
     expiring: { border: 'border-status-pending', text: 'text-white', bg: 'bg-status-pending', fill: '100%' },
     expired: { border: 'border-status-rejected', text: 'text-white', bg: 'bg-status-rejected', fill: '100%' },

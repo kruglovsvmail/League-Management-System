@@ -9,14 +9,15 @@ import {
     addTeamMember,
     uploadMemberPhoto,
     deleteMemberPhoto,
-    // --- НОВЫЕ ИМПОРТЫ ДЛЯ ЗАЯВОК ---
     getAvailableLeaguesAndDivisions,
     getTeamApplications,
     createTeamApplication,
     deleteTeamApplication,
     sendApplicationForReview,
     addPlayerToApplication,
-    removePlayerFromApplication
+    removePlayerFromApplication,
+    addStaffToApplication,       // <-- НОВЫЙ ИМПОРТ
+    removeStaffFromApplication   // <-- НОВЫЙ ИМПОРТ
 } from '../controllers/teamManagementController.js';
 
 const router = express.Router();
@@ -40,12 +41,16 @@ router.get('/teams-manage/available-divisions', getAvailableLeaguesAndDivisions)
 
 // Управление заявками конкретной команды
 router.get('/teams-manage/:teamId/applications', getTeamApplications);
-router.post('/teams-manage/:teamId/applications', createTeamApplication);
+router.post('/teams-manage/:teamId/applications', upload.single('file'), createTeamApplication);
 router.delete('/teams-manage/:teamId/applications/:appId', deleteTeamApplication);
 router.post('/teams-manage/:teamId/applications/:appId/send-review', sendApplicationForReview);
 
-// Управление составом внутри заявки
+// Управление ИГРОКАМИ внутри заявки
 router.post('/teams-manage/:teamId/applications/:appId/roster', addPlayerToApplication);
 router.delete('/teams-manage/:teamId/applications/:appId/roster/:rosterId', removePlayerFromApplication);
+
+// Управление ПЕРСОНАЛОМ внутри заявки
+router.post('/teams-manage/:teamId/applications/:appId/staff', addStaffToApplication);
+router.delete('/teams-manage/:teamId/applications/:appId/staff/:userId', removeStaffFromApplication);
 
 export default router;
