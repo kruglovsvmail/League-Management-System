@@ -15,7 +15,7 @@ import {
   calculatePenaltyTimelines, 
   calculatePeriodFromTime
 } from '../components/GameLiveDesk/GameDeskShared';
-import { ProtocolViewerModal } from '../components/GameLiveDesk/PDF-Protocol/ProtocolViewerModal';
+import { ProtocolViewerModal } from '../components/GameLiveDesk/ProtocolViewerModal';
 import { Button } from '../ui/Button';
 
 const EditableTimePill = ({ label, field, value, onSave, onClear }) => {

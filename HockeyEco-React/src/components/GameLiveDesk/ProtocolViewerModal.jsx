@@ -1,14 +1,12 @@
 // src/components/GameLiveDesk/PDF-Protocol/ProtocolViewerModal.jsx
 import React, { useState, useEffect } from 'react';
-import { PDFViewer } from '@react-pdf/renderer';
-import { ProtocolFactory } from './ProtocolFactory';
-import { prepareProtocolData } from './ProtocolConverter';
-import { getToken } from '../../../utils/helpers';
-import { Button } from '../../../ui/Button';
-import { Select } from '../../../ui/Select';
+import { getToken } from '../../utils/helpers';
+import { Button } from '../../ui/Button';
+import { Select } from '../../ui/Select';
 
-export function ProtocolViewerModal({ isOpen, onClose, gameId, initialLeagueId }) {
+export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   const [protocolData, setProtocolData] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null); // URL для отображения PDF в iframe
   const [isLoading, setIsLoading] = useState(true);
   
   const [formState, setFormState] = useState({});
@@ -16,22 +14,53 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, initialLeagueId }
 
   const headers = { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
 
-  const loadData = async () => {
+  const loadDataAndPdf = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}`, { headers });
-      const apiResponse = await res.json();
-      if (apiResponse.success) setProtocolData(prepareProtocolData(apiResponse.data));
-    } catch (err) { console.error(err); } 
-    finally { setIsLoading(false); }
+      // 1. Загружаем JSON-данные для боковой панели подписей
+      const resJson = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}`, { headers });
+      const apiResponse = await resJson.json();
+      if (apiResponse.success) {
+          setProtocolData(apiResponse.data);
+      }
+
+      // 2. Скачиваем сам сгенерированный PDF-файл
+      const resPdf = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}/download`, {
+          headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      
+      // ПРОВЕРЯЕМ, УСПЕШНО ЛИ ОТРАБОТАЛ СЕРВЕР
+      if (!resPdf.ok) {
+          const errorData = await resPdf.text();
+          console.error("Ошибка генерации PDF на сервере:", errorData);
+          alert("Ошибка на сервере при создании PDF. Посмотрите консоль браузера (F12).");
+          setPdfUrl(null);
+          return;
+      }
+
+      const blob = await resPdf.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(objectUrl);
+
+    } catch (err) { 
+      console.error('Ошибка загрузки протокола:', err); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   useEffect(() => {
     if (isOpen) {
-      loadData();
+      loadDataAndPdf();
       setFormState({});
       setIsSigning(null);
     }
+    // Очистка памяти при закрытии модалки
+    return () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    };
   }, [isOpen, gameId]);
 
   const updateForm = (role, field, value) => {
@@ -58,7 +87,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, initialLeagueId }
       
       if (data.success) {
         setFormState(prev => { const next = { ...prev }; delete next[role]; return next; });
-        await loadData(); 
+        await loadDataAndPdf(); 
       } else {
         alert(data.error || 'Ошибка подписания');
       }
@@ -74,7 +103,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, initialLeagueId }
   const signatures = protocolData?.signatures || {};
 
   const renderTeamSection = (teamType, teamName) => {
-    const optionsSource = protocolData?.eligibleSigners[teamType] || { coaches: [], staff: [] };
+    const optionsSource = protocolData?.eligibleSigners?.[teamType] || { coaches: [], staff: [] };
     const roles = [
       { key: `${teamType}_coach`, label: 'Тренер', isPinless: true, options: optionsSource.coaches, opt: false },
       { key: `${teamType}_off1`, label: 'Офиц. лицо 1', isPinless: false, options: optionsSource.staff, opt: false },
@@ -288,18 +317,22 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, initialLeagueId }
 
   return (
     <div className="fixed inset-0 z-[10000] flex bg-black animate-fade-in">
+      {/* ЛЕВАЯ ЧАСТЬ - ПРОСМОТР PDF */}
       <div className="flex-1 h-full relative flex flex-col bg-[#525659]">
-        {isLoading ? (
+        {isLoading && !pdfUrl ? (
            <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white">
               <svg className="w-10 h-10 animate-spin text-orange" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
            </div>
         ) : (
-          <PDFViewer width="100%" height="100%" className="border-none w-full h-full rounded-none">
-            <ProtocolFactory leagueId={initialLeagueId} data={protocolData} />
-          </PDFViewer>
+          <iframe 
+             src={pdfUrl || ''} 
+             className="w-full h-full border-none bg-white"
+             title="Официальный протокол матча"
+          />
         )}
       </div>
 
+      {/* ПРАВАЯ ЧАСТЬ - ПАНЕЛЬ ПОДПИСЕЙ */}
       <div className="w-[480px] h-full bg-[#F4F5F7] flex flex-col shadow-[-20px_0_40px_rgba(0,0,0,0.2)] z-10 shrink-0">
         <div className="px-6 py-3 border-b border-graphite/10 flex justify-between items-center bg-white shrink-0 shadow-sm z-20">
           <div className="flex flex-col">
