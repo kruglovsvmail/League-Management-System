@@ -39,7 +39,7 @@ export const lookupPhone = async (req, res) => {
 
 const fetchUserProfile = async (userId) => {
   const userResult = await pool.query(
-    'SELECT id, first_name, last_name, middle_name, email, phone, avatar_url, global_role, birth_date FROM users WHERE id = $1', 
+    'SELECT id, first_name, last_name, middle_name, email, phone, avatar_url, global_role, birth_date, sign_pin_hash FROM users WHERE id = $1', 
     [userId]
   );
 
@@ -73,6 +73,7 @@ const fetchUserProfile = async (userId) => {
     avatarUrl: user.avatar_url,
     birthDate: user.birth_date, 
     globalRole: user.global_role, 
+    hasSignPin: !!user.sign_pin_hash, // Флаг для фронтенда: установлен ли PIN-код ЭЦП
     leagues: leaguesResult.rows
   };
 };
@@ -116,16 +117,24 @@ export const getMe = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { email, phone, password, avatarUrl } = req.body;
+    // Добавили прием signPin из фронтенда
+    const { email, phone, password, avatarUrl, signPin } = req.body;
 
     await pool.query(
       'UPDATE users SET email = $1, phone = $2, avatar_url = $3 WHERE id = $4',
       [email, phone, avatarUrl, userId]
     );
 
+    // Обновление пароля
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
       await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, userId]);
+    }
+
+    // Обновление PIN-кода для ЭЦП
+    if (signPin) {
+      const hashedPin = await bcrypt.hash(signPin, 10);
+      await pool.query('UPDATE users SET sign_pin_hash = $1 WHERE id = $2', [hashedPin, userId]);
     }
 
     res.json({ success: true, message: 'Профиль обновлен' });
@@ -181,7 +190,6 @@ export const resetPassword = async (req, res) => {
 // БЛОК ОХРАННИКОВ (СИСТЕМА ПРАВ RBAC)
 // ==========================================
 
-// Глобальный админ (Только для суперадминов)
 export const requireGlobalAdmin = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -197,9 +205,8 @@ export const requireGlobalAdmin = async (req, res, next) => {
 const checkLeagueRoleHelper = async (req, res, next, leagueId, allowedRoles) => {
   const userId = req.user.id;
   const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-  if (userRes.rows[0]?.global_role === 'admin') return next(); // Суперадмин может всё
+  if (userRes.rows[0]?.global_role === 'admin') return next(); 
 
-  // ДОБАВЛЕНО: AND end_date IS NULL, чтобы тянуть только действующие роли
   const result = await pool.query(
     'SELECT role FROM league_staff WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL',
     [userId, leagueId]
@@ -230,7 +237,6 @@ export const requireRoleBySeason = (allowedRoles) => async (req, res, next) => {
   } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
 };
 
-// Права на основе Division ID
 export const requireRoleByDivision = (allowedRoles) => async (req, res, next) => {
   try {
     const divisionId = req.params.id || req.params.divisionId;
@@ -319,7 +325,6 @@ export const requireRoleByGame = (allowedRoles) => async (req, res, next) => {
   } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
 };
 
-// ОХРАННИК: Статус матча (Админы лиги + Секретарь)
 export const requireGameStatusAccess = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -327,8 +332,6 @@ export const requireGameStatusAccess = async (req, res, next) => {
     if (userRes.rows[0]?.global_role === 'admin') return next();
 
     const { gameId } = req.params;
-
-    // 1. Узнаем лигу матча
     const leagueRes = await pool.query(`
         SELECT s.league_id 
         FROM games g
@@ -340,7 +343,6 @@ export const requireGameStatusAccess = async (req, res, next) => {
     if (leagueRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
     const leagueId = leagueRes.rows[0].league_id;
 
-    // 2. Получаем АКТИВНЫЕ роли юзера в этой лиге (где end_date IS NULL)
     const staffRes = await pool.query(`
         SELECT role FROM league_staff
         WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
@@ -348,12 +350,10 @@ export const requireGameStatusAccess = async (req, res, next) => {
 
     const userRoles = staffRes.rows.map(r => r.role);
 
-    // 3. Если он админ или менеджер лиги — пускаем сразу
     if (userRoles.includes('top_manager') || userRoles.includes('league_admin')) {
         return next();
     }
 
-    // 4. ЗАЩИТА: Если он ДЕЙСТВУЮЩИЙ судья в этой лиге, только тогда проверяем назначение на матч
     if (userRoles.includes('referee')) {
         const refRes = await pool.query(`
             SELECT 1 FROM game_referee 
@@ -369,7 +369,6 @@ export const requireGameStatusAccess = async (req, res, next) => {
   }
 };
 
-// ОХРАННИК: Протокол и Ростеры (Админы лиги + ДЕЙСТВУЮЩИЙ Секретарь)
 export const requireGameProtocolAccess = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -377,8 +376,6 @@ export const requireGameProtocolAccess = async (req, res, next) => {
     if (userRes.rows[0]?.global_role === 'admin') return next();
 
     const { gameId } = req.params;
-
-    // 1. Узнаем лигу матча
     const leagueRes = await pool.query(`
         SELECT s.league_id 
         FROM games g
@@ -390,7 +387,6 @@ export const requireGameProtocolAccess = async (req, res, next) => {
     if (leagueRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
     const leagueId = leagueRes.rows[0].league_id;
 
-    // 2. Получаем АКТИВНЫЕ роли юзера в этой лиге
     const staffRes = await pool.query(`
         SELECT role FROM league_staff
         WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
@@ -398,12 +394,10 @@ export const requireGameProtocolAccess = async (req, res, next) => {
 
     const userRoles = staffRes.rows.map(r => r.role);
 
-    // 3. Менеджеров и админов пускаем
     if (userRoles.includes('top_manager') || userRoles.includes('league_admin')) {
         return next();
     }
 
-    // 4. ЗАЩИТА: Только если он ДЕЙСТВУЮЩИЙ судья, проверяем, секретарь ли он на этом матче
     if (userRoles.includes('referee')) {
         const refRes = await pool.query(`
             SELECT 1 FROM game_referee 
@@ -419,7 +413,6 @@ export const requireGameProtocolAccess = async (req, res, next) => {
   }
 };
 
-// ОХРАННИК: Права на основе Tournament Team ID
 export const requireRoleByTournamentTeam = (allowedRoles) => async (req, res, next) => {
   try {
     const teamId = req.params.id;
@@ -434,7 +427,6 @@ export const requireRoleByTournamentTeam = (allowedRoles) => async (req, res, ne
   } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
 };
 
-// ОХРАННИК: Права на основе Tournament Roster ID
 export const requireRoleByTournamentRoster = (allowedRoles) => async (req, res, next) => {
   try {
     const rosterId = req.params.id;

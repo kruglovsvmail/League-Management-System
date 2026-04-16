@@ -500,8 +500,12 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
             {/* Панель 2: Спорт (Таблица и Плей-офф) */}
             <div className={`w-full shrink-0 transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${viewMode === 'sport' ? 'relative opacity-100 translate-x-0' : 'absolute top-0 left-0 opacity-0 translate-x-10 pointer-events-none'}`}>
               <div className="p-6 md:p-8 flex flex-col gap-8 bg-gradient-to-b from-graphite/[0.03] to-transparent border-t border-graphite/5">
-                <DivisionStandings division={division} />
-                <DivisionPlayoffs divisionId={division.id} />
+                {division.tournament_type !== 'playoff' && (
+                  <DivisionStandings division={division} />
+                )}
+                {division.tournament_type !== 'regular' && (
+                  <DivisionPlayoffs divisionId={division.id} />
+                )}
               </div>
             </div>
 

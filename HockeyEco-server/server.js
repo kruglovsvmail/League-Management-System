@@ -1,3 +1,4 @@
+// HockeyEco-server/server.js
 import 'dotenv/config'; 
 import express from 'express';
 import cors from 'cors';
@@ -9,7 +10,7 @@ import setupTimerSockets from './sockets/timerHandler.js';
 import setupCronJobs from './jobs/cronTasks.js';
 
 // Импортируем маршруты
-import publicRoutes from './routes/publicRoutes.js'; // <-- НАШ НОВЫЙ РОУТЕР
+import publicRoutes from './routes/publicRoutes.js'; 
 import authRoutes from './routes/authRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
@@ -24,6 +25,7 @@ import registryRoutes from './routes/registryRoutes.js';
 import teamManagementRoutes from './routes/teamManagementRoutes.js';
 import gameRoutes from './routes/gameRoutes.js';
 import gameLiveDeskRoutes from './routes/gameLiveDeskRoutes.js';
+import protocolPDFRoutes from './routes/protocolPDFRoutes.js'; // <-- НАШ НОВЫЙ РОУТЕР
 
 import pool from './config/db.js';
 
@@ -74,6 +76,7 @@ app.use('/api', registryRoutes);
 app.use('/api', teamManagementRoutes);
 app.use('/api', gameRoutes);
 app.use('/api', gameLiveDeskRoutes);
+app.use('/api', protocolPDFRoutes); // <-- ПОДКЛЮЧИЛИ РОУТЕР ДЛЯ ПРОТОКОЛОВ
 
 // Инициализация вынесенной логики
 setupTimerSockets(io);

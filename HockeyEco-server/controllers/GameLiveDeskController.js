@@ -1,6 +1,17 @@
 // HockeyEco-server/controllers/GameLiveDeskController.js
 import pool from '../config/db.js';
 
+/**
+ * Вспомогательная функция для установки флага необходимости пересчета статистики.
+ * Срабатывает только если матч уже находится в статусе 'finished'.
+ */
+const triggerRecalcFlag = async (clientOrPool, gameId) => {
+    await clientOrPool.query(
+        `UPDATE games SET needs_recalc = true WHERE id = $1 AND status = 'finished'`, 
+        [gameId]
+    );
+};
+
 export const getGameEvents = async (req, res) => {
     try {
         const { gameId } = req.params;
@@ -103,6 +114,9 @@ export const createGameEvent = async (req, res) => {
             }
         }
 
+        // Если матч завершен, помечаем, что нужен пересчет
+        await triggerRecalcFlag(client, gameId);
+
         await client.query('COMMIT');
         res.json({ success: true, eventId });
     } catch (err) {
@@ -135,7 +149,6 @@ export const updateGameEvent = async (req, res) => {
         
         const oldEvent = oldEvRes.rows[0];
 
-        // Обработка изменения счета для обычных голов
         if (oldEvent.event_type === 'goal' && event_type === 'goal' && oldEvent.team_id !== parseInt(team_id)) {
             const gameRes = await client.query('SELECT home_team_id FROM games WHERE id = $1', [gameId]);
             if (gameRes.rows.length > 0) {
@@ -156,7 +169,6 @@ export const updateGameEvent = async (req, res) => {
         const isGoalEvent = (event_type === 'goal');
         const isShootoutEvent = (event_type === 'shootout_goal' || event_type === 'shootout_miss');
 
-        // ВАЖНО: Добавлено обновление event_type = $15
         await client.query(`
             UPDATE game_events SET
                 period = $1, time_seconds = $2, team_id = $3,
@@ -172,6 +184,8 @@ export const updateGameEvent = async (req, res) => {
             eventId,
             event_type
         ]);
+
+        await triggerRecalcFlag(client, gameId);
 
         await client.query('COMMIT');
         res.json({ success: true });
@@ -213,6 +227,8 @@ export const deleteGameEvent = async (req, res) => {
         }
 
         await client.query('DELETE FROM game_events WHERE id = $1', [eventId]);
+
+        await triggerRecalcFlag(client, gameId);
 
         await client.query('COMMIT');
         res.json({ success: true });
@@ -261,6 +277,11 @@ export const saveEventPlusMinus = async (req, res) => {
         const { plus_players, minus_players, scoring_team_id, conceding_team_id } = req.body;
 
         await client.query('BEGIN');
+
+        // Находим ID игры для флага пересчета
+        const gameIdRes = await client.query('SELECT game_id FROM game_events WHERE id = $1', [eventId]);
+        const gameId = gameIdRes.rows[0]?.game_id;
+
         await client.query('DELETE FROM game_plus_minus WHERE event_id = $1', [eventId]);
 
         if (plus_players && plus_players.length > 0) {
@@ -285,6 +306,8 @@ export const saveEventPlusMinus = async (req, res) => {
             await client.query(`INSERT INTO game_plus_minus (event_id, team_id, player_id) VALUES ${minusValues.join(', ')}`, minusParams);
         }
 
+        if (gameId) await triggerRecalcFlag(client, gameId);
+
         await client.query('COMMIT');
         res.json({ success: true });
     } catch (err) {
@@ -293,5 +316,203 @@ export const saveEventPlusMinus = async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка сохранения' });
     } finally {
         client.release();
+    }
+};
+
+export const updateShootoutStatus = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        const { status } = req.body; 
+        
+        await pool.query(
+            'UPDATE game_timers SET shootout_status = $1 WHERE game_id = $2',
+            [status, gameId]
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка обновления статуса буллитов:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+
+export const finishShootout = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { gameId } = req.params;
+        await client.query('BEGIN');
+
+        const gameRes = await client.query('SELECT home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+        if (gameRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        const game = gameRes.rows[0];
+
+        const allGoalsRes = await client.query(`
+            SELECT team_id, event_type 
+            FROM game_events 
+            WHERE game_id = $1 AND event_type IN ('goal', 'shootout_goal')
+        `, [gameId]);
+        
+        let homeReg = 0, awayReg = 0;
+        let homeSO = 0, awaySO = 0;
+
+        allGoalsRes.rows.forEach(e => {
+            if (e.event_type === 'goal') {
+                if (e.team_id === game.home_team_id) homeReg++;
+                else if (e.team_id === game.away_team_id) awayReg++;
+            } else if (e.event_type === 'shootout_goal') {
+                if (e.team_id === game.home_team_id) homeSO++;
+                else if (e.team_id === game.away_team_id) awaySO++;
+            }
+        });
+
+        if (homeSO === awaySO) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: 'Счет в серии равный. Выявите победителя.' });
+        }
+
+        let finalHome = homeReg;
+        let finalAway = awayReg;
+
+        if (homeSO > awaySO) finalHome++;
+        else finalAway++;
+
+        await client.query(
+            'UPDATE games SET home_score = $2, away_score = $3, end_type = $4 WHERE id = $1', 
+            [gameId, finalHome, finalAway, 'so']
+        );
+
+        await client.query(
+            'UPDATE game_timers SET shootout_status = $1 WHERE game_id = $2',
+            ['finished_win', gameId]
+        );
+
+        await triggerRecalcFlag(client, gameId);
+
+        await client.query('COMMIT');
+        res.json({ success: true, winner: homeSO > awaySO ? 'home' : 'away' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка завершения серии буллитов:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    } finally {
+        client.release();
+    }
+};
+
+export const reopenShootout = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { gameId } = req.params;
+        await client.query('BEGIN');
+
+        const gameRes = await client.query('SELECT home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+        if (gameRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        const game = gameRes.rows[0];
+
+        const allGoalsRes = await client.query(`
+            SELECT team_id 
+            FROM game_events 
+            WHERE game_id = $1 AND event_type = 'goal'
+        `, [gameId]);
+        
+        let homeReg = 0, awayReg = 0;
+
+        allGoalsRes.rows.forEach(e => {
+            if (e.team_id === game.home_team_id) homeReg++;
+            else if (e.team_id === game.away_team_id) awayReg++;
+        });
+
+        await client.query(
+            'UPDATE games SET home_score = $2, away_score = $3, end_type = NULL WHERE id = $1', 
+            [gameId, homeReg, awayReg]
+        );
+
+        await client.query(
+            'UPDATE game_timers SET shootout_status = $1 WHERE game_id = $2',
+            ['active', gameId]
+        );
+
+        await triggerRecalcFlag(client, gameId);
+
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка переоткрытия серии буллитов:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    } finally {
+        client.release();
+    }
+};
+
+export const saveGoalieLog = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        const { id, time_seconds, home_goalie_id, away_goalie_id } = req.body;
+        
+        if (id) {
+            await pool.query(`
+                UPDATE game_goalie_log 
+                SET time_seconds = $1, home_goalie_id = $2, away_goalie_id = $3
+                WHERE id = $4 AND game_id = $5
+            `, [time_seconds, home_goalie_id || null, away_goalie_id || null, id, gameId]);
+        } else {
+            await pool.query(`
+                INSERT INTO game_goalie_log (game_id, time_seconds, home_goalie_id, away_goalie_id)
+                VALUES ($1, $2, $3, $4)
+            `, [gameId, time_seconds, home_goalie_id || null, away_goalie_id || null]);
+        }
+        
+        await triggerRecalcFlag(pool, gameId);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка сохранения лога вратарей:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+
+export const deleteGoalieLog = async (req, res) => {
+    try {
+        const { gameId, logId } = req.params;
+        
+        const countRes = await pool.query('SELECT COUNT(*) as count FROM game_goalie_log WHERE game_id = $1', [gameId]);
+        const totalLogs = parseInt(countRes.rows[0].count, 10);
+
+        if (totalLogs <= 1) {
+            return res.status(400).json({ success: false, error: 'Нельзя удалить единственную запись. Вы можете только отредактировать её.' });
+        }
+        
+        await pool.query('DELETE FROM game_goalie_log WHERE id = $1 AND game_id = $2', [logId, gameId]);
+        await triggerRecalcFlag(pool, gameId);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка удаления лога вратарей:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+
+export const saveShotsSummary = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        const { team_id, period, shots_count } = req.body;
+
+        await pool.query(`
+            INSERT INTO game_shots_summary (game_id, team_id, period, shots_count)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (game_id, team_id, period) 
+            DO UPDATE SET shots_count = EXCLUDED.shots_count
+        `, [gameId, team_id, period, shots_count]);
+        
+        await triggerRecalcFlag(pool, gameId);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка сохранения сводки бросков:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 };

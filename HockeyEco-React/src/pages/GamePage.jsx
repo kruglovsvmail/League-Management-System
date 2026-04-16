@@ -54,6 +54,7 @@ export function GamePage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   
   const [obsCopied, setObsCopied] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   const loadAllData = async () => {
     try {
@@ -121,33 +122,65 @@ export function GamePage() {
     setTimeout(() => setObsCopied(false), 2000);
   };
 
+  const handleRecalculate = async (e) => {
+    e.stopPropagation();
+    setIsRecalculating(true);
+    try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${game.id}/recalculate`, {
+            method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        if (res.ok) await loadAllData();
+    } catch (err) { console.error(err); } 
+    finally { setIsRecalculating(false); }
+  };
+
   const getStatusBadge = () => {
     if (!game) return null;
-    let badgeClass = "flex items-center justify-center px-5 py-2.5 rounded-xl text-[12px] font-black tracking-widest uppercase shadow-sm leading-none border shrink-0 ";
+    let badgeClass = "flex items-center w-[240px] justify-center px-5 py-2.5 rounded-md text-[12px] font-black tracking-widest uppercase shadow-sm leading-none border shrink-0 transition-all ";
     let content = "";
 
     switch (game.status) {
       case 'live': 
         badgeClass += canManageStatus 
-          ? "bg-blue-500 text-white border-blue-500 hover:bg-blue-600 animate-pulse shadow-[0_4px_15px_rgba(59,130,246,0.3)] cursor-pointer group transition-all" 
+          ? "bg-blue-500 text-white border-blue-500 hover:bg-blue-600 animate-pulse shadow-[0_4px_15px_rgba(59,130,246,0.3)] cursor-pointer group" 
           : "bg-blue-500 text-white border-blue-500 shadow-[0_4px_15px_rgba(59,130,246,0.3)]"; 
         content = "LIVE (Идет сейчас)"; 
         break;
       case 'finished': 
-        badgeClass += canManageStatus 
-          ? "bg-status-accepted/80 text-white border-status-accepted/20 hover:bg-status-accepted cursor-pointer group transition-all" 
-          : "bg-status-accepted/80 text-white border-status-accepted/20"; 
-        content = "Матч завершен"; 
+        if (game.needs_recalc) {
+            content = isRecalculating ? "Пересчет..." : "Пересчет статистики"; 
+            if (canManageStatus) {
+                badgeClass += isRecalculating 
+                  ? "bg-graphite/40 text-white border-transparent cursor-wait w-[240px] flex justify-center" 
+                  : "bg-status-accepted/80 text-white hover:bg-status-accepted cursor-pointer shadow-[0_4px_15px_rgba(34,197,94,0.3)] group w-[210px] flex justify-center"; 
+                
+                return (
+                    <button className={badgeClass} onClick={handleRecalculate} disabled={isRecalculating} title="Пересчитать статистику">
+                        <span>{content}</span>
+                        {isRecalculating ? (
+                           <svg className="w-4 h-4 ml-2 animate-spin shrink-0" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        ) : (
+                           <svg className="w-4 h-4 ml-2 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        )}
+                    </button>
+                );
+            }
+        } else {
+            badgeClass += canManageStatus 
+              ? "bg-status-accepted/80 text-white border-status-accepted/20 hover:bg-status-accepted cursor-pointer group" 
+              : "bg-status-accepted/80 text-white border-status-accepted/20"; 
+            content = "Матч завершен"; 
+        }
         break;
       case 'cancelled': 
         badgeClass += canManageStatus 
-          ? "bg-status-rejected/80 text-white border-status-rejected/20 hover:bg-status-rejected cursor-pointer group transition-all" 
+          ? "bg-status-rejected/80 text-white border-status-rejected/20 hover:bg-status-rejected cursor-pointer group" 
           : "bg-status-rejected/80 text-white border-status-rejected/20"; 
         content = "Матч отменен"; 
         break;
       default: 
         badgeClass += canManageStatus 
-          ? "bg-orange text-white border-orange hover:bg-orange/90 cursor-pointer group transition-all" 
+          ? "bg-orange text-white border-orange hover:bg-orange/90 cursor-pointer group" 
           : "bg-orange text-white border-orange"; 
         content = "В расписании"; 
         break;

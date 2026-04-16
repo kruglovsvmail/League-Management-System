@@ -11,7 +11,6 @@ import { DatePicker } from '../../ui/DatePicker';
 import { Uploader } from '../../ui/Uploader';
 import { getToken, getImageUrl } from '../../utils/helpers';
 
-// === ПОДКЛЮЧАЕМ НАШ НОВЫЙ КОМПОНЕНТ ===
 import { PlayoffStructureView } from './PlayoffStructureView';
 
 const TYPE_OPTIONS = ['Регулярный чемпионат', 'Плей-офф', 'Регулярный + Плей-офф'];
@@ -40,10 +39,25 @@ const getInitialFormData = (div = null) => {
       transfer_start: div.transfer_start ? div.transfer_start.split('T')[0] : null,
       transfer_end: div.transfer_end ? div.transfer_end.split('T')[0] : null,
       ranking_criteria: parsedCriteria,
-      periods_count: div.periods_count ?? 3, period_length: div.period_length ?? 20, 
-      has_overtime: div.has_overtime ?? true, ot_length: div.ot_length ?? 5, 
-      has_shootouts: div.has_shootouts ?? true, so_length: div.so_length ?? 3, 
-      track_plus_minus: div.track_plus_minus ?? false,
+      
+      // Flat Fields for Regular
+      reg_periods_count: div.reg_periods_count ?? 3, 
+      reg_period_length: div.reg_period_length ?? 20, 
+      reg_has_overtime: div.reg_has_overtime ?? true, 
+      reg_ot_length: div.reg_ot_length ?? 5, 
+      reg_has_shootouts: div.reg_has_shootouts ?? true, 
+      reg_so_length: div.reg_so_length ?? 3, 
+      reg_track_plus_minus: div.reg_track_plus_minus ?? false,
+
+      // Flat Fields for Playoff
+      playoff_periods_count: div.playoff_periods_count ?? 3, 
+      playoff_period_length: div.playoff_period_length ?? 20, 
+      playoff_has_overtime: div.playoff_has_overtime ?? true, 
+      playoff_ot_length: div.playoff_ot_length ?? 20, 
+      playoff_has_shootouts: div.playoff_has_shootouts ?? false, 
+      playoff_so_length: div.playoff_so_length ?? 0, 
+      playoff_track_plus_minus: div.playoff_track_plus_minus ?? false,
+
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
       points_win_reg: div.points_win_reg ?? 2, points_win_ot: div.points_win_ot ?? 2, points_draw: div.points_draw ?? 1, points_loss_ot: div.points_loss_ot ?? 1, points_loss_reg: div.points_loss_reg ?? 0,
       points_tech_win: div.points_tech_win ?? 3, points_tech_loss: div.points_tech_loss ?? 0, points_tech_draw: div.points_tech_draw ?? 0,
@@ -52,7 +66,10 @@ const getInitialFormData = (div = null) => {
   return {
     name: '', short_name: '', tournament_type: 'Регулярный чемпионат', description: '',
     start_date: null, end_date: null, application_start: null, application_end: null, transfer_start: null, transfer_end: null,
-    periods_count: 3, period_length: 20, has_overtime: true, ot_length: 5, has_shootouts: true, so_length: 3, track_plus_minus: false,
+    
+    reg_periods_count: 3, reg_period_length: 20, reg_has_overtime: true, reg_ot_length: 5, reg_has_shootouts: true, reg_so_length: 3, reg_track_plus_minus: false,
+    playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false,
+    
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
     points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
     points_tech_win: 3, points_tech_loss: 0, points_tech_draw: 0,
@@ -60,7 +77,6 @@ const getInitialFormData = (div = null) => {
   };
 };
 
-// КОМПОНЕНТ ДЛЯ ОТОБРАЖЕНИЯ СХЕМЫ ПЛЕЙ-ОФФ И ВЫЗОВА POPUP-ОКНА
 const PlayoffSummary = ({ divisionId }) => {
     const [brackets, setBrackets] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -80,7 +96,6 @@ const PlayoffSummary = ({ divisionId }) => {
 
     useEffect(() => {
         fetchBrackets();
-        // Слушаем сообщение от Popup-окна. Если там нажали "Сохранить", мы обновляем схему тут.
         const handleMessage = (event) => {
             if (event.data === 'PLAYOFF_SAVED') fetchBrackets();
         };
@@ -89,7 +104,7 @@ const PlayoffSummary = ({ divisionId }) => {
     }, [divisionId]);
 
     const openConstructorPopup = () => {
-        const url = `/playoff-editor/${divisionId}`; // Путь, который нужно будет прописать в роутере
+        const url = `/playoff-editor/${divisionId}`; 
         const features = 'width=1400,height=900,left=100,top=100,toolbar=no,menubar=no,location=no,status=no,scrollbars=yes,resizable=yes';
         window.open(url, 'PlayoffEditor', features);
     };
@@ -111,7 +126,6 @@ const PlayoffSummary = ({ divisionId }) => {
             {brackets.length > 0 ? (
                 <div className="flex flex-col gap-5">
                     <span className="text-[14px] font-bold text-graphite uppercase tracking-wider ml-1">Текущая структура</span>
-                    {/* === ЗАМЕНИЛИ СТАРЫЙ КОД НА НАШУ НОВУЮ ВИТРИНУ === */}
                     <PlayoffStructureView brackets={brackets} />
                 </div>
             ) : (
@@ -122,7 +136,6 @@ const PlayoffSummary = ({ divisionId }) => {
         </div>
     );
 };
-
 
 export function DivisionsTab({ setToast, setHeaderActions }) {
   const { user, selectedLeague } = useOutletContext();
@@ -137,7 +150,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Для отслеживания изменений (isDirty)
   const [originalData, setOriginalData] = useState(null);
   const [formData, setFormData] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
@@ -145,7 +157,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const [logoCleared, setLogoCleared] = useState(false);
   const [regCleared, setRegCleared] = useState(false);
 
-  // Навигация
   const [activeSection, setActiveSection] = useState('general');
 
   useEffect(() => { if (selectedLeague?.id) fetchSeasons(); }, [selectedLeague]);
@@ -201,7 +212,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
     }
   }, [selectedDivisionId, divisions]);
 
-  // Управление кнопкой в шапке (Header Actions)
   useEffect(() => {
     if (setHeaderActions && canManageDivisions && selectedSeasonId) {
       const isCreatingNew = selectedDivisionId === 'new';
@@ -255,7 +265,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
     return true;
   };
 
-  // Проверка на изменения
   const isDirty = () => {
     if (!formData || !originalData) return false;
     const hasDataChanged = JSON.stringify(formData) !== JSON.stringify(originalData);
@@ -301,7 +310,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
           setSelectedDivisionId(savedDivId);
       }
       
-      // Сброс файлов и обновление оригинальных данных после сохранения
       setLogoFile(null);
       setRegFile(null);
       setLogoCleared(false);
@@ -316,8 +324,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const showRegular = typeVal === 'regular' || typeVal === 'mixed';
   const showPlayoff = typeVal === 'playoff' || typeVal === 'mixed';
 
-  // ВРЕМЕННЫЕ ОГРАНИЧЕНИЯ УДАЛЕНЫ
-  // Теперь блокировка зависит ТОЛЬКО от прав доступа пользователя
   const isLocked = !canManageDivisions;
   const isCreatingNew = selectedDivisionId === 'new';
 
@@ -333,10 +339,57 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   if (showRegular) menuItems.push({ id: 'regular', label: 'Регулярный чемпионат' });
   if (showPlayoff) menuItems.push({ id: 'playoff', label: 'Плей-офф' });
 
-  // Если пытаемся отрендерить вкладку, которой нет для данного типа турнира
   if (formData && !menuItems.find(m => m.id === activeSection)) {
     setActiveSection('general');
   }
+
+  // --- Вспомогательный рендер для блоков механики (DRY) ---
+  const renderMechanicsBlock = (prefix, title) => (
+     <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-5">
+        <span className="text-[14px] font-bold text-graphite uppercase tracking-wider">{title}</span>
+        
+        <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
+            <div><div className="text-[13px] font-semibold text-graphite">Количество периодов</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Число периодов в матче</div></div>
+            <Stepper initialValue={formData[`${prefix}_periods_count`]} onChange={(v) => handleChange(`${prefix}_periods_count`, v)} min={1} max={5} />
+        </div>
+        
+        <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
+            <div><div className="text-[13px] font-semibold text-graphite">Длина (мин)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Длительность одного периода</div></div>
+            <Stepper initialValue={formData[`${prefix}_period_length`]} onChange={(v) => handleChange(`${prefix}_period_length`, v)} min={5} max={60} />
+        </div>
+
+        <div className="flex flex-col gap-3 border-b border-graphite/5 pb-4">
+            <div className="flex justify-between items-center gap-4">
+                <div><div className="text-[13px] font-semibold text-graphite">Овертайм</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Доп. период при ничьей</div></div>
+                <Switch checked={formData[`${prefix}_has_overtime`]} onChange={(e) => handleChange(`${prefix}_has_overtime`, e.target.checked)} disabled={isLocked} />
+            </div>
+            {formData[`${prefix}_has_overtime`] && (
+                <div className="flex justify-between items-center gap-4 pt-2 animate-fade-in-down">
+                    <div className="text-[12px] text-graphite-light font-semibold">Длительность ОТ (мин)</div>
+                    <Stepper initialValue={formData[`${prefix}_ot_length`]} onChange={(v) => handleChange(`${prefix}_ot_length`, v)} min={1} max={30} />
+                </div>
+            )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-b border-graphite/5 pb-4">
+            <div className="flex justify-between items-center gap-4">
+                <div><div className="text-[13px] font-semibold text-graphite">Буллиты</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Послематчевые броски</div></div>
+                <Switch checked={formData[`${prefix}_has_shootouts`]} onChange={(e) => handleChange(`${prefix}_has_shootouts`, e.target.checked)} disabled={isLocked} />
+            </div>
+            {formData[`${prefix}_has_shootouts`] && (
+                <div className="flex justify-between items-center gap-4 pt-2 animate-fade-in-down">
+                    <div className="text-[12px] text-graphite-light font-semibold">Мин. бросков</div>
+                    <Stepper initialValue={formData[`${prefix}_so_length`]} onChange={(v) => handleChange(`${prefix}_so_length`, v)} min={0} max={10} />
+                </div>
+            )}
+        </div>
+
+        <div className="flex justify-between items-center gap-4">
+            <div><div className="text-[13px] font-semibold text-graphite">Считать (+/-)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Учет полезности игроков</div></div>
+            <Switch checked={formData[`${prefix}_track_plus_minus`]} onChange={(e) => handleChange(`${prefix}_track_plus_minus`, e.target.checked)} disabled={isLocked} />
+        </div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start animate-fade-in-down relative min-h-[500px]">
@@ -345,7 +398,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       {/* ЛЕВЫЙ САЙДБАР */}
       <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6">
         
-        {/* Контролы выбора */}
         <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-4">
           <Select 
             label="Сезон"
@@ -364,7 +416,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
           />
         </div>
 
-        {/* Навигационное меню */}
         {formData && (
             <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-3 flex flex-col gap-1">
                 {menuItems.map(item => (
@@ -383,7 +434,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             </div>
         )}
 
-        {/* Кнопка "Сохранить" */}
         {formData && canManageDivisions && !isLocked && activeSection !== 'playoff' && (
             <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-4">
                 <Button 
@@ -506,29 +556,9 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 3: МЕХАНИКА МАТЧА */}
                 {activeSection === 'mechanics' && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in-down">
-                        <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-5">
-                            <span className="text-[14px] font-bold text-graphite uppercase">Основное время</span>
-                            <div className="flex justify-between items-center gap-4"><div><div className="text-[13px] font-semibold text-graphite">Количество периодов</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Число периодов в матче</div></div><Stepper initialValue={formData.periods_count} onChange={(v) => handleChange('periods_count', v)} min={1} max={5} /></div>
-                            <div className="flex justify-between items-center gap-4 border-t border-graphite/5 pt-4"><div><div className="text-[13px] font-semibold text-graphite">Длина (мин)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Длительность одного периода</div></div><Stepper initialValue={formData.period_length} onChange={(v) => handleChange('period_length', v)} min={5} max={60} /></div>
-                        </div>
-
-                        <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-5">
-                            <span className="text-[14px] font-bold text-graphite uppercase">Исход матча</span>
-                            <div className="flex flex-col gap-3">
-                                <div className="flex justify-between items-center gap-4"><div><div className="text-[13px] font-semibold text-graphite">Овертайм</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Доп. период при ничьей</div></div><Switch checked={formData.has_overtime} onChange={(e) => handleChange('has_overtime', e.target.checked)} disabled={isLocked} /></div>
-                                {formData.has_overtime && (<div className="flex justify-between items-center gap-4 pt-2 border-t border-graphite/5 animate-fade-in-down"><div className="text-[12px] text-graphite-light font-semibold">Длительность ОТ (мин)</div><Stepper initialValue={formData.ot_length} onChange={(v) => handleChange('ot_length', v)} min={1} max={20} /></div>)}
-                            </div>
-                            <div className="flex flex-col gap-3 border-t border-graphite/5 pt-4">
-                                <div className="flex justify-between items-center gap-4"><div><div className="text-[13px] font-semibold text-graphite">Буллиты</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Послематчевые броски</div></div><Switch checked={formData.has_shootouts} onChange={(e) => handleChange('has_shootouts', e.target.checked)} disabled={isLocked} /></div>
-                                {formData.has_shootouts && (<div className="flex justify-between items-center gap-4 pt-2 border-t border-graphite/5 animate-fade-in-down"><div className="text-[12px] text-graphite-light font-semibold">Мин. бросков</div><Stepper initialValue={formData.so_length} onChange={(v) => handleChange('so_length', v)} min={1} max={10} /></div>)}
-                            </div>
-                        </div>
-
-                        <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-5">
-                            <span className="text-[14px] font-bold text-graphite uppercase">Статистика</span>
-                            <div className="flex justify-between items-center gap-4"><div><div className="text-[13px] font-semibold text-graphite">Считать (+/-)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Учет показателя полезности игроков</div></div><Switch checked={formData.track_plus_minus} onChange={(e) => handleChange('track_plus_minus', e.target.checked)} disabled={isLocked} /></div>
-                        </div>
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-fade-in-down">
+                        {showRegular && renderMechanicsBlock('reg', 'Регулярный чемпионат')}
+                        {showPlayoff && renderMechanicsBlock('playoff', 'Плей-офф')}
                     </div>
                 )}
 
@@ -563,7 +593,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                     </div>
                 )}
 
-                {/* РАЗДЕЛ 5: ПЛЕЙ-ОФФ (ТЕПЕРЬ ТОЛЬКО СХЕМА И КНОПКА POPUP) */}
+                {/* РАЗДЕЛ 5: ПЛЕЙ-ОФФ */}
                 {activeSection === 'playoff' && showPlayoff && (
                     <div className="animate-fade-in-down w-full h-full">
                         {isCreatingNew ? (

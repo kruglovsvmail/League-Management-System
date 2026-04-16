@@ -114,8 +114,8 @@ export const createDivision = async (req, res) => {
             description, points_win_reg, points_win_ot, points_draw,
             points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
             ranking_criteria, 
-            periods_count, period_length, has_overtime, ot_length, 
-            has_shootouts, so_length, track_plus_minus,
+            reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus,
+            playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus,
             req_med_cert, req_insurance, req_consent, digital_applications_only
         } = req.body;
 
@@ -131,12 +131,15 @@ export const createDivision = async (req, res) => {
                 points_win_reg, points_win_ot, points_draw,
                 points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
                 ranking_criteria, is_published, 
-                periods_count, period_length, has_overtime, ot_length, 
-                has_shootouts, so_length, track_plus_minus,
+                reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus,
+                playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus,
                 req_med_cert, req_insurance, req_consent, digital_applications_only
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
-                false, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
+                false, 
+                $21, $22, $23, $24, $25, $26, $27, 
+                $28, $29, $30, $31, $32, $33, $34,
+                $35, $36, $37, $38
             )
             RETURNING id
         `, [
@@ -148,10 +151,9 @@ export const createDivision = async (req, res) => {
             points_win_reg, points_win_ot, points_draw,
             points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
             ranking_criteria ? JSON.stringify(ranking_criteria) : null,
-            periods_count ?? 3, period_length ?? 20, has_overtime ?? true, ot_length ?? 5, 
-            has_shootouts ?? true, so_length ?? 3, track_plus_minus ?? false,
-            req_med_cert ?? true, req_insurance ?? true, req_consent ?? true, 
-            digital_applications_only !== undefined ? digital_applications_only : true
+            reg_periods_count ?? 3, reg_period_length ?? 20, reg_has_overtime ?? true, reg_ot_length ?? 5, reg_has_shootouts ?? true, reg_so_length ?? 3, reg_track_plus_minus ?? false,
+            playoff_periods_count ?? 3, playoff_period_length ?? 20, playoff_has_overtime ?? true, playoff_ot_length ?? 20, playoff_has_shootouts ?? false, playoff_so_length ?? 0, playoff_track_plus_minus ?? false,
+            req_med_cert ?? true, req_insurance ?? true, req_consent ?? true, digital_applications_only !== undefined ? digital_applications_only : true
         ]);
 
         res.json({ success: true, id: result.rows[0].id });
@@ -168,7 +170,8 @@ export const updateDivision = async (req, res) => {
             name, short_name, tournament_type, start_date, end_date, application_start, application_end,
             transfer_start, transfer_end, description, points_win_reg, points_win_ot, points_draw, points_loss_ot,
             points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria, 
-            periods_count, period_length, has_overtime, ot_length, has_shootouts, so_length, track_plus_minus,
+            reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus,
+            playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus,
             req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations
         } = req.body;
 
@@ -183,17 +186,17 @@ export const updateDivision = async (req, res) => {
                 description = $10, points_win_reg = $11, points_win_ot = $12, points_draw = $13,
                 points_loss_ot = $14, points_loss_reg = $15, points_tech_win = $16, points_tech_loss = $17, points_tech_draw = $18,
                 ranking_criteria = $19,
-                periods_count = $21, period_length = $22, has_overtime = $23, ot_length = $24, 
-                has_shootouts = $25, so_length = $26, track_plus_minus = $27,
-                req_med_cert = $28, req_insurance = $29, req_consent = $30, digital_applications_only = $31
+                reg_periods_count = $21, reg_period_length = $22, reg_has_overtime = $23, reg_ot_length = $24, reg_has_shootouts = $25, reg_so_length = $26, reg_track_plus_minus = $27,
+                playoff_periods_count = $28, playoff_period_length = $29, playoff_has_overtime = $30, playoff_ot_length = $31, playoff_has_shootouts = $32, playoff_so_length = $33, playoff_track_plus_minus = $34,
+                req_med_cert = $35, req_insurance = $36, req_consent = $37, digital_applications_only = $38
             WHERE id = $20
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
             transfer_start || null, transfer_end || null, description, points_win_reg, points_win_ot, points_draw,
             points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
             ranking_criteria ? JSON.stringify(ranking_criteria) : null, id,
-            periods_count, period_length, has_overtime, ot_length, 
-            has_shootouts, so_length, track_plus_minus,
+            reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus,
+            playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus,
             req_med_cert, req_insurance, req_consent, digital_applications_only
         ]);
 
@@ -319,11 +322,9 @@ export const getPlayoffBracket = async (req, res) => {
     try {
         const { id } = req.params;
         
-        // Запрашиваем сетки дивизиона
         const bracketsRes = await pool.query('SELECT * FROM playoff_brackets WHERE division_id = $1 ORDER BY is_main DESC, id ASC', [id]);
         const brackets = bracketsRes.rows;
 
-        // Для каждой сетки собираем вложенные раунды и пары
         for (let b of brackets) {
             const roundsRes = await pool.query('SELECT * FROM playoff_rounds WHERE bracket_id = $1 ORDER BY order_index ASC', [b.id]);
             b.rounds = roundsRes.rows;
@@ -381,9 +382,6 @@ export const savePlayoffConstructor = async (req, res) => {
 
         await client.query('BEGIN');
 
-        // =========================================================================
-        // ВАЛИДАЦИЯ И АВТО-ОТМЕНА ЛИШНИХ МАТЧЕЙ
-        // =========================================================================
         const gamesRes = await client.query(`
             SELECT id, home_team_id, away_team_id, status, stage_label 
             FROM games 
@@ -403,7 +401,6 @@ export const savePlayoffConstructor = async (req, res) => {
                 roundGames.forEach(g => {
                     if (!g.home_team_id || !g.away_team_id) return;
                     
-                    // Сортируем айдишники, чтобы (A-B) и (B-A) попадали в одну группу
                     const pairKey = [g.home_team_id, g.away_team_id].sort().join('-');
                     if (!pairGroups[pairKey]) pairGroups[pairKey] = { played: 0, scheduled: [] };
                     
@@ -417,7 +414,6 @@ export const savePlayoffConstructor = async (req, res) => {
                 for (const pairKey in pairGroups) {
                     const group = pairGroups[pairKey];
                     
-                    // Жесткая блокировка, если УЖЕ СЫГРАНО больше нового лимита (на всякий случай, как бэкенд защита)
                     if (group.played > maxGames) {
                         await client.query('ROLLBACK');
                         return res.status(400).json({
@@ -426,12 +422,9 @@ export const savePlayoffConstructor = async (req, res) => {
                         });
                     }
                     
-                    // Мягкая авто-отмена: если (Сыгранные + Запланированные) больше лимита, 
-                    // мы переводим в cancelled лишние несыгранные (scheduled) матчи.
                     const totalActive = group.played + group.scheduled.length;
                     if (totalActive > maxGames) {
                         const excess = totalActive - maxGames;
-                        // Так как мы сортировали ORDER BY id DESC, первые элементы массива — это самые последние созданные матчи
                         for (let i = 0; i < excess; i++) {
                             gamesToCancel.push(group.scheduled[i]);
                         }
@@ -443,7 +436,6 @@ export const savePlayoffConstructor = async (req, res) => {
         if (gamesToCancel.length > 0) {
             await client.query(`UPDATE games SET status = 'cancelled' WHERE id = ANY($1::int[])`, [gamesToCancel]);
         }
-        // =========================================================================
 
         await client.query('DELETE FROM playoff_brackets WHERE division_id = $1', [id]);
 

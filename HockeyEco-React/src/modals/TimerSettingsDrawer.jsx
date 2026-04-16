@@ -41,6 +41,7 @@ export function TimerSettingsDrawer({
         <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar flex flex-col gap-6">
           
           <div className="bg-white border border-graphite/5 shadow-sm p-5 rounded-xl space-y-5">
+            {/* ПЕРИОДЫ */}
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-bold text-graphite">Количество периодов:</span>
               <input 
@@ -70,32 +71,56 @@ export function TimerSettingsDrawer({
               />
             </div>
             
-            <div className="flex justify-between items-center pt-5 border-t border-graphite/10">
-              <span className="text-[13px] font-bold text-graphite">Овертайм (мин):</span>
-              <input 
-                type="number" 
-                min="0"
-                value={otLength ?? ''} 
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setOtLength(isNaN(val) || val < 0 ? 0 : val);
-                }} 
-                className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
-              />
+            {/* ОВЕРТАЙМ С ТУМБЛЕРОМ */}
+            <div className="flex flex-col gap-3 pt-5 border-t border-graphite/10">
+              <div className="flex justify-between items-center">
+                <span className="text-[13px] font-bold text-graphite">Овертайм</span>
+                <Switch 
+                  checked={otLength > 0} 
+                  onChange={(e) => setOtLength(e.target.checked ? 5 : 0)} 
+                />
+              </div>
+              {otLength > 0 && (
+                <div className="flex justify-between items-center pl-4 border-l-2 border-graphite/10 animate-fade-in-down">
+                  <span className="text-[12px] text-graphite-light font-semibold">Длительность ОТ (мин):</span>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={otLength ?? ''} 
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setOtLength(isNaN(val) || val < 1 ? 1 : val);
+                    }} 
+                    className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
+                  />
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-between items-center pt-5 border-t border-graphite/10">
-              <span className="text-[13px] font-bold text-graphite">Бросков в серии буллитов:</span>
-              <input 
-                type="number" 
-                min="1"
-                value={soLength ?? ''} 
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setSoLength(isNaN(val) || val < 1 ? 1 : val);
-                }} 
-                className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
-              />
+            {/* БУЛЛИТЫ С ТУМБЛЕРОМ */}
+            <div className="flex flex-col gap-3 pt-5 border-t border-graphite/10">
+              <div className="flex justify-between items-center">
+                <span className="text-[13px] font-bold text-graphite">Серия буллитов</span>
+                <Switch 
+                  checked={soLength > 0} 
+                  onChange={(e) => setSoLength(e.target.checked ? 3 : 0)} 
+                />
+              </div>
+              {soLength > 0 && (
+                <div className="flex justify-between items-center pl-4 border-l-2 border-graphite/10 animate-fade-in-down">
+                  <span className="text-[12px] text-graphite-light font-semibold">Мин. бросков в серии:</span>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={soLength ?? ''} 
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setSoLength(isNaN(val) || val < 1 ? 1 : val);
+                    }} 
+                    className="w-20 bg-[#F8F9FA] border border-graphite/20 rounded-md px-3 py-2 text-center text-graphite font-black outline-none focus:border-orange focus:ring-1 focus:ring-orange/50 transition-all shadow-inner" 
+                  />
+                </div>
+              )}
             </div>
           </div>
 

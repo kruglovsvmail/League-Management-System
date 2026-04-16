@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { formatTime, formatTimeMask, getPeriodLimits, parseTime } from './GameDeskShared';
 import { TimerSettingsDrawer } from '../../modals/TimerSettingsDrawer';
 import { getImageUrl } from '../../utils/helpers';
+import { Button } from '../../ui/Button';
 
 // --- Иконки ---
 const GearIcon = () => (
@@ -32,7 +33,8 @@ const PauseIcon = () => (
 export const TimerPanel = ({
   game, currentPeriod, changePeriod, timerSeconds, isTimerRunning, handleTimerAction,
   periodsCount, setPeriodsCount, periodLength, setPeriodLength, otLength, setOtLength, soLength, setSoLength, saveTimerSettings,
-  trackPlusMinus, setTrackPlusMinus, socketConnected, onSetTime
+  trackPlusMinus, setTrackPlusMinus, socketConnected, onSetTime,
+  onRecalculate, onFinishGame, isFinishing, isRecalculating // ПРИНИМАЕМ ИЗОЛИРОВАННЫЕ ФЛАГИ
 }) => {
   const [isEditingTimer, setIsEditingTimer] = useState(false);
   const [manualTimerInput, setManualTimerInput] = useState('');
@@ -66,7 +68,6 @@ export const TimerPanel = ({
   const currentLimits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
   const countdownSecs = Math.max(0, currentLimits.end - timerSeconds);
 
-  // Динамически генерируем список кнопок периодов
   const periodsArray = Array.from({ length: periodsCount }, (_, i) => String(i + 1)).concat(['OT', 'SO']);
 
   return (
@@ -98,13 +99,16 @@ export const TimerPanel = ({
         >
           {periodsArray.map(p => {
             const isOTDisabled = p === 'OT' && parseInt(otLength, 10) === 0;
+            const isSODisabled = p === 'SO' && parseInt(soLength, 10) === 0;
+            const isDisabled = isOTDisabled || isSODisabled;
+
             return (
               <button 
                 key={p} 
-                onClick={() => !isOTDisabled && changePeriod(p)} 
-                disabled={isOTDisabled}
+                onClick={() => !isDisabled && changePeriod(p)} 
+                disabled={isDisabled}
                 className={`py-1.5 text-xs font-black rounded-md transition-colors ${
-                  isOTDisabled 
+                  isDisabled 
                     ? 'opacity-20 cursor-not-allowed text-white/20' 
                     : currentPeriod === p 
                       ? 'bg-white/20 text-white shadow-sm' 
@@ -187,11 +191,33 @@ export const TimerPanel = ({
         </button>
       </div>
 
-      <div className="mt-auto pt-4 border-t border-white/10 text-[10px] text-white/40 text-center uppercase tracking-widest font-bold">
-        <div className="flex items-center justify-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-status-accepted' : 'bg-status-rejected'}`}></span>
-          {socketConnected ? 'Синхронизировано' : 'Отключено'}
-        </div>
+      <div className="mt-auto pt-4 border-t border-white/10">
+        {game?.status === 'live' ? (
+             <Button 
+                 onClick={onFinishGame}
+                 isLoading={isFinishing}
+                 loadingText="Завершение..."
+                 className={`w-full text-[9px] uppercase tracking-[2px] transition-all ${isFinishing ? '!bg-white/20 !text-white !shadow-none' : ''}`}
+             >
+                 Завершить матч
+             </Button>
+        ) : game?.status === 'finished' && game?.needs_recalc ? (
+             <Button 
+                onClick={onRecalculate} 
+                isLoading={isRecalculating}
+                loadingText="Пересчет..."
+                className={`w-full text-[9px] uppercase tracking-[2px] transition-all ${isRecalculating ? '!bg-white/20 !text-white !shadow-none' : ''}`}
+             >
+                 Пересчёт статистики
+             </Button>
+        ) : (
+             <Button 
+                 disabled 
+                 className="w-full text-[9px] uppercase tracking-[2px] !bg-white/5 !text-white/40"
+             >
+                 Пересчёт статистики
+             </Button>
+        )}
       </div>
 
       <TimerSettingsDrawer 

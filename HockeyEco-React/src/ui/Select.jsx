@@ -124,7 +124,7 @@ export function Select({
 
         {isOpen && !disabled && createPortal(
           <div 
-            className={`portal-dropdown absolute bg-white/60 backdrop-blur-[18px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-fade-in-down overflow-y-auto max-h-[250px] ${scrollbarStyles}`}
+            className={`portal-dropdown absolute bg-white/60 backdrop-blur-[18px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-fade-in-down overflow-y-auto max-h-[320px] ${scrollbarStyles}`}
             style={{ top: `${coords.top}px`, left: `${coords.left}px`, width: `${Math.max(coords.width, 100)}px` }}
           >
             {isSearchable && (

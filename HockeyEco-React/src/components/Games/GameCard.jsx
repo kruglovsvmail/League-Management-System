@@ -65,7 +65,6 @@ export function GameCard({
             }
         }
 
-        // Если пользователь меняет команду, проверяем лимит
         if (nextState.stage_type === 'playoff' && nextState.stage_label && (updates.home_team_id !== undefined || updates.away_team_id !== undefined)) {
             const newHome = nextState.home_team_id;
             const newAway = nextState.away_team_id;
@@ -91,7 +90,6 @@ export function GameCard({
                             message: `Для этой пары раунд "${round.name}" уже заполнен.`, 
                             type: 'error' 
                         });
-                        // Сбрасываем раунд, если он больше недоступен для этой пары команд
                         updates.stage_label = null;
                         nextState.stage_label = null;
                     }
@@ -230,8 +228,6 @@ export function GameCard({
                                             message: 'Максимальное количество матчей для этой пары в данном раунде уже создано.', 
                                             type: 'error' 
                                         });
-                                        // Если кликнули на заблокированный раунд, мы просто сбрасываем выбор в "null". 
-                                        // Бэкенд это спокойно сохранит без ошибок.
                                         handleFieldChange('stage_label', null);
                                     } else {
                                         handleFieldChange('stage_label', val === '-' ? null : val);
@@ -457,9 +453,21 @@ export function GameCard({
             </div>
 
             <div className={`${colClasses.actions} shrink-0 flex justify-center items-center relative h-full`}>
-                <div className={`transition-opacity duration-200 flex items-center justify-center ${canCreateGames && game.status === 'scheduled' ? 'group-hover:opacity-0' : ''}`}>
+                <div className={`transition-opacity duration-200 flex flex-col items-center justify-center gap-1 ${canCreateGames && game.status === 'scheduled' ? 'group-hover:opacity-0' : ''}`}>
                     {game.status === 'live' && <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-2 py-1 rounded">Live</span>}
-                    {game.status === 'finished' && <span className="text-[10px] font-bold text-graphite/50 uppercase tracking-widest">Завершен</span>}
+                    
+                    {game.status === 'finished' && (
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-[10px] font-bold text-graphite/50 uppercase tracking-widest">Завершен</span>
+                            {/* ЯРКИЙ БЕЙДЖ "ТРЕБУЕТСЯ ПЕРЕСЧЕТ" */}
+                            {game.needs_recalc && (
+                                <span className="text-[8px] font-black text-orange uppercase tracking-wider text-center leading-tight">
+                                    Требуется<br/>пересчет
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    
                     {game.status === 'cancelled' && <span className="text-[10px] font-bold text-status-rejected uppercase tracking-widest">Отменен</span>}
                     {game.status === 'scheduled' && <span className="text-[10px] font-bold text-orange uppercase tracking-widest">В расписании</span>}
                 </div>

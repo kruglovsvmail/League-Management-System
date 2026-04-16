@@ -1,16 +1,92 @@
-import React, { useState } from 'react';
+// src/components/GameLiveDesk/ProtocolSheet.jsx
+import React, { useState, useEffect } from 'react';
 import { 
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines, 
   CustomSelect, StylishSelect, StylishInput, EditIcon, DeleteIcon, SaveIcon, PlusIcon, UsersIcon, 
   goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, GOAL_STRENGTH_DISPLAY 
 } from './GameDeskShared';
 
-export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, teamEvents, timerSeconds, onSaveEvent, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving }) => {
+const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [tempVal, setTempVal] = useState('');
+
+    useEffect(() => {
+        if (isEditing && timeoutEvent) {
+            setTempVal(formatTime(timeoutEvent.time_seconds));
+        }
+    }, [isEditing, timeoutEvent]);
+
+    const handleSaveAction = () => {
+        setIsEditing(false);
+        const newSecs = parseTime(tempVal);
+        if (newSecs !== null && newSecs !== timeoutEvent.time_seconds) {
+            onSave({ time_seconds: newSecs }, timeoutEvent.id);
+        }
+    };
+
+    if (isEditing && timeoutEvent) {
+        return (
+            <div className="flex items-center justify-between bg-white border border-orange/50 rounded-md px-2 shadow-sm ring-2 ring-orange/10 h-[32px] w-[140px] relative" onClick={e => e.stopPropagation()}>
+                <span className="text-[10px] font-bold uppercase text-graphite-light absolute left-2.5">ТАЙМ-АУТ</span>
+                <input
+                    autoFocus
+                    value={tempVal}
+                    onChange={e => setTempVal(formatTimeMask(e.target.value))}
+                    onBlur={(e) => { if (!e.relatedTarget?.closest('.clear-btn')) handleSaveAction(); }}
+                    onKeyDown={e => { if(e.key === 'Enter') handleSaveAction(); }}
+                    className="bg-transparent font-mono text-[13px] font-bold text-graphite outline-none w-full text-right pr-6"
+                    placeholder="00:00"
+                />
+                <button
+                    type="button"
+                    className="clear-btn absolute right-1 w-5 h-5 flex items-center justify-center text-status-rejected hover:bg-status-rejected/10 rounded transition-colors"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsEditing(false); onDelete(timeoutEvent.id); }}
+                    title="Удалить тайм-аут"
+                >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+        );
+    }
+
+    if (timeoutEvent) {
+        return (
+            <button
+                onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+                className="relative group flex items-center justify-between px-3 rounded-md transition-all border bg-white border-graphite/20 hover:border-graphite/40 shadow-sm h-[32px] w-[140px]"
+                title="Редактировать время тайм-аута"
+            >
+                <span className="text-[10px] font-bold uppercase text-graphite-light">ТАЙМ-АУТ</span>
+                <span className="font-mono text-[13px] font-bold text-graphite">
+                    {formatTime(timeoutEvent.time_seconds)}
+                </span>
+            </button>
+        );
+    }
+
+    return (
+        <button 
+            onClick={(e) => { e.stopPropagation(); onSave({ time_seconds: timerSeconds }); }} 
+            className="relative group flex items-center justify-between px-3 rounded-md transition-all border bg-transparent border-dashed border-graphite/30 hover:border-orange hover:bg-orange/5 hover:text-orange text-graphite-light h-[32px] w-[140px]"
+            title="Зафиксировать тайм-аут"
+        >
+            <span className="text-[10px] font-bold uppercase text-graphite/50 group-hover:text-orange">ТАЙМ-АУТ</span>
+            <span className="font-mono text-[13px] font-bold text-graphite/40 group-hover:text-orange">--:--</span>
+        </button>
+    );
+};
+
+export const ProtocolSheet = ({ 
+  teamId, teamLetter, teamName, teamLogo, roster, teamEvents, oppEvents = [], timerSeconds, 
+  onSaveEvent, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving,
+  goalieLog = []
+}) => {
   const goals = teamEvents.filter(e => e.event_type === 'goal').sort((a, b) => a.time_seconds - b.time_seconds);
   const penalties = teamEvents.filter(e => e.event_type === 'penalty');
   const timeouts = teamEvents.filter(e => e.event_type === 'timeout').sort((a, b) => a.time_seconds - b.time_seconds);
 
   const penaltiesWithTimeline = calculatePenaltyTimelines(penalties);
+  const oppPenaltiesWithTimeline = calculatePenaltyTimelines(oppEvents.filter(e => e.event_type === 'penalty'));
 
   const [newGoal, setNewGoal] = useState({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal' });
   const [newPenalty, setNewPenalty] = useState({ player: '', mins: '2', violation: '', start: '', end: '' });
@@ -19,6 +95,44 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
   const [editGoalData, setEditGoalData] = useState({});
   const [editPenaltyId, setEditPenaltyId] = useState(null);
   const [editPenaltyData, setEditPenaltyData] = useState({});
+
+  const [manualStr, setManualStr] = useState(false);
+
+  const calculateGoalStrength = (timeSecs) => {
+    if (timeSecs === null || timeSecs === undefined) return 'equal';
+
+    const isHome = teamLetter === 'А';
+    const relevantLogs = goalieLog.filter(l => l.time_seconds <= timeSecs);
+    const currentLog = relevantLogs.length > 0 ? relevantLogs[relevantLogs.length - 1] : null;
+    
+    const oppGoalieId = isHome ? currentLog?.away_goalie_id : currentLog?.home_goalie_id;
+    if (currentLog && !oppGoalieId) {
+       return 'en'; 
+    }
+
+    const isPenaltyActive = (p, t) => t >= p.effStart && t < p.effEnd && [2, 4, 5, 25].includes(parseInt(p.penalty_minutes, 10));
+    
+    const myActive = penaltiesWithTimeline.filter(p => isPenaltyActive(p, timeSecs)).length;
+    const oppActive = oppPenaltiesWithTimeline.filter(p => isPenaltyActive(p, timeSecs)).length;
+
+    if (oppActive > myActive) {
+       return (oppActive - myActive) >= 2 ? 'pp2' : 'pp1'; 
+    } else if (myActive > oppActive) {
+       return (myActive - oppActive) >= 2 ? 'sh2' : 'sh1'; 
+    }
+
+    return 'equal'; 
+  };
+
+  useEffect(() => {
+     if (manualStr) return; 
+     const timeSecs = newGoal.time ? parseTime(newGoal.time) : timerSeconds;
+     const calcStr = calculateGoalStrength(timeSecs);
+     
+     if (newGoal.str !== calcStr) {
+         setNewGoal(prev => ({ ...prev, str: calcStr }));
+     }
+  }, [newGoal.time, timerSeconds, penaltiesWithTimeline, oppPenaltiesWithTimeline, goalieLog, manualStr]);
 
   const getPlayerId = (jersey) => roster.find(r => r.jersey_number == jersey)?.player_id || null;
   const getJersey = (id) => roster.find(r => r.player_id == id)?.jersey_number || '';
@@ -43,6 +157,7 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
       goal_strength: newGoal.str
     });
     setNewGoal({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal' });
+    setManualStr(false); 
   };
 
   const startEditGoal = (g) => {
@@ -102,33 +217,35 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
   return (
     <div className={`bg-white border border-graphite/20 shadow-sm flex flex-col font-sans rounded-md ${loadingClass}`}>
       
-      <div className="bg-gray-bg-light border-b border-graphite/20 px-4 py-3 flex justify-between items-center rounded-t-md select-none">
-        <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center gap-3">
-          <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center font-black rounded-sm">{teamLetter}</span>
-          {teamLogo && <img src={teamLogo} alt={teamName} className="w-8 h-8 object-contain drop-shadow-sm" />}
-          <span className="truncate">{teamName}</span>
+      <div className="bg-gray-bg-light border-b border-graphite/20 px-4 py-3 flex justify-between items-center rounded-t-md select-none gap-4">
+        
+        {/* ЛЕВЫЙ БЛОК: КОМАНДА */}
+        <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center gap-3 shrink-0 min-w-[200px]">
+          <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center font-black rounded-sm shrink-0">{teamLetter}</span>
+          {teamLogo && <img src={teamLogo} alt={teamName} className="w-8 h-8 object-contain drop-shadow-sm shrink-0" />}
+          <span className="truncate max-w-[260px]" title={teamName}>{teamName}</span>
         </div>
         
-        <div className="flex items-center gap-3 text-[13px] font-semibold text-graphite-light">
-          <span>Тайм-аут:</span>
-          {timeouts.length > 0 
-            ? timeouts.map(t => (
-                <span 
-                  key={t.id} 
-                  className="text-status-rejected border-b border-dashed border-status-rejected cursor-pointer" 
-                  onClick={(e) => { e.stopPropagation(); onDeleteEvent(t.id); }} 
-                  title="Нажмите для удаления"
-                >
-                  {formatTime(t.time_seconds)}
-                </span>
+        {/* ПРАВЫЙ БЛОК: ТАЙМ-АУТЫ */}
+        <div className="flex items-center justify-end gap-2 shrink-0 min-w-[140px]">
+          {timeouts.length > 0 ? (
+              timeouts.map(t => (
+                  <TimeoutPill 
+                      key={t.id}
+                      timeoutEvent={t} 
+                      timerSeconds={timerSeconds} 
+                      onSave={(data, id) => onSaveEvent(teamId, 'timeout', data, id)} 
+                      onDelete={onDeleteEvent} 
+                  />
               ))
-            : <button 
-                onClick={(e) => { e.stopPropagation(); onSaveEvent(teamId, 'timeout', {time_seconds: timerSeconds}); }} 
-                className="bg-white border border-graphite/20 hover:border-graphite/40 hover:bg-gray-light text-graphite px-2.5 py-1 rounded transition-colors shadow-sm text-xs font-bold uppercase tracking-wider"
-              >
-                Взять ({formatTime(timerSeconds)})
-              </button>
-          }
+          ) : (
+              <TimeoutPill 
+                  timeoutEvent={null} 
+                  timerSeconds={timerSeconds} 
+                  onSave={(data) => onSaveEvent(teamId, 'timeout', data)} 
+                  onDelete={onDeleteEvent} 
+              />
+          )}
         </div>
       </div>
 
@@ -163,24 +280,24 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
               <th colSpan="6" className="border-t-1 border-r-1 border-b-2 border-graphite/40 py-2 font-bold uppercase tracking-widest text-[10px] text-status-rejected">Удаления</th>
             </tr>
             <tr className="bg-graphite/15 text-[11px] text-graphite-light uppercase tracking-wider relative z-0">
-              <th className="border-l-2 border-graphite/40 border-r border-graphite/30 py-1.5 font-bold">№</th>
-              <th className="border-r border-graphite/10 py-1.5 text-left px-2 font-bold">Фамилия, Имя</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold">Поз</th>
+              <th className="border-l-2 border-graphite/40 border-r border-graphite/30 py-1.5 font-bold">#</th>
+              <th className="border-r border-graphite/30 py-1.5 text-left px-2 font-bold">Фамилия, Имя</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold">Поз</th>
               <th className="border-r-2 border-graphite/40 py-1.5 font-bold">ИГ</th>
               
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-accepted"></th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-accepted">Время</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-accepted">Г</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-accepted">П1</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-accepted">П2</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-accepted">Сост</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted"></th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">Время</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">Г</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">П1</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">П2</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">ИС</th>
               <th className="border-r-2 border-graphite/40 py-1.5"></th>
               
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-rejected">Иг</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-rejected">Шт</th>
-              <th className="border-r border-graphite/10 py-1.5 text-left px-2 font-bold text-status-rejected">Причина</th> 
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-rejected">Нач</th>
-              <th className="border-r border-graphite/10 py-1.5 font-bold text-status-rejected">Окон</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">#</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Шт</th>
+              <th className="border-r border-graphite/30 py-1.5 text-left px-2 font-bold text-status-rejected">Причина</th> 
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Нач</th>
+              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Окон</th>
               <th className="border-r-2 border-graphite/40 py-1.5"></th>
             </tr>
           </thead>
@@ -222,7 +339,13 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} exclude={[editGoalData.scorer]} /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} exclude={[editGoalData.scorer, editGoalData.ast1]} /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><CustomSelect options={goalStrengthOptions} value={editGoalData.str} onChange={e=>setEditGoalData({...editGoalData, str: e.target.value})} /></td>
+                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5">
+                        <CustomSelect 
+                           options={goalStrengthOptions} 
+                           value={editGoalData.str} 
+                           onChange={e=>setEditGoalData({...editGoalData, str: e.target.value})} 
+                        />
+                      </td>
                       <td className="border-r-2 border-graphite/40 p-0 text-center bg-orange/5"><button onClick={saveEditGoal} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><SaveIcon /></button></td>
                     </>
                   ) : goal ? (
@@ -246,7 +369,16 @@ export const ProtocolSheet = ({ teamId, teamLetter, teamName, teamLogo, roster, 
                       <td className="border-r border-graphite/30 p-0.5"><StylishSelect roster={roster} value={newGoal.scorer} onChange={e=>setNewGoal({...newGoal, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
                       <td className="border-r border-graphite/30 p-0.5"><StylishSelect roster={roster} value={newGoal.ast1} onChange={e=>setNewGoal({...newGoal, ast1: e.target.value})} exclude={[newGoal.scorer]} /></td>
                       <td className="border-r border-graphite/30 p-0.5"><StylishSelect roster={roster} value={newGoal.ast2} onChange={e=>setNewGoal({...newGoal, ast2: e.target.value})} exclude={[newGoal.scorer, newGoal.ast1]} /></td>
-                      <td className="border-r border-graphite/30 p-0.5"><CustomSelect options={goalStrengthOptions} value={newGoal.str} onChange={e=>setNewGoal({...newGoal, str: e.target.value})} /></td>
+                      <td className="border-r border-graphite/30 p-0.5">
+                         <CustomSelect 
+                            options={goalStrengthOptions} 
+                            value={newGoal.str} 
+                            onChange={e => { 
+                               setManualStr(true); 
+                               setNewGoal({...newGoal, str: e.target.value}); 
+                            }} 
+                         />
+                      </td>
                       <td className="border-r-2 border-graphite/40 p-0 text-center"><button onClick={handleAddGoal} className="w-full h-full min-h-[34px] hover:bg-status-accepted/10 text-status-accepted transition-colors flex items-center justify-center"><PlusIcon /></button></td>
                     </>
                   ) : (

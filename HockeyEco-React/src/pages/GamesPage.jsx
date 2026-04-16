@@ -379,7 +379,7 @@ export function GamesPage() {
                                             disabled={isCreating}
                                             className="px-8 py-3 shadow-[0_4px_15px_rgba(255,107,0,0.2)]"
                                         >
-                                            Создать матч
+                                            + Добавить слот матча
                                         </Button>
                                     </div>
                                 )}
