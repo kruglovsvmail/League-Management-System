@@ -32,11 +32,13 @@ WORKDIR /app
 COPY . .
 
 # Устанавливаем зависимости сервера и клиента
+# Используем --include=dev если для сборки фронтенда нужны devDependencies
 RUN npm run build-server
 RUN npm run build-client
 
 # Открываем порт 3001
 EXPOSE 3001
 
-# Команда для запуска вашего сервера
-CMD ["npm", "run", "start-server"]
+# ЗАПУСКАЕМ НАПРЯМУЮ ЧЕРЕЗ NODE, А НЕ ЧЕРЕЗ NPM
+# Это уберет ошибки SIGTERM из логов
+CMD ["node", "HockeyEco-server/server.js"]
