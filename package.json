@@ -2,8 +2,7 @@
   "name": "hockey-lms-root",
   "version": "1.0.0",
   "scripts": {
-    "postinstall": "npm run build-server",
-    "build-server": "cd HockeyEco-server && npm install && npx puppeteer browsers install chrome",
+    "build-server": "cd HockeyEco-server && npm install",
     "start-server": "node HockeyEco-server/server.js",
     "build-client": "cd HockeyEco-React && npm install && npm run build"
   }

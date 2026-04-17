@@ -334,13 +334,12 @@ export const downloadProtocolPDF = async (req, res) => {
         // 3. Запускаем Puppeteer и создаем PDF
         const browser = await puppeteer.launch({
             headless: 'new',
+            executablePath: '/usr/bin/chromium', // Указываем путь к браузеру в Docker
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-zygote',
-                '--single-process'
+                '--disable-gpu'
             ] 
         });
         const page = await browser.newPage();
