@@ -9,6 +9,7 @@ import { Button } from '../../ui/Button';
 import { Loader } from '../../ui/Loader';
 import { DatePicker } from '../../ui/DatePicker';
 import { Uploader } from '../../ui/Uploader';
+import { AccessFallback } from '../../ui/AccessFallback';
 import { getToken, getImageUrl } from '../../utils/helpers';
 
 import { PlayoffStructureView } from './PlayoffStructureView';
@@ -77,7 +78,7 @@ const getInitialFormData = (div = null) => {
   };
 };
 
-const PlayoffSummary = ({ divisionId }) => {
+const PlayoffSummary = ({ divisionId, canEditPlayoff }) => {
     const [brackets, setBrackets] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -116,11 +117,15 @@ const PlayoffSummary = ({ divisionId }) => {
             <div className="flex justify-between items-center bg-white/60 p-6 rounded-xl border border-graphite/10">
                 <div className="flex flex-col">
                     <span className="text-[15px] font-bold text-graphite uppercase">Управление сетками</span>
-                    <span className="text-[12px] text-graphite-light mt-1">Конструктор откроется в отдельном системном окне</span>
+                    <span className="text-[12px] text-graphite-light mt-1">
+                        {canEditPlayoff ? 'Конструктор откроется в отдельном системном окне' : 'Просмотр текущей структуры сетки'}
+                    </span>
                 </div>
-                <Button onClick={openConstructorPopup} className="bg-graphite text-white hover:bg-black border-none px-6 shadow-lg">
-                    Открыть конструктор
-                </Button>
+                {canEditPlayoff && (
+                    <Button onClick={openConstructorPopup} className="bg-graphite text-white hover:bg-black border-none px-6 shadow-lg">
+                        Открыть конструктор
+                    </Button>
+                )}
             </div>
 
             {brackets.length > 0 ? (
@@ -130,7 +135,7 @@ const PlayoffSummary = ({ divisionId }) => {
                 </div>
             ) : (
                  <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-xl text-graphite-light py-12 px-6">
-                    Плей-офф еще не настроен. Откройте конструктор, чтобы создать сетки.
+                    Плей-офф еще не настроен. {canEditPlayoff ? 'Откройте конструктор, чтобы создать сетки.' : ''}
                 </div>
             )}
         </div>
@@ -138,9 +143,16 @@ const PlayoffSummary = ({ divisionId }) => {
 };
 
 export function DivisionsTab({ setToast, setHeaderActions }) {
-  const { user, selectedLeague } = useOutletContext();
+  const { selectedLeague } = useOutletContext();
   const { checkAccess } = useAccess();
-  const canManageDivisions = checkAccess('MANAGE_DIVISIONS') || user?.globalRole === 'admin';
+  
+  // Матрица прав доступа
+  const canView = checkAccess('SETTINGS_DIVISIONS_VIEW');
+  const canEdit = checkAccess('SETTINGS_DIVISIONS_EDIT');
+  const canCreate = checkAccess('SETTINGS_DIVISIONS_CREATE');
+  const canEditPlayoff = checkAccess('SETTINGS_PLAYOFF_CONSTRUCTOR');
+
+  const isLocked = !canEdit;
 
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
@@ -159,7 +171,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   const [activeSection, setActiveSection] = useState('general');
 
-  useEffect(() => { if (selectedLeague?.id) fetchSeasons(); }, [selectedLeague]);
+  useEffect(() => { if (selectedLeague?.id && canView) fetchSeasons(); }, [selectedLeague, canView]);
 
   const fetchSeasons = async () => {
     setIsLoading(true);
@@ -175,9 +187,9 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   };
 
   useEffect(() => {
-    if (selectedSeasonId) fetchDivisions();
+    if (selectedSeasonId && canView) fetchDivisions();
     else { setDivisions([]); setSelectedDivisionId(null); setFormData(null); setOriginalData(null); }
-  }, [selectedSeasonId]);
+  }, [selectedSeasonId, canView]);
 
   const fetchDivisions = async () => {
     setIsLoading(true);
@@ -213,7 +225,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   }, [selectedDivisionId, divisions]);
 
   useEffect(() => {
-    if (setHeaderActions && canManageDivisions && selectedSeasonId) {
+    if (setHeaderActions && canCreate && selectedSeasonId) {
       const isCreatingNew = selectedDivisionId === 'new';
       const actionBtn = (
         <Button 
@@ -234,7 +246,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
     return () => {
         if (setHeaderActions) setHeaderActions(null);
     };
-  }, [setHeaderActions, canManageDivisions, selectedSeasonId, selectedDivisionId, divisions]);
+  }, [setHeaderActions, canCreate, selectedSeasonId, selectedDivisionId, divisions]);
 
   const handleChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
   const handleCriteriaChange = (index, value) => {
@@ -320,11 +332,14 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
     finally { setIsSaving(false); }
   };
 
+  if (!canView) {
+    return <AccessFallback variant="full" message="У вас нет прав для просмотра настроек дивизионов." />;
+  }
+
   const typeVal = TYPE_MAP[formData?.tournament_type];
   const showRegular = typeVal === 'regular' || typeVal === 'mixed';
   const showPlayoff = typeVal === 'playoff' || typeVal === 'mixed';
 
-  const isLocked = !canManageDivisions;
   const isCreatingNew = selectedDivisionId === 'new';
 
   const currSeasonName = seasons.find(s => s.id === selectedSeasonId)?.name || '';
@@ -350,12 +365,12 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         
         <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
             <div><div className="text-[13px] font-semibold text-graphite">Количество периодов</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Число периодов в матче</div></div>
-            <Stepper initialValue={formData[`${prefix}_periods_count`]} onChange={(v) => handleChange(`${prefix}_periods_count`, v)} min={1} max={5} />
+            <Stepper initialValue={formData[`${prefix}_periods_count`]} onChange={(v) => handleChange(`${prefix}_periods_count`, v)} min={1} max={5} disabled={isLocked} />
         </div>
         
         <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
             <div><div className="text-[13px] font-semibold text-graphite">Длина (мин)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Длительность одного периода</div></div>
-            <Stepper initialValue={formData[`${prefix}_period_length`]} onChange={(v) => handleChange(`${prefix}_period_length`, v)} min={5} max={60} />
+            <Stepper initialValue={formData[`${prefix}_period_length`]} onChange={(v) => handleChange(`${prefix}_period_length`, v)} min={5} max={60} disabled={isLocked} />
         </div>
 
         <div className="flex flex-col gap-3 border-b border-graphite/5 pb-4">
@@ -366,7 +381,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             {formData[`${prefix}_has_overtime`] && (
                 <div className="flex justify-between items-center gap-4 pt-2 animate-fade-in-down">
                     <div className="text-[12px] text-graphite-light font-semibold">Длительность ОТ (мин)</div>
-                    <Stepper initialValue={formData[`${prefix}_ot_length`]} onChange={(v) => handleChange(`${prefix}_ot_length`, v)} min={1} max={30} />
+                    <Stepper initialValue={formData[`${prefix}_ot_length`]} onChange={(v) => handleChange(`${prefix}_ot_length`, v)} min={1} max={30} disabled={isLocked} />
                 </div>
             )}
         </div>
@@ -379,7 +394,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             {formData[`${prefix}_has_shootouts`] && (
                 <div className="flex justify-between items-center gap-4 pt-2 animate-fade-in-down">
                     <div className="text-[12px] text-graphite-light font-semibold">Мин. бросков</div>
-                    <Stepper initialValue={formData[`${prefix}_so_length`]} onChange={(v) => handleChange(`${prefix}_so_length`, v)} min={0} max={10} />
+                    <Stepper initialValue={formData[`${prefix}_so_length`]} onChange={(v) => handleChange(`${prefix}_so_length`, v)} min={0} max={10} disabled={isLocked} />
                 </div>
             )}
         </div>
@@ -434,7 +449,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             </div>
         )}
 
-        {formData && canManageDivisions && !isLocked && activeSection !== 'playoff' && (
+        {formData && canEdit && activeSection !== 'playoff' && (
             <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-4">
                 <Button 
                     onClick={handleSave} 
@@ -454,7 +469,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         
         {!formData && !isLoading && selectedSeasonId && divisions.length === 0 && (
             <div className="text-center py-20 text-graphite-light font-medium text-[15px]">
-                В этом сезоне еще нет созданных дивизионов.<br/>Нажмите «+ Новый дивизион» в шапке, чтобы создать первый.
+                В этом сезоне еще нет созданных дивизионов.<br/>
+                {canCreate ? 'Нажмите «+ Новый дивизион» в шапке, чтобы создать первый.' : 'Ожидайте создания дивизионов администраторами.'}
             </div>
         )}
 
@@ -462,11 +478,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             <div className="flex flex-col gap-6 font-sans animate-fade-in">
                 
                 {isLocked && !isCreatingNew && (
-                    <div className="p-4 bg-graphite/5 border border-graphite/10 rounded-xl flex items-center gap-3 mb-2">
-                        <div className="flex flex-col">
-                            <span className="text-[13px] font-bold text-graphite">Режим только для чтения</span>
-                            <span className="text-[12px] text-graphite-light">У вас нет прав для редактирования настроек дивизиона.</span>
-                        </div>
+                    <div className="mb-2">
+                        <AccessFallback variant="readonly" message="У вас нет прав для редактирования настроек дивизиона. Вы находитесь в режиме просмотра." />
                     </div>
                 )}
 
@@ -568,17 +581,17 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                         <div className="flex flex-col gap-6">
                             <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[15px] font-bold text-graphite mb-2 uppercase">Начисление очков</span>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Победа в осн. время</span> <Stepper initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} max={10} /></div>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Победа в ОТ / Буллиты</span> <Stepper initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} max={10} /></div>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Ничья</span> <Stepper initialValue={formData.points_draw} onChange={(v) => handleChange('points_draw', v)} max={10} /></div>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Поражение в ОТ / Буллиты</span> <Stepper initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} max={10} /></div>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Поражение в осн. время</span> <Stepper initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} max={10} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Победа в осн. время</span> <Stepper initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} max={10} disabled={isLocked} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Победа в ОТ / Буллиты</span> <Stepper initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} max={10} disabled={isLocked} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Ничья</span> <Stepper initialValue={formData.points_draw} onChange={(v) => handleChange('points_draw', v)} max={10} disabled={isLocked} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Поражение в ОТ / Буллиты</span> <Stepper initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} max={10} disabled={isLocked} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Поражение в осн. время</span> <Stepper initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} max={10} disabled={isLocked} /></div>
                             </div>
                             <div className="bg-status-rejected/5 p-6 rounded-xl border border-status-rejected/20 flex flex-col gap-4">
                                 <span className="text-[15px] font-bold text-status-rejected mb-2 uppercase">Технические результаты</span>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническая победа (+/-)</span> <Stepper initialValue={formData.points_tech_win} onChange={(v) => handleChange('points_tech_win', v)} max={10} /></div>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническое поражение (-/+)</span> <Stepper initialValue={formData.points_tech_loss} onChange={(v) => handleChange('points_tech_loss', v)} max={10} /></div>
-                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Обоюдное поражение (-/-)</span> <Stepper initialValue={formData.points_tech_draw} onChange={(v) => handleChange('points_tech_draw', v)} max={10} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническая победа (+/-)</span> <Stepper initialValue={formData.points_tech_win} onChange={(v) => handleChange('points_tech_win', v)} max={10} disabled={isLocked} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническое поражение (-/+)</span> <Stepper initialValue={formData.points_tech_loss} onChange={(v) => handleChange('points_tech_loss', v)} max={10} disabled={isLocked} /></div>
+                                <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Обоюдное поражение (-/-)</span> <Stepper initialValue={formData.points_tech_draw} onChange={(v) => handleChange('points_tech_draw', v)} max={10} disabled={isLocked} /></div>
                             </div>
                         </div>
                         <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-4 relative z-50">
@@ -601,7 +614,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 Сначала создайте и сохраните дивизион, чтобы настроить для него сетки плей-офф.
                             </div>
                         ) : (
-                            <PlayoffSummary divisionId={formData.id} />
+                            <PlayoffSummary divisionId={formData.id} canEditPlayoff={canEditPlayoff} />
                         )}
                     </div>
                 )}

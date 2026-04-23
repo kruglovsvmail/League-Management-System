@@ -1,10 +1,7 @@
 import express from 'express';
 import upload from '../config/upload.js';
 
-import { 
-    verifyToken,
-    requireRoleByTournamentRoster
-} from '../controllers/authController.js';
+import { verifyToken, requirePermission } from '../controllers/authController.js';
 
 import { 
     updateTournamentRosterStatus,
@@ -18,20 +15,17 @@ const router = express.Router();
 
 router.use(verifyToken);
 
-const allowedRoles = ['top_manager', 'league_admin'];
-
-// Все эндпоинты редактирования игроков в заявке закрыты правами менеджеров/админов
-router.patch('/tournament-rosters/:id/status', requireRoleByTournamentRoster(allowedRoles), updateTournamentRosterStatus);
-router.patch('/tournament-rosters/:id/qualification', requireRoleByTournamentRoster(allowedRoles), updateTournamentRosterQualification);
-router.patch('/tournament-rosters/:id/fee', requireRoleByTournamentRoster(allowedRoles), updateTournamentRosterFee);
+router.patch('/tournament-rosters/:id/status', requirePermission('DIVISIONS_PLAYER_ADMIT_TOGGLE'), updateTournamentRosterStatus);
+router.patch('/tournament-rosters/:id/qualification', requirePermission('DIVISIONS_TEAM_QUAL_MODAL'), updateTournamentRosterQualification);
+router.patch('/tournament-rosters/:id/fee', requirePermission('DIVISIONS_TEAM_FEE_MODAL'), updateTournamentRosterFee);
 
 router.post('/tournament-rosters/:id/docs', upload.fields([
     { name: 'insurance', maxCount: 1 },
     { name: 'medical', maxCount: 1 },
-    { name: 'consent', maxCount: 1 } // <-- ДОБАВЛЕНО СОГЛАСИЕ
-]), requireRoleByTournamentRoster(allowedRoles), uploadTournamentRosterDocs);
+    { name: 'consent', maxCount: 1 }
+]), requirePermission('DIVISIONS_TEAM_DOCS_MODAL'), uploadTournamentRosterDocs);
 
 // ЭНДПОИНТ ДЛЯ ИНЛАЙН-РЕДАКТИРОВАНИЯ ВНУТРИ ЗАЯВКИ
-router.patch('/tournament-rosters/:id', requireRoleByTournamentRoster(allowedRoles), updateTournamentRosterInline);
+router.patch('/tournament-rosters/:id', requirePermission('DIVISIONS_PLAYER_ADMIT_TOGGLE'), updateTournamentRosterInline);
 
 export default router;

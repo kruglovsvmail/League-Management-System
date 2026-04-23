@@ -1,5 +1,5 @@
 // src/pages/GameLiveDesk.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getToken } from '../utils/helpers';
 import { io } from 'socket.io-client';
@@ -17,8 +17,10 @@ import {
 } from '../components/GameLiveDesk/GameDeskShared';
 import { ProtocolViewerModal } from '../components/GameLiveDesk/ProtocolViewerModal';
 import { Button } from '../ui/Button';
+import { useAccess } from '../hooks/useAccess';
+import { AccessFallback } from '../ui/AccessFallback';
 
-const EditableTimePill = ({ label, field, value, onSave, onClear }) => {
+const EditableTimePill = ({ label, field, value, onSave, onClear, isReadOnly }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempVal, setTempVal] = useState(value || '');
 
@@ -38,7 +40,7 @@ const EditableTimePill = ({ label, field, value, onSave, onClear }) => {
         onSave(field, timeString);
     };
 
-    if (isEditing) {
+    if (isEditing && !isReadOnly) {
         return (
             <div className="flex items-center justify-between bg-white border border-orange/50 rounded-md px-2 shadow-sm ring-2 ring-orange/10 h-[32px] w-[125px] relative">
                 <input
@@ -64,9 +66,12 @@ const EditableTimePill = ({ label, field, value, onSave, onClear }) => {
 
     return (
         <button
-            onClick={() => value ? setIsEditing(true) : handleAutoSet()}
-            className={`relative group flex items-center justify-between px-3 rounded-md transition-all border h-[32px] w-[125px] ${value ? 'bg-white border-graphite/20 hover:border-graphite/40 shadow-sm' : 'bg-transparent border-dashed border-graphite/30 hover:border-orange hover:bg-orange/5'}`}
-            title={value ? "Редактировать время" : "Зафиксировать текущее время"}
+            onClick={() => {
+                if (isReadOnly) return;
+                value ? setIsEditing(true) : handleAutoSet();
+            }}
+            className={`relative group flex items-center justify-between px-3 rounded-md transition-all border h-[32px] w-[125px] ${value ? 'bg-white border-graphite/20 shadow-sm' : 'bg-transparent border-dashed border-graphite/30'} ${!isReadOnly && value ? 'hover:border-graphite/40 cursor-pointer' : ''} ${!isReadOnly && !value ? 'hover:border-orange hover:bg-orange/5 cursor-pointer' : ''} ${isReadOnly ? 'cursor-default opacity-80' : ''}`}
+            title={isReadOnly ? "" : (value ? "Редактировать время" : "Зафиксировать текущее время")}
         >
             <span className={`text-[10px] font-bold uppercase ${value ? 'text-graphite-light' : 'text-graphite/50 group-hover:text-orange'}`}>{label}</span>
             <span className={`font-mono text-[13px] font-bold ${value ? 'text-graphite' : 'text-graphite/40 group-hover:text-orange'}`}>
@@ -76,7 +81,7 @@ const EditableTimePill = ({ label, field, value, onSave, onClear }) => {
     );
 };
 
-const EditableNumberPill = ({ label, field, value, onSave }) => {
+const EditableNumberPill = ({ label, field, value, onSave, isReadOnly }) => {
     const [tempVal, setTempVal] = useState(value || '');
     const [isEditing, setIsEditing] = useState(false);
 
@@ -91,7 +96,7 @@ const EditableNumberPill = ({ label, field, value, onSave }) => {
         }
     };
 
-    if (isEditing) {
+    if (isEditing && !isReadOnly) {
         return (
             <div className="flex items-center justify-between bg-white border border-orange/50 rounded-md px-2 shadow-sm ring-2 ring-orange/10 h-[32px] w-[110px] relative">
                 <span className="text-[10px] font-bold text-graphite-light uppercase absolute left-2.5">{label}</span>
@@ -113,9 +118,9 @@ const EditableNumberPill = ({ label, field, value, onSave }) => {
 
     return (
         <button
-            onClick={() => setIsEditing(true)}
-            className={`relative group flex items-center justify-between px-3 rounded-md transition-all border h-[32px] w-[110px] ${hasValue ? 'bg-white border-graphite/20 hover:border-graphite/40 shadow-sm' : 'bg-transparent border-dashed border-graphite/30 hover:border-orange hover:bg-orange/5'}`}
-            title="Указать количество зрителей"
+            onClick={() => { if (!isReadOnly) setIsEditing(true); }}
+            className={`relative group flex items-center justify-between px-3 rounded-md transition-all border h-[32px] w-[110px] ${hasValue ? 'bg-white border-graphite/20 shadow-sm' : 'bg-transparent border-dashed border-graphite/30'} ${!isReadOnly && hasValue ? 'hover:border-graphite/40 cursor-pointer' : ''} ${!isReadOnly && !hasValue ? 'hover:border-orange hover:bg-orange/5 cursor-pointer' : ''} ${isReadOnly ? 'cursor-default opacity-80' : ''}`}
+            title={isReadOnly ? "" : "Указать количество зрителей"}
         >
             <span className={`text-[10px] font-bold uppercase ${hasValue ? 'text-graphite-light' : 'text-graphite/50 group-hover:text-orange'}`}>{label}</span>
             <span className={`font-mono text-[13px] font-bold ${hasValue ? 'text-graphite' : 'text-graphite/40 group-hover:text-orange'}`}>
@@ -136,6 +141,28 @@ export function GameLiveDesk() {
   
   const [goalieLog, setGoalieLog] = useState([]);
   const [shotsSummary, setShotsSummary] = useState([]);
+
+  // --- ЛОГИКА АВТОРИЗАЦИИ ДЛЯ ПОЛНОЭКРАННОЙ СТРАНИЦЫ ---
+  const [authUser, setAuthUser] = useState(null);
+  
+  // Ищем лигу текущего матча в профиле юзера, чтобы права отработали точно
+  const activeLeague = authUser?.leagues?.find(l => l.id === game?.league_id) || null;
+  const { checkAccess, checkMatchEditAccess } = useAccess(authUser, activeLeague);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/me`, { 
+          headers: { 'Authorization': `Bearer ${getToken()}` } 
+        });
+        const data = await res.json();
+        if (data.success) setAuthUser(data.user);
+      } catch (err) {
+        console.error('Ошибка загрузки профиля', err);
+      }
+    };
+    fetchUser();
+  }, []);
 
   const [socket, setSocket] = useState(null);
   const [timerSeconds, setTimerSeconds] = useState(0); 
@@ -502,7 +529,34 @@ export function GameLiveDesk() {
       }
   };
 
-  if (!game) return <div className="min-h-screen bg-gray-light text-graphite-light flex items-center justify-center font-bold text-xl uppercase tracking-widest">Загрузка бланка...</div>;
+  const gameStaffArray = useMemo(() => {
+    if (!game?.officials) return [];
+    return Object.entries(game.officials)
+      .filter(([role, off]) => off && off.id)
+      .map(([role, off]) => ({ user_id: off.id, role }));
+  }, [game]);
+
+  const matchEditAccess = checkMatchEditAccess(game, gameStaffArray);
+  const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
+  
+  const canAccessPanel = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
+  const isReadOnly = !matchEditAccess.hasAccess;
+
+  if (!game || !authUser) {
+      return (
+          <div className="min-h-screen bg-gray-light text-graphite-light flex items-center justify-center font-bold text-xl uppercase tracking-widest">
+              Загрузка бланка...
+          </div>
+      );
+  }
+
+  if (!canAccessPanel) {
+      return (
+          <div className="h-screen w-full flex items-center justify-center bg-gray-bg-light px-10">
+              <AccessFallback variant="full" message="У вас нет прав для доступа к панели секретаря матча." />
+          </div>
+      );
+  }
 
   return (
     <div className={`flex w-full h-screen bg-gray-bg-light font-sans overflow-hidden text-graphite ${isSaving || isFinishingGame || isRecalculatingStats ? 'cursor-wait' : ''}`}>
@@ -511,10 +565,17 @@ export function GameLiveDesk() {
         
         <div className="mb-5 flex items-center justify-between mr-2">
             <div className="flex flex-col gap-1.5 items-start">
-              <button onClick={() => navigate(`/games/${gameId}`)} className="flex items-center gap-1 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors uppercase tracking-wider">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
-                Страница матча
-              </button>
+              <div className="flex items-center">
+                  <button onClick={() => navigate(`/games/${gameId}`)} className="flex items-center gap-1 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors uppercase tracking-wider">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+                    Страница матча
+                  </button>
+                  {isReadOnly && (
+                      <span className="ml-4 bg-status-rejected/10 text-status-rejected px-3 py-1 rounded-md text-[11px] font-black uppercase tracking-widest border border-status-rejected/20 shadow-sm">
+                          Режим чтения (Протокол подписан)
+                      </span>
+                  )}
+              </div>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md border border-graphite/10 shadow-sm rounded-lg p-1.5 flex items-center gap-2">
@@ -525,6 +586,7 @@ export function GameLiveDesk() {
                         value={game.actual_start_time} 
                         onSave={handleSaveActualData} 
                         onClear={handleClearActualData} 
+                        isReadOnly={isReadOnly}
                     />
                     <EditableTimePill 
                         label="Конец" 
@@ -532,6 +594,7 @@ export function GameLiveDesk() {
                         value={game.actual_end_time} 
                         onSave={handleSaveActualData} 
                         onClear={handleClearActualData} 
+                        isReadOnly={isReadOnly}
                     />
                     
                     <div className="w-px h-6 bg-graphite/10 mx-1"></div>
@@ -541,6 +604,7 @@ export function GameLiveDesk() {
                         field="spectators" 
                         value={game.spectators} 
                         onSave={handleSaveActualData} 
+                        isReadOnly={isReadOnly}
                     />
                 </div>
 
@@ -570,6 +634,7 @@ export function GameLiveDesk() {
             isSaving={isSaving}
             goalieLog={goalieLog} 
             onGoalieChange={saveGoalieLog}
+            isReadOnly={isReadOnly}
           />
 
           <SummaryTablesAccordion 
@@ -582,6 +647,7 @@ export function GameLiveDesk() {
             onSaveGoalieLog={saveGoalieLog}
             onRequestDeleteGoalieLog={(id) => setDeleteModalState({ isOpen: true, id, type: 'goalie' })}
             onSaveShotsSummary={saveShotsSummary}
+            isReadOnly={isReadOnly}
           />
 
           <ShootoutAccordion 
@@ -592,14 +658,17 @@ export function GameLiveDesk() {
             onReopenShootout={handleReopenShootout} 
             onUpdateStatus={handleUpdateShootoutStatus} 
             isSaving={isSaving}
+            isReadOnly={isReadOnly}
           />
 
-          <div className="mt-4 mb-12 flex justify-end">
-             <button onClick={() => setIsTechModalOpen(true)} className="px-6 py-3 bg-white text-status-rejected hover:bg-status-rejected hover:text-white border border-status-rejected/20 rounded-xl text-[13px] font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                Назначить технический результат
-             </button>
-          </div>
+          {!isReadOnly && (
+              <div className="mt-4 mb-12 flex justify-end">
+                 <button onClick={() => setIsTechModalOpen(true)} className="px-6 py-3 bg-white text-status-rejected hover:bg-status-rejected hover:text-white border border-status-rejected/20 rounded-xl text-[13px] font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    Назначить технический результат
+                 </button>
+              </div>
+          )}
         </div>
       </div>
 
@@ -622,6 +691,7 @@ export function GameLiveDesk() {
           setTimerSeconds(secs);
           socket?.emit('timer_action', { gameId, action: 'set_time', seconds: secs });
         }}
+        isReadOnly={isReadOnly}
       />
 
       <ConfirmModal 

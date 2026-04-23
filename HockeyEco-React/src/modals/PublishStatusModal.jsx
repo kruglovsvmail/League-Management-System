@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from '../ui/Button';
 
+// Импортируем заглушку
+import { AccessFallback } from '../ui/AccessFallback';
 
-export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSaving = false }) {
+export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSaving = false, readOnly = false }) {
   const [status, setStatus] = useState(isPublished);
 
   useEffect(() => {
@@ -12,14 +14,19 @@ export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSav
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Статус публикации" size="normal">
-      <div className="flex flex-col gap-3 mb-6 font-sans">
+      
+      {readOnly && (
+        <AccessFallback variant="readonly" message="Режим просмотра. Изменение публикации недоступно." />
+      )}
+
+      <div className="flex flex-col gap-3 mb-6 font-sans mt-2">
         <div 
-          onClick={() => setStatus(true)}
-          className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all border ${
+          onClick={() => !readOnly && setStatus(true)}
+          className={`flex items-center gap-4 p-4 rounded-xl transition-all border ${
             status === true 
               ? 'border-status-accepted bg-status-accepted/10' 
               : 'border-graphite/10 hover:border-status-accepted/40 hover:bg-black/5'
-          }`}
+          } ${readOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
         >
           <div className="flex flex-col flex-1">
             <span className="font-bold text-graphite text-[15px]">Опубликован</span>
@@ -31,12 +38,12 @@ export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSav
         </div>
 
         <div 
-          onClick={() => setStatus(false)}
-          className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all border ${
+          onClick={() => !readOnly && setStatus(false)}
+          className={`flex items-center gap-4 p-4 rounded-xl transition-all border ${
             status === false 
               ? 'border-orange bg-orange/10' 
               : 'border-graphite/10 hover:border-orange/40 hover:bg-black/5'
-          }`}
+          } ${readOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
         >
           <div className="flex flex-col flex-1">
             <span className="font-bold text-graphite text-[15px]">Скрыт (Черновик)</span>
@@ -48,11 +55,13 @@ export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSav
         </div>
       </div>
 
-      <div className="flex justify-end pt-5 border-t border-graphite/10">
-        <Button onClick={() => onSave(status)} isLoading={isSaving} className="w-full sm:w-auto">
-          Сохранить
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end pt-5 border-t border-graphite/10">
+          <Button onClick={() => onSave(status)} isLoading={isSaving} className="w-full sm:w-auto">
+            Сохранить
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }

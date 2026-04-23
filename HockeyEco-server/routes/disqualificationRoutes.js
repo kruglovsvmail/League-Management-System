@@ -1,10 +1,5 @@
 import express from 'express';
-import { 
-    verifyToken,
-    requireRoleBySeason,
-    requireRoleByDisqualification,
-    requireRoleForDisqualificationCreate
-} from '../controllers/authController.js';
+import { verifyToken, requirePermission } from '../controllers/authController.js';
 import {
     getSeasonDisqualifications,
     createDisqualification,
@@ -16,13 +11,13 @@ const router = express.Router();
 // Защита всех эндпоинтов токеном
 router.use(verifyToken);
 
-// Получить все штрафы в сезоне (все кроме media)
-router.get('/seasons/:seasonId/disqualifications', requireRoleBySeason(['top_manager', 'league_admin']), getSeasonDisqualifications);
+// Получить все штрафы в сезоне
+router.get('/seasons/:seasonId/disqualifications', requirePermission('DISQUALIFICATIONS_VIEW'), getSeasonDisqualifications);
 
-// Создать новый штраф (только руководство)
-router.post('/disqualifications', requireRoleForDisqualificationCreate(['top_manager', 'league_admin']), createDisqualification);
+// Создать новый штраф
+router.post('/disqualifications', requirePermission('DISQUALIFICATIONS_CREATE'), createDisqualification);
 
 // Обновить статус штрафа (отменить или отметить как отбытый)
-router.patch('/disqualifications/:id/status', requireRoleByDisqualification(['top_manager', 'league_admin']), updateDisqualificationStatus);
+router.patch('/disqualifications/:id/status', requirePermission('DISQUALIFICATIONS_STATUS_CHANGE'), updateDisqualificationStatus);
 
 export default router;

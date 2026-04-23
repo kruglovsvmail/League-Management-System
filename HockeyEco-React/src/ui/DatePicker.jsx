@@ -1,38 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-export function DatePicker({ value, onChange, placeholder = "Выберите дату" }) {
+export function DatePicker({ value, onChange, placeholder = "Выберите дату", disabled = false, readOnly = false }) {
+  const isDisabled = disabled || readOnly;
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
   const [coords, setCoords] = useState({ left: 0, top: 0 });
   const [viewDate, setViewDate] = useState(value ? new Date(value) : new Date());
 
-  // --- УМНОЕ ПОЗИЦИОНИРОВАНИЕ ---
   const updatePosition = () => {
     if (isOpen && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const popupWidth = 260; 
-      const popupHeight = 310; // Примерная высота самого календаря
-      const gap = 8; // Отступ от инпута
+      const popupHeight = 310;
+      const gap = 8; 
 
       let calculatedLeft = rect.left;
-      let calculatedTop = rect.bottom + window.scrollY + gap; // По умолчанию открываем вниз
+      let calculatedTop = rect.bottom + window.scrollY + gap; 
 
-      // 1. Проверка по горизонтали (Ось X)
       if (calculatedLeft + popupWidth > window.innerWidth - 20) {
-        // Если вылезает справа — выравниваем по правому краю инпута
         calculatedLeft = rect.right - popupWidth;
       }
       if (calculatedLeft < 10) {
-        // Если после выравнивания вылез слева — прижимаем к левому краю экрана
         calculatedLeft = 10;
       }
 
-      // 2. Проверка по вертикали (Ось Y)
       if (rect.bottom + popupHeight + gap > window.innerHeight) {
-        // Если внизу нет места, проверяем есть ли место сверху
         if (rect.top - popupHeight - gap > 0) {
-          // Открываем ВВЕРХ
           calculatedTop = rect.top + window.scrollY - popupHeight - gap;
         }
       }
@@ -41,11 +35,8 @@ export function DatePicker({ value, onChange, placeholder = "Выберите д
     }
   };
 
-  // Пересчитываем позицию при открытии
   useEffect(() => {
     updatePosition();
-    
-    // Опционально: пересчитываем позицию при скролле (чтобы календарь не отрывался от инпута)
     if (isOpen) {
       window.addEventListener('scroll', updatePosition, { passive: true });
       window.addEventListener('resize', updatePosition);
@@ -93,13 +84,12 @@ export function DatePicker({ value, onChange, placeholder = "Выберите д
   return (
     <div className="relative font-sans w-full" ref={containerRef}>
       <div 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full px-4 py-[10px] rounded-md bg-white/60 border cursor-pointer flex justify-between items-center transition-all duration-300 hover:border-orange hover:bg-white ${isOpen ? 'border-orange bg-white shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' : 'border-graphite/20'}`}
+        onClick={() => { if (!isDisabled) setIsOpen(!isOpen); }}
+        className={`w-full px-4 py-[10px] rounded-md border flex justify-between items-center transition-all duration-300 ${isDisabled ? 'bg-gray-50 border-graphite/10 cursor-not-allowed opacity-70' : (isOpen ? 'border-orange bg-white shadow-[0_0_0_3px_rgba(255,122,0,0.2)] cursor-pointer' : 'bg-white/60 border-graphite/20 hover:border-orange hover:bg-white cursor-pointer')}`}
       >
         <span className={`text-[14px] font-semibold truncate ${value ? 'text-graphite' : 'text-graphite/40'}`}>
           {displayValue || placeholder}
         </span>
-        {/* Смягченная и изящная иконка */}
         <svg 
           className={`w-[18px] h-[18px] shrink-0 ml-2 transition-colors duration-300 ${value ? 'text-graphite-light' : 'text-graphite/40'}`} 
           viewBox="0 0 24 24" 
@@ -116,7 +106,7 @@ export function DatePicker({ value, onChange, placeholder = "Выберите д
         </svg>
       </div>
 
-      {isOpen && createPortal(
+      {isOpen && !isDisabled && createPortal(
         <div 
           className="datepicker-portal absolute bg-white/95 backdrop-blur-xl rounded-xl border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100000] animate-fade-in-down p-4 w-[260px]"
           style={{ top: `${coords.top}px`, left: `${coords.left}px` }}

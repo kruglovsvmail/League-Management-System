@@ -7,6 +7,7 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
+import { AccessFallback } from '../ui/AccessFallback';
 import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
 import { CreateTransferRequestModal } from '../modals/CreateTransferRequestModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal'; 
@@ -22,9 +23,12 @@ export function TransfersPage() {
   const { checkAccess } = useAccess();
 
   const isAdmin = user?.globalRole === 'admin';
-  const canViewTransfers = checkAccess('VIEW_TRANSFERS');
-  const canCreateTransfer = checkAccess('CREATE_TRANSFER');
-  const canActionTransfer = checkAccess('ACTION_TRANSFER');
+  const canViewTransfers = checkAccess('TRANSFERS_VIEW');
+  const canCreateTransfer = checkAccess('TRANSFERS_CREATE');
+  const canActionTransfer = checkAccess('TRANSFERS_ACTION');
+  const canRevertTransfer = checkAccess('TRANSFERS_REVERT');
+  
+  const isReadOnly = !canCreateTransfer && !canActionTransfer && !canRevertTransfer;
   
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -202,9 +206,7 @@ export function TransfersPage() {
       <div className="flex flex-col flex-1 animate-fade-in-down">
         <Header title="Трансферы" />
         <main className="p-10 flex flex-1 items-center justify-center">
-          <div className="text-center text-status-rejected font-medium text-lg bg-status-rejected/5 px-8 py-6 rounded-2xl border border-status-rejected/10">
-            У вас нет прав для просмотра этого раздела
-          </div>
+          <AccessFallback variant="full" message="У вас нет прав для просмотра раздела трансферов." />
         </main>
       </div>
     );
@@ -237,6 +239,12 @@ export function TransfersPage() {
           </>
         }
       />
+
+      {isReadOnly && (
+        <div className="px-10 pt-6">
+          <AccessFallback variant="readonly" message="У вас нет прав на управление трансферами. Вы находитесь в режиме просмотра." />
+        </div>
+      )}
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         
@@ -274,7 +282,7 @@ export function TransfersPage() {
                 const isAdd = tr.request_type === 'add';
                 const created = formatDateTime(tr.created_at);
                 const resolved = formatDateTime(tr.resolved_at);
-                const playerPhoto = getImageUrl(tr.member_photo || '/default/user_default.webp'); // tr.avatar_url - вставить если нужно фото из users
+                const playerPhoto = getImageUrl(tr.member_photo || '/default/user_default.webp');
                 const teamLogo = getImageUrl(tr.team_logo || '/default/Logo_team_default.webp');
 
                 const now = new Date();
@@ -303,7 +311,17 @@ export function TransfersPage() {
                             <div className="text-[12px] font-medium text-graphite-light mt-0.5">{tr.middle_name || ' '}</div>
                           </div>
                           <div className="flex justify-center">
-                            {isAdd ? <svg className="w-8 h-8 text-status-accepted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg> : <svg className="w-8 h-8 text-status-rejected" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>}
+                            {isAdd ? (
+                              <svg className="w-8 h-8 text-status-accepted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                              </svg>
+                            ) : (
+                              <svg className="w-8 h-8 text-status-rejected" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                              </svg>
+                            )}
                           </div>
                           <div className="w-14 h-12 rounded-lg overflow-hidden flex items-center justify-center p-1 shrink-0">
                             <img src={teamLogo} alt="Team" className="w-full h-full object-contain" onError={(e) => e.target.src = getImageUrl('/default/Logo_team_default.webp')}/>
@@ -319,7 +337,6 @@ export function TransfersPage() {
 
                         <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                           <div className="overflow-hidden">
-                            {/* Изменил gap с 12 на 10, чтобы ID аккуратно влез */}
                             <div className="px-10 py-4 bg-graphite/5 border-t border-graphite/5 flex items-center gap-10">
                               <div className="text-center min-w-[100px]">
                                 {tr.resolved_at ? (
@@ -330,7 +347,6 @@ export function TransfersPage() {
                               <div><div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">Амплуа</div><div className="text-[13px] font-medium text-graphite">{POSITIONS[tr.position] || tr.position || '-'}</div></div>
                               <div><div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">Номер</div><div className="text-[13px] font-bold text-graphite">{tr.jersey_number ? `#${tr.jersey_number}` : '-'}</div></div>
                               
-                              {/* НОВЫЙ БЛОК С ID ЗАЯВКИ */}
                               <div>
                                 <div className="text-[9px] uppercase font-bold text-graphite/30 mb-1">ID запроса</div>
                                 <div className="text-[12px] font-mono text-graphite/40">#{tr.id}</div>
@@ -363,8 +379,8 @@ export function TransfersPage() {
                                         </div>
                                       )}
                                     </>
-                                  ) : isAdmin ? (
-                                    /* Кнопка "Вернуть" только для админа */
+                                  ) : canRevertTransfer ? (
+                                    /* Кнопка "Вернуть" по матрице прав */
                                     <button onClick={(e) => handleAction(e, tr.id, 'revert')} className="w-10 h-10 flex items-center justify-center rounded-lg bg-white border border-graphite/20 text-graphite hover:border-orange hover:transition-colors shadow-sm" title="Вернуть статус на проверку">
                                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
                                     </button>

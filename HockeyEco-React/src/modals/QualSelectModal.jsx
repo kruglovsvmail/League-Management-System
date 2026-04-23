@@ -3,6 +3,8 @@ import { Modal } from './Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 
+// Импортируем компонент заглушки для прав доступа
+import { AccessFallback } from '../ui/AccessFallback';
 
 export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQualId, onSelect, isSaving = false, readOnly = false }) {
   const [selectedId, setSelectedId] = useState(currentQualId);
@@ -24,7 +26,13 @@ export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQ
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Выбор квалификации" size="medium">
-      <div className="flex flex-col gap-3 mb-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+      
+      {/* Выводим баннер "Только чтение", если права ограничены */}
+      {readOnly && (
+        <AccessFallback variant="readonly" message="Режим просмотра. Смена квалификации недоступна для вашей роли." />
+      )}
+
+      <div className="flex flex-col gap-3 mb-6 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar mt-2">
         
         <div 
           onClick={() => !readOnly && setSelectedId(null)}

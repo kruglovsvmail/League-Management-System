@@ -6,6 +6,7 @@ import { Button } from '../../ui/Button';
 import { Loader } from '../../ui/Loader';
 import { Modal } from '../../modals/Modal';
 import { RoleSelect } from '../../ui/RoleSelect';
+import { AccessFallback } from '../../ui/AccessFallback';
 import { getImageUrl, getToken } from '../../utils/helpers';
 
 const ROLE_OPTIONS = [
@@ -45,8 +46,9 @@ export function StaffTab({ setToast }) {
   const { user, selectedLeague } = useOutletContext();
   const { checkAccess } = useAccess();
   
-  const canViewStaff = checkAccess('VIEW_STAFF');
-  const canManageStaff = checkAccess('MANAGE_STAFF');
+  // Обновленные системные ключи
+  const canViewStaff = checkAccess('SETTINGS_STAFF_VIEW');
+  const canManageStaff = checkAccess('SETTINGS_STAFF_MANAGE');
 
   const [staff, setStaff] = useState([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
@@ -183,6 +185,10 @@ export function StaffTab({ setToast }) {
     }
   };
 
+  if (!canViewStaff) {
+    return <AccessFallback variant="full" message="У вас нет прав для просмотра персонала лиги." />;
+  }
+
   const staffColumns = [
     { label: 'Фото', width: 'text-center w-16', render: (row) => (
         <div className="w-[40px] h-[40px] rounded-md overflow-hidden bg-graphite/5 border border-graphite/10 inline-block">
@@ -214,95 +220,94 @@ export function StaffTab({ setToast }) {
   ];
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-start animate-fade-in-down">
-      
-      {/* Левая колонка (Форма) */}
-      {canManageStaff && (
-        <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-5">
-          <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Добавить сотрудника</span>
-          
-          <div className="flex flex-col w-full">
-            <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Номер телефона</span>
-            <div className="relative flex items-center w-full border border-graphite/20 rounded-md bg-white transition-all duration-300 focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)]">
-              <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/10 py-2.5">+7</div>
-              <input 
-                type="tel" 
-                placeholder="(000) 000-00-00" 
-                value={formatPhoneDynamic(phoneRaw)} 
-                onChange={handlePhoneChange} 
-                className="w-full px-3 py-2.5 bg-transparent text-graphite text-[14px] outline-none placeholder:text-graphite/30 font-medium" 
-              />
-              {isSearchingUser && <div className="absolute right-3 w-4 h-4 border-2 border-graphite/10 border-t-orange rounded-full animate-spin"></div>}
-            </div>
-          </div>
-
-          {foundUser && (
-            <div className="bg-white/80 border border-graphite/10 rounded-xl p-5 flex flex-col gap-5 animate-fade-in-down shadow-sm mt-2">
-              <div className="flex items-center gap-4 border-b border-graphite/10 pb-4">
-                <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
-                  <img src={getImageUrl(foundUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-bold text-[15px] text-graphite leading-tight">{`${foundUser.last_name} ${foundUser.first_name} ${foundUser.middle_name || ''}`}</span>
-                  <span className="text-[12px] text-graphite-light mt-0.5">{foundUser.birth_date ? new Date(foundUser.birth_date).toLocaleDateString('ru-RU') : 'Возраст не указан'}</span>
-                </div>
-              </div>
-              
-              <div className="flex flex-col gap-4">
-                <RoleSelect options={ROLE_OPTIONS} value={selectedRoles} onChange={setSelectedRoles} />
-                <Button onClick={handleAssignStaff} isLoading={isAssigning} className="w-full mt-1">Назначить</Button>
-              </div>
-            </div>
-          )}
-        </div>
+    <div className="flex flex-col gap-6 animate-fade-in-down">
+      {!canManageStaff && (
+        <AccessFallback variant="readonly" message="У вас нет прав для управления персоналом. Вы находитесь в режиме просмотра." />
       )}
+      
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
+        {/* Левая колонка (Форма) */}
+        {canManageStaff && (
+          <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-5">
+            <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Добавить сотрудника</span>
+            
+            <div className="flex flex-col w-full">
+              <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Номер телефона</span>
+              <div className="relative flex items-center w-full border border-graphite/20 rounded-md bg-white transition-all duration-300 focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)]">
+                <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/10 py-2.5">+7</div>
+                <input 
+                  type="tel" 
+                  placeholder="(000) 000-00-00" 
+                  value={formatPhoneDynamic(phoneRaw)} 
+                  onChange={handlePhoneChange} 
+                  className="w-full px-3 py-2.5 bg-transparent text-graphite text-[14px] outline-none placeholder:text-graphite/30 font-medium" 
+                />
+                {isSearchingUser && <div className="absolute right-3 w-4 h-4 border-2 border-graphite/10 border-t-orange rounded-full animate-spin"></div>}
+              </div>
+            </div>
 
-      {/* Правая колонка (Таблица) */}
-      <div className="flex-1 w-full bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 min-h-[400px] relative">
-        {!canViewStaff ? (
-          <div className="text-center py-20 text-status-rejected font-medium">У вас нет прав для просмотра персонала</div>
-        ) : (
-          <>
-            {isLoadingStaff && (
-              <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none">
-                <Loader text="Загрузка персонала..." />
+            {foundUser && (
+              <div className="bg-white/80 border border-graphite/10 rounded-xl p-5 flex flex-col gap-5 animate-fade-in-down shadow-sm mt-2">
+                <div className="flex items-center gap-4 border-b border-graphite/10 pb-4">
+                  <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
+                    <img src={getImageUrl(foundUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[15px] text-graphite leading-tight">{`${foundUser.last_name} ${foundUser.first_name} ${foundUser.middle_name || ''}`}</span>
+                    <span className="text-[12px] text-graphite-light mt-0.5">{foundUser.birth_date ? new Date(foundUser.birth_date).toLocaleDateString('ru-RU') : 'Возраст не указан'}</span>
+                  </div>
+                </div>
+                
+                <div className="flex flex-col gap-4">
+                  <RoleSelect options={ROLE_OPTIONS} value={selectedRoles} onChange={setSelectedRoles} />
+                  <Button onClick={handleAssignStaff} isLoading={isAssigning} className="w-full mt-1">Назначить</Button>
+                </div>
               </div>
             )}
-            <div className={`transition-opacity duration-300 ease-in-out ${isLoadingStaff ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-[16px] font-black text-graphite uppercase tracking-wide">Список персонала</span>
-              </div>
-              {staff.length > 0 ? (
-                <Table columns={staffColumns} data={staff} />
-              ) : (
-                <div className="text-center py-20 text-graphite-light font-medium">Персонал лиги пока не назначен</div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Модалка редактирования */}
-      <Modal isOpen={!!editModalUser} onClose={() => setEditModalUser(null)} title="Редактирование ролей" size="medium">
-        {editModalUser && (
-          <div className="flex flex-col gap-6 font-sans">
-             <div className="flex items-center gap-4 bg-graphite/5 p-4 rounded-xl border border-graphite/10">
-                <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-white">
-                    <img src={getImageUrl(editModalUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-bold text-[15px] text-graphite">{`${editModalUser.last_name} ${editModalUser.first_name}`}</span>
-                  <span className="text-[12px] text-graphite-light mt-0.5">{formatPhoneDisplay(editModalUser.phone)}</span>
-                </div>
-             </div>
-             <div><RoleSelect options={ROLE_OPTIONS} value={editRoles} onChange={setEditRoles} /></div>
-             <div className="flex justify-end pt-5 border-t border-graphite/10">
-               <Button onClick={handleSaveEdit} isLoading={isUpdatingStaff}>Сохранить</Button>
-             </div>
           </div>
         )}
-      </Modal>
 
+        {/* Правая колонка (Таблица) */}
+        <div className="flex-1 w-full bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 min-h-[400px] relative">
+          {isLoadingStaff && (
+            <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none">
+              <Loader text="Загрузка персонала..." />
+            </div>
+          )}
+          <div className={`transition-opacity duration-300 ease-in-out ${isLoadingStaff ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
+            <div className="flex justify-between items-center mb-6">
+              <span className="text-[16px] font-black text-graphite uppercase tracking-wide">Список персонала</span>
+            </div>
+            {staff.length > 0 ? (
+              <Table columns={staffColumns} data={staff} />
+            ) : (
+              <div className="text-center py-20 text-graphite-light font-medium">Персонал лиги пока не назначен</div>
+            )}
+          </div>
+        </div>
+
+        {/* Модалка редактирования */}
+        <Modal isOpen={!!editModalUser} onClose={() => setEditModalUser(null)} title="Редактирование ролей" size="medium">
+          {editModalUser && (
+            <div className="flex flex-col gap-6 font-sans">
+               <div className="flex items-center gap-4 bg-graphite/5 p-4 rounded-xl border border-graphite/10">
+                  <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-white">
+                      <img src={getImageUrl(editModalUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[15px] text-graphite">{`${editModalUser.last_name} ${editModalUser.first_name}`}</span>
+                    <span className="text-[12px] text-graphite-light mt-0.5">{formatPhoneDisplay(editModalUser.phone)}</span>
+                  </div>
+               </div>
+               <div><RoleSelect options={ROLE_OPTIONS} value={editRoles} onChange={setEditRoles} /></div>
+               <div className="flex justify-end pt-5 border-t border-graphite/10">
+                 <Button onClick={handleSaveEdit} isLoading={isUpdatingStaff}>Сохранить</Button>
+               </div>
+            </div>
+          )}
+        </Modal>
+
+      </div>
     </div>
   );
 }

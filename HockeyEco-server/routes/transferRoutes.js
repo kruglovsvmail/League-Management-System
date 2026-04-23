@@ -1,14 +1,9 @@
 import express from 'express';
-import { 
-  verifyToken, 
-  requireRoleBySeason, 
-  requireRoleByTransfer, 
-  requireRoleForTransferCreate 
-} from '../controllers/authController.js';
+import { verifyToken, requirePermission } from '../controllers/authController.js';
 import { 
     getTransfers, 
     handleTransferAction,
-    getTransferPlayers, // Исправленный импорт
+    getTransferPlayers,
     createTransferRequest
 } from '../controllers/transferController.js';
 
@@ -17,15 +12,15 @@ const router = express.Router();
 router.use(verifyToken);
 
 // Маршруты для модалки создания заявки
-router.get('/transfers/available-players', getTransferPlayers); // Исправленный вызов функции
+router.get('/transfers/available-players', getTransferPlayers);
 
 // ЗАЩИТА: Создавать трансфер может только top_manager
-router.post('/transfers', requireRoleForTransferCreate(['top_manager']), createTransferRequest);
+router.post('/transfers', requirePermission('TRANSFERS_CREATE'), createTransferRequest);
 
-// ЗАЩИТА: Просмотр страницы трансферов (Все кроме media)
-router.get('/seasons/:seasonId/transfers', requireRoleBySeason(['top_manager', 'league_admin']), getTransfers);
+// ЗАЩИТА: Просмотр страницы трансферов
+router.get('/seasons/:seasonId/transfers', requirePermission('TRANSFERS_VIEW'), getTransfers);
 
-// ЗАЩИТА: Принятие / Отклонение / Возврат заявки (Только руководители)
-router.put('/transfers/:id/action', requireRoleByTransfer(['top_manager', 'league_admin']), handleTransferAction);
+// ЗАЩИТА: Принятие / Отклонение / Возврат заявки
+router.put('/transfers/:id/action', requirePermission('TRANSFERS_ACTION'), handleTransferAction);
 
 export default router;

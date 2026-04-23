@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Uploader } from '../ui/Uploader';
 import { Button } from '../ui/Button';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { getImageUrl } from '../utils/helpers';
+
+// Импортируем нашу заглушку
+import { AccessFallback } from '../ui/AccessFallback';
 
 export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initialDark, isSaving = false, canClearLight = true, canClearDark = true, readOnly = false }) {
   const [lightFile, setLightFile] = useState(null);
@@ -23,8 +26,12 @@ export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initia
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Экипировка команды" size="medium">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-[30px] mb-6">
-        {/* Темная форма теперь первая */}
+      
+      {readOnly && (
+        <AccessFallback variant="readonly" message="Режим просмотра. Изменение экипировки недоступно." />
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-[30px] mb-6 mt-2">
         <Uploader 
           label="Темная форма<br/>(Домашняя)" heightClass="h-[232px]" accept=".jpg,.png,.webp"
           isDefaultPreview={true} mockText=""
@@ -33,7 +40,6 @@ export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initia
           canClear={canClearDark}
           disabled={readOnly}
         />
-        {/* Светлая форма теперь вторая */}
         <Uploader 
           label="Светлая форма<br/>(Гостевая)" heightClass="h-[232px]" accept=".jpg,.png,.webp"
           isDefaultPreview={true} mockText=""
@@ -43,6 +49,7 @@ export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initia
           disabled={readOnly}
         />
       </div>
+      
       {!readOnly && (
         <div className="flex justify-end pt-5 border-t border-graphite/10">
           <Button onClick={handleSave} isLoading={isSaving} disabled={isSaving} className={`bg-orange text-white border-none transition-all duration-300 ${isSaving ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-orange-hover'}`}>

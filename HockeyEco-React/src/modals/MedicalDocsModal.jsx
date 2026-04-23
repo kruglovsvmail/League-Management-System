@@ -4,6 +4,9 @@ import { Uploader } from '../ui/Uploader';
 import { Calendar } from '../ui/Calendar';
 import { Button } from '../ui/Button';
 
+// Импортируем нашу заглушку
+import { AccessFallback } from '../ui/AccessFallback';
+
 export function MedicalDocsModal({ 
   isOpen, 
   onClose, 
@@ -17,7 +20,6 @@ export function MedicalDocsModal({
   initialConsentExp,
   readOnly = false,
   playerName,
-  // Новые пропсы из настроек дивизиона
   reqMed = true,
   reqIns = true,
   reqConsent = true
@@ -80,7 +82,6 @@ export function MedicalDocsModal({
     });
   };
 
-  // Вычисляем красивую сетку
   const activeBlocks = [reqMed, reqIns, reqConsent].filter(Boolean).length;
   let gridCols = 'md:grid-cols-3';
   if (activeBlocks === 2) gridCols = 'md:grid-cols-2 max-w-[800px] mx-auto';
@@ -88,10 +89,8 @@ export function MedicalDocsModal({
 
   const modalContent = (
     <div className={`fixed inset-0 z-[35] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={onClose}></div>
       
-      {/* Drawer Panel */}
       <div className={`absolute top-0 right-0 h-full w-full max-w-[1100px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
         {/* Header */}
@@ -106,6 +105,13 @@ export function MedicalDocsModal({
             </svg>
           </button>
         </div>
+
+        {/* Информационный блок о режиме просмотра */}
+        {readOnly && (
+          <div className="px-8 pt-6 pb-0">
+            <AccessFallback variant="readonly" message="Режим просмотра. Скачивание и загрузка документов недоступны." />
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-5 flex flex-col">

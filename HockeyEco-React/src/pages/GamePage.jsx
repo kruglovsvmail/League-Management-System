@@ -16,6 +16,7 @@ import { EditGameInfoDrawer } from '../modals/EditGameInfoDrawer';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
+import { AccessFallback } from '../ui/AccessFallback';
 
 dayjs.locale('ru');
 
@@ -33,7 +34,7 @@ export function GamePage() {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { user, selectedLeague } = useOutletContext();
-  const { checkAccess } = useAccess();
+  const { checkAccess, checkMatchEditAccess } = useAccess();
   
   const [game, setGame] = useState(null);
   const [arenas, setArenas] = useState([]);
@@ -100,16 +101,32 @@ export function GamePage() {
       .map(([role, off]) => ({ user_id: off.id, role }));
   }, [game]);
 
-  const canEditGameInfo = checkAccess('EDIT_GAMES');
-  const canManageStatus = checkAccess('MANAGE_GAME_STATUS', gameStaffArray);
-  const canManageRoster = checkAccess('MANAGE_GAME_ROSTER', gameStaffArray);
-  const canManageOfficials = checkAccess('MANAGE_GAME_REFEREES');
-  const hasProtocolAccess = checkAccess('MANAGE_PROTOCOL', gameStaffArray);
-  const canManageGraphics = checkAccess('MANAGE_GRAPHICS', gameStaffArray);
+  // ==========================================================================
+  // ПРОВЕРКИ ПРАВ ДОСТУПА (С УЧЕТОМ ВРЕМЕНИ И ПОДПИСЕЙ СЕКРЕТАРЯ)
+  // ==========================================================================
+  const matchEditAccess = game ? checkMatchEditAccess(game, gameStaffArray) : { hasAccess: false };
+
+  const canView = checkAccess('MATCH_PAGE_VIEW', { gameStaff: gameStaffArray });
+  const canEditGameInfo = checkAccess('MATCH_EDIT_INFO');
+  
+  // Статус и Составы могут менять только те, у кого есть базовая роль И открыт доступ (не заблокировано подписью/временем)
+  const baseCanManageStatus = checkAccess('MATCH_STATUS_CHANGE', { gameStaff: gameStaffArray });
+  const canManageStatus = baseCanManageStatus && matchEditAccess.hasAccess;
+  
+  const baseCanManageRoster = checkAccess('MATCH_ROSTER_FILL', { gameStaff: gameStaffArray });
+  const canManageRoster = baseCanManageRoster && matchEditAccess.hasAccess;
+
+  const canManageOfficials = checkAccess('MATCH_ASSIGN_STAFF');
+  const canManageGraphics = checkAccess('MATCH_WEB_GRAPHICS_PANEL', { gameStaff: gameStaffArray });
+
+  // Логика кнопки Панели Секретаря:
+  // Если права есть, мы рендерим кнопку.
+  // Разрешаем вход (canEnterLiveDesk), если доступ открыт (matchEditAccess.hasAccess) ИЛИ протокол уже подписан (входим в режиме чтения)
+  const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
+  const canEnterLiveDesk = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
 
   const isScheduled = game?.status === 'scheduled';
   const canEditRosters = isScheduled || game?.status === 'live'; 
-  const canOpenLiveDesk = hasProtocolAccess && ['live', 'finished', 'cancelled'].includes(game?.status);
 
   const gameDate = game ? dayjs(game.game_date) : dayjs();
   const officials = game?.officials || {}; 
@@ -136,53 +153,59 @@ export function GamePage() {
 
   const getStatusBadge = () => {
     if (!game) return null;
-    let badgeClass = "flex items-center w-[240px] justify-center px-5 py-2.5 rounded-md text-[12px] font-black tracking-widest uppercase shadow-sm leading-none border shrink-0 transition-all ";
+    let badgeClass = "flex items-center w-[180px] justify-center px-4 py-2.5 rounded-lg text-[12px] font-bold tracking-widest uppercase transition-all duration-300 border border-transparent shrink-0 ";
     let content = "";
 
     switch (game.status) {
       case 'live': 
-        badgeClass += canManageStatus 
-          ? "bg-blue-500 text-white border-blue-500 hover:bg-blue-600 animate-pulse shadow-[0_4px_15px_rgba(59,130,246,0.3)] cursor-pointer group" 
-          : "bg-blue-500 text-white border-blue-500 shadow-[0_4px_15px_rgba(59,130,246,0.3)]"; 
-        content = "LIVE (Идет сейчас)"; 
+        content = "Идет сейчас"; 
+        if (canManageStatus) {
+          badgeClass += "bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white cursor-pointer group shadow-sm";
+        } else {
+          badgeClass += "bg-blue-500/5 text-blue-500/70 cursor-default";
+        }
         break;
       case 'finished': 
-        if (game.needs_recalc) {
-            content = isRecalculating ? "Пересчет..." : "Пересчет статистики"; 
-            if (canManageStatus) {
-                badgeClass += isRecalculating 
-                  ? "bg-graphite/40 text-white border-transparent cursor-wait w-[240px] flex justify-center" 
-                  : "bg-status-accepted/80 text-white hover:bg-status-accepted cursor-pointer shadow-[0_4px_15px_rgba(34,197,94,0.3)] group w-[210px] flex justify-center"; 
-                
-                return (
-                    <button className={badgeClass} onClick={handleRecalculate} disabled={isRecalculating} title="Пересчитать статистику">
-                        <span>{content}</span>
-                        {isRecalculating ? (
-                           <svg className="w-4 h-4 ml-2 animate-spin shrink-0" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                        ) : (
-                           <svg className="w-4 h-4 ml-2 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        )}
-                    </button>
-                );
-            }
+        if (game.needs_recalc && canManageStatus) {
+            content = isRecalculating ? "Пересчет..." : "Пересчет"; 
+            badgeClass += isRecalculating 
+              ? "bg-status-accepted/10 text-status-accepted/50 cursor-wait w-[180px]" 
+              : "bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white cursor-pointer group shadow-sm w-[180px]"; 
+            
+            return (
+                <button className={badgeClass} onClick={handleRecalculate} disabled={isRecalculating} title="Пересчитать статистику">
+                    <span>{content}</span>
+                    {isRecalculating ? (
+                       <svg className="w-4 h-4 ml-2 animate-spin shrink-0" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    ) : (
+                       <svg className="w-4 h-4 ml-2 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    )}
+                </button>
+            );
         } else {
-            badgeClass += canManageStatus 
-              ? "bg-status-accepted/80 text-white border-status-accepted/20 hover:bg-status-accepted cursor-pointer group" 
-              : "bg-status-accepted/80 text-white border-status-accepted/20"; 
-            content = "Матч завершен"; 
+            content = "Завершен"; 
+            if (canManageStatus) {
+              badgeClass += "bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white cursor-pointer group shadow-sm"; 
+            } else {
+              badgeClass += "bg-status-accepted/5 text-status-accepted/70 cursor-default"; 
+            }
         }
         break;
       case 'cancelled': 
-        badgeClass += canManageStatus 
-          ? "bg-status-rejected/80 text-white border-status-rejected/20 hover:bg-status-rejected cursor-pointer group" 
-          : "bg-status-rejected/80 text-white border-status-rejected/20"; 
         content = "Матч отменен"; 
+        if (canManageStatus) {
+          badgeClass += "bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white cursor-pointer group shadow-sm"; 
+        } else {
+          badgeClass += "bg-status-rejected/5 text-status-rejected/70 cursor-default"; 
+        }
         break;
       default: 
-        badgeClass += canManageStatus 
-          ? "bg-orange text-white border-orange hover:bg-orange/90 cursor-pointer group" 
-          : "bg-orange text-white border-orange"; 
         content = "В расписании"; 
+        if (canManageStatus) {
+          badgeClass += "bg-orange/10 text-orange hover:bg-orange hover:text-white cursor-pointer group shadow-sm"; 
+        } else {
+          badgeClass += "bg-orange/5 text-orange/70 cursor-default"; 
+        }
         break;
     }
 
@@ -377,26 +400,23 @@ export function GamePage() {
             ← К списку матчей
           </button>
         } 
-        actions={
-          canEditGameInfo && (
-            <Button onClick={() => setIsEditInfoDrawerOpen(true)}>
-              Цвет формы и ссылки
-            </Button>
-          )
-        }
       />
 
       {isLoading || !game ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-fade-in">
           <Loader text="Загрузка данных матча..." />
         </div>
+      ) : !canView ? (
+        <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-fade-in px-10">
+          <AccessFallback variant="full" message="У вас нет прав для просмотра страницы этого матча." />
+        </div>
       ) : (
         <div className="flex items-start px-6 md:px-10 pt-8 gap-8 relative z-10 w-full">
           
           <div className="flex-1 relative z-10 flex flex-col min-w-0 gap-6">
             
-            <div className="bg-white/85 rounded-xxl shadow-sm border border-graphite/10 p-6 md:p-8 animate-fade-in-down">
-              <div className="flex items-center justify-between mb-8">
+            <div className="bg-white/85 h-[260px] flex flex-col rounded-xxl shadow-sm border border-graphite/10 p-6 md:p-6 animate-fade-in-down">
+              <div className="flex items-center justify-between mb-8 flex-1">
                 {/* Хозяева */}
                 <div className="flex-1 flex items-center justify-end gap-5">
                   <span className="text-[18px] md:text-[22px] font-black text-graphite text-right leading-tight">{game.home_team_name}</span>
@@ -445,9 +465,9 @@ export function GamePage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-graphite/5 pt-4">
+              <div className="flex items-center justify-between border-t border-graphite/5 pt-4 mt-auto shrink-0">
                 <div className="flex items-center gap-4">
-                  <Tabs tabs={['Составы', 'Судьи', 'Ход игры']} activeTab={tabIndex} onChange={setTabIndex} />
+                  <Tabs tabs={['Составы команд', 'Судьи и медиа ', 'Ход матча']} activeTab={tabIndex} onChange={setTabIndex} />
                 </div>
                 {getStatusBadge()}
               </div>
@@ -465,12 +485,7 @@ export function GamePage() {
               {tabIndex === 1 && (
                 <div className="bg-white/85 p-8 rounded-xxl border border-graphite/10 shadow-sm w-full min-h-[400px]">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
-                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Назначения на матч</h3>
-                    {canManageOfficials && isScheduled && (
-                      <Button onClick={() => setIsOfficialsModalOpen(true)}>
-                        {hasOfficials ? 'Изменить бригаду' : '+ Назначить судей'}
-                      </Button>
-                    )}
+                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Обслуживающие матч</h3>
                   </div>
                   
                   {hasOfficials ? (
@@ -508,7 +523,6 @@ export function GamePage() {
                         <Icon name="whistle" className="w-8 h-8 text-graphite/20" />
                       </div>
                       <span className="text-[14px] font-bold text-graphite/60 mb-1">Бригада арбитров не назначена</span>
-                      <span className="text-[12px] font-medium text-graphite/40">Нажмите «Назначить судей» для формирования бригады</span>
                     </div>
                   )}
                 </div>
@@ -517,12 +531,7 @@ export function GamePage() {
               {tabIndex === 2 && (
                 <div className="bg-white/85 p-8 rounded-xxl border border-graphite/10 shadow-sm w-full min-h-[400px]">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
-                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Протокол</h3>
-                    {canOpenLiveDesk && (
-                      <Button onClick={() => navigate(`/games/${game.id}/live-desk`)}>
-                        Панель секретаря
-                      </Button>
-                    )}
+                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Ход Матча</h3>
                   </div>
 
                   {events.length > 0 ? (
@@ -592,9 +601,6 @@ export function GamePage() {
           <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-xxl p-5 flex flex-col gap-5 shadow-sm border border-white/50 z-20 animate-fade-in">
             
             <div className="flex flex-col gap-4 bg-white/60 p-4 rounded-xl border border-graphite/5">
-              <div className="flex justify-between items-center mb-1">
-                 <span className="text-[10px] font-black uppercase text-graphite-light tracking-widest">Информация</span>
-              </div>
               <div>
                 <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
                 <div className="text-[13px] font-bold text-graphite">{gameDate.isValid() ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}</div>
@@ -610,41 +616,77 @@ export function GamePage() {
               </div>
             </div>
 
-            <div className="bg-white/60 p-4 rounded-xl border border-graphite/5 flex items-center justify-between">
-              <div className="flex flex-col items-center gap-1">
-                  <img src={getJerseyUrl('home', game.home_jersey_type)} className="w-16 h-16 object-contain mix-blend-multiply drop-shadow-sm" alt="jersey" />
-                  <span className="text-[9px] font-bold text-graphite uppercase">{game.home_jersey_type === 'dark' ? 'Темная' : 'Светлая'}</span>
+            <div className="bg-white/60 p-4 rounded-xl border border-graphite/5 flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                 <span className="text-[10px] font-black uppercase text-graphite-light tracking-widest"></span>
+                 {canEditGameInfo && canView && (
+                    <button onClick={() => setIsEditInfoDrawerOpen(true)} className="text-graphite-light hover:text-orange transition-colors" title="Редактировать форму и медиа">
+                       <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    </button>
+                 )}
               </div>
-              <span className="text-[10px] font-black text-graphite/30 uppercase">VS</span>
-              <div className="flex flex-col items-center gap-1">
-                  <img src={getJerseyUrl('away', game.away_jersey_type)} className="w-16 h-16 object-contain mix-blend-multiply drop-shadow-sm" alt="jersey" />
-                  <span className="text-[9px] font-bold text-graphite uppercase">{game.away_jersey_type === 'dark' ? 'Темная' : 'Светлая'}</span>
+
+              <div className="flex items-center justify-between">
+                  <div className="flex flex-col items-center gap-1">
+                      <img src={getJerseyUrl('home', game.home_jersey_type)} className="w-16 h-16 object-contain mix-blend-multiply drop-shadow-sm" alt="jersey" />
+                      <span className="text-[9px] font-bold text-graphite uppercase">{game.home_jersey_type === 'dark' ? 'Темная' : 'Светлая'}</span>
+                  </div>
+                  <span className="text-[10px] font-black text-graphite/30 uppercase">VS</span>
+                  <div className="flex flex-col items-center gap-1">
+                      <img src={getJerseyUrl('away', game.away_jersey_type)} className="w-16 h-16 object-contain mix-blend-multiply drop-shadow-sm" alt="jersey" />
+                      <span className="text-[9px] font-bold text-graphite uppercase">{game.away_jersey_type === 'dark' ? 'Темная' : 'Светлая'}</span>
+                  </div>
               </div>
+
+              {(game.video_yt_url || game.video_vk_url) && (
+                 <div className="flex gap-10 pt-3 border-t border-graphite/5">
+                    {game.video_yt_url && <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-red-500 hover:underline flex items-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div>YouTube</a>}
+                    {game.video_vk_url && <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-blue-500 hover:underline flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full"></div>VK Видео</a>}
+                 </div>
+              )}
             </div>
+
+            {(hasProtocolAccess || (canManageOfficials && isScheduled)) && (
+              <div className="flex flex-col gap-3 bg-white/60 p-4 rounded-xl border border-graphite/5">
+                {hasProtocolAccess && (
+                   <button 
+                     onClick={() => canEnterLiveDesk && navigate(`/games/${game.id}/live-desk`)}
+                     disabled={!canEnterLiveDesk}
+                     title={!canEnterLiveDesk ? matchEditAccess.reason : ''}
+                     className={`w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm ${
+                       canEnterLiveDesk 
+                         ? (game?.is_protocol_signed ? 'bg-graphite/80 text-white hover:bg-graphite' : 'bg-graphite text-white hover:bg-graphite/90') 
+                         : 'bg-graphite/20 text-graphite/50 cursor-not-allowed'
+                     }`}
+                   >
+                     {game?.is_protocol_signed ? 'Панель секретаря ' : 'Панель секретаря'}
+                   </button>
+                )}
+                {canManageOfficials && isScheduled && (
+                   <button 
+                     onClick={() => setIsOfficialsModalOpen(true)} 
+                     className="bg-graphite text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-graphite/90 transition-colors shadow-sm"
+                   >
+                     {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
+                   </button>
+                )}
+              </div>
+            )}
 
             {canManageGraphics && (
               <div className="flex flex-col gap-3 bg-white/60 p-4 rounded-xl border border-graphite/5">
-                <span className="text-[10px] font-black uppercase text-graphite-light tracking-widest mb-1">Веб-Графика</span>
                 <button 
                   onClick={() => window.open(`/games/${gameId}/graphics-panel`, '_blank')}
-                  className="bg-blue-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-blue-600 transition-colors shadow-sm"
+                  className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
                 >
                   Панель трансляции
                 </button>
                 <button 
                   onClick={handleCopyOBSLink}
-                  className="bg-graphite text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-graphite/90 transition-colors shadow-sm"
+                  className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
                 >
                   {obsCopied ? 'Ссылка скопирована!' : 'Ссылка для OBS'}
                 </button>
-              </div>
-            )}
-
-            {(game.video_yt_url || game.video_vk_url) && (
-              <div className="flex flex-col gap-2 bg-white/60 p-4 rounded-xl border border-graphite/5">
-                <span className="text-[10px] font-black uppercase text-graphite-light tracking-widest mb-1">Медиа</span>
-                {game.video_yt_url && <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-red-500 hover:underline flex items-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div>YouTube трансляция</a>}
-                {game.video_vk_url && <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-blue-500 hover:underline flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full"></div>VK Видео</a>}
               </div>
             )}
           </div>

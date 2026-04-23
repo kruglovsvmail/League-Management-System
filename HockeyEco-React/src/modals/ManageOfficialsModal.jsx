@@ -3,8 +3,9 @@ import { Modal } from './Modal';
 import { Button } from '../ui/Button';
 import { Select } from '../ui/Select';
 import { getToken, getImageUrl } from '../utils/helpers';
+import { AccessFallback } from '../ui/AccessFallback';
 
-export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials, onSuccess }) {
+export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials, onSuccess, readOnly = false }) {
   const [staffList, setStaffList] = useState([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
 
@@ -43,6 +44,8 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
   }, [isOpen, initialOfficials]);
 
   const handleSave = async () => {
+    if (readOnly) return;
+    
     setIsSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/officials`, {
@@ -82,6 +85,8 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
   const mediaOptions = ['-- Не назначен --', ...mediaList.map(formatName)];
 
   const handleSelectChange = (key, selectedName) => {
+    if (readOnly) return;
+    
     if (selectedName === '-- Не назначен --') {
       setOfficials({ ...officials, [key]: '' });
     } else {
@@ -116,6 +121,7 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
               options={optionsArray}
               value={getValueForSelect(key)}
               onChange={(val) => handleSelectChange(key, val)}
+              disabled={readOnly}
             />
           </div>
         </div>
@@ -128,7 +134,11 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
       {/* Сделали ширину 750px - идеально для 2 колонок с длинными ФИО */}
       <div className="flex flex-col gap-6 w-[750px] max-w-full">
         
-        <div className={`space-y-6 transition-opacity duration-300 ${isLoadingStaff ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+        {readOnly && (
+          <AccessFallback variant="readonly" message="У вас нет прав на редактирование бригады арбитров." />
+        )}
+
+        <div className={`space-y-6 transition-opacity duration-300 ${isLoadingStaff || readOnly ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
           
           <div className="bg-graphite/[0.03] p-5 rounded-2xl border border-graphite/10">
             <div className="grid grid-cols-2 gap-8">
@@ -153,11 +163,13 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
 
         </div>
 
-        <div className="flex justify-end pt-2">
-          <Button onClick={handleSave} isLoading={isSaving} className="w-full sm:w-auto">
-            Сохранить назначения
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="flex justify-end pt-2">
+            <Button onClick={handleSave} isLoading={isSaving} className="w-full sm:w-auto">
+              Сохранить назначения
+            </Button>
+          </div>
+        )}
       </div>
     </Modal>
   );

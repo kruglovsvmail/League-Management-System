@@ -1,6 +1,6 @@
 import express from 'express';
 import { getPlayerProfile } from '../controllers/playerController.js';
-import { verifyToken } from '../controllers/authController.js'; // <-- Импортируем охранника
+import { verifyToken } from '../controllers/authController.js';
 
 const router = express.Router();
 

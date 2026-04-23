@@ -33,16 +33,14 @@ const TargetIcon = ({ className = "w-5 h-5" }) => (
 export const SummaryTablesAccordion = ({ 
   game, goalieLog, shotsSummary, 
   homeRoster, awayRoster, timerSeconds,
-  onSaveGoalieLog, onRequestDeleteGoalieLog, onSaveShotsSummary 
+  onSaveGoalieLog, onRequestDeleteGoalieLog, onSaveShotsSummary, isReadOnly 
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
-  // --- СТЕЙТЫ ВРАТАРЕЙ ---
   const [editLogId, setEditLogId] = useState(null);
   const [editLogData, setEditLogData] = useState({});
   const [newLogData, setNewLogData] = useState({ time: '', home_goalie: '', away_goalie: '' });
 
-  // ЭФФЕКТ: Синхронизируем строку добавления с последней записью лога
   useEffect(() => {
     const lastLog = goalieLog.length > 0 ? goalieLog[goalieLog.length - 1] : null;
     setNewLogData(prev => ({
@@ -52,14 +50,12 @@ export const SummaryTablesAccordion = ({
     }));
   }, [goalieLog]);
 
-  // --- СТЕЙТЫ БРОСКОВ ---
   const [editShotTeamId, setEditShotTeamId] = useState(null);
   const [editShotData, setEditShotData] = useState({});
   const [confirmClearTeamId, setConfirmClearTeamId] = useState(null);
   const [isClearing, setIsClearing] = useState(false);
 
   const getGoalieOptions = (roster) => {
-    // Больше никаких фейковых пустых значений! Глобальный Select сам добавит "—"
     return roster.filter(r => r.position === 'goalie' || r.position_in_line === 'G')
                  .sort((a, b) => a.jersey_number - b.jersey_number)
                  .map(g => ({ value: g.player_id, label: `#${g.jersey_number} ${g.last_name || ''}` }));
@@ -68,14 +64,12 @@ export const SummaryTablesAccordion = ({
   const homeGoalieOptions = getGoalieOptions(homeRoster);
   const awayGoalieOptions = getGoalieOptions(awayRoster);
 
-  // Хелпер для красивого вывода вратарей в сохраненных строках
   const renderGoalieLabel = (goalieId, options) => {
     const g = options.find(o => String(o.value) === String(goalieId || ''));
     if (g && g.value !== '') return g.label;
     return <span className="text-graphite/40 italic text-[11px] font-bold">ПУСТЫЕ ВОРОТА</span>;
   };
 
-  // --- ЛОГИКА ВРАТАРЕЙ ---
   const startEditLog = (log) => {
     setEditLogId(log.id);
     setEditLogData({
@@ -106,17 +100,14 @@ export const SummaryTablesAccordion = ({
     setNewLogData(prev => ({ ...prev, time: '' })); 
   };
 
-  // Проверка на совпадение вратарей для блокировки кнопки "+"
   const lastGoalieLog = goalieLog.length > 0 ? goalieLog[goalieLog.length - 1] : null;
   const isGoaliesMatch = lastGoalieLog && 
     String(lastGoalieLog.home_goalie_id || '') === String(newLogData.home_goalie) && 
     String(lastGoalieLog.away_goalie_id || '') === String(newLogData.away_goalie);
 
-  // --- ЛОГИКА БРОСКОВ ---
   const periodsCount = game?.periods_count || 3;
   const periods = Array.from({ length: periodsCount }, (_, i) => String(i + 1));
   
-  // ИСПРАВЛЕНИЕ: Опираемся на длину овертайма, а не на отсутствующее свойство
   if (parseInt(game?.ot_length, 10) > 0) {
       periods.push('OT');
   }
@@ -194,13 +185,11 @@ export const SummaryTablesAccordion = ({
     }
   ];
 
-  const goalieRowsCount = Math.max(1, goalieLog.length + 1);
+  const goalieRowsCount = isReadOnly ? Math.max(1, goalieLog.length) : Math.max(1, goalieLog.length + 1);
   const goalieRows = Array.from({ length: goalieRowsCount });
 
   return (
     <div className={`bg-white shadow-lg flex flex-col font-sans rounded-md transition-all duration-500 ease-in-out`}>
-      
-      {/* ШАПКА АККОРДЕОНА */}
       <div 
          className="bg-gray-bg-light px-5 py-3 flex justify-between items-center rounded-t-md select-none cursor-pointer hover:bg-graphite/5 transition-colors"
          onClick={() => setIsExpanded(!isExpanded)}
@@ -211,7 +200,6 @@ export const SummaryTablesAccordion = ({
           </div>
       </div>
       
-      {/* СОДЕРЖИМОЕ АККОРДЕОНА */}
       <div className={`grid transition-all duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
          <div className={isExpanded ? 'overflow-visible' : 'overflow-hidden'}>
              <div className="flex w-full gap-5 p-5 bg-graphite/[0.02] rounded-b-md border-t border-graphite/20">
@@ -250,7 +238,7 @@ export const SummaryTablesAccordion = ({
                                     const log = goalieLog[i];
                                     const isInput = i === goalieLog.length;
 
-                                    if (log && log.id === editLogId) {
+                                    if (log && log.id === editLogId && !isReadOnly) {
                                         return (
                                             <tr key={`edit-${log.id}`} className="h-[36px] border-b border-graphite/30 bg-orange/5 transition-colors">
                                                 <td className="p-1 border-r border-graphite/30 text-center">
@@ -276,18 +264,20 @@ export const SummaryTablesAccordion = ({
                                                 <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.home_goalie_id, homeGoalieOptions)}</td>
                                                 <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.away_goalie_id, awayGoalieOptions)}</td>
                                                 <td className="p-0 text-center">
-                                                    <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => startEditLog(log)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                                                        {goalieLog.length > 1 && (
-                                                            <button onClick={() => onRequestDeleteGoalieLog(log.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
-                                                        )}
-                                                    </div>
+                                                    {!isReadOnly && (
+                                                        <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
+                                                            <button onClick={() => startEditLog(log)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
+                                                            {goalieLog.length > 1 && (
+                                                                <button onClick={() => onRequestDeleteGoalieLog(log.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
                                     }
 
-                                    if (isInput) {
+                                    if (isInput && !isReadOnly) {
                                         return (
                                             <tr key="new-log" className="even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
                                                 <td className="p-1 border-r border-graphite/30 text-center">
@@ -350,7 +340,7 @@ export const SummaryTablesAccordion = ({
                                     const isEditing = editShotTeamId === team.id;
                                     const currentSum = isEditing ? periods.reduce((sum, p) => sum + (parseInt(editShotData[p], 10) || 0), 0) : 0;
                                     
-                                    if (isEditing) {
+                                    if (isEditing && !isReadOnly) {
                                         return (
                                             <tr key={`edit-team-${team.id}`} className="h-[36px] bg-orange/5 transition-colors">
                                                 <td className="border-r border-graphite/30 text-left px-3">
@@ -393,10 +383,12 @@ export const SummaryTablesAccordion = ({
                                             ))}
                                             <td className="font-mono font-black text-[13px] text-status-accepted border-r border-graphite/30">{getDisplayTotal(team.id) || '-'}</td>
                                             <td className="p-0 text-center">
-                                                <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => startEditShots(team.id)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                                                    <button onClick={() => setConfirmClearTeamId(team.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Очистить"><DeleteIcon /></button>
-                                                </div>
+                                                {!isReadOnly && (
+                                                    <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
+                                                        <button onClick={() => startEditShots(team.id)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
+                                                        <button onClick={() => setConfirmClearTeamId(team.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Очистить"><DeleteIcon /></button>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     );

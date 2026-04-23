@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { getToken } from '../utils/helpers';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -8,8 +7,13 @@ import { Toast } from '../modals/Toast';
 import { DivisionCard } from '../components/Divisions/DivisionCard';
 import { ConfirmModal } from '../modals/ConfirmModal';
 
+// Импортируем новую систему прав
+import { useAccess } from '../hooks/useAccess';
+import { AccessFallback } from '../ui/AccessFallback';
+
 export function DivisionsPage() {
-  const { user, selectedLeague } = useOutletContext();
+  // Используем useAccess вместо useOutletContext
+  const { user, selectedLeague, checkAccess } = useAccess();
   
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
@@ -21,9 +25,13 @@ export function DivisionsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Проверяем наличие базового права на просмотр раздела
+  const canViewPage = checkAccess('DIVISIONS_VIEW');
+
   useEffect(() => {
-    if (selectedLeague?.id) fetchSeasons(selectedLeague.id);
-  }, [selectedLeague]);
+    // Загружаем данные только если есть права
+    if (selectedLeague?.id && canViewPage) fetchSeasons(selectedLeague.id);
+  }, [selectedLeague, canViewPage]);
 
   const fetchSeasons = async (leagueId) => {
     try {
@@ -42,9 +50,9 @@ export function DivisionsPage() {
   };
 
   useEffect(() => {
-    if (selectedSeasonId) fetchDivisions();
+    if (selectedSeasonId && canViewPage) fetchDivisions();
     else setDivisions([]);
-  }, [selectedSeasonId]);
+  }, [selectedSeasonId, canViewPage]);
 
   const fetchDivisions = async (isQuiet = false) => {
     if (!isQuiet) setIsLoading(true);
@@ -86,12 +94,25 @@ export function DivisionsPage() {
   const seasonOptions = seasons.map(s => s.name);
   const currentSeasonName = seasons.find(s => s.id === selectedSeasonId)?.name || '';
 
+  // Если лига не выбрана
   if (!selectedLeague) {
     return (
       <div className="flex flex-col flex-1 animate-fade-in-down">
         <Header title="Дивизионы" />
         <main className="p-10 flex flex-1 items-center justify-center">
           <div className="text-center text-graphite-light font-medium text-lg">Выберите лигу</div>
+        </main>
+      </div>
+    );
+  }
+
+  // БЛОКИРОВКА ДОСТУПА К СТРАНИЦЕ (Заглушка)
+  if (!canViewPage) {
+    return (
+      <div className="flex flex-col flex-1 animate-fade-in-down">
+        <Header title="Дивизионы" />
+        <main className="p-6 md:p-10 flex flex-1 flex-col">
+          <AccessFallback variant="full" message="У вас нет доступа к просмотру дивизионов. Обратитесь к администратору лиги." />
         </main>
       </div>
     );
@@ -116,8 +137,13 @@ export function DivisionsPage() {
           <div className="flex flex-col gap-6">
             {divisions.map(div => (
               <DivisionCard 
-                key={div.id} division={div} leagueId={selectedLeague?.id} userRole={user.globalRole}
-                onDelete={() => setConfirmDeleteId(div.id)} onRefresh={fetchDivisions} setGlobalToast={setToast}
+                key={div.id} 
+                division={div} 
+                leagueId={selectedLeague?.id} 
+                // Убрали передачу userRole, DivisionCard будет работать автономно через useAccess
+                onDelete={() => setConfirmDeleteId(div.id)} 
+                onRefresh={fetchDivisions} 
+                setGlobalToast={setToast}
               />
             ))}
           </div>

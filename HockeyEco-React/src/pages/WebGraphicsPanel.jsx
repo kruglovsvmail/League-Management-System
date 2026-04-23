@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebGraphicsPanel } from '../components/WebGraphicsPanel/useWebGraphicsPanel';
 import { ScoreBoardWidget } from '../components/WebGraphicsPanel/ScoreBoardWidget';
 import { EventBroadcastButton } from '../components/WebGraphicsPanel/EventBroadcastButton';
 import { StaticBroadcastButton } from '../components/WebGraphicsPanel/StaticBroadcastButton';
 import { AutoPlaylistWidget } from '../components/WebGraphicsPanel/AutoPlaylistWidget';
+import { useAccess } from '../hooks/useAccess';
+import { AccessFallback } from '../ui/AccessFallback';
+import { getToken } from '../utils/helpers';
 
 export function WebGraphicsPanel() {
   const { gameId } = useParams();
@@ -15,6 +18,28 @@ export function WebGraphicsPanel() {
     triggerOverlay, toggleStaticOverlay, activeStaticOverlay,
     isScoreboardVisible, toggleScoreboard, activeEventOverlay
   } = useWebGraphicsPanel(gameId);
+
+  // --- ЛОГИКА АВТОРИЗАЦИИ ДЛЯ ПОЛНОЭКРАННОЙ СТРАНИЦЫ ---
+  const [authUser, setAuthUser] = useState(null);
+  
+  // Ищем лигу текущего матча в профиле юзера, чтобы права отработали точно
+  const activeLeague = authUser?.leagues?.find(l => l.id === game?.league_id) || null;
+  const { checkAccess } = useAccess(authUser, activeLeague);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/me`, { 
+          headers: { 'Authorization': `Bearer ${getToken()}` } 
+        });
+        const data = await res.json();
+        if (data.success) setAuthUser(data.user);
+      } catch (err) {
+        console.error('Ошибка загрузки профиля', err);
+      }
+    };
+    fetchUser();
+  }, []);
 
   // --- СТЕЙТЫ И ЛОГИКА ДЛЯ ПЕРЕРЫВА И ПРЕДМАТЧЕВОЙ ---
   const [intermissionMins, setIntermissionMins] = useState(2);
@@ -78,8 +103,8 @@ export function WebGraphicsPanel() {
   const handleArenaStepper = (newSecs) => { setArenaDurationSecs(newSecs); if (activeStaticOverlay === 'arena') toggleStaticOverlay('arena', { displayDuration: newSecs }, true); };
   const handleArenaToggle = () => { activeStaticOverlay !== 'arena' ? toggleStaticOverlay('arena', { displayDuration: arenaDurationSecs }) : toggleStaticOverlay('arena'); };
 
-  const [commentatorDurationSecs, setCommentatorDurationSecs] = useState(10);
-  const handleCommentatorStepper = (newSecs) => { setCommentatorDurationSecs(newSecs); if (activeStaticOverlay === 'commentator') toggleStaticOverlay('commentator', { displayDuration: newSecs }, true); };
+  const [commentatorDurationSecs, setcommentatorDurationSecs] = useState(10);
+  const handleCommentatorStepper = (newSecs) => { setcommentatorDurationSecs(newSecs); if (activeStaticOverlay === 'commentator') toggleStaticOverlay('commentator', { displayDuration: newSecs }, true); };
   const handleCommentatorToggle = () => { activeStaticOverlay !== 'commentator' ? toggleStaticOverlay('commentator', { displayDuration: commentatorDurationSecs }) : toggleStaticOverlay('commentator'); };
 
   const [refereesDurationSecs, setRefereesDurationSecs] = useState(10);
@@ -109,11 +134,31 @@ export function WebGraphicsPanel() {
     return null;
   };
 
-  if (!game) return (
+  // Вычисляем роли персонала для текущего матча
+  const gameStaffArray = useMemo(() => {
+    if (!game?.officials) return [];
+    return Object.entries(game.officials)
+      .filter(([role, off]) => off && off.id)
+      .map(([role, off]) => ({ user_id: off.id, role }));
+  }, [game]);
+
+  const canAccessGraphics = checkAccess('MATCH_WEB_GRAPHICS_PANEL', { gameStaff: gameStaffArray });
+
+  // Ждем загрузки и матча, и юзера!
+  if (!game || !authUser) return (
     <div className="min-h-screen bg-gray-bg-light flex items-center justify-center font-bold text-xl uppercase tracking-widest text-graphite-light">
       Загрузка...
     </div>
   );
+
+  // Проверка прав на доступ к панели графики
+  if (!canAccessGraphics) {
+    return (
+      <div className="min-h-screen bg-gray-bg-light flex items-center justify-center px-10">
+        <AccessFallback variant="full" message="У вас нет прав для управления веб-графикой матча." />
+      </div>
+    );
+  }
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${('0' + (s % 60)).slice(-2)}`;
 

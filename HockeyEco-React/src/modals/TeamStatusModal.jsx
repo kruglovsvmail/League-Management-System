@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from '../ui/Button';
 
-// Записываем полные строки классов, чтобы Tailwind их 100% увидел
+// Импортируем заглушку
+import { AccessFallback } from '../ui/AccessFallback';
+
 const STATUS_OPTIONS = [
   { 
     value: 'approved', 
@@ -46,7 +48,7 @@ const STATUS_OPTIONS = [
   }
 ];
 
-export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSave, isSaving = false }) {
+export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSave, isSaving = false, readOnly = false }) {
   const [selectedStatus, setSelectedStatus] = useState(currentStatus || 'pending');
 
   useEffect(() => {
@@ -55,7 +57,12 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Статус команды" size="medium">
-      <div className="mb-4 text-center">
+      
+      {readOnly && (
+        <AccessFallback variant="readonly" message="Режим просмотра. Изменение статуса команды недоступно." />
+      )}
+
+      <div className="mb-4 text-center mt-2">
         <span className="text-[20px] font-black text-graphite">{teamName}</span>
       </div>
 
@@ -63,12 +70,12 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
         {STATUS_OPTIONS.map(opt => (
           <div 
             key={opt.value}
-            onClick={() => setSelectedStatus(opt.value)}
-            className={`flex items-center gap-4 p-3.5 rounded-xl cursor-pointer transition-all border ${
+            onClick={() => !readOnly && setSelectedStatus(opt.value)}
+            className={`flex items-center gap-4 p-3.5 rounded-xl transition-all border ${
               selectedStatus === opt.value 
                 ? `${opt.styles.border} ${opt.styles.bg}` 
                 : `border-graphite/10 ${opt.styles.hover} hover:bg-black/5`
-            }`}
+            } ${readOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
           >
             <div className="flex flex-col flex-1">
               <span className={`font-bold text-[14px] ${selectedStatus === opt.value ? opt.styles.text : 'text-graphite'}`}>
@@ -85,15 +92,18 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
         ))}
       </div>
 
-      <div className="flex justify-end pt-5 border-t border-graphite/10">
-        <Button 
-          onClick={() => onSave(selectedStatus)} 
-          isLoading={isSaving} 
-          disabled={isSaving} className={`w-full sm:w-auto bg-orange text-white border-none transition-all duration-300 ${isSaving ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-orange-hover'}`}
-        >
-          Сохранить
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end pt-5 border-t border-graphite/10">
+          <Button 
+            onClick={() => onSave(selectedStatus)} 
+            isLoading={isSaving} 
+            disabled={isSaving} 
+            className="w-full sm:w-auto bg-orange text-white border-none transition-all duration-300 hover:bg-orange-hover"
+          >
+            Сохранить
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }

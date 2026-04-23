@@ -1,10 +1,14 @@
+import React from 'react';
 import { useAccess } from '../hooks/useAccess';
 
-export function Access({ action, children, fallback = null }) {
+export function Access({ action, gameStaff = [], children, fallback = null }) {
   const { checkAccess } = useAccess();
   
-  if (!checkAccess(action)) {
-    return fallback; // Если прав нет, показываем пустоту (или fallback, например, текст "Нет доступа")
+  // Передаем контекст матча (gameStaff), если он есть
+  if (!checkAccess(action, { gameStaff })) {
+    // Если прав нет, возвращаем fallback (это может быть null, 
+    // либо наш компонент <AccessFallback />, который мы сделали ранее)
+    return fallback; 
   }
   
   return children;

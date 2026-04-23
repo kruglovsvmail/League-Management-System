@@ -3,6 +3,66 @@ import pool from '../config/db.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 
+// ============================================================================
+// ВНУТРЕННИЙ ПОМОЩНИК ДЛЯ ПРОВЕРКИ ПРАВ РЕДАКТИРОВАНИЯ (ЗАЩИТА ОТ СЕКРЕТАРЕЙ)
+// ============================================================================
+const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
+    if (!userId) return null;
+
+    const userRes = await clientOrPool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
+    if (!userRes.rows.length) return null;
+    // Глобальным админам можно всё
+    if (userRes.rows[0].global_role === 'GLOBAL_ADMIN') return null;
+
+    const gameRes = await clientOrPool.query(`
+        SELECT g.game_date, s.league_id 
+        FROM games g
+        LEFT JOIN divisions d ON g.division_id = d.id
+        LEFT JOIN seasons s ON d.season_id = s.id
+        WHERE g.id = $1
+    `, [gameId]);
+    
+    if (gameRes.rows.length === 0) return 'Матч не найден';
+    const game = gameRes.rows[0];
+
+    // Пропускаем топ-менеджмент и стафф лиги
+    if (game.league_id) {
+        const staffRes = await clientOrPool.query(`
+            SELECT 1 FROM league_staff 
+            WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
+        `, [userId, game.league_id]);
+        if (staffRes.rows.length > 0) return null; 
+    }
+
+    // Проверяем, является ли пользователь линейным персоналом именно этого матча
+    const refRes = await clientOrPool.query(`
+        SELECT 1 FROM game_referee 
+        WHERE game_id = $1 AND user_id = $2
+    `, [gameId, userId]);
+
+    if (refRes.rows.length > 0) {
+        // Правило 1: Дата и время должны быть назначены
+        if (!game.game_date) return 'Доступ закрыт: дата и время матча не назначены.';
+        
+        // Правило 2: Окно в 18 часов
+        const gameTime = new Date(game.game_date).getTime();
+        const now = Date.now();
+        const hoursDiff = (gameTime - now) / (1000 * 60 * 60);
+        
+        if (hoursDiff > 18) return 'Доступ закрыт: панель откроется за 18 часов до начала матча.';
+
+        // Правило 3: Протокол не должен быть подписан
+        const sigRes = await clientOrPool.query(`
+            SELECT 1 FROM game_protocol_signatures 
+            WHERE game_id = $1 AND role = 'scorekeeper'
+        `, [gameId]);
+        
+        if (sigRes.rows.length > 0) return 'Доступ закрыт: протокол матча уже подписан (Read-Only).';
+    }
+    
+    return null; // Проверки пройдены
+};
+
 export const getPublicGameById = async (req, res) => {
     try {
         const query = `
@@ -32,6 +92,9 @@ export const getPublicGameById = async (req, res) => {
                    a.city as arena_city,
                    a.address as arena_address,
                    gt.periods_count, gt.track_plus_minus, gt.shootout_status,
+                   
+                   (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
+                   
                    (
                        SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
                        FROM (
@@ -292,6 +355,8 @@ export const getGameById = async (req, res) => {
                 d.name as division_name,
                 
                 s.league_id, 
+                
+                (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
                 
                 (
                     EXISTS(SELECT 1 FROM game_events ge WHERE ge.game_id = g.id) OR 
@@ -611,6 +676,14 @@ export const updateGameStatus = async (req, res) => {
     const client = await pool.connect();
     try {
         const { gameId } = req.params;
+
+        // --- ЗАЩИТА ---
+        const accessError = await checkGameEditAccess(client, gameId, req.user?.id);
+        if (accessError) {
+            client.release();
+            return res.status(403).json({ success: false, error: accessError });
+        }
+
         const { status, end_type: incomingEndType, tech_result } = req.body;
 
         await client.query('BEGIN');
@@ -753,6 +826,14 @@ export const saveGameRoster = async (req, res) => {
     const client = await pool.connect();
     try {
         const { gameId, teamId } = req.params;
+
+        // --- ЗАЩИТА ---
+        const accessError = await checkGameEditAccess(client, gameId, req.user?.id);
+        if (accessError) {
+            client.release();
+            return res.status(403).json({ success: false, error: accessError });
+        }
+
         const { roster } = req.body;
 
         await client.query('BEGIN');
@@ -925,6 +1006,11 @@ export const deleteGame = async (req, res) => {
 export const recalculateGameStats = async (req, res) => {
     try {
         const { gameId } = req.params;
+
+        // --- ЗАЩИТА ---
+        const accessError = await checkGameEditAccess(pool, gameId, req.user?.id);
+        if (accessError) return res.status(403).json({ success: false, error: accessError });
+
         const gameRes = await pool.query('SELECT division_id, stage_type FROM games WHERE id = $1', [gameId]);
 
         if (gameRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });

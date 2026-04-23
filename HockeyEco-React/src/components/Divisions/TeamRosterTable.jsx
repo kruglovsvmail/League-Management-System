@@ -6,6 +6,9 @@ import { Switch } from '../../ui/Switch';
 import dayjs from 'dayjs';
 import { getImageUrl } from '../../utils/helpers';
 
+// Импортируем новую систему прав
+import { useAccess } from '../../hooks/useAccess';
+
 const POSITION_MAP = {
   goalie: 'Вр',
   defense: 'Защ',
@@ -19,8 +22,10 @@ const STAFF_ROLE_MAP = {
   head_coach: 'Главный тренер'
 };
 
-// Принимаем division как пропс для определения какие документы нужны
-export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, canEditRoster = true, division }) {
+export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, division }) {
+  // Достаем проверку прав из хука
+  const { checkAccess } = useAccess();
+  const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
   
   const formatPhone = (phone) => {
     if (!phone) return '-';
@@ -180,7 +185,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       render: (row) => {
         const hasQual = !!row.qualification_id;
         return (
-          <div onClick={() => onOpenModal(row, 'qual')} className={`cursor-pointer hover:scale-105 inline-block transition-transform ${!canEditRoster ? 'opacity-70' : ''}`}>
+          <div onClick={() => onOpenModal(row, 'qual')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
             <Badge label={row.qualification_short_name || 'Нет'} type={hasQual ? 'filled' : 'empty'} />
           </div>
         );
@@ -247,7 +252,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         }
         
         return (
-          <div onClick={() => onOpenModal(row, 'docs')} className={`cursor-pointer hover:scale-105 inline-block transition-transform ${!canEditRoster ? 'opacity-70' : ''}`}>
+          <div onClick={() => onOpenModal(row, 'docs')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
             <Badge label={text} type={type} />
           </div>
         );
@@ -259,7 +264,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       sortKey: 'is_fee_paid',
       width: 'w-[80px]', align: 'center',
       render: (row) => (
-        <div onClick={() => onOpenModal(row, 'fee')} className={`cursor-pointer hover:scale-105 inline-block transition-transform ${!canEditRoster ? 'opacity-70' : ''}`}>
+        <div onClick={() => onOpenModal(row, 'fee')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
           <Badge label="Взнос" type={row.is_fee_paid ? 'filled' : 'empty'} />
         </div>
       )
@@ -283,8 +288,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         <div className="flex justify-center">
           <Switch 
             checked={row.application_status === 'approved'} 
-            onChange={() => canEditRoster && onToggleStatus(row.tournament_roster_id, row.application_status)} 
-            disabled={!canEditRoster}
+            onChange={() => canTogglePlayerAdmit && onToggleStatus(row.tournament_roster_id, row.application_status)} 
+            disabled={!canTogglePlayerAdmit}
           />
         </div>
       )

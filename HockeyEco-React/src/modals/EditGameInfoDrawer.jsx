@@ -3,13 +3,17 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { SegmentButton } from '../ui/SegmentButton';
 import { getToken, getImageUrl } from '../utils/helpers';
+import { AccessFallback } from '../ui/AccessFallback';
 
-export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess }) {
+export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess, readOnly = false }) {
   const [form, setForm] = useState({});
   const [isSaving, setIsSaving] = useState(false);
 
   // Проверка статуса матча: Джерси можно менять только у матчей "В расписании" (scheduled)
-  const isReadOnly = game && game.status !== 'scheduled';
+  const isStatusLocked = game && game.status !== 'scheduled';
+  
+  // Джерси блокируются, если либо нет прав, либо матч уже начался
+  const isJerseysDisabled = readOnly || isStatusLocked;
 
   useEffect(() => {
     if (isOpen && game) {
@@ -28,6 +32,8 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess }) {
   }, [isOpen, game]);
 
   const handleSave = async () => {
+    if (readOnly) return;
+    
     setIsSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${game.id}/info`, {
@@ -64,7 +70,7 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess }) {
     <div className={`fixed inset-y-0 right-0 w-[450px] bg-white shadow-2xl z-[1000] transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
       
       <div className="p-6 border-b border-graphite/10 flex items-center justify-between bg-graphite/5 shrink-0">
-        <h3 className="text-[18px] font-black uppercase text-graphite tracking-tight">Настройки медиа</h3>
+        <h3 className="text-[18px] font-black uppercase text-graphite tracking-tight">Форма и ссылки</h3>
         <button onClick={onClose} className="p-2 hover:bg-graphite/10 rounded-full transition-colors">
           <svg className="w-6 h-6 text-graphite/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
@@ -72,8 +78,16 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess }) {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
         
-        <div className={`space-y-6 ${isReadOnly ? 'opacity-40 pointer-events-none grayscale-[30%]' : ''}`}>
-          <h4 className="text-[12px] font-black uppercase text-graphite-light tracking-widest">Игровая форма</h4>
+        {readOnly && (
+           <AccessFallback variant="readonly" message="У вас нет прав на редактирование медиа-настроек." />
+        )}
+
+        <div className={`space-y-6 ${isJerseysDisabled ? 'opacity-40 pointer-events-none grayscale-[30%]' : ''}`}>
+          <h4 className="text-[12px] font-black uppercase text-graphite-light tracking-widest flex items-center gap-2">
+            {isStatusLocked && !readOnly && (
+               <span className="text-[9px] font-bold text-orange normal-case tracking-normal bg-orange/10 px-2 py-0.5 rounded-full">Только до начала матча</span>
+            )}
+          </h4>
           <div className="flex gap-4">
             
             {/* Хозяева */}
@@ -115,8 +129,8 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess }) {
           </div>
         </div>
 
-        <div className="space-y-4 pt-4 border-t border-graphite/10">
-          <h4 className="text-[12px] font-black uppercase text-graphite-light tracking-widest">Медиа трансляции</h4>
+        <div className={`space-y-4 pt-4 border-t border-graphite/10 ${readOnly ? 'opacity-50 pointer-events-none' : ''}`}>
+          <h4 className="text-[12px] font-black uppercase text-graphite-light tracking-widest"></h4>
           <Input 
             label="Ссылка на YouTube" 
             placeholder="https://youtu.be/..." 
@@ -132,16 +146,18 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess }) {
         </div>
       </div>
 
-      <div className="p-6 bg-white border-t border-graphite/10 shrink-0">
-        <Button 
-          onClick={handleSave} 
-          className="w-full py-4 text-[14px] shadow-lg" 
-          isLoading={isSaving}
-          disabled={isSaving}
-        >
-          Сохранить медиа-настройки
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="p-6 bg-white border-t border-graphite/10 shrink-0">
+          <Button 
+            onClick={handleSave} 
+            className="w-full shadow-lg" 
+            isLoading={isSaving}
+            disabled={isSaving}
+          >
+            Сохранить медиа-настройки
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

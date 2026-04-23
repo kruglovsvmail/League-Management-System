@@ -30,7 +30,8 @@ export function GameCard({
     onUpdate,
     onDelete,
     setToast,
-    canCreateGames
+    canEdit,
+    canDelete
 }) {
     const navigate = useNavigate();
 
@@ -344,14 +345,14 @@ export function GameCard({
                                 </Tooltip>
                             )}
                             <Tooltip 
-                                title={isFinishedOrLive || game.has_protocol ? 'Невозможно удалить' : 'Удалить матч'}
+                                title={!canDelete ? 'Нет прав на удаление' : isFinishedOrLive || game.has_protocol ? 'Невозможно удалить' : 'Удалить матч'}
                                 subtitle={isFinishedOrLive ? 'Только статус "В расписании"' : game.has_protocol ? 'Очистите протокол' : null}
                                 noUnderline={true}
                             >
                                 <button 
                                     onClick={() => onDelete(game.id)}
-                                    disabled={game.has_protocol || isFinishedOrLive}
-                                    className={`p-2 rounded-lg transition-colors ${game.has_protocol || isFinishedOrLive ? 'text-graphite/20 cursor-not-allowed' : 'text-graphite/40 hover:text-status-rejected hover:bg-status-rejected/10'}`}
+                                    disabled={game.has_protocol || isFinishedOrLive || !canDelete}
+                                    className={`p-2 rounded-lg transition-colors ${game.has_protocol || isFinishedOrLive || !canDelete ? 'text-graphite/20 cursor-not-allowed' : 'text-graphite/40 hover:text-status-rejected hover:bg-status-rejected/10'}`}
                                 >
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
                                 </button>
@@ -453,7 +454,7 @@ export function GameCard({
             </div>
 
             <div className={`${colClasses.actions} shrink-0 flex justify-center items-center relative h-full`}>
-                <div className={`transition-opacity duration-200 flex flex-col items-center justify-center gap-1 ${canCreateGames && game.status === 'scheduled' ? 'group-hover:opacity-0' : ''}`}>
+                <div className={`transition-opacity duration-200 flex flex-col items-center justify-center gap-1 ${canEdit && game.status === 'scheduled' ? 'group-hover:opacity-0' : ''}`}>
                     {game.status === 'live' && <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-2 py-1 rounded">Live</span>}
                     
                     {game.status === 'finished' && (
@@ -472,7 +473,7 @@ export function GameCard({
                     {game.status === 'scheduled' && <span className="text-[10px] font-bold text-orange uppercase tracking-widest">В расписании</span>}
                 </div>
 
-                {canCreateGames && game.status === 'scheduled' && (
+                {canEdit && game.status === 'scheduled' && (
                     <button
                         onClick={(e) => {
                             e.stopPropagation(); 

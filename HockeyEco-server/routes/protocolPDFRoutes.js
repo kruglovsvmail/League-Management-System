@@ -1,4 +1,3 @@
-// src/routes/protocolPDFRoutes.js
 import express from 'express';
 import { verifyToken } from '../controllers/authController.js';
 import { getProtocolData, signProtocol, downloadProtocolPDF } from '../controllers/ProtocolPDFController.js';

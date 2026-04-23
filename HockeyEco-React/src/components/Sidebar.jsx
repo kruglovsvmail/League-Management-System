@@ -4,18 +4,19 @@ import { Icon } from '../ui/Icon';
 import { LeagueSelectModal } from '../modals/LeagueSelectModal';
 import { ProfileDrawer } from '../modals/ProfileDrawer';
 import { getImageUrl } from '../utils/helpers';
-import { PERMISSIONS } from '../utils/permissions'; 
+import { PERMISSIONS, ROLES } from '../utils/permissions'; 
 
 const ROLE_NAMES = {
-  'top_manager': 'Руководитель',
-  'league_admin': 'Админ',
-  'referee': 'Судья',
-  'media': 'Медиа',
+  [ROLES.TOP_MANAGER]: 'Руководитель',
+  [ROLES.LEAGUE_ADMIN]: 'Админ',
+  [ROLES.REFEREE]: 'Судья',
+  [ROLES.MEDIA]: 'Медиа',
+  [ROLES.GLOBAL_ADMIN]: 'Глобальный Админ',
 };
 
 const translateRoles = (roleString) => {
   if (!roleString) return 'Пользователь';
-  return roleString.split(', ').map(r => ROLE_NAMES[r] || r).join(', ');
+  return roleString.split(',').map(r => ROLE_NAMES[r.trim()] || r.trim()).join(', ');
 };
 
 export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
@@ -27,40 +28,34 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     setLogoError(false);
   }, [selectedLeague]);
 
+  // ==========================================
+  // ЛОКАЛЬНАЯ ПРОВЕРКА ПРАВ ДЛЯ САЙДБАРА
+  // ==========================================
+  const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN;
   const userRolesStr = selectedLeague?.role || '';
-  const userRolesArr = userRolesStr.split(',').map(r => r.trim());
-  const isGlobalAdmin = user?.globalRole === 'admin';
-  
-  // Проверки доступа к разделам
-  const canViewDivisions = isGlobalAdmin || userRolesArr.some(role => 
-    PERMISSIONS.VIEW_DIVISIONS?.includes(role)
-  );
-  
-  const canViewTransfers = isGlobalAdmin || userRolesArr.some(role => 
-    PERMISSIONS.VIEW_TRANSFERS?.includes(role)
-  );
+  const userRolesArr = userRolesStr.split(',').map(r => r.trim()).filter(Boolean);
 
-  const canViewDisqualifications = isGlobalAdmin || userRolesArr.some(role => 
-    PERMISSIONS.VIEW_DISQUALIFICATIONS?.includes(role)
-  );
+  const hasAccess = (action) => {
+    if (isGlobalAdmin) return true;
+    const allowedRoles = PERMISSIONS[action];
+    if (!allowedRoles || allowedRoles.length === 0) return false;
+    return userRolesArr.some(role => allowedRoles.includes(role));
+  };
 
-  // Для доступа к настройкам лиги проверяем права на просмотр персонала
-  const canViewSettings = isGlobalAdmin || userRolesArr.some(role => 
-    PERMISSIONS.VIEW_STAFF?.includes(role)
-  );
-
+  // ==========================================
   // ФОРМИРОВАНИЕ МЕНЮ
+  // ==========================================
   const baseMenuItems = [
-    { name: "Расписание", path: "/games", icon: "matches" },
-    canViewDivisions ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
-    canViewTransfers ? { name: "Трансферы", path: "/transfers", icon: "transfers" } : null,
-    canViewDisqualifications ? { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" } : null,
-    { name: "Справочник", path: "/handbook", icon: "handbook" },
-    canViewSettings ? { name: "Управление лигой", path: "/settings", icon: "settings" } : null
+    hasAccess('SCHEDULE_VIEW') ? { name: "Расписание", path: "/games", icon: "matches" } : null,
+    hasAccess('DIVISIONS_VIEW') ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
+    hasAccess('TRANSFERS_VIEW') ? { name: "Трансферы", path: "/transfers", icon: "transfers" } : null,
+    hasAccess('DISQUALIFICATIONS_VIEW') ? { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" } : null,
+    { name: "Справочник", path: "/handbook", icon: "handbook" }, // Справочник доступен всем
+    hasAccess('SETTINGS_STAFF_VIEW') ? { name: "Управление лигой", path: "/settings", icon: "settings" } : null
   ].filter(Boolean);
 
   let displayRole = 'Пользователь';
-  if (user?.globalRole === 'admin') {
+  if (isGlobalAdmin) {
     displayRole = 'Админ LMS';
   } else if (selectedLeague && selectedLeague.role) {
     displayRole = translateRoles(selectedLeague.role);
@@ -95,7 +90,6 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
         
         {/* Логотип и выбор лиги */}
         <div className="p-7 pb-2">
-          
           {user?.leagues && user.leagues.length > 0 && (
             <div 
               onClick={() => setIsLeagueModalOpen(true)}
@@ -128,7 +122,8 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
             {baseMenuItems.map(renderNavLink)}
           </div>
 
-          {user?.globalRole === 'admin' && (
+          {/* Глобальные разделы - только для admin */}
+          {hasAccess('GLOBAL_REGISTRY_ACCESS') && (
             <div className="mt-6 pt-4 border-t border-white/10 space-y-1">
               {renderNavLink({ name: "Глобальный Реестр", path: "/registry", icon: "registry" })}
               {renderNavLink({ name: "Упр. командой", path: "/teams", icon: "team" })}

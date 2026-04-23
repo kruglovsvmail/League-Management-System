@@ -1,7 +1,7 @@
 import express from 'express';
 import upload from '../config/upload.js';
 
-import { verifyToken, requireGlobalAdmin } from '../controllers/authController.js'; 
+import { verifyToken, requirePermission } from '../controllers/authController.js'; 
 import {
     searchTeams,
     searchUsers,
@@ -16,15 +16,14 @@ import {
     sendApplicationForReview,
     addPlayerToApplication,
     removePlayerFromApplication,
-    addStaffToApplication,       // <-- НОВЫЙ ИМПОРТ
-    removeStaffFromApplication   // <-- НОВЫЙ ИМПОРТ
+    addStaffToApplication,
+    removeStaffFromApplication
 } from '../controllers/teamManagementController.js';
 
 const router = express.Router();
 
-// Защищаем весь раздел "Управление командой" проверкой на глобального админа,
-// СТРОГО указывая префикс '/teams-manage', чтобы не блокировать остальные роуты в приложении!
-router.use('/teams-manage', verifyToken, requireGlobalAdmin);
+// Защищаем весь раздел "Управление командой" проверкой на глобального админа
+router.use('/teams-manage', verifyToken, requirePermission('TEAM_MANAGEMENT_ACCESS'));
 
 router.get('/teams-manage/search', searchTeams);
 router.get('/teams-manage/users/search', searchUsers);
@@ -36,7 +35,6 @@ router.post('/teams-manage/:teamId/members/:userId/photo', upload.single('file')
 router.delete('/teams-manage/:teamId/members/:userId/photo', deleteMemberPhoto);
 
 // --- НОВЫЕ ЭНДПОИНТЫ ДЛЯ ЗАЯВОК (ТУРНИРОВ) ---
-// Получение доступных лиг и дивизионов для заявочной кампании
 router.get('/teams-manage/available-divisions', getAvailableLeaguesAndDivisions);
 
 // Управление заявками конкретной команды

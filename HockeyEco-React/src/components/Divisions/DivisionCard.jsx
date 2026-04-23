@@ -7,7 +7,9 @@ import { DivisionPlayoffs } from './DivisionPlayoffs';
 import { Loader } from '../../ui/Loader';
 import { Tabs } from '../../ui/Tabs';
 import { PlayerProfileModal } from '../../modals/PlayerProfileModal';
-import { useAccess } from '../../hooks/useAccess'; 
+
+// Импортируем новую систему прав
+import { useAccess } from '../../hooks/useAccess';
 
 // Модалки команд
 import { TeamUniformModal } from '../../modals/TeamUniformModal';
@@ -27,9 +29,15 @@ const TOURNAMENT_TYPES = {
   mixed: 'Регулярный + Плей-офф'
 };
 
-export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh, setGlobalToast }) {
+export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGlobalToast }) {
+  // Используем useAccess для проверки прав
   const { checkAccess } = useAccess();
-  const canManageDivisions = checkAccess('MANAGE_DIVISIONS'); 
+  
+  // Вычисляем права доступа
+  const canPublishDivision = checkAccess('DIVISIONS_PUBLISH');
+  const canDeleteDivision = checkAccess('DIVISIONS_DELETE');
+  const canChangeTeamStatus = checkAccess('DIVISIONS_TEAM_STATUS');
+  const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
 
   const initialExpanded = getExpiringStorage(`div_${division.id}_expanded`) === true;
   const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTab`)) || 0;
@@ -145,6 +153,9 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
   };
 
   const handleToggleRosterStatus = async (rosterId, currentStatus) => {
+    // Проверка прав перед вызовом API
+    if (!canTogglePlayerAdmit) return;
+
     const newStatus = currentStatus === 'approved' ? 'declined' : 'approved';
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-rosters/${rosterId}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ application_status: newStatus }) });
@@ -219,6 +230,9 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
   };
 
   const handlePublishSave = async (newStatus) => {
+    // Проверка прав перед вызовом API
+    if (!canPublishDivision) return;
+
     setIsPublishSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/divisions/${division.id}/publish`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ is_published: newStatus }) });
@@ -228,7 +242,7 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
   };
 
   const handleTeamStatusSave = async (newStatus) => {
-    if (!activeTeamForModal) return;
+    if (!activeTeamForModal || !canChangeTeamStatus) return;
     setIsDataSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${activeTeamForModal.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ status: newStatus }) });
@@ -294,14 +308,6 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
   const appStart = division.application_start ? new Date(division.application_start) : null;
   const appEnd = division.application_end ? new Date(division.application_end) : null;
   const isAppWindowOpen = appStart && appEnd ? (now >= appStart && now <= appEnd) : true; 
-
-  const isAdmin = userRole === 'admin';
-  const canEditRoster = canManageDivisions && (isAdmin || (selectedTeam && selectedTeam.status !== 'revision'));
-  
-  // ПРОВЕРКА ПРАВА НА СМЕНУ СТАТУСА ТЕПЕРЬ АБСОЛЮТНАЯ И ЗАВИСИТ ТОЛЬКО ОТ РОЛИ
-  const canChangeTeamStatus = checkAccess('CHANGE_TEAM_STATUS');
-  
-  const canEditActiveTeamParams = canManageDivisions && (isAdmin || (activeTeamForModal && activeTeamForModal.status !== 'revision'));
 
   const STATUS_LABELS = {
     approved: 'Команда допущена',
@@ -380,7 +386,7 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
             <span className="hidden xl:inline">{viewMode === 'sport' ? 'Таблицы' : 'Команды'}</span>
           </button>
 
-          {canManageDivisions && (
+          {canPublishDivision && (
             <button 
               onClick={(e) => { 
                 e.stopPropagation(); 
@@ -406,7 +412,7 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
             </button>
           )}
 
-          {userRole === 'admin' && (
+          {canDeleteDivision && (
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="w-12 h-12 rounded-lg flex items-center justify-center text-status-rejected hover:bg-graphite/5 hover:transition-all duration-300" title="Удалить дивизион">
               <svg className="w-8 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
@@ -448,11 +454,10 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
                       onOpenModal={openModal} 
                       selectedTeamId={isCompactView ? selectedTeam?.id : null} 
                       onTeamSelect={handleTeamSelect} 
-                      userRole={userRole}
                       activeTab={teamsTab}      
                       onTabChange={setTeamsTab} 
                       isAppWindowOpen={isAppWindowOpen}
-                      canManageDivisions={canManageDivisions}
+                      onRefresh={onRefresh} // <-- Исправлено: передаем пропс onRefresh, а не fetchDivisions
                     />
                   </div>
                 </div>
@@ -487,7 +492,6 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
                           onOpenModal={(player, type) => { setActivePlayerForModal(player); setPlayerModalType(type); }} 
                           onToggleStatus={handleToggleRosterStatus} 
                           onOpenProfile={(id) => setProfileModalPlayerId(id)} 
-                          canEditRoster={canEditRoster}
                           division={division}
                         />
                       </div>
@@ -516,12 +520,53 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
       <PublishStatusModal isOpen={isPublishModalOpen} onClose={() => setIsPublishModalOpen(false)} isPublished={division.is_published} onSave={handlePublishSave} isSaving={isPublishSaving} />
       <TeamStatusModal isOpen={modalType === 'status'} onClose={closeModals} currentStatus={activeTeamForModal?.status} teamName={activeTeamForModal?.name} onSave={handleTeamStatusSave} isSaving={isDataSaving} />
       
-      <TeamUniformModal isOpen={modalType === 'uniform'} onClose={closeModals} initialLight={activeTeamForModal?.custom_jersey_light_url ? `${getImageUrl(activeTeamForModal.custom_jersey_light_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_light_url ? getImageUrl(activeTeamForModal.jersey_light_url) : null)} initialDark={activeTeamForModal?.custom_jersey_dark_url ? `${getImageUrl(activeTeamForModal.custom_jersey_dark_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_dark_url ? getImageUrl(activeTeamForModal.jersey_dark_url) : null)} canClearLight={!!activeTeamForModal?.custom_jersey_light_url} canClearDark={!!activeTeamForModal?.custom_jersey_dark_url} onSave={handleUniformSave} isSaving={isDataSaving} readOnly={!canEditActiveTeamParams} />
-      <TeamDescriptionModal isOpen={modalType === 'desc'} onClose={closeModals} initialText={activeTeamForModal?.custom_description || activeTeamForModal?.description || ''} onSave={handleDescSave} isSaving={isDataSaving} readOnly={!canEditActiveTeamParams} />
-      <TeamPhotoModal isOpen={modalType === 'photo'} onClose={closeModals} initialPhoto={activeTeamForModal?.custom_team_photo_url ? `${getImageUrl(activeTeamForModal.custom_team_photo_url)}?t=${Date.now()}` : (activeTeamForModal?.team_photo_url ? getImageUrl(activeTeamForModal.team_photo_url) : null)} canClearPhoto={!!activeTeamForModal?.custom_team_photo_url} onSave={handlePhotoSave} isSaving={isDataSaving} readOnly={!canEditActiveTeamParams} />
+      <TeamUniformModal 
+        isOpen={modalType === 'uniform'} 
+        onClose={closeModals} 
+        initialLight={activeTeamForModal?.custom_jersey_light_url ? `${getImageUrl(activeTeamForModal.custom_jersey_light_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_light_url ? getImageUrl(activeTeamForModal.jersey_light_url) : null)} 
+        initialDark={activeTeamForModal?.custom_jersey_dark_url ? `${getImageUrl(activeTeamForModal.custom_jersey_dark_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_dark_url ? getImageUrl(activeTeamForModal.jersey_dark_url) : null)} 
+        canClearLight={!!activeTeamForModal?.custom_jersey_light_url} 
+        canClearDark={!!activeTeamForModal?.custom_jersey_dark_url} 
+        onSave={handleUniformSave} 
+        isSaving={isDataSaving} 
+        readOnly={!checkAccess('DIVISIONS_TEAM_UNIFORM_MODAL')} 
+      />
+      <TeamDescriptionModal 
+        isOpen={modalType === 'desc'} 
+        onClose={closeModals} 
+        initialText={activeTeamForModal?.custom_description || activeTeamForModal?.description || ''} 
+        onSave={handleDescSave} 
+        isSaving={isDataSaving} 
+        readOnly={!checkAccess('DIVISIONS_TEAM_DESC_MODAL')} 
+      />
+      <TeamPhotoModal 
+        isOpen={modalType === 'photo'} 
+        onClose={closeModals} 
+        initialPhoto={activeTeamForModal?.custom_team_photo_url ? `${getImageUrl(activeTeamForModal.custom_team_photo_url)}?t=${Date.now()}` : (activeTeamForModal?.team_photo_url ? getImageUrl(activeTeamForModal.team_photo_url) : null)} 
+        canClearPhoto={!!activeTeamForModal?.custom_team_photo_url} 
+        onSave={handlePhotoSave} 
+        isSaving={isDataSaving} 
+        readOnly={!checkAccess('DIVISIONS_TEAM_PHOTO_MODAL')} 
+      />
 
-      <QualSelectModal isOpen={playerModalType === 'qual'} onClose={() => setPlayerModalType(null)} qualifications={leagueQuals} currentQualId={activePlayerForModal?.qualification_id} onSelect={handlePlayerQualSave} isSaving={isPlayerSaving} readOnly={!canEditRoster} />
-      <FeeModal isOpen={playerModalType === 'fee'} onClose={() => setPlayerModalType(null)} initialPaid={activePlayerForModal?.is_fee_paid} playerName={activePlayerForModal ? `${activePlayerForModal.last_name} ${activePlayerForModal.first_name}` : 'Игрок'} onSave={handlePlayerFeeSave} isSaving={isPlayerSaving} readOnly={!canEditRoster} />
+      <QualSelectModal 
+        isOpen={playerModalType === 'qual'} 
+        onClose={() => setPlayerModalType(null)} 
+        qualifications={leagueQuals} 
+        currentQualId={activePlayerForModal?.qualification_id} 
+        onSelect={handlePlayerQualSave} 
+        isSaving={isPlayerSaving} 
+        readOnly={!checkAccess('DIVISIONS_TEAM_QUAL_MODAL')} 
+      />
+      <FeeModal 
+        isOpen={playerModalType === 'fee'} 
+        onClose={() => setPlayerModalType(null)} 
+        initialPaid={activePlayerForModal?.is_fee_paid} 
+        playerName={activePlayerForModal ? `${activePlayerForModal.last_name} ${activePlayerForModal.first_name}` : 'Игрок'} 
+        onSave={handlePlayerFeeSave} 
+        isSaving={isPlayerSaving} 
+        readOnly={!checkAccess('DIVISIONS_TEAM_FEE_MODAL')} 
+      />
       
       <MedicalDocsModal 
         isOpen={playerModalType === 'docs'} 
@@ -534,7 +579,7 @@ export function DivisionCard({ division, leagueId, userRole, onDelete, onRefresh
         initialConsentExp={activePlayerForModal?.consent_expires_at}
         onSave={handlePlayerDocsSave} 
         isSaving={isPlayerSaving} 
-        readOnly={!canEditRoster}
+        readOnly={!checkAccess('DIVISIONS_TEAM_DOCS_MODAL')}
         playerName={activePlayerForModal ? `${activePlayerForModal.last_name || ''} ${activePlayerForModal.first_name || ''}`.trim() : ''}
         reqMed={division.req_med_cert ?? true}
         reqIns={division.req_insurance ?? true}

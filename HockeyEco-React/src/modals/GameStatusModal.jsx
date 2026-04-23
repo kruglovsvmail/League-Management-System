@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from '../ui/Button';
 import { getToken } from '../utils/helpers';
+import { AccessFallback } from '../ui/AccessFallback';
 
 // Записываем полные строки классов, чтобы Tailwind их 100% увидел
 const STATUS_OPTIONS = [
@@ -47,7 +48,7 @@ const STATUS_OPTIONS = [
   }
 ];
 
-export function GameStatusModal({ isOpen, onClose, game, onSuccess }) {
+export function GameStatusModal({ isOpen, onClose, game, onSuccess, readOnly = false }) {
   const [selectedStatus, setSelectedStatus] = useState('scheduled');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -58,6 +59,8 @@ export function GameStatusModal({ isOpen, onClose, game, onSuccess }) {
   }, [isOpen, game]);
 
   const handleSave = async () => {
+    if (readOnly) return;
+    
     setIsSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${game.id}/status`, {
@@ -81,8 +84,14 @@ export function GameStatusModal({ isOpen, onClose, game, onSuccess }) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Статус матча" size="medium">
+      
+      {readOnly && (
+        <div className="mb-4">
+          <AccessFallback variant="readonly" message="У вас нет прав на изменение статуса матча." />
+        </div>
+      )}
 
-      <div className="flex flex-col gap-2 mb-6 font-sans">
+      <div className={`flex flex-col gap-2 mb-6 font-sans ${readOnly ? 'opacity-60 pointer-events-none grayscale-[20%]' : ''}`}>
         {STATUS_OPTIONS.map(opt => (
           <div 
             key={opt.value}
@@ -108,16 +117,18 @@ export function GameStatusModal({ isOpen, onClose, game, onSuccess }) {
         ))}
       </div>
 
-      <div className="flex justify-end pt-5 border-t border-graphite/10">
-        <Button 
-          onClick={handleSave} 
-          isLoading={isSaving} 
-          disabled={isSaving} 
-          className="w-full sm:w-auto"
-        >
-          Сохранить статус
-        </Button>
-      </div>
+      {!readOnly && (
+        <div className="flex justify-end pt-5 border-t border-graphite/10">
+          <Button 
+            onClick={handleSave} 
+            isLoading={isSaving} 
+            disabled={isSaving} 
+            className="w-full sm:w-auto"
+          >
+            Сохранить статус
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }

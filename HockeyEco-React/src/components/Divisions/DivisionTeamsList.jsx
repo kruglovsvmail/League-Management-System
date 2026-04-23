@@ -6,9 +6,13 @@ import { Badge } from '../../ui/Badge';
 import { Tooltip } from '../../ui/Tooltip';
 import { PaperApplicationModal } from '../../modals/PaperApplicationModal';
 
+// Импортируем новую систему прав
+import { useAccess } from '../../hooks/useAccess';
+
 const STATUS_KEYS = ['approved', 'pending', 'revision', 'rejected'];
 
-export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId, onTeamSelect, userRole, activeTab, onTabChange, isAppWindowOpen, canManageDivisions, onRefresh }) {
+export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId, onTeamSelect, activeTab, onTabChange, isAppWindowOpen, onRefresh }) {
+  const { checkAccess } = useAccess();
   const isCompact = !!selectedTeamId;
   
   // Локальное состояние для моментального визуального обновления без перезагрузки страницы
@@ -114,17 +118,13 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
         if (row.paper_roster_team_url && row.paper_roster_league_url) type = 'filled';
         else if (row.paper_roster_team_url || row.paper_roster_league_url) type = 'half';
 
-        const isClickable = canManageDivisions;
-        
         return (
           <div 
             onClick={(e) => { 
-              if (isClickable) {
-                e.stopPropagation(); 
-                setPaperModalApp(row); 
-              }
+              e.stopPropagation(); 
+              setPaperModalApp(row); 
             }} 
-            className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+            className="inline-block cursor-pointer hover:scale-105 transition-transform"
           >
             <Badge label="Заявка" type={type} />
           </div>
@@ -136,12 +136,10 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
       const hasLight = !!(row.custom_jersey_light_url || row.jersey_light_url); const hasDark = !!(row.custom_jersey_dark_url || row.jersey_dark_url);
       let badgeType = 'empty'; if (hasLight && hasDark) badgeType = 'filled'; else if (hasLight || hasDark) badgeType = 'half';
       
-      const isClickable = canManageDivisions && (userRole === 'admin' || row.status !== 'revision');
-      
       return (
         <div 
-          onClick={() => isClickable && onOpenModal(row, 'uniform')} 
-          className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+          onClick={() => onOpenModal(row, 'uniform')} 
+          className="inline-block cursor-pointer hover:scale-105 transition-transform"
         >
           <Badge label="Форма" type={badgeType} />
         </div>
@@ -149,12 +147,11 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     }},
     { label: 'Описание', width: 'w-[80px]', align: 'center', render: (row) => {
       const hasDesc = !!(row.custom_description || row.description);
-      const isClickable = canManageDivisions && (userRole === 'admin' || row.status !== 'revision');
       
       return (
         <div 
-          onClick={() => isClickable && onOpenModal(row, 'desc')} 
-          className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+          onClick={() => onOpenModal(row, 'desc')} 
+          className="inline-block cursor-pointer hover:scale-105 transition-transform"
         >
           <Badge label="Инфо" type={hasDesc ? 'filled' : 'empty'} />
         </div>
@@ -162,12 +159,11 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     }},
     { label: 'Фото', width: 'w-[80px]', align: 'center', render: (row) => {
       const hasPhoto = !!(row.custom_team_photo_url || row.team_photo_url);
-      const isClickable = canManageDivisions && (userRole === 'admin' || row.status !== 'revision');
       
       return (
         <div 
-          onClick={() => isClickable && onOpenModal(row, 'photo')} 
-          className={`inline-block ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'opacity-70 cursor-not-allowed'}`}
+          onClick={() => onOpenModal(row, 'photo')} 
+          className="inline-block cursor-pointer hover:scale-105 transition-transform"
         >
           <Badge label="Фото" type={hasPhoto ? 'filled' : 'empty'} />
         </div>
@@ -177,8 +173,8 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     { label: 'Ср. возр.', sortKey: 'avg_age', width: 'w-[100px]', align: 'center', render: (row) => <span className="font-semibold text-graphite text-[14px]">{row.avg_age ? formatAge(row.avg_age) : '-'}</span> },
     
     { label: '', width: 'w-[50px]', align: 'right', render: (row) => {
-      const isAdmin = userRole === 'admin';
-      const canChangeStatus = canManageDivisions && (isAdmin || (isAppWindowOpen && row.status !== 'revision'));
+      // Иконка статуса появляется только если есть права
+      const canChangeStatus = checkAccess('DIVISIONS_TEAM_STATUS') && row.status !== 'revision';
 
       if (!canChangeStatus) return null;
 
@@ -249,6 +245,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
         app={paperModalApp}
         onSave={handleUploadLeaguePaper}
         isSaving={isSavingLeagueFile}
+        readOnly={!checkAccess('DIVISIONS_TEAM_ROSTERS_MODAL')}
       />
     </>
   );

@@ -6,7 +6,7 @@ import {
   goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, GOAL_STRENGTH_DISPLAY 
 } from './GameDeskShared';
 
-const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete }) => {
+const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempVal, setTempVal] = useState('');
 
@@ -24,7 +24,7 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete }) => {
         }
     };
 
-    if (isEditing && timeoutEvent) {
+    if (isEditing && timeoutEvent && !isReadOnly) {
         return (
             <div className="flex items-center justify-between bg-white border border-orange/50 rounded-md px-2 shadow-sm ring-2 ring-orange/10 h-[32px] w-[140px] relative" onClick={e => e.stopPropagation()}>
                 <span className="text-[10px] font-bold uppercase text-graphite-light absolute left-2.5">ТАЙМ-АУТ</span>
@@ -52,9 +52,9 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete }) => {
     if (timeoutEvent) {
         return (
             <button
-                onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
-                className="relative group flex items-center justify-between px-3 rounded-md transition-all border bg-white border-graphite/20 hover:border-graphite/40 shadow-sm h-[32px] w-[140px]"
-                title="Редактировать время тайм-аута"
+                onClick={(e) => { e.stopPropagation(); if (!isReadOnly) setIsEditing(true); }}
+                className={`relative group flex items-center justify-between px-3 rounded-md transition-all border bg-white border-graphite/20 shadow-sm h-[32px] w-[140px] ${isReadOnly ? 'cursor-default opacity-80' : 'hover:border-graphite/40'}`}
+                title={isReadOnly ? "Тайм-аут" : "Редактировать время тайм-аута"}
             >
                 <span className="text-[10px] font-bold uppercase text-graphite-light">ТАЙМ-АУТ</span>
                 <span className="font-mono text-[13px] font-bold text-graphite">
@@ -66,12 +66,12 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete }) => {
 
     return (
         <button 
-            onClick={(e) => { e.stopPropagation(); onSave({ time_seconds: timerSeconds }); }} 
-            className="relative group flex items-center justify-between px-3 rounded-md transition-all border bg-transparent border-dashed border-graphite/30 hover:border-orange hover:bg-orange/5 hover:text-orange text-graphite-light h-[32px] w-[140px]"
-            title="Зафиксировать тайм-аут"
+            onClick={(e) => { e.stopPropagation(); if (!isReadOnly) onSave({ time_seconds: timerSeconds }); }} 
+            className={`relative group flex items-center justify-between px-3 rounded-md transition-all border bg-transparent border-dashed h-[32px] w-[140px] ${isReadOnly ? 'border-graphite/10 cursor-default opacity-50' : 'border-graphite/30 hover:border-orange hover:bg-orange/5 hover:text-orange text-graphite-light'}`}
+            title={isReadOnly ? "" : "Зафиксировать тайм-аут"}
         >
-            <span className="text-[10px] font-bold uppercase text-graphite/50 group-hover:text-orange">ТАЙМ-АУТ</span>
-            <span className="font-mono text-[13px] font-bold text-graphite/40 group-hover:text-orange">--:--</span>
+            <span className={`text-[10px] font-bold uppercase ${isReadOnly ? 'text-graphite/30' : 'text-graphite/50 group-hover:text-orange'}`}>ТАЙМ-АУТ</span>
+            <span className={`font-mono text-[13px] font-bold ${isReadOnly ? 'text-graphite/20' : 'text-graphite/40 group-hover:text-orange'}`}>--:--</span>
         </button>
     );
 };
@@ -79,7 +79,7 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete }) => {
 export const ProtocolSheet = ({ 
   teamId, teamLetter, teamName, teamLogo, roster, teamEvents, oppEvents = [], timerSeconds, 
   onSaveEvent, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving,
-  goalieLog = []
+  goalieLog = [], isReadOnly
 }) => {
   const goals = teamEvents.filter(e => e.event_type === 'goal').sort((a, b) => a.time_seconds - b.time_seconds);
   const penalties = teamEvents.filter(e => e.event_type === 'penalty');
@@ -219,14 +219,12 @@ export const ProtocolSheet = ({
       
       <div className="bg-gray-bg-light border-b border-graphite/20 px-4 py-3 flex justify-between items-center rounded-t-md select-none gap-4">
         
-        {/* ЛЕВЫЙ БЛОК: КОМАНДА */}
         <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center gap-3 shrink-0 min-w-[200px]">
           <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center font-black rounded-sm shrink-0">{teamLetter}</span>
           {teamLogo && <img src={teamLogo} alt={teamName} className="w-8 h-8 object-contain drop-shadow-sm shrink-0" />}
           <span className="truncate max-w-[260px]" title={teamName}>{teamName}</span>
         </div>
         
-        {/* ПРАВЫЙ БЛОК: ТАЙМ-АУТЫ */}
         <div className="flex items-center justify-end gap-2 shrink-0 min-w-[140px]">
           {timeouts.length > 0 ? (
               timeouts.map(t => (
@@ -236,6 +234,7 @@ export const ProtocolSheet = ({
                       timerSeconds={timerSeconds} 
                       onSave={(data, id) => onSaveEvent(teamId, 'timeout', data, id)} 
                       onDelete={onDeleteEvent} 
+                      isReadOnly={isReadOnly}
                   />
               ))
           ) : (
@@ -244,6 +243,7 @@ export const ProtocolSheet = ({
                   timerSeconds={timerSeconds} 
                   onSave={(data) => onSaveEvent(teamId, 'timeout', data)} 
                   onDelete={onDeleteEvent} 
+                  isReadOnly={isReadOnly}
               />
           )}
         </div>
@@ -329,11 +329,11 @@ export const ProtocolSheet = ({
                   <td className="border-l-2 border-graphite/40 border-r border-graphite/30 font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
                   <td className="border-r border-graphite/30 text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">{player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}</td>
                   <td className="border-r border-graphite/30 text-[11px] text-graphite-light font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
-                  <td className="border-r-2 border-graphite/40 cursor-pointer font-bold text-base text-status-accepted hover:bg-graphite/10 transition-colors" onClick={() => player && onToggleLineup(player.id, teamId, player.is_in_lineup)}>{player ? (player.is_in_lineup ? '✓' : '') : ''}</td>
+                  <td className={`border-r-2 border-graphite/40 ${isReadOnly ? 'cursor-default' : 'cursor-pointer hover:bg-graphite/10'} font-bold text-base text-status-accepted transition-colors`} onClick={() => !isReadOnly && player && onToggleLineup(player.id, teamId, player.is_in_lineup)}>{player ? (player.is_in_lineup ? '✓' : '') : ''}</td>
 
                   {/* ВЗЯТИЕ ВОРОТ */}
-                  <td className="border-r border-graphite/30 font-bold text-graphite/40 text-[12px]">{goal || isGoalInput || isEditingGoal ? i + 1 : ''}</td>
-                  {isEditingGoal ? (
+                  <td className="border-r border-graphite/30 font-bold text-graphite/40 text-[12px]">{goal || (isGoalInput && !isReadOnly) || isEditingGoal ? i + 1 : ''}</td>
+                  {isEditingGoal && !isReadOnly ? (
                     <>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
@@ -356,14 +356,16 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist2_id)}</td>
                       <td className="border-r border-graphite/30 text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY[goal.goal_strength] || ''}</td>
                       <td className="border-r-2 border-graphite/40 p-0 text-center">
-                         <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                            {isPlusMinusEnabled && <button onClick={() => onRequestPlusMinus(goal)} className={`transition-colors ${goal.has_plus_minus ? 'text-status-accepted hover:text-status-accepted/80' : 'text-graphite/40 hover:text-status-accepted'}`} title="Показатель полезности (+/-)"><UsersIcon /></button>}
-                            <button onClick={() => startEditGoal(goal)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                            <button onClick={() => onDeleteEvent(goal.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
-                         </div>
+                         {!isReadOnly && (
+                            <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
+                               {isPlusMinusEnabled && <button onClick={() => onRequestPlusMinus(goal)} className={`transition-colors ${goal.has_plus_minus ? 'text-status-accepted hover:text-status-accepted/80' : 'text-graphite/40 hover:text-status-accepted'}`} title="Показатель полезности (+/-)"><UsersIcon /></button>}
+                               <button onClick={() => startEditGoal(goal)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
+                               <button onClick={() => onDeleteEvent(goal.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                            </div>
+                         )}
                       </td>
                     </>
-                  ) : isGoalInput ? (
+                  ) : (isGoalInput && !isReadOnly) ? (
                     <>
                       <td className="border-r border-graphite/30 p-0.5"><StylishInput value={newGoal.time} placeholder={formatTime(timerSeconds)} onChange={e=>setNewGoal({...newGoal, time: formatTimeMask(e.target.value)})} /></td>
                       <td className="border-r border-graphite/30 p-0.5"><StylishSelect roster={roster} value={newGoal.scorer} onChange={e=>setNewGoal({...newGoal, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
@@ -386,7 +388,7 @@ export const ProtocolSheet = ({
                   )}
 
                   {/* УДАЛЕНИЯ */}
-                  {isEditingPenalty ? (
+                  {isEditingPenalty && !isReadOnly ? (
                     <>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect roster={roster} value={editPenaltyData.player} onChange={e=>setEditPenaltyData({...editPenaltyData, player: e.target.value})} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><CustomSelect options={penaltyMinsOptions} value={editPenaltyData.mins} onChange={e=>setEditPenaltyData({...editPenaltyData, mins: e.target.value})} /></td>
@@ -403,13 +405,15 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
                       <td className={`border-r border-graphite/30 ${endTimeClass}`}>{endTimeDisplay}</td>
                       <td className="border-r-2 border-graphite/40 p-0 text-center">
-                         <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                            <button onClick={() => startEditPenalty(penalty)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                            <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
-                         </div>
+                         {!isReadOnly && (
+                            <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
+                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
+                               <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                            </div>
+                         )}
                       </td>
                     </>
-                  ) : isPenaltyInput ? (
+                  ) : (isPenaltyInput && !isReadOnly) ? (
                     <>
                       <td className="border-r border-graphite/30 p-0.5"><StylishSelect roster={roster} value={newPenalty.player} onChange={e=>setNewPenalty({...newPenalty, player: e.target.value})} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/30 p-0.5"><CustomSelect options={penaltyMinsOptions} value={newPenalty.mins} onChange={e=>setNewPenalty({...newPenalty, mins: e.target.value})} /></td>

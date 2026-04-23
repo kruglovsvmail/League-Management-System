@@ -8,7 +8,8 @@ import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
 import { Badge } from '../ui/Badge';
-import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { AccessFallback } from '../ui/AccessFallback';
+import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
 import { CreateDisqualificationModal } from '../modals/CreateDisqualificationModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 
@@ -16,11 +17,13 @@ export function DisqualificationsPage() {
   const { selectedLeague } = useOutletContext();
   const { checkAccess } = useAccess();
 
-  // Проверка прав пользователя
-  const canView = checkAccess('VIEW_DISQUALIFICATIONS');
-  const canCreate = checkAccess('CREATE_DISQUALIFICATION');
-  const canAction = checkAccess('ACTION_DISQUALIFICATION');
+  // Проверка прав пользователя по новой матрице
+  const canView = checkAccess('DISQUALIFICATIONS_VIEW');
+  const canCreate = checkAccess('DISQUALIFICATIONS_CREATE');
+  const canAction = checkAccess('DISQUALIFICATIONS_STATUS_CHANGE');
   
+  const isReadOnly = !canCreate && !canAction;
+
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
   const [disqualifications, setDisqualifications] = useState([]);
@@ -154,15 +157,12 @@ export function DisqualificationsPage() {
     return new Date(dateString).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  // Заглушка, если нет прав на просмотр
   if (!canView) {
     return (
       <div className="flex flex-col flex-1 animate-fade-in-down">
         <Header title="Дисквалификации" />
         <main className="p-10 flex flex-1 items-center justify-center">
-          <div className="text-center text-status-rejected font-medium text-lg bg-status-rejected/5 px-8 py-6 rounded-2xl border border-status-rejected/10">
-            У вас нет прав для просмотра этого раздела
-          </div>
+           <AccessFallback variant="full" message="У вас нет прав для просмотра раздела дисквалификаций." />
         </main>
       </div>
     );
@@ -189,9 +189,15 @@ export function DisqualificationsPage() {
         }
       />
 
+      {isReadOnly && (
+        <div className="px-10 pt-6">
+          <AccessFallback variant="readonly" message="У вас нет прав для управления дисквалификациями. Вы находитесь в режиме просмотра." />
+        </div>
+      )}
+
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         
-        {/* ЛЕВАЯ ПАНЕЛЬ ФИЛЬТРОВ (Зафиксирована) */}
+        {/* ЛЕВАЯ ПАНЕЛЬ ФИЛЬТРОВ */}
         <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6 custom-scrollbar z-20">
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Статус</label>
@@ -221,7 +227,7 @@ export function DisqualificationsPage() {
             ) : (
               filteredData.map((d) => {
                 const isExpanded = expandedId === d.id;
-                const playerPhoto = getImageUrl(d.member_photo || '/default/user_default.webp'); // d.avatar_url - вставить если нужно фото из users 
+                const playerPhoto = getImageUrl(d.member_photo || '/default/user_default.webp');
                 const teamLogo = getImageUrl(d.team_logo || '/default/Logo_team_default.webp');
 
                 let penaltyText = '';

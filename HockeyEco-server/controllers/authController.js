@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import transporter from '../config/mail.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { PERMISSIONS, ROLES } from '../utils/permissions.js';
 
 export const verifyToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -48,7 +49,7 @@ const fetchUserProfile = async (userId) => {
 
   let leaguesResult;
 
-  if (user.global_role === 'admin') {
+  if (user.global_role === ROLES.GLOBAL_ADMIN) {
     leaguesResult = await pool.query(`
       SELECT id, name, short_name, city, logo_url, 'admin' as role 
       FROM leagues
@@ -190,254 +191,173 @@ export const resetPassword = async (req, res) => {
 // БЛОК ОХРАННИКОВ (СИСТЕМА ПРАВ RBAC)
 // ==========================================
 
-export const requireGlobalAdmin = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-    if (userRes.rows[0]?.global_role === 'admin') return next();
-    
-    return res.status(403).json({ success: false, error: 'Доступ разрешен только глобальному администратору' });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Ошибка проверки прав доступа' });
+/**
+ * Вспомогательная функция для извлечения ID лиги из различных параметров маршрута
+ * Эта функция является "определителем контекста" для запроса.
+ */
+const getLeagueIdFromContext = async (req) => {
+  // Прямая передача leagueId в параметрах или теле
+  if (req.params.leagueId) return req.params.leagueId;
+  if (req.body.leagueId) return req.body.leagueId;
+
+  // Извлечение через seasonId
+  if (req.params.seasonId || req.body.seasonId) {
+    const id = req.params.seasonId || req.body.seasonId;
+    const res = await pool.query('SELECT league_id FROM seasons WHERE id = $1', [id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
   }
-};
 
-const checkLeagueRoleHelper = async (req, res, next, leagueId, allowedRoles) => {
-  const userId = req.user.id;
-  const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-  if (userRes.rows[0]?.global_role === 'admin') return next(); 
-
-  const result = await pool.query(
-    'SELECT role FROM league_staff WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL',
-    [userId, leagueId]
-  );
-  
-  const userRoles = result.rows.map(row => row.role);
-  const hasAccess = userRoles.some(role => allowedRoles.includes(role));
-
-  if (!hasAccess) {
-    return res.status(403).json({ success: false, error: 'Отказано в доступе: недостаточно прав' });
-  }
-  next();
-};
-
-export const requireLeagueRole = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { leagueId } = req.params;
-    await checkLeagueRoleHelper(req, res, next, leagueId, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав доступа' }); }
-};
-
-export const requireRoleBySeason = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { seasonId } = req.params;
-    const result = await pool.query('SELECT league_id FROM seasons WHERE id = $1', [seasonId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Сезон не найден' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
-
-export const requireRoleByDivision = (allowedRoles) => async (req, res, next) => {
-  try {
-    const divisionId = req.params.id || req.params.divisionId;
-    const result = await pool.query(`
+  // Извлечение через divisionId (или просто id, если это маршрут дивизиона)
+  if (req.params.divisionId || req.body.divisionId || (req.baseUrl.includes('/divisions') && req.params.id)) {
+    const id = req.params.divisionId || req.body.divisionId || req.params.id;
+    const res = await pool.query(`
       SELECT s.league_id FROM divisions d
       JOIN seasons s ON d.season_id = s.id
       WHERE d.id = $1
-    `, [divisionId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Дивизион не найден' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
+    `, [id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
 
-export const requireRoleByTransfer = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(`
+  // Извлечение через gameId
+  if (req.params.gameId || req.body.gameId) {
+    const id = req.params.gameId || req.body.gameId;
+    const res = await pool.query(`
+      SELECT s.league_id FROM games g
+      JOIN divisions d ON g.division_id = d.id
+      JOIN seasons s ON d.season_id = s.id
+      WHERE g.id = $1
+    `, [id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  // Извлечение через transfer_id (заявка на трансфер)
+  if (req.baseUrl.includes('/transfers') && req.params.id) {
+    const res = await pool.query(`
       SELECT s.league_id FROM roster_requests rr
       JOIN divisions d ON rr.division_id = d.id
       JOIN seasons s ON d.season_id = s.id
       WHERE rr.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+  
+  // Извлечение через ID заявки игрока на турнир (tournament_rosters)
+  if (req.body.tournament_roster_id || (req.baseUrl.includes('/tournament-rosters') && req.params.id)) {
+    const id = req.body.tournament_roster_id || req.params.id;
+    const res = await pool.query(`
+      SELECT s.league_id FROM tournament_rosters tr
+      JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+      JOIN divisions div ON tt.division_id = div.id
+      JOIN seasons s ON div.season_id = s.id
+      WHERE tr.id = $1
     `, [id]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Заявка не найдена' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
-
-export const requireRoleForTransferCreate = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { divisionId } = req.body;
-    if (!divisionId) return res.status(400).json({ success: false, error: 'Не передан divisionId' });
-    const result = await pool.query(`
-      SELECT s.league_id FROM divisions d
-      JOIN seasons s ON d.season_id = s.id
-      WHERE d.id = $1
-    `, [divisionId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Дивизион не найден' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
-
-export const requireRoleByDisqualification = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(`
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+  
+  // Извлечение через id дисквалификации
+  if (req.baseUrl.includes('/disqualifications') && req.params.id) {
+     const res = await pool.query(`
       SELECT s.league_id FROM disqualifications d
       JOIN tournament_rosters tr ON d.tournament_roster_id = tr.id
       JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
       JOIN divisions div ON tt.division_id = div.id
       JOIN seasons s ON div.season_id = s.id
       WHERE d.id = $1
-    `, [id]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Штраф не найден' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
-
-export const requireRoleForDisqualificationCreate = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { tournament_roster_id } = req.body;
-    if (!tournament_roster_id) return res.status(400).json({ success: false, error: 'Не передан tournament_roster_id' });
-    const result = await pool.query(`
-      SELECT s.league_id FROM tournament_rosters tr
-      JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-      JOIN divisions div ON tt.division_id = div.id
-      JOIN seasons s ON div.season_id = s.id
-      WHERE tr.id = $1
-    `, [tournament_roster_id]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Заявка игрока не найдена' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
-
-export const requireRoleByGame = (allowedRoles) => async (req, res, next) => {
-  try {
-    const { gameId } = req.params;
-    const result = await pool.query(`
-      SELECT s.league_id 
-      FROM games g
-      JOIN divisions d ON g.division_id = d.id
-      JOIN seasons s ON d.season_id = s.id
-      WHERE g.id = $1
-    `, [gameId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
-};
-
-export const requireGameStatusAccess = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-    if (userRes.rows[0]?.global_role === 'admin') return next();
-
-    const { gameId } = req.params;
-    const leagueRes = await pool.query(`
-        SELECT s.league_id 
-        FROM games g
-        JOIN divisions d ON g.division_id = d.id
-        JOIN seasons s ON d.season_id = s.id
-        WHERE g.id = $1
-    `, [gameId]);
-
-    if (leagueRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
-    const leagueId = leagueRes.rows[0].league_id;
-
-    const staffRes = await pool.query(`
-        SELECT role FROM league_staff
-        WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
-    `, [userId, leagueId]);
-
-    const userRoles = staffRes.rows.map(r => r.role);
-
-    if (userRoles.includes('top_manager') || userRoles.includes('league_admin')) {
-        return next();
-    }
-
-    if (userRoles.includes('referee')) {
-        const refRes = await pool.query(`
-            SELECT 1 FROM game_referee 
-            WHERE game_id = $1 AND user_id = $2 AND role = 'scorekeeper'
-        `, [gameId, userId]);
-
-        if (refRes.rows.length > 0) return next();
-    }
-
-    return res.status(403).json({ success: false, error: 'Доступ запрещен. Вы не являетесь действующим администратором или судьей.' });
-  } catch (err) {
-      res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
   }
-};
 
-export const requireGameProtocolAccess = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-    if (userRes.rows[0]?.global_role === 'admin') return next();
-
-    const { gameId } = req.params;
-    const leagueRes = await pool.query(`
-        SELECT s.league_id 
-        FROM games g
-        JOIN divisions d ON g.division_id = d.id
-        JOIN seasons s ON d.season_id = s.id
-        WHERE g.id = $1
-    `, [gameId]);
-
-    if (leagueRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
-    const leagueId = leagueRes.rows[0].league_id;
-
-    const staffRes = await pool.query(`
-        SELECT role FROM league_staff
-        WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
-    `, [userId, leagueId]);
-
-    const userRoles = staffRes.rows.map(r => r.role);
-
-    if (userRoles.includes('top_manager') || userRoles.includes('league_admin')) {
-        return next();
-    }
-
-    if (userRoles.includes('referee')) {
-        const refRes = await pool.query(`
-            SELECT 1 FROM game_referee 
-            WHERE game_id = $1 AND user_id = $2 AND role = 'scorekeeper'
-        `, [gameId, userId]);
-
-        if (refRes.rows.length > 0) return next();
-    }
-
-    return res.status(403).json({ success: false, error: 'Доступ к ведению протокола запрещен.' });
-  } catch (err) {
-      res.status(500).json({ success: false, error: 'Ошибка сервера' });
-  }
-};
-
-export const requireRoleByTournamentTeam = (allowedRoles) => async (req, res, next) => {
-  try {
-    const teamId = req.params.id;
-    const result = await pool.query(`
+  // Извлечение через команду турнира (tournament_teams)
+  if (req.baseUrl.includes('/tournament-teams') && req.params.id) {
+    const res = await pool.query(`
       SELECT s.league_id FROM tournament_teams tt
       JOIN divisions d ON tt.division_id = d.id
       JOIN seasons s ON d.season_id = s.id
       WHERE tt.id = $1
-    `, [teamId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Команда турнира не найдена' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  return null;
 };
 
-export const requireRoleByTournamentRoster = (allowedRoles) => async (req, res, next) => {
+/**
+ * Универсальный Middleware для проверки прав (RBAC)
+ * @param {string} permissionKey Ключ из PERMISSIONS (например, 'DIVISIONS_DELETE')
+ */
+export const requirePermission = (permissionKey) => async (req, res, next) => {
   try {
-    const rosterId = req.params.id;
-    const result = await pool.query(`
-      SELECT s.league_id FROM tournament_rosters tr
-      JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-      JOIN divisions d ON tt.division_id = d.id
-      JOIN seasons s ON d.season_id = s.id
-      WHERE tr.id = $1
-    `, [rosterId]);
-    if (result.rows.length === 0) return res.status(404).json({ success: false, error: 'Игрок в заявке не найден' });
-    await checkLeagueRoleHelper(req, res, next, result.rows[0].league_id, allowedRoles);
-  } catch (err) { res.status(500).json({ success: false, error: 'Ошибка проверки прав' }); }
+    const userId = req.user.id;
+    
+    // 1. Проверка на Глобального Администратора (Абсолютный доступ ко всему)
+    const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
+    if (userRes.rows[0]?.global_role === ROLES.GLOBAL_ADMIN) {
+      return next();
+    }
+
+    // 2. Получаем список разрешенных ролей для данного действия
+    const allowedRoles = PERMISSIONS[permissionKey];
+
+    // Если массив allowedRoles пустой, значит доступ разрешен ТОЛЬКО глобальному админу
+    if (!allowedRoles || allowedRoles.length === 0) {
+      return res.status(403).json({ success: false, error: 'Доступ разрешен только глобальному администратору' });
+    }
+
+    // 3. Определяем контекст лиги для текущего запроса
+    const leagueId = await getLeagueIdFromContext(req);
+    
+    if (!leagueId) {
+      console.warn(`[RBAC] Не удалось определить leagueId для маршрута: ${req.originalUrl}`);
+      return res.status(400).json({ success: false, error: 'Невозможно определить контекст лиги для проверки прав' });
+    }
+
+    // 4. Собираем все роли пользователя в текущей лиге
+    let userRoles = [];
+
+    // 4a. Роли из штата лиги (league_staff)
+    const staffRes = await pool.query(
+      'SELECT role FROM league_staff WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL',
+      [userId, leagueId]
+    );
+    userRoles = staffRes.rows.map(row => row.role);
+
+    // 4b. Роли из конкретного матча (game_referee, game_media), если в контексте есть gameId
+    const gameId = req.params.gameId || req.body.gameId;
+    if (gameId) {
+      // Ищем роли в game_referee
+      const refRes = await pool.query(
+        'SELECT role FROM game_referee WHERE game_id = $1 AND user_id = $2',
+        [gameId, userId]
+      );
+      
+      // ИСПРАВЛЕННЫЙ МАППИНГ: Переводим роли из БД в системные константы
+      refRes.rows.forEach(r => {
+        if (['head_1', 'head_2'].includes(r.role)) userRoles.push(ROLES.GAME_HEAD);
+        if (['linesman_1', 'linesman_2'].includes(r.role)) userRoles.push(ROLES.GAME_LINESMAN);
+        if (r.role === 'scorekeeper') userRoles.push(ROLES.GAME_SECRETARY);
+      });
+
+      // Ищем роли в game_media
+      const mediaRes = await pool.query(
+        'SELECT id FROM game_media WHERE game_id = $1 AND user_id = $2',
+        [gameId, userId]
+      );
+      if (mediaRes.rows.length > 0) {
+        userRoles.push(ROLES.GAME_MEDIA);
+      }
+    }
+
+    // 5. Проверка пересечения имеющихся ролей с разрешенными
+    const hasAccess = userRoles.some(role => allowedRoles.includes(role));
+
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Отказано в доступе: недостаточно прав' });
+    }
+
+    // Доступ разрешен
+    next();
+  } catch (err) {
+    console.error('[RBAC Error]:', err);
+    res.status(500).json({ success: false, error: 'Системная ошибка проверки прав доступа' });
+  }
 };

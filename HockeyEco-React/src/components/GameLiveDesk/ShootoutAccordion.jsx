@@ -20,14 +20,12 @@ const ChevronIcon = ({ isExpanded }) => (
   </svg>
 );
 
-// --- ИКОНКИ ДЛЯ СМАРТ-МЕНЮ ---
 const PlayIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const TrophyIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>;
 const StopIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>;
 const RefreshIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
 
-// --- СМАРТ-БЕЙДЖ СТАТУСА (Modern 2026 UI) ---
-const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving }) => {
+const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving, isReadOnly }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -42,17 +40,17 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving 
     const statuses = {
         pending: { 
             label: 'Серия не начата', 
-            btnClass: 'bg-white border-graphite/10 text-graphite hover:border-graphite/30 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.1)] hover:shadow-[0_4px_16px_-4px_rgba(0,0,0,0.1)]', 
+            btnClass: 'bg-white border-graphite/10 text-graphite shadow-[0_2px_10px_-4px_rgba(0,0,0,0.1)]', 
             dotClass: 'bg-graphite/40' 
         },
         active: { 
             label: 'Серия в процессе', 
-            btnClass: 'bg-orange text-white border-orange shadow-[0_4px_16px_-4px_rgba(255,165,0,0.5)] hover:shadow-[0_6px_24px_-4px_rgba(255,165,0,0.6)]', 
+            btnClass: 'bg-orange text-white border-orange shadow-[0_4px_16px_-4px_rgba(255,165,0,0.5)]', 
             dotClass: 'bg-white animate-pulse shadow-[0_0_8px_rgba(255,255,255,0.9)]' 
         },
         finished_win: { 
             label: 'Завершена', 
-            btnClass: 'bg-graphite text-white border-graphite shadow-[0_4px_16px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_6px_24px_-4px_rgba(0,0,0,0.4)]', 
+            btnClass: 'bg-graphite text-white border-graphite shadow-[0_4px_16px_-4px_rgba(0,0,0,0.3)]', 
             dotClass: 'bg-status-accepted shadow-[0_0_8px_rgba(34,197,94,0.8)]' 
         }
     };
@@ -69,22 +67,19 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving 
             <button 
                 onClick={(e) => {
                     e.stopPropagation(); 
-                    if (!isSaving) setIsOpen(!isOpen);
+                    if (!isSaving && !isReadOnly) setIsOpen(!isOpen);
                 }}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-[14px] border text-xs font-bold uppercase tracking-widest transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-95 ${current.btnClass} ${isSaving ? 'opacity-50 cursor-wait' : 'hover:-translate-y-0.5'}`}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-[14px] border text-xs font-bold uppercase tracking-widest transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${current.btnClass} ${isSaving || isReadOnly ? 'opacity-50 cursor-default' : 'hover:-translate-y-0.5 hover:shadow-[0_6px_24px_-4px_rgba(0,0,0,0.4)] active:scale-95'}`}
             >
                 <span className={`w-2.5 h-2.5 rounded-full ${current.dotClass}`}></span>
                 {current.label}
-                <svg className={`w-4 h-4 transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isOpen ? 'rotate-180' : ''} ${status === 'pending' ? 'text-graphite/40' : 'text-white/70'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" /></svg>
+                {!isReadOnly && <svg className={`w-4 h-4 transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isOpen ? 'rotate-180' : ''} ${status === 'pending' ? 'text-graphite/40' : 'text-white/70'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" /></svg>}
             </button>
 
             <div 
-                className={`absolute right-0 mt-3 w-[340px] bg-white/95 backdrop-blur-2xl border border-graphite/10 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.15)] rounded-[20px] p-2 z-[100] transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] origin-top-right ${isOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'}`} 
+                className={`absolute right-0 mt-3 w-[340px] bg-white/95 backdrop-blur-2xl border border-graphite/10 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.15)] rounded-[20px] p-2 z-[100] transition-all duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] origin-top-right ${isOpen && !isReadOnly ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'}`} 
                 onClick={e => e.stopPropagation()}
             >
-                <div className="">
-                </div>
-                
                 {status === 'pending' && (
                     <button onClick={() => handleAction('active')} className="w-full text-left p-3 rounded-2xl hover:bg-graphite/[0.04] active:bg-graphite/[0.08] flex items-center gap-4 transition-all duration-200 group">
                         <div className="w-12 h-12 rounded-[14px] bg-orange/10 flex items-center justify-center text-orange group-hover:scale-110 group-hover:bg-orange group-hover:text-white transition-all duration-300 ease-out">
@@ -141,8 +136,7 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving 
     );
 };
 
-// --- ЛОКАЛЬНЫЙ САБ-КОМПОНЕНТ ДЛЯ КОЛОНКИ КОМАНДЫ ---
-const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, teamLogo, roster, oppRoster, events, onSaveEvent, onDeleteEvent, soLength, periodLength, otLength, periodsCount }) => {
+const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, teamLogo, roster, oppRoster, events, onSaveEvent, onDeleteEvent, soLength, periodLength, otLength, periodsCount, isReadOnly }) => {
   const shots = events.filter(e => e.team_id === teamId && (e.event_type === 'shootout_goal' || e.event_type === 'shootout_miss')).sort((a,b) => a.id - b.id);
   const allShootoutsTotal = events.filter(e => e.event_type === 'shootout_goal' || e.event_type === 'shootout_miss');
   
@@ -189,7 +183,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
     setEditShotId(null);
   };
 
-  const rowsCount = isClosed ? Math.max(soLength, shots.length) : Math.max(soLength, shots.length + 1);
+  const rowsCount = isClosed || isReadOnly ? Math.max(soLength, shots.length) : Math.max(soLength, shots.length + 1);
   const rows = Array.from({ length: rowsCount });
 
   return (
@@ -215,7 +209,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                     const shot = shots[i];
                     const isInput = i === shots.length;
 
-                    if (shot && shot.id === editShotId && !isClosed) {
+                    if (shot && shot.id === editShotId && !isClosed && !isReadOnly) {
                         return (
                             <tr key={`edit-${shot.id}`} className="h-[36px] bg-orange/5 transition-colors">
                                 <td className="font-bold text-graphite/40 border-r border-graphite/30">{i + 1}</td>
@@ -279,7 +273,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                         )}
                                     </td>
                                     <td className="p-0 text-center">
-                                        {!isClosed && (
+                                        {!isClosed && !isReadOnly && (
                                             <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
                                                 <button onClick={() => startEdit(shot)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
                                                 <button onClick={() => onDeleteEvent(shot.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
@@ -287,7 +281,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                         )}
                                     </td>
                                 </>
-                            ) : (isInput && !isClosed) ? (
+                            ) : (isInput && !isClosed && !isReadOnly) ? (
                                 <>
                                     <td className="p-1 border-r border-graphite/30 text-center">
                                         <StylishSelect roster={roster} value={newShot.player} onChange={e=>setNewShot({...newShot, player: e.target.value})} className="font-bold" />
@@ -342,11 +336,10 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
   );
 };
 
-// --- ГЛАВНЫЙ КОМПОНЕНТ АККОРДЕОНА ---
 export const ShootoutAccordion = ({ 
     game, events, homeRoster, awayRoster, currentPeriod, 
     soLength, periodLength, otLength, periodsCount, 
-    onSaveEvent, onDeleteEvent, onFinishShootout, onReopenShootout, onUpdateStatus, isSaving 
+    onSaveEvent, onDeleteEvent, onFinishShootout, onReopenShootout, onUpdateStatus, isSaving, isReadOnly 
 }) => {
   const [isShootoutExpanded, setIsShootoutExpanded] = useState(false);
 
@@ -398,6 +391,7 @@ export const ShootoutAccordion = ({
                  hasShots={hasShots}
                  isSaving={isSaving}
                  onStatusChange={handleStatusChangeRequest}
+                 isReadOnly={isReadOnly}
              />
           </div>
       </div>
@@ -413,6 +407,7 @@ export const ShootoutAccordion = ({
                     roster={homeRoster} oppRoster={awayRoster} events={events} 
                     onSaveEvent={onSaveEvent} onDeleteEvent={onDeleteEvent} 
                     soLength={soLength} periodLength={periodLength} otLength={otLength} periodsCount={periodsCount}
+                    isReadOnly={isReadOnly}
                  />
                  <ShootoutColumn 
                     isPending={status === 'pending'}
@@ -422,6 +417,7 @@ export const ShootoutAccordion = ({
                     roster={awayRoster} oppRoster={homeRoster} events={events} 
                     onSaveEvent={onSaveEvent} onDeleteEvent={onDeleteEvent} 
                     soLength={soLength} periodLength={periodLength} otLength={otLength} periodsCount={periodsCount}
+                    isReadOnly={isReadOnly}
                  />
              </div>
          </div>

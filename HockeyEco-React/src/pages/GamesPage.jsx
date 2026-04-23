@@ -10,6 +10,7 @@ import { ConfirmModal } from '../modals/ConfirmModal';
 import { Switch } from '../ui/Switch';
 import { useAccess } from '../hooks/useAccess';
 import { GameCard } from '../components/Games/GameCard';
+import { AccessFallback } from '../ui/AccessFallback';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru'; 
 
@@ -41,7 +42,11 @@ export function GamesPage() {
     const [gameToDelete, setGameToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    const canCreateGames = checkAccess('CREATE_GAMES');
+    // Проверяем права по новой матрице RBAC
+    const canView = checkAccess('SCHEDULE_VIEW');
+    const canEdit = checkAccess('SCHEDULE_EDIT');
+    const canCreate = checkAccess('SCHEDULE_CREATE');
+    const canDelete = checkAccess('SCHEDULE_DELETE');
 
     useEffect(() => {
         if (selectedLeague?.id) fetchSeasons(selectedLeague.id);
@@ -256,11 +261,23 @@ export function GamesPage() {
     if (!selectedLeague) {
         return (
             <div className="flex flex-col flex-1 animate-fade-in-down">
-                <Header title="Расписание" />
+                <Header title="Расписание матчей" />
                 <main className="p-10 flex flex-1 items-center justify-center">
                     <div className="text-center text-status-rejected font-medium text-lg bg-status-rejected/5 px-8 py-6 rounded-2xl border border-status-rejected/10">
                         Выберите лигу для просмотра расписания
                     </div>
+                </main>
+            </div>
+        );
+    }
+
+    // Заглушка, если нет прав на просмотр раздела
+    if (!canView) {
+        return (
+            <div className="flex flex-col flex-1 animate-fade-in-down">
+                <Header title="Расписание матчей" />
+                <main className="p-10 flex flex-1 items-center justify-center">
+                    <AccessFallback variant="full" message="У вас нет прав для просмотра расписания." />
                 </main>
             </div>
         );
@@ -289,7 +306,7 @@ export function GamesPage() {
                             <Switch checked={showFinished} onChange={() => setShowFinished(!showFinished)} />
                         </div>
 
-                        {canCreateGames && (
+                        {canEdit && (
                             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
                                 <span className={`text-[12px] font-bold uppercase tracking-wider ${isEditMode ? 'text-orange' : 'text-graphite-light'}`}>
                                     Редакт.
@@ -367,11 +384,12 @@ export function GamesPage() {
                                         onUpdate={handleUpdateGame}
                                         onDelete={handleDeleteRequest}
                                         setToast={setToast}
-                                        canCreateGames={canCreateGames}
+                                        canEdit={canEdit}
+                                        canDelete={canDelete}
                                     />
                                 ))}
 
-                                {isEditMode && (
+                                {isEditMode && canCreate && (
                                     <div className="mt-4 flex justify-center">
                                         <Button 
                                             onClick={handleCreateGame} 

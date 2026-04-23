@@ -4,7 +4,6 @@ import { TimerSettingsDrawer } from '../../modals/TimerSettingsDrawer';
 import { getImageUrl } from '../../utils/helpers';
 import { Button } from '../../ui/Button';
 
-// --- Иконки ---
 const GearIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -34,7 +33,7 @@ export const TimerPanel = ({
   game, currentPeriod, changePeriod, timerSeconds, isTimerRunning, handleTimerAction,
   periodsCount, setPeriodsCount, periodLength, setPeriodLength, otLength, setOtLength, soLength, setSoLength, saveTimerSettings,
   trackPlusMinus, setTrackPlusMinus, socketConnected, onSetTime,
-  onRecalculate, onFinishGame, isFinishing, isRecalculating // ПРИНИМАЕМ ИЗОЛИРОВАННЫЕ ФЛАГИ
+  onRecalculate, onFinishGame, isFinishing, isRecalculating, isReadOnly
 }) => {
   const [isEditingTimer, setIsEditingTimer] = useState(false);
   const [manualTimerInput, setManualTimerInput] = useState('');
@@ -100,7 +99,7 @@ export const TimerPanel = ({
           {periodsArray.map(p => {
             const isOTDisabled = p === 'OT' && parseInt(otLength, 10) === 0;
             const isSODisabled = p === 'SO' && parseInt(soLength, 10) === 0;
-            const isDisabled = isOTDisabled || isSODisabled;
+            const isDisabled = isOTDisabled || isSODisabled || isReadOnly;
 
             return (
               <button 
@@ -129,7 +128,7 @@ export const TimerPanel = ({
         </div>
         
         <div className={`relative flex items-center justify-center h-[90px] border rounded-lg mb-3 shadow-inner transition-colors group ${isTimerRunning ? 'bg-[#000000] border-status-accepted/30' : 'bg-white/5 border-white/10'}`}>
-          {isEditingTimer ? (
+          {isEditingTimer && !isReadOnly ? (
             <input
               autoFocus
               className="w-full text-center font-mono text-6xl font-black text-status-accepted bg-transparent outline-none"
@@ -144,7 +143,7 @@ export const TimerPanel = ({
             </span>
           )}
 
-          {!isEditingTimer && (
+          {!isEditingTimer && !isReadOnly && (
             <button 
               onClick={openTimerEdit} 
               className="absolute top-2 right-2 p-1.5 rounded text-white/20 hover:text-white hover:bg-white/10 transition-colors opacity-40 hover:opacity-100"
@@ -165,7 +164,7 @@ export const TimerPanel = ({
 
           <button 
              onClick={toggleTimer}
-             disabled={currentPeriod === 'SO'}
+             disabled={currentPeriod === 'SO' || isReadOnly}
              className={`w-[66%] flex items-center justify-center gap-2 rounded-lg font-black text-[13px] uppercase tracking-widest transition-all shadow-sm border ${
                isTimerRunning 
                  ? 'bg-status-rejected/80 hover:bg-status-rejected text-white border-status-rejected/50 shadow-[0_0_15px_rgba(255,69,58,0.2)]' 
@@ -181,21 +180,24 @@ export const TimerPanel = ({
         </div>
       </div>
 
-      <div className="flex justify-end mb-6">
-        <button 
-          onClick={() => setIsSettingsOpen(true)} 
-          className="text-white/40 hover:text-white transition-all hover:rotate-90 duration-300" 
-          title="Настройки матча"
-        >
-          <GearIcon />
-        </button>
-      </div>
+      {!isReadOnly && (
+        <div className="flex justify-end mb-6">
+          <button 
+            onClick={() => setIsSettingsOpen(true)} 
+            className="text-white/40 hover:text-white transition-all hover:rotate-90 duration-300" 
+            title="Настройки матча"
+          >
+            <GearIcon />
+          </button>
+        </div>
+      )}
 
       <div className="mt-auto pt-4 border-t border-white/10">
         {game?.status === 'live' ? (
              <Button 
                  onClick={onFinishGame}
                  isLoading={isFinishing}
+                 disabled={isReadOnly}
                  loadingText="Завершение..."
                  className={`w-full text-[9px] uppercase tracking-[2px] transition-all ${isFinishing ? '!bg-white/20 !text-white !shadow-none' : ''}`}
              >
@@ -205,6 +207,7 @@ export const TimerPanel = ({
              <Button 
                 onClick={onRecalculate} 
                 isLoading={isRecalculating}
+                disabled={isReadOnly}
                 loadingText="Пересчет..."
                 className={`w-full text-[9px] uppercase tracking-[2px] transition-all ${isRecalculating ? '!bg-white/20 !text-white !shadow-none' : ''}`}
              >

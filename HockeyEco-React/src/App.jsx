@@ -23,7 +23,7 @@ import { PlayoffConstructor } from './components/Settings/PlayoffConstructor';
 // Импорт каркаса, UI и прав
 import { AdminLayout } from './AdminLayout';
 import { Loader } from './ui/Loader';
-import { PERMISSIONS } from './utils/permissions';
+import { PERMISSIONS, ROLES } from './utils/permissions';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -34,6 +34,16 @@ export default function App() {
   const [showGlobalLoader, setShowGlobalLoader] = useState(true);
   
   const navigate = useNavigate();
+
+  // Локальная функция проверки прав для роутера верхнего уровня
+  const hasAccess = (user, league, action) => {
+    if (!user) return false;
+    if (user.globalRole === ROLES.GLOBAL_ADMIN) return true;
+    const allowedRoles = PERMISSIONS[action];
+    if (!allowedRoles || allowedRoles.length === 0) return false;
+    const userRoles = league?.role ? league.role.split(',').map(r => r.trim()) : [];
+    return userRoles.some(role => allowedRoles.includes(role));
+  };
 
   const initLeague = (user) => {
     const savedLeagueId = localStorage.getItem('hockeyeco_selected_league');
@@ -95,9 +105,8 @@ export default function App() {
     }
   }, []); 
 
-  const canViewDivisions = currentUser?.globalRole === 'admin' || 
-    (selectedLeague?.role && selectedLeague.role.split(',').some(r => PERMISSIONS.VIEW_DIVISIONS?.includes(r.trim())));
-  
+  // Вычисляем дефолтный роут на основе прав новой матрицы
+  const canViewDivisions = hasAccess(currentUser, selectedLeague, 'DIVISIONS_VIEW');
   const defaultRoute = canViewDivisions ? '/divisions' : '/games';
 
   const handleLoginSuccess = (userData) => {
@@ -105,8 +114,8 @@ export default function App() {
     setIsAuthenticated(true);
     initLeague(userData);
     
-    const canView = userData?.globalRole === 'admin' || 
-      (userData?.leagues?.[0]?.role && userData.leagues[0].role.split(',').some(r => PERMISSIONS.VIEW_DIVISIONS?.includes(r.trim())));
+    const league = userData?.leagues?.[0] || null;
+    const canView = hasAccess(userData, league, 'DIVISIONS_VIEW');
     navigate(canView ? '/divisions' : '/games'); 
   };
 
@@ -114,8 +123,7 @@ export default function App() {
     setSelectedLeague(league);
     localStorage.setItem('hockeyeco_selected_league', league.id);
     
-    const canView = currentUser?.globalRole === 'admin' || 
-      (league?.role && league.role.split(',').some(r => PERMISSIONS.VIEW_DIVISIONS?.includes(r.trim())));
+    const canView = hasAccess(currentUser, league, 'DIVISIONS_VIEW');
     navigate(canView ? '/divisions' : '/games'); 
   };
 
@@ -146,7 +154,6 @@ export default function App() {
             element={ isAuthenticated ? <WebGraphicsPanel user={currentUser} /> : <Navigate to="/login" replace /> } 
           />
 
-          {/* === НОВЫЙ ИЗОЛИРОВАННЫЙ РОУТ ДЛЯ КОНСТРУКТОРА ПЛЕЙ-ОФФ === */}
           <Route 
             path="/playoff-editor/:divisionId" 
             element={
@@ -171,8 +178,8 @@ export default function App() {
           >
             <Route index element={<Navigate to={defaultRoute} replace />} />
             
-            <Route path="registry" element={currentUser?.globalRole === 'admin' ? <GlobalRegistryPage /> : <Navigate to={defaultRoute} replace />} />
-            <Route path="teams" element={currentUser?.globalRole === 'admin' ? <TeamManagementPage /> : <Navigate to={defaultRoute} replace />} />
+            <Route path="registry" element={hasAccess(currentUser, selectedLeague, 'GLOBAL_REGISTRY_ACCESS') ? <GlobalRegistryPage /> : <Navigate to={defaultRoute} replace />} />
+            <Route path="teams" element={hasAccess(currentUser, selectedLeague, 'TEAM_MANAGEMENT_ACCESS') ? <TeamManagementPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="divisions" element={canViewDivisions ? <DivisionsPage /> : <Navigate to="/games" replace />} />
             <Route path="games" element={<GamesPage />} />
             <Route path="handbook" element={<HandbookPage />} />

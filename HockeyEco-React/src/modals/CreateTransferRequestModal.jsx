@@ -11,8 +11,7 @@ const POSITION_LABELS = {
   forward: 'Нападающий' 
 };
 
-// ДОБАВЛЕН ПРОП isAdmin
-export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], onSuccess, isAdmin }) {
+export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], onSuccess, isAdmin, readOnly = false }) {
   const [typeIndex, setTypeIndex] = useState(0); 
   const [selectedDivName, setSelectedDivName] = useState('');
   const [teams, setTeams] = useState([]);
@@ -31,16 +30,14 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
 
   const requestType = typeIndex === 0 ? 'add' : 'remove';
   
-  // НАХОДИМ ВЫБРАННЫЙ ДИВИЗИОН ЦЕЛИКОМ, ЧТОБЫ ВЗЯТЬ ДАТЫ
   const selectedDivision = divisions?.find(d => d.name === selectedDivName);
   const divisionId = selectedDivision?.id;
   const teamId = teams.find(t => t.name === selectedTeamName)?.team_id;
 
   const isNumberTaken = takenNumbers.includes(Number(jerseyNumber));
 
-  // ПРОВЕРКА: Открыто ли трансферное окно В ВЫБРАННОМ дивизионе?
   const isWindowOpen = useMemo(() => {
-    if (!selectedDivision) return true; // Пока ничего не выбрано, не блокируем
+    if (!selectedDivision) return true; 
     const now = new Date();
     const tS = selectedDivision.transfer_start ? new Date(selectedDivision.transfer_start) : null;
     const tE = selectedDivision.transfer_end ? new Date(selectedDivision.transfer_end) : null;
@@ -102,6 +99,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
   });
 
   const handlePlayerSelect = (p) => {
+    if (readOnly) return;
     setSelectedPlayerId(p.id);
     if (typeIndex === 0 && p.position) setPosition(p.position);
   };
@@ -163,12 +161,12 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
           <div className="w-full md:w-[320px] shrink-0 flex flex-col gap-6 border-r border-graphite/10 p-6 overflow-y-auto custom-scrollbar bg-white">
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Тип запроса</span>
-              <SegmentButton options={['Дозаявка', 'Отзаявка']} defaultIndex={typeIndex} onChange={setTypeIndex} />
+              <SegmentButton options={['Дозаявка', 'Отзаявка']} defaultIndex={typeIndex} onChange={setTypeIndex} disabled={readOnly} />
             </div>
             
-            <Select label="Дивизион" options={divisions.map(d => d.name)} value={selectedDivName} onChange={setSelectedDivName} />
+            <Select label="Дивизион" options={divisions.map(d => d.name)} value={selectedDivName} onChange={setSelectedDivName} disabled={readOnly} />
             
-            <Select label="Команда" options={teams.map(t => t.name)} value={selectedTeamName} onChange={setSelectedTeamName} />
+            <Select label="Команда" options={teams.map(t => t.name)} value={selectedTeamName} onChange={setSelectedTeamName} disabled={readOnly} />
             
             {/* ИНФОРМАЦИОННОЕ ТАБЛО О СТАТУСЕ ОКНА */}
             {selectedDivision && !isWindowOpen && (
@@ -187,7 +185,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                     Номер на джерси
                     {isNumberTaken && <span className="text-status-rejected normal-case">Уже занят!</span>}
                   </label>
-                  <Input type="number" min="1" max="99" placeholder="Например: 17" value={jerseyNumber} onChange={e => setJerseyNumber(e.target.value)} className={isNumberTaken ? '!border-status-rejected !bg-status-rejected/5 !text-status-rejected' : ''} />
+                  <Input type="number" min="1" max="99" placeholder="Например: 17" value={jerseyNumber} onChange={e => setJerseyNumber(e.target.value)} className={isNumberTaken ? '!border-status-rejected !bg-status-rejected/5 !text-status-rejected' : ''} disabled={readOnly} />
                   {takenNumbers.length > 0 && (
                     <div className="mt-2 animate-fade-in">
                       <div className="text-[10px] font-semibold text-graphite-light mb-1.5">Занятые номера:</div>
@@ -200,14 +198,14 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                   )}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <Select options={['Вратарь', 'Защитник', 'Нападающий']} value={POSITION_LABELS[position]} onChange={(val) => { const key = Object.keys(POSITION_LABELS).find(k => POSITION_LABELS[k] === val); setPosition(key); }} />
+                  <Select options={['Вратарь', 'Защитник', 'Нападающий']} value={POSITION_LABELS[position]} onChange={(val) => { const key = Object.keys(POSITION_LABELS).find(k => POSITION_LABELS[k] === val); setPosition(key); }} disabled={readOnly} />
                 </div>
               </div>
             )}
           </div>
 
           <div className="flex-1 flex flex-col p-6 overflow-hidden">
-            <Input placeholder="Поиск игрока по ФИО..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <Input placeholder="Поиск игрока по ФИО..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} disabled={readOnly} />
             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 pr-2 mt-4">
               {isLoadingPlayers ? (
                 <div className="text-center text-graphite-light py-10 mt-10">Загрузка игроков...</div>
@@ -217,7 +215,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                 <div className="text-center text-graphite-light py-10 mt-10 text-sm">Подходящих игроков не найдено</div>
               ) : (
                 filteredPlayers.map(p => (
-                  <div key={p.id} onClick={() => handlePlayerSelect(p)} className={`flex items-center gap-4 p-3 rounded-xl border cursor-pointer transition-all duration-300 ${selectedPlayerId === p.id ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}>
+                  <div key={p.id} onClick={() => handlePlayerSelect(p)} className={`flex items-center gap-4 p-3 rounded-xl border transition-all duration-300 ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'} ${selectedPlayerId === p.id ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}>
                     <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
                       <img src={getImageUrl(p.member_photo || p.avatar_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
                     </div>
@@ -229,16 +227,18 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                 ))
               )}
             </div>
-            <div className="mt-4 pt-4 border-t border-graphite/10 shrink-0">
-              <Button 
-                onClick={handleSubmit} 
-                disabled={!selectedPlayerId || isSubmitting || (typeIndex === 0 && (!jerseyNumber || !position || isNumberTaken)) || (!isWindowOpen && !isAdmin)} 
-                isLoading={isSubmitting} 
-                className="w-full py-3"
-              >
-                Создать заявку
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="mt-4 pt-4 border-t border-graphite/10 shrink-0">
+                <Button 
+                  onClick={handleSubmit} 
+                  disabled={!selectedPlayerId || isSubmitting || (typeIndex === 0 && (!jerseyNumber || !position || isNumberTaken)) || (!isWindowOpen && !isAdmin)} 
+                  isLoading={isSubmitting} 
+                  className="w-full py-3"
+                >
+                  Создать заявку
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>

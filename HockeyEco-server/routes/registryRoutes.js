@@ -1,7 +1,7 @@
 import express from 'express';
 import upload from '../config/upload.js';
 
-import { verifyToken, requireGlobalAdmin } from '../controllers/authController.js';
+import { verifyToken, requirePermission } from '../controllers/authController.js';
 import {
     getArenas, createArena, updateArena,
     getLeagues, createLeague, updateLeague,
@@ -14,10 +14,8 @@ import {
 
 const router = express.Router();
 
-// Храним загружаемые файлы в оперативной памяти перед отправкой в S3
-
 // Защищаем все маршруты реестра токеном авторизации И проверкой на глобального админа
-router.use('/registry', verifyToken, requireGlobalAdmin);
+router.use('/registry', verifyToken, requirePermission('GLOBAL_REGISTRY_ACCESS'));
 
 // --- АРЕНЫ ---
 router.get('/registry/arenas', getArenas);

@@ -5,6 +5,7 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Table } from '../ui/Table2';
 import { getImageUrl, getToken } from '../utils/helpers';
+import { AccessFallback } from '../ui/AccessFallback';
 
 const POSITION_MAP = { 'goalie': 'Вр', 'defense': 'Защ', 'forward': 'Нап' };
 
@@ -15,7 +16,7 @@ const mapDbPositionToUI = (dbPos) => {
   return 'forward'; // LW, C, RW
 };
 
-export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onSuccess }) {
+export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onSuccess, readOnly = false }) {
   const [available, setAvailable] = useState([]);
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState('');
@@ -80,20 +81,24 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
   };
 
   const handleAdd = (player) => {
+    if (readOnly) return;
     setAvailable(prev => prev.filter(p => p.id !== player.id));
     setSelected(prev => [...prev, { ...player, is_captain: false, is_assistant: false }]);
   };
 
   const handleRemove = (player) => {
+    if (readOnly) return;
     setSelected(prev => prev.filter(p => p.id !== player.id));
     setAvailable(prev => [...prev, player]);
   };
 
   const handleUpdate = (id, field, value) => {
+    if (readOnly) return;
     setSelected(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
 
   const handleLetterClick = (id, letter) => {
+    if (readOnly) return;
     setSelected(prev => {
       let updated = [...prev];
       const playerIndex = updated.findIndex(p => p.id === id);
@@ -122,6 +127,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
   };
 
   const handleSave = async () => {
+    if (readOnly) return;
     setIsSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/roster/${teamId}`, {
@@ -179,6 +185,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
         <Select 
           options={['Вр', 'Защ', 'Нап']} 
           value={POSITION_MAP[p.position] || 'Вр'} 
+          disabled={readOnly}
           onChange={(val) => {
             const newPos = Object.keys(POSITION_MAP).find(k => POSITION_MAP[k] === val);
             if (newPos) handleUpdate(p.id, 'position', newPos);
@@ -200,10 +207,11 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
               value={p.jersey_number || ''} 
               onChange={(e) => handleUpdate(p.id, 'jersey_number', e.target.value.replace(/\D/g, '').slice(0, 2))}
               placeholder="№"
+              disabled={readOnly}
               className={`w-10 h-8 text-center text-[13px] font-bold px-1 transition-colors ${
-                isDuplicate 
+                isDuplicate && !readOnly
                   ? 'bg-status-rejected/10 border-status-rejected text-status-rejected focus:border-status-rejected' 
-                  : 'bg-white border-graphite/20'
+                  : readOnly ? 'bg-graphite/5 border-graphite/10 text-graphite/50' : 'bg-white border-graphite/20'
               }`} 
             /> 
           </div>
@@ -219,13 +227,22 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
           <div className="flex gap-1.5 shrink-0 justify-center">
             <button 
               onClick={() => handleLetterClick(p.id, 'C')}
-              className={`w-7 h-7 rounded flex items-center justify-center text-[12px] font-black border transition-colors ${p.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'}`}
+              disabled={readOnly}
+              className={`w-7 h-7 rounded flex items-center justify-center text-[12px] font-black border transition-colors ${
+                p.is_captain 
+                  ? 'bg-orange text-white border-orange' 
+                  : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'
+              } ${readOnly && !p.is_captain ? 'opacity-30 cursor-not-allowed' : ''}`}
               title="Капитан"
             >C</button>
             <button 
               onClick={() => handleLetterClick(p.id, 'A')}
-              disabled={!canAddA && !p.is_assistant}
-              className={`w-7 h-7 rounded flex items-center justify-center text-[12px] font-black border transition-colors ${p.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'} ${!canAddA && !p.is_assistant ? 'opacity-40 cursor-not-allowed' : ''}`}
+              disabled={readOnly || (!canAddA && !p.is_assistant)}
+              className={`w-7 h-7 rounded flex items-center justify-center text-[12px] font-black border transition-colors ${
+                p.is_assistant 
+                  ? 'bg-status-accepted text-white border-status-accepted' 
+                  : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'
+              } ${(readOnly || (!canAddA && !p.is_assistant)) && !p.is_assistant ? 'opacity-30 cursor-not-allowed' : ''}`}
               title="Ассистент"
             >A</button>
           </div>
@@ -237,7 +254,13 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       width: 'w-[40px]', 
       align: 'right', 
       render: (p) => ( 
-        <button onClick={() => handleRemove(p)} className="w-7 h-7 text-graphite/30 hover:text-status-rejected transition-colors flex items-center justify-center shrink-0">
+        <button 
+          onClick={() => handleRemove(p)} 
+          disabled={readOnly}
+          className={`w-7 h-7 flex items-center justify-center shrink-0 transition-colors ${
+            readOnly ? 'text-graphite/10 cursor-not-allowed' : 'text-graphite/30 hover:text-status-rejected'
+          }`}
+        >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button> 
       )
@@ -259,12 +282,19 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
 
         {/* Content */}
         <div className="flex-1 p-6 md:p-8 overflow-hidden flex flex-col">
+          
+          {readOnly && (
+            <div className="mb-4">
+              <AccessFallback variant="readonly" message="У вас нет прав на редактирование состава." />
+            </div>
+          )}
+
           {isLoading ? (
             <div className="flex-1 flex items-center justify-center">
               <span className="text-graphite-light font-bold">Загрузка состава...</span>
             </div>
           ) : (
-            <div className="grid grid-cols-5 gap-8 flex-1 overflow-hidden h-full">
+            <div className={`grid grid-cols-5 gap-8 flex-1 overflow-hidden h-full ${readOnly ? 'opacity-90' : ''}`}>
               
               {/* Левая панель: доступные игроки */}
               <div className="col-span-2 flex flex-col bg-white border border-graphite/10 rounded-2xl shadow-sm overflow-hidden h-full">
@@ -295,7 +325,12 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                       </div>
                       <button 
                         onClick={() => handleAdd(p)}
-                        className="w-8 h-8 flex items-center justify-center rounded-md bg-graphite/5 text-graphite hover:bg-orange hover:text-white transition-colors shrink-0"
+                        disabled={readOnly}
+                        className={`w-8 h-8 flex items-center justify-center rounded-md shrink-0 transition-colors ${
+                          readOnly 
+                            ? 'bg-graphite/5 text-graphite/20 cursor-not-allowed' 
+                            : 'bg-graphite/5 text-graphite hover:bg-orange hover:text-white'
+                        }`}
                       >
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                       </button>
@@ -325,20 +360,22 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                   )}
                 </div>
 
-                <div className="p-5 border-t border-graphite/10 bg-gray-50 shrink-0">
-                  <Button 
-                    onClick={handleSave} 
-                    isLoading={isSaving} 
-                    disabled={hasDuplicates}
-                    className={`w-full transition-all ${
-                      hasDuplicates 
-                        ? 'bg-graphite/20 border-graphite/20 text-graphite/50 cursor-not-allowed hover:bg-graphite/20 hover:border-graphite/20 hover:text-graphite/50' 
-                        : ''
-                    }`}
-                  >
-                    {hasDuplicates ? 'Исправьте дублирующиеся номера' : 'Утвердить заявку на матч'}
-                  </Button>
-                </div>
+                {!readOnly && (
+                  <div className="p-5 border-t border-graphite/10 bg-gray-50 shrink-0">
+                    <Button 
+                      onClick={handleSave} 
+                      isLoading={isSaving} 
+                      disabled={hasDuplicates}
+                      className={`w-full transition-all ${
+                        hasDuplicates 
+                          ? 'bg-graphite/20 border-graphite/20 text-graphite/50 cursor-not-allowed hover:bg-graphite/20 hover:border-graphite/20 hover:text-graphite/50' 
+                          : ''
+                      }`}
+                    >
+                      {hasDuplicates ? 'Исправьте дублирующиеся номера' : 'Утвердить заявку на матч'}
+                    </Button>
+                  </div>
+                )}
               </div>
 
             </div>
