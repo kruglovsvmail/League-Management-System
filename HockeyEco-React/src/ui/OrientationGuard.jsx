@@ -40,10 +40,10 @@ export function OrientationGuard({ children }) {
           style={{ zIndex: 9999999 }}
           className="fixed inset-0 w-full h-full bg-graphite flex flex-col items-center justify-center p-6 text-center text-white backdrop-blur-xl touch-none"
         >
-          <div className="mb-8 relative flex items-center justify-center w-32 h-32 rounded-full bg-white/5 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.3)]">
+          <div className="mb-8 relative flex items-center justify-center w-80 h-80 rounded-full bg-white/5 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.3)]">
             
             <svg 
-              className="w-16 h-16 text-orange animate-rotate-phone origin-center drop-shadow-lg" 
+              className="w-56 h-56 text-orange animate-rotate-phone origin-center drop-shadow-lg" 
               fill="none" stroke="currentColor" viewBox="0 0 24 24"
             >
               <rect x="5" y="2" width="14" height="20" rx="3" ry="3" strokeWidth="2"/>
@@ -52,11 +52,11 @@ export function OrientationGuard({ children }) {
 
           </div>
           
-          <h2 className="text-2xl font-black uppercase tracking-widest mb-4">
+          <h2 className="text-[60px] font-black uppercase tracking-widest mb-4">
             Поверните устройство
           </h2>
           
-          <p className="text-[14px] text-white/60 font-medium max-w-[320px] leading-relaxed">
+          <p className="text-[40px] text-white/60 font-medium max-w-[1020px] leading-relaxed">
             HockeyEco LMS использует сложные таблицы и панели трансляций, которые требуют <span className="text-white font-bold">горизонтальной</span> ориентации экрана.
           </p>
         </div>
