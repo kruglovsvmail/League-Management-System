@@ -108,7 +108,7 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
 
       {isOpen && createPortal(
         <div 
-          className="datetimepicker-portal absolute bg-white/95 backdrop-blur-xl rounded-xl border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100000] animate-fade-in-down p-4 w-[260px]"
+          className="datetimepicker-portal absolute bg-white/95 backdrop-blur-xl rounded-xl border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100000] animate-zoom-in p-4 w-[260px]"
           style={{ top: `${coords.top}px`, left: `${coords.left}px` }}
         >
           <div className="flex justify-between items-center mb-3 text-sm font-bold text-graphite">

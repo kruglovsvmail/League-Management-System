@@ -1,6 +1,5 @@
 // src/components/GameLiveDesk/GameDeskShared.jsx
 import React from 'react';
-// ИМПОРТИРУЕМ НАШ ГЛОБАЛЬНЫЙ УНИВЕРСАЛЬНЫЙ SELECT
 import { Select } from '../../ui/Select';
 
 // --- Утилиты форматирования ---
@@ -188,8 +187,6 @@ export const shootoutOptions = [
 ];
 
 // --- Компоненты UI ---
-
-// Выбрасываем тонну старого кода и просто используем универсальный Select!
 export const StylishSelect = ({ value, onChange, exclude = [], className, roster }) => {
   const options = roster
     .filter(p => !exclude.includes(String(p.jersey_number)))
@@ -199,7 +196,6 @@ export const StylishSelect = ({ value, onChange, exclude = [], className, roster
     <Select 
       isSearchable={true} 
       value={value} 
-      // Протокол исторически ожидал onChange({target: {value}}), делаем микро-адаптер
       onChange={(val) => onChange({ target: { value: val } })} 
       options={options} 
       className={`h-[30px] !py-0 !px-2 ${className}`} 
@@ -208,7 +204,6 @@ export const StylishSelect = ({ value, onChange, exclude = [], className, roster
   );
 };
 
-// Тот же финт ушами для обычного кастомного селекта в протоколе (например, для типа штрафа)
 export const CustomSelect = ({ value, onChange, options, className, placeholder = "" }) => {
   return (
     <Select 
@@ -227,52 +222,4 @@ export const StylishInput = ({ value, onChange, placeholder, onBlur, className }
     className={`w-full h-[30px] text-center bg-white border border-graphite/20 hover:border-orange focus:bg-white focus:border-orange focus:ring-2 focus:ring-orange/20 shadow-sm rounded-md outline-none placeholder-graphite/40 transition-all text-sm font-mono font-semibold text-graphite ${className}`} 
     value={value} placeholder={placeholder} onChange={onChange} onBlur={onBlur}
   />
-);
-
-// --- Иконки ---
-export const EditIcon = () => (
-  <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-  </svg>
-);
-
-export const DeleteIcon = () => (
-  <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-  </svg>
-);
-
-export const SaveIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
-  </svg>
-);
-
-export const PlusIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4"></path>
-  </svg>
-);
-
-export const UsersIcon = () => (
-  <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-  </svg>
-);
-
-export const ShootoutGoalIcon = ({ className = "w-5 h-5 text-status-accepted" }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse>
-    <path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path>
-    <polyline points="14 17 17 20 23 13"></polyline>
-  </svg>
-);
-
-export const ShootoutMissIcon = ({ className = "w-5 h-5 text-status-rejected" }) => (
-  <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse>
-    <path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path>
-    <line x1="16" y1="14" x2="22" y2="20"></line>
-    <line x1="22" y1="14" x2="16" y2="20"></line>
-  </svg>
 );

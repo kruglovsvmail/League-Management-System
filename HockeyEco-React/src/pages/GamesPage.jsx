@@ -42,7 +42,6 @@ export function GamesPage() {
     const [gameToDelete, setGameToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    // Проверяем права по новой матрице RBAC
     const canView = checkAccess('SCHEDULE_VIEW');
     const canEdit = checkAccess('SCHEDULE_EDIT');
     const canCreate = checkAccess('SCHEDULE_CREATE');
@@ -200,7 +199,6 @@ export function GamesPage() {
             else { extraUpdates.location_text = 'Не назначена'; }
         }
 
-        // Если это быстрый локальный ввод (например, инпут с датой), не ждем ответа
         if (onlyLocal) {
             setGames(prev => prev.map(g => g.id === gameId ? { ...g, ...updatesObj, ...extraUpdates } : g));
             return;
@@ -215,12 +213,9 @@ export function GamesPage() {
             const data = await res.json();
             
             if (data.success) {
-                // Если бекэнд разрешил - сохраняем и отображаем у пользователя
                 setGames(prev => prev.map(g => g.id === gameId ? { ...g, ...updatesObj, ...extraUpdates } : g));
             } else {
-                // Если сервер заблокировал (защита от дурака / превышение лимита матчей)
                 setToast({ title: 'Действие отменено', message: data.error || 'Ошибка', type: 'error' });
-                // Принудительно запрашиваем список матчей, чтобы вернуть визуальное состояние к данным из базы
                 loadGames();
             }
         } catch (err) {
@@ -260,7 +255,7 @@ export function GamesPage() {
 
     if (!selectedLeague) {
         return (
-            <div className="flex flex-col flex-1 animate-fade-in-down">
+            <div className="flex flex-col flex-1 animate-zoom-in">
                 <Header title="Расписание матчей" />
                 <main className="p-10 flex flex-1 items-center justify-center">
                     <div className="text-center text-status-rejected font-medium text-lg bg-status-rejected/5 px-8 py-6 rounded-2xl border border-status-rejected/10">
@@ -271,10 +266,9 @@ export function GamesPage() {
         );
     }
 
-    // Заглушка, если нет прав на просмотр раздела
     if (!canView) {
         return (
-            <div className="flex flex-col flex-1 animate-fade-in-down">
+            <div className="flex flex-col flex-1 animate-zoom-in">
                 <Header title="Расписание матчей" />
                 <main className="p-10 flex flex-1 items-center justify-center">
                     <AccessFallback variant="full" message="У вас нет прав для просмотра расписания." />
@@ -299,7 +293,7 @@ export function GamesPage() {
                 title="Расписание матчей" 
                 actions={
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
+                        <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
                             <span className={`text-[12px] font-bold uppercase tracking-wider ${showFinished ? 'text-orange' : 'text-graphite-light'}`}>
                                 Завершенные
                             </span>
@@ -307,7 +301,7 @@ export function GamesPage() {
                         </div>
 
                         {canEdit && (
-                            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
+                            <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
                                 <span className={`text-[12px] font-bold uppercase tracking-wider ${isEditMode ? 'text-orange' : 'text-graphite-light'}`}>
                                     Редакт.
                                 </span>
@@ -329,7 +323,7 @@ export function GamesPage() {
                         )}
 
                         {seasons.length > 0 && (
-                            <div className="w-48">
+                            <div className="w-32">
                                 <Select 
                                     options={seasonOptions} 
                                     value={currentSeasonName} 
@@ -361,11 +355,11 @@ export function GamesPage() {
                 ) : (
                     <div className="max-w-[1400px] mx-auto flex flex-col gap-3">
                         {!selectedDivisionId ? (
-                            <div className="text-center py-20 text-graphite-light font-medium bg-white/40 border border-dashed border-graphite/20 rounded-2xl">
+                            <div className="text-center py-20 text-graphite/50 font-medium bg-white/0 rounded-2xl">
                                 Выберите дивизион для просмотра расписания
                             </div>
                         ) : displayedGames.length === 0 && !isEditMode ? (
-                            <div className="text-center py-20 text-graphite-light font-medium bg-white/40 border border-dashed border-graphite/20 rounded-2xl">
+                            <div className="text-center py-20 text-graphite-light font-medium bg-white/0 border border-dashed border-graphite/20 rounded-2xl">
                                 {games.length > 0 ? "Включите тумблер «Завершенные», чтобы увидеть сыгранные матчи." : "В этом дивизионе пока нет матчей. Включите режим редактирования, чтобы создать матч."}
                             </div>
                         ) : (

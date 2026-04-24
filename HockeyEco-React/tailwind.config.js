@@ -28,9 +28,9 @@ export default {
         circle: 'var(--radius-circle)',
       },
       keyframes: {
-        'fade-in-down': {
-          '0%': { opacity: '0', transform: 'translateY(-10px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
+        'zoom-in': {
+          '0%': { transform: 'scale(0.9)' },
+          '100%': { transform: 'scale(1)' },
         },
         'slide-in': {
           '0%': { transform: 'translateX(120%)' },
@@ -46,7 +46,7 @@ export default {
         }
       },
       animation: {
-        'fade-in-down': 'fade-in-down 0.2s ease-out forwards',
+        'zoom-in': 'zoom-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards',
         'slide-in': 'slide-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards',
         'slide-out': 'slide-out 0.3s forwards',
         shimmer: 'shimmer 1.5s infinite linear',

@@ -408,7 +408,7 @@ export function TeamManagementPage() {
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         {selectedTeam && (
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-xxl p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-fade-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-xxl p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-zoom-in">
             <div className="flex flex-col items-center mb-4 text-center">
               <img src={getImageUrl(selectedTeam.logo_url) || '/default/Logo_team_default.webp'} className="w-16 h-16 object-contain mb-3" />
               <span className="font-black text-[16px] leading-tight">{selectedTeam.name}</span>
@@ -424,7 +424,7 @@ export function TeamManagementPage() {
 
         <div className="flex-1 relative z-10 min-h-[500px]">
           {!selectedTeam ? (
-            <div className="bg-white/40 border border-graphite/10 rounded-xxl p-8 animate-fade-in-down">
+            <div className="bg-white/40 border border-graphite/10 rounded-xxl p-8 animate-zoom-in">
               <Input placeholder="Поиск команды..." value={teamSearchQuery} onChange={(e) => setTeamSearchQuery(e.target.value)} />
               {isSearchingTeams ? <Loader text="Поиск..." /> : (
                 <div className="grid grid-cols-2 xl:grid-cols-3 gap-5 mt-6">
@@ -442,7 +442,7 @@ export function TeamManagementPage() {
             </div>
           ) : (
             <>
-              <div className={`bg-white/85 rounded-xxl shadow-sm border border-graphite/10 p-8 animate-fade-in-down ${activeTab === 'tournaments' ? 'mb-6' : ''}`}>
+              <div className={`bg-white/85 rounded-xxl shadow-sm border border-graphite/10 p-8 animate-zoom-in ${activeTab === 'tournaments' ? 'mb-6' : ''}`}>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-black text-graphite uppercase tracking-wide">
                     {activeTab === 'base' ? 'База команды' : activeTab === 'roster' ? 'Игровой состав' : activeTab === 'staff' ? 'Штаб команды' : 'Заявки в лигу'}
@@ -472,7 +472,7 @@ export function TeamManagementPage() {
               </div>
 
               {activeTab === 'tournaments' && (
-                <div className="flex flex-col gap-5 animate-fade-in-down">
+                <div className="flex flex-col gap-5 animate-zoom-in">
                   {displayedApplications.length > 0 ? displayedApplications.map(app => (
                     <ApplicationCard 
                       key={app.id} app={app} getRenderPhoto={getRenderPhoto} showToast={showToast}
@@ -832,7 +832,7 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
           </div>
           
           {isPaperFirst ? (
-            <div className="flex-1 animate-fade-in space-y-6">
+            <div className="flex-1 animate-zoom-in space-y-6">
               <div className="p-5 bg-orange/10 border border-orange/20 rounded-2xl text-[14px] text-orange">
                 <b>Внимание!</b> В этом дивизионе требуется предварительная отправка заявочного листа. 
                 Пожалуйста, загрузите скан подписанного заявочного листа. После его проверки Лигой, вы сможете добавить игроков в систему.
@@ -845,7 +845,7 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
               />
             </div>
           ) : (
-            <div className="flex-1 flex gap-6 overflow-hidden animate-fade-in">
+            <div className="flex-1 flex gap-6 overflow-hidden animate-zoom-in">
               <div className="flex-1 flex flex-col bg-white border border-graphite/10 rounded-2xl overflow-hidden"><div className="p-4 bg-graphite/5 border-b border-graphite/10 font-bold text-[13px] text-graphite-light">Игровой состав ({roster.length})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5 hover:bg-orange/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div>{!selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white">→</button>}</div>))}</div></div>
               <div className="flex-1 flex flex-col bg-white border border-orange/30 rounded-2xl overflow-hidden shadow-[0_0_15px_rgba(255,122,0,0.05)]"><div className="p-4 bg-orange/10 border-b border-orange/20 font-bold text-[13px] text-orange">В заявку ({selectedPlayers.size})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.filter(r => selectedPlayers.has(r.user_id)).map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div><button onClick={() => togglePlayer(r.user_id)} className="text-status-rejected font-bold text-[12px] bg-status-rejected/10 px-3 py-1 rounded hover:bg-status-rejected hover:text-white">✕</button></div>))}</div></div>
             </div>

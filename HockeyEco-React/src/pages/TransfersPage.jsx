@@ -203,7 +203,7 @@ export function TransfersPage() {
 
   if (!canViewTransfers) {
     return (
-      <div className="flex flex-col flex-1 animate-fade-in-down">
+      <div className="flex flex-col flex-1 animate-zoom-in">
         <Header title="Трансферы" />
         <main className="p-10 flex flex-1 items-center justify-center">
           <AccessFallback variant="full" message="У вас нет прав для просмотра раздела трансферов." />
@@ -219,7 +219,7 @@ export function TransfersPage() {
         actions={
           <>
             {seasons.length > 0 && (
-              <div className="w-48">
+              <div className="w-32">
                 <Select options={seasonOptions} value={selectedSeasonName} onChange={(val) => {
                   const found = seasons.find(s => s.name === val);
                   if (found) setSelectedSeasonId(found.id);
@@ -248,7 +248,7 @@ export function TransfersPage() {
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         
-        <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6 custom-scrollbar z-20">
+        <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-6 custom-scrollbar z-20">
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Статус заявки</label>
             <SegmentButton options={['На проверке', 'Принятые', 'Отклоненные']} defaultIndex={statusFilterIndex} onChange={setStatusFilterIndex} />
@@ -294,7 +294,7 @@ export function TransfersPage() {
                 return (
                   <div key={tr.id} className={`grid transition-all duration-300 ease-in-out origin-top ${isHiding ? 'grid-rows-[0fr] opacity-0 mb-0 scale-[0.98]' : 'grid-rows-[1fr] opacity-100 mb-3 scale-100'}`}>
                     <div className="overflow-hidden">
-                      <div className={`bg-white/80 border rounded-xl overflow-hidden transition-all duration-100 ${isExpanded ? 'border-orange/20 shadow-mg' : 'hover:border-orange/50 shadow-mg'}`}>
+                      <div className={`bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl overflow-hidden transition-all duration-100 ${isExpanded ? 'border-orange/20 shadow-mg' : 'hover:border-orange/50 shadow-mg'}`}>
                         
                         <div onClick={() => toggleExpand(tr.id)} className="p-4 grid grid-cols-[150px_48px_1fr_100px_48px_1.5fr_10px] gap-4 items-center cursor-pointer select-none">
                           <div className="text-center">

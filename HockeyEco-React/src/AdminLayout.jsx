@@ -3,22 +3,37 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from "./components/Sidebar";
 
 export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange }) {
-  // Наш супер-сложный 10-слойный волнистый градиент
-  const complexMeshGradient = {
-    backgroundImage: `
-      radial-gradient(ellipse 100% 40% at 20% -10%, #5e5e5eff 0%, transparent 70%), /* 1. Ледяной акцент сверху */
-      radial-gradient(ellipse 120% 50% at 80% 10%, #c6c6c6ff 0%, transparent 80%), /* 2. Яркий белый блик справа */
-      radial-gradient(ellipse 90% 60% at 5% 40%, #dee2e6 0%, transparent 70%),   /* 3. Средне-серая волна слева */
-      radial-gradient(ellipse 140% 40% at 95% 45%, #c3c3c3ff 0%, transparent 80%), /* 4. Светло-серая волна справа */
-      radial-gradient(ellipse 110% 50% at 30% 70%, #b6b6b6ff 0%, transparent 80%), /* 5. Стальной акцент внизу слева */
-      radial-gradient(ellipse 130% 60% at 75% 85%, #ffedd5 0%, transparent 70%), /* 6. Теплый (песочный) акцент внизу */
-      radial-gradient(ellipse 80% 50% at 10% 110%, #bdbdbdff 0%, transparent 70%), /* 7. Темно-серая тень в левом углу */
-      radial-gradient(ellipse 100% 60% at 90% -10%, #e9ecef 0%, transparent 70%),/* 8. Мягкий перелив в правом верхнем */
-      radial-gradient(circle at 50% 50%, #fdfdfd 0%, transparent 60%),           /* 9. Центральное высветление */
-      linear-gradient(135deg, #f1f3f5 0%, #e9ecef 50%, #dce0e5 100%)             /* 10. Базовая диагональная подложка */
-    `,
-    backgroundAttachment: 'fixed', // Чтобы градиент не уезжал при скролле страницы
-  };
+  // Наш супер-сложный фон
+const complexMeshGradient = {
+  backgroundImage: `
+    /* 1. Строгая инженерная микро-сетка (создает системный паттерн и текстуру данных) */
+    repeating-linear-gradient(0deg, rgba(20, 30, 40, 0.02) 0px, rgba(20, 30, 40, 0.02) 1px, transparent 1px, transparent 32px),
+    repeating-linear-gradient(90deg, rgba(20, 30, 40, 0.02) 0px, rgba(20, 30, 40, 0.02) 1px, transparent 1px, transparent 32px),
+
+    /* 2. Макро-векторы и технологические диагонали (задают направление и динамику) */
+    repeating-linear-gradient(135deg, transparent 0px, transparent 200px, rgba(255, 255, 255, 0.5) 200px, rgba(255, 255, 255, 0.5) 201px, transparent 201px, transparent 400px),
+    repeating-linear-gradient(45deg, transparent 0px, transparent 150px, rgba(20, 30, 40, 0.03) 150px, rgba(20, 30, 40, 0.03) 151px, transparent 151px, transparent 300px),
+
+    /* 3. Концентрические кольца-радары (добавляют фокусность и системную глубину в левом углу) */
+    repeating-radial-gradient(circle at 10% 20%, transparent 0, transparent 60px, rgba(255, 255, 255, 0.15) 60px, rgba(255, 255, 255, 0.15) 61px),
+
+    /* 4. Атмосферное освещение (Mesh-база: переходы от холодного серого к теплым бежевым теням) */
+    radial-gradient(ellipse 100% 100% at 20% 0%, #baaf92ff 0%, transparent 60%),     /* Чистый светлый источник сверху */
+    radial-gradient(ellipse 120% 100% at 85% 15%, #bbd0ddff 0%, transparent 65%),     /* Теплый титановый (беж) справа */
+    radial-gradient(ellipse 100% 120% at 10% 90%, #bfcbd7ff 0%, transparent 60%),     /* Глубокий стальной серый снизу слева */
+    radial-gradient(ellipse 120% 100% at 90% 85%, #d1b99bff 0%, transparent 65%),     /* Мягкий платиновый снизу справа */
+    radial-gradient(circle at 50% 50%, #cae4a6ff 0%, transparent 50%),                /* Нейтральный центр для контента */
+
+    /* 5. Объемное виньетирование (создает атмосферу большого, глубокого пространства) */
+    radial-gradient(circle at 50% 50%, transparent 40%, rgba(120, 125, 130, 0.15) 100%),
+
+    /* 6. Базовая градиентная подложка (матовый металлик) */
+    linear-gradient(135deg, #e8ecef 0%, #d4d8db 50%, #c5c1ba 100%)
+  `,
+  backgroundAttachment: 'fixed',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center'
+};
 
   return (
     // Убрали bg-[#dededeff], добавили style

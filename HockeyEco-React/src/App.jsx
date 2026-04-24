@@ -130,7 +130,7 @@ export default function App() {
   return (
     <>
       {showGlobalLoader && (
-        <div className={`fixed inset-0 z-[10000] bg-[#F0F2F5] flex items-center justify-center transition-opacity duration-500 ease-in-out ${isInitializing ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-500 ease-in-out ${isInitializing ? 'opacity-100' : 'opacity-0'}`}>
           <Loader text="Запуск HockeyEco Pro..." />
         </div>
       )}

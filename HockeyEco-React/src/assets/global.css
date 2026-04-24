@@ -3,8 +3,15 @@
 @tailwind utilities;
 
 html {
-  /* Резервирует место под полосу прокрутки, чтобы контент не прыгал */
+  /* Ваше свойство: резервирует место, чтобы контент не прыгал */
   scrollbar-gutter: stable; 
+  background-color: #2d2e30;
+
+  /* Первый цвет — сам ползунок, второй — фон дорожки */
+  scrollbar-color: #838383ca #11121400; 
+  
+  /* Толщина полосы прокрутки (auto | thin | none) */
+  scrollbar-width: thin; 
 }
 
 
@@ -12,7 +19,7 @@ html {
   /* Базовые цвета в формате RGB (для поддержки opacity в Tailwind) */
   --orange: 255 122 0;
   --orange-hover: 224 106 0;
-  --graphite: 44 44 46;
+  --graphite: 20 20 20;
   --graphite-light: 72 72 74;
   --graphite-dark: 32 32 34;
   --white: 255 255 255;
@@ -20,8 +27,8 @@ html {
   --gray-bg-light: 248 249 250;
 
   /* Градиенты фона (можно оставить HEX) */
-  --bg-grad-1: #f5f7fa;
-  --bg-grad-2: #c3cfe2;
+  --bg-grad-1: #e0e0e0;
+  --bg-grad-2: #b3b3b3;
 
   /* Яркие цвета для Статусов (RGB) */
   --status-pending: 0 122 255; 
@@ -35,7 +42,7 @@ html {
   --radius-md: 9px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --radius-xxl: 20px;
+  --radius-xxl: 16px;
   --radius-pill: 40px;
   --radius-circle: 50%;
 

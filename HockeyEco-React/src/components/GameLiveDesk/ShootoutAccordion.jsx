@@ -1,29 +1,8 @@
 // src/components/GameLiveDesk/ShootoutAccordion.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { getImageUrl } from '../../utils/helpers';
-import { 
-  StylishSelect, 
-  PlusIcon, 
-  DeleteIcon,
-  EditIcon,
-  SaveIcon,
-  ShootoutGoalIcon,
-  ShootoutMissIcon
-} from './GameDeskShared';
-
-const ChevronIcon = ({ isExpanded }) => (
-  <svg 
-    className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} 
-    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
-  </svg>
-);
-
-const PlayIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-const TrophyIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>;
-const StopIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>;
-const RefreshIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
+import { StylishSelect } from './GameDeskShared';
+import { Icon } from '../../ui/Icon';
 
 const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving, isReadOnly }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -73,7 +52,7 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving,
             >
                 <span className={`w-2.5 h-2.5 rounded-full ${current.dotClass}`}></span>
                 {current.label}
-                {!isReadOnly && <svg className={`w-4 h-4 transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isOpen ? 'rotate-180' : ''} ${status === 'pending' ? 'text-graphite/40' : 'text-white/70'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" /></svg>}
+                {!isReadOnly && <Icon name="chevron" className={`w-4 h-4 transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isOpen ? 'rotate-180' : ''} ${status === 'pending' ? 'text-graphite/40' : 'text-white/70'}`} />}
             </button>
 
             <div 
@@ -83,7 +62,7 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving,
                 {status === 'pending' && (
                     <button onClick={() => handleAction('active')} className="w-full text-left p-3 rounded-2xl hover:bg-graphite/[0.04] active:bg-graphite/[0.08] flex items-center gap-4 transition-all duration-200 group">
                         <div className="w-12 h-12 rounded-[14px] bg-orange/10 flex items-center justify-center text-orange group-hover:scale-110 group-hover:bg-orange group-hover:text-white transition-all duration-300 ease-out">
-                            <PlayIcon />
+                            <Icon name="play" className="w-5 h-5" />
                         </div>
                         <div className="flex flex-col">
                             <span className="text-sm font-bold text-graphite">Запустить серию</span>
@@ -100,7 +79,7 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving,
                             className={`w-full text-left p-3 rounded-2xl flex items-center gap-4 transition-all duration-200 group ${isTie || !hasShots ? 'opacity-50 cursor-not-allowed' : 'hover:bg-status-accepted/10 active:bg-status-accepted/20'}`}
                         >
                             <div className={`w-12 h-12 rounded-[14px] flex items-center justify-center transition-all duration-300 ${isTie || !hasShots ? 'bg-graphite/10 text-graphite/50' : 'bg-status-accepted/20 text-status-accepted group-hover:scale-110 group-hover:bg-status-accepted group-hover:text-white ease-out'}`}>
-                                <TrophyIcon />
+                                <Icon name="trophy" className="w-5 h-5" />
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-sm font-bold text-graphite">Завершить с победой</span>
@@ -110,7 +89,7 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving,
                         
                         <button onClick={() => handleAction('pending')} className="w-full text-left p-3 rounded-2xl hover:bg-status-rejected/10 active:bg-status-rejected/20 flex items-center gap-4 transition-all duration-200 group">
                             <div className="w-12 h-12 rounded-[14px] bg-status-rejected/10 flex items-center justify-center text-status-rejected group-hover:scale-110 group-hover:bg-status-rejected group-hover:text-white transition-all duration-300 ease-out">
-                                <StopIcon />
+                                <Icon name="stop" className="w-5 h-5" />
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-sm font-bold text-graphite">Остановить серию</span>
@@ -123,7 +102,7 @@ const ShootoutStatusPill = ({ status, onStatusChange, isTie, hasShots, isSaving,
                 {status === 'finished_win' && (
                     <button onClick={() => handleAction('reopen')} className="w-full text-left p-3 rounded-2xl hover:bg-graphite/[0.04] active:bg-graphite/[0.08] flex items-center gap-4 transition-all duration-200 group">
                         <div className="w-12 h-12 rounded-[14px] bg-graphite/10 flex items-center justify-center text-graphite group-hover:scale-110 transition-transform duration-300 ease-out">
-                            <RefreshIcon />
+                            <Icon name="refresh" className="w-5 h-5" />
                         </div>
                         <div className="flex flex-col">
                             <span className="text-sm font-bold text-graphite">Аннулировать итог</span>
@@ -239,7 +218,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                             className={`w-7 h-7 rounded flex items-center justify-center transition-all border ${editData.result === 'shootout_goal' ? 'border-status-accepted bg-status-accepted/10' : 'border-transparent hover:bg-status-accepted/10'}`}
                                             title="Гол"
                                         >
-                                            <ShootoutGoalIcon className={`w-4 h-4 transition-all ${editData.result === 'shootout_goal' ? 'text-status-accepted scale-110' : 'text-status-accepted opacity-40'}`} />
+                                            <Icon name="shootout_goal" className={`w-4 h-4 transition-all ${editData.result === 'shootout_goal' ? 'text-status-accepted scale-110' : 'text-status-accepted opacity-40'}`} />
                                         </button>
                                         <button 
                                             type="button"
@@ -247,12 +226,12 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                             className={`w-7 h-7 rounded flex items-center justify-center transition-all border ${editData.result === 'shootout_miss' ? 'border-status-rejected bg-status-rejected/10' : 'border-transparent hover:bg-status-rejected/10'}`}
                                             title="Мимо/Вратарь"
                                         >
-                                            <ShootoutMissIcon className={`w-4 h-4 transition-all ${editData.result === 'shootout_miss' ? 'text-status-rejected scale-110' : 'text-status-rejected opacity-40'}`} />
+                                            <Icon name="shootout_miss" className={`w-4 h-4 transition-all ${editData.result === 'shootout_miss' ? 'text-status-rejected scale-110' : 'text-status-rejected opacity-40'}`} />
                                         </button>
                                     </div>
                                 </td>
                                 <td className="p-0 text-center">
-                                    <button onClick={handleSaveEdit} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><SaveIcon /></button>
+                                    <button onClick={handleSaveEdit} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button>
                                 </td>
                             </tr>
                         );
@@ -267,16 +246,16 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                     <td className="text-center font-semibold text-graphite border-r border-graphite/30 text-sm">{getJersey(shot.against_goalie_id, oppRoster)}</td>
                                     <td className="flex justify-center items-center h-[36px] border-r border-graphite/30">
                                         {shot.event_type === 'shootout_goal' ? (
-                                            <ShootoutGoalIcon className="w-5 h-5 text-status-accepted" />
+                                            <Icon name="shootout_goal" className="w-5 h-5 text-status-accepted" />
                                         ) : (
-                                            <ShootoutMissIcon className="w-5 h-5 text-status-rejected" />
+                                            <Icon name="shootout_miss" className="w-5 h-5 text-status-rejected" />
                                         )}
                                     </td>
                                     <td className="p-0 text-center">
                                         {!isClosed && !isReadOnly && (
                                             <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                                                <button onClick={() => startEdit(shot)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                                                <button onClick={() => onDeleteEvent(shot.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                                                <button onClick={() => startEdit(shot)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                                                <button onClick={() => onDeleteEvent(shot.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><Icon name="delete" className="w-[18px] h-[18px]" /></button>
                                             </div>
                                         )}
                                     </td>
@@ -309,7 +288,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                                 className={`w-7 h-7 rounded flex items-center justify-center transition-all border ${newShot.result === 'shootout_goal' ? 'border-status-accepted bg-status-accepted/10' : 'border-transparent hover:bg-status-accepted/10'}`}
                                                 title="Гол"
                                             >
-                                                <ShootoutGoalIcon className={`w-4 h-4 transition-all ${newShot.result === 'shootout_goal' ? 'text-status-accepted scale-110' : 'text-status-accepted opacity-40'}`} />
+                                                <Icon name="shootout_goal" className={`w-4 h-4 transition-all ${newShot.result === 'shootout_goal' ? 'text-status-accepted scale-110' : 'text-status-accepted opacity-40'}`} />
                                             </button>
                                             <button 
                                                 type="button"
@@ -317,11 +296,11 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                                 className={`w-7 h-7 rounded flex items-center justify-center transition-all border ${newShot.result === 'shootout_miss' ? 'border-status-rejected bg-status-rejected/10' : 'border-transparent hover:bg-status-rejected/10'}`}
                                                 title="Мимо/Вратарь"
                                             >
-                                                <ShootoutMissIcon className={`w-4 h-4 transition-all ${newShot.result === 'shootout_miss' ? 'text-status-rejected scale-110' : 'text-status-rejected opacity-40'}`} />
+                                                <Icon name="shootout_miss" className={`w-4 h-4 transition-all ${newShot.result === 'shootout_miss' ? 'text-status-rejected scale-110' : 'text-status-rejected opacity-40'}`} />
                                             </button>
                                         </div>
                                     </td>
-                                    <td className="p-0 text-center"><button onClick={handleAdd} className="w-full h-full min-h-[36px] hover:bg-status-accepted/10 text-status-accepted transition-colors flex items-center justify-center"><PlusIcon /></button></td>
+                                    <td className="p-0 text-center"><button onClick={handleAdd} className="w-full h-full min-h-[36px] hover:bg-status-accepted/10 text-status-accepted transition-colors flex items-center justify-center"><Icon name="plus" className="w-6 h-6" /></button></td>
                                 </>
                             ) : (
                                 <><td className="border-r border-graphite/30"/><td className="border-r border-graphite/30"/><td className="border-r border-graphite/30"/><td/></>
@@ -378,7 +357,7 @@ export const ShootoutAccordion = ({
          onClick={() => setIsShootoutExpanded(!isShootoutExpanded)}
       >
           <div className="font-bold py-1 text-graphite text-base uppercase tracking-wide flex items-center gap-3">
-             <ChevronIcon isExpanded={isShootoutExpanded} />
+             <Icon name="chevron" className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isShootoutExpanded ? 'rotate-180' : ''}`} />
              Броски, определяющие победителя (Буллиты)
           </div>
           

@@ -91,8 +91,8 @@ export function Select({
                 className={`${sizeClass} w-full rounded-md border flex items-center transition-all duration-300 outline-none text-[13px] font-semibold text-graphite placeholder:font-medium placeholder-graphite/40 ${
                   disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70' 
                   : hasError ? 'border-status-rejected bg-status-rejected/5' 
-                  : isOpen ? 'border-orange bg-white shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' 
-                  : 'border-graphite/40 bg-white hover:border-orange'
+                  : isOpen ? 'border-orange bg-white/30 shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' 
+                  : 'border-graphite/40 bg-white/30 hover:border-orange'
                 }`}
                 placeholder={displayValue || placeholder}
                 value={isOpen ? searchTerm : displayValue}
@@ -107,8 +107,8 @@ export function Select({
             className={`${sizeClass} rounded-md border flex justify-between items-center transition-all duration-300 ${
               disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70'
                 : hasError ? 'border-status-rejected bg-status-rejected/5 cursor-pointer' 
-                : isOpen ? 'border-orange bg-white shadow-[0_0_0_3px_rgba(255,122,0,0.2)] cursor-pointer' 
-                : 'border-graphite/40 bg-white hover:border-orange cursor-pointer'
+                : isOpen ? 'border-orange bg-white/30 shadow-[0_0_0_3px_rgba(255,122,0,0.2)] cursor-pointer' 
+                : 'border-graphite/40 bg-white/30 hover:border-orange cursor-pointer'
             }`}
           >
             <span className={`text-[13px] font-semibold truncate pr-2 ${value ? 'text-graphite' : 'text-graphite/50'}`}>
@@ -124,7 +124,7 @@ export function Select({
 
         {isOpen && !disabled && createPortal(
           <div 
-            className={`portal-dropdown absolute bg-white/60 backdrop-blur-[18px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-fade-in-down overflow-y-auto max-h-[320px] ${scrollbarStyles}`}
+            className={`portal-dropdown absolute bg-white/50 backdrop-blur-[14px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-zoom-in overflow-y-auto max-h-[320px] ${scrollbarStyles}`}
             style={{ top: `${coords.top}px`, left: `${coords.left}px`, width: `${Math.max(coords.width, 100)}px` }}
           >
             {isSearchable && (

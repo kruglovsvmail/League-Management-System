@@ -178,7 +178,7 @@ export function GamePage() {
                     {isRecalculating ? (
                        <svg className="w-4 h-4 ml-2 animate-spin shrink-0" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     ) : (
-                       <svg className="w-4 h-4 ml-2 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                       <Icon name="refresh" className="w-4 h-4 ml-2 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" />
                     )}
                 </button>
             );
@@ -213,9 +213,7 @@ export function GamePage() {
       return (
         <button className={badgeClass} onClick={() => setIsStatusModalOpen(true)} title="Изменить статус матча">
           <span>{content}</span>
-          <svg className="w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity ml-2 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
+          <Icon name="edit" className="w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity ml-2 shrink-0" />
         </button>
       );
     }
@@ -277,7 +275,7 @@ export function GamePage() {
     ];
 
     return (
-      <div className="bg-white/70 p-6 pt-5 rounded-xxl border border-graphite/10 shadow-sm flex flex-col h-full">
+      <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-6 pt-5 shadow-sm flex flex-col h-full animate-zoom-in">
         <div className="flex items-center justify-between border-b border-graphite/10 pb-3 mb-4 shrink-0">
           <div className="flex flex-wrap items-center gap-3 w-full justify-between">
              <span className="text-[12px] font-black uppercase text-graphite/40 tracking-widest">{side === 'home' ? 'Хозяева' : 'Гости'}</span>
@@ -297,8 +295,8 @@ export function GamePage() {
           {sortedRoster.length > 0 ? (
             <div className="mb-6"><Table columns={rosterColumns} data={sortedRoster} hideHeader={true} /></div>
           ) : (
-            <div className="bg-white/40 rounded-xl border border-dashed border-graphite/10 p-8 flex flex-col items-center justify-center text-center mb-6 min-h-[120px]">
-              <span className="text-[12px] font-medium text-graphite-light">Состав не сформирован</span>
+            <div className="p-8 flex flex-col items-center justify-center text-center mb-6 min-h-[120px]">
+              <span className="text-[14px] font-medium text-graphite-light">Состав не сформирован</span>
             </div>
           )}
           {staff.length > 0 && (
@@ -396,18 +394,18 @@ export function GamePage() {
       <Header 
         title="Матч" 
         subtitle={
-          <button onClick={() => navigate('/games')} className="flex items-center gap-2 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
-            ← К списку матчей
+          <button onClick={() => navigate('/games')} className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
+            <Icon name="chevron_left" className="w-4 h-4" /> К списку матчей
           </button>
         } 
       />
 
       {isLoading || !game ? (
-        <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-fade-in">
-          <Loader text="Загрузка данных матча..." />
+        <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-zoom-in">
+          <Loader text="" />
         </div>
       ) : !canView ? (
-        <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-fade-in px-10">
+        <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-zoom-in px-10">
           <AccessFallback variant="full" message="У вас нет прав для просмотра страницы этого матча." />
         </div>
       ) : (
@@ -415,7 +413,7 @@ export function GamePage() {
           
           <div className="flex-1 relative z-10 flex flex-col min-w-0 gap-6">
             
-            <div className="bg-white/85 h-[260px] flex flex-col rounded-xxl shadow-sm border border-graphite/10 p-6 md:p-6 animate-fade-in-down">
+            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-sm p-6 md:p-6 animate-zoom-in">
               <div className="flex items-center justify-between mb-8 flex-1">
                 {/* Хозяева */}
                 <div className="flex-1 flex items-center justify-end gap-5">
@@ -473,7 +471,7 @@ export function GamePage() {
               </div>
             </div>
 
-            <div className="animate-fade-in-down">
+            <div className="animate-zoom-in">
               
               {tabIndex === 0 && (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start w-full">
@@ -483,7 +481,7 @@ export function GamePage() {
               )}
 
               {tabIndex === 1 && (
-                <div className="bg-white/85 p-8 rounded-xxl border border-graphite/10 shadow-sm w-full min-h-[400px]">
+                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Обслуживающие матч</h3>
                   </div>
@@ -518,18 +516,15 @@ export function GamePage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-20 text-graphite-light bg-white/40 border border-dashed border-graphite/10 rounded-xl">
-                      <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                        <Icon name="whistle" className="w-8 h-8 text-graphite/20" />
-                      </div>
-                      <span className="text-[14px] font-bold text-graphite/60 mb-1">Бригада арбитров не назначена</span>
+                    <div className="flex flex-col items-center justify-center py-20 text-graphite-light border border-dashed border-graphite/10 rounded-xl">
+                      <span className="text-[14px] font-medium text-graphite/60 mb-1">Бригада арбитров не назначена</span>
                     </div>
                   )}
                 </div>
               )}
 
               {tabIndex === 2 && (
-                <div className="bg-white/85 p-8 rounded-xxl border border-graphite/10 shadow-sm w-full min-h-[400px]">
+                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Ход Матча</h3>
                   </div>
@@ -589,8 +584,8 @@ export function GamePage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-16 text-graphite-light bg-white/40 border border-dashed border-graphite/10 rounded-xl">
-                      <span className="text-[13px] font-medium text-graphite/60">Событий пока нет</span>
+                    <div className="flex flex-col items-center justify-center py-16 text-graphite-light border border-dashed border-graphite/10 rounded-xl">
+                      <span className="text-[14px] font-medium text-graphite/60">Событий пока нет</span>
                     </div>
                   )}
                 </div>
@@ -598,9 +593,9 @@ export function GamePage() {
             </div>
           </div>
 
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-xxl p-5 flex flex-col gap-5 shadow-sm border border-white/50 z-20 animate-fade-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-5 flex flex-col gap-1 shadow-sm z-20 animate-zoom-in">
             
-            <div className="flex flex-col gap-4 bg-white/60 p-4 rounded-xl border border-graphite/5">
+            <div className="flex flex-col gap-4 bg-white/0 py-5 px-3 border-b border-graphite/10">
               <div>
                 <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
                 <div className="text-[13px] font-bold text-graphite">{gameDate.isValid() ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}</div>
@@ -616,12 +611,12 @@ export function GamePage() {
               </div>
             </div>
 
-            <div className="bg-white/60 p-4 rounded-xl border border-graphite/5 flex flex-col gap-4">
+            <div className="bg-white/0 px-3 py-5 border-b border-graphite/10 flex flex-col gap-4">
               <div className="flex justify-between items-center">
                  <span className="text-[10px] font-black uppercase text-graphite-light tracking-widest"></span>
                  {canEditGameInfo && canView && (
                     <button onClick={() => setIsEditInfoDrawerOpen(true)} className="text-graphite-light hover:text-orange transition-colors" title="Редактировать форму и медиа">
-                       <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                       <Icon name="edit" className="w-3.5 h-3.5" />
                     </button>
                  )}
               </div>
@@ -639,7 +634,7 @@ export function GamePage() {
               </div>
 
               {(game.video_yt_url || game.video_vk_url) && (
-                 <div className="flex gap-10 pt-3 border-t border-graphite/5">
+                 <div className="flex gap-10 pt-3">
                     {game.video_yt_url && <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-red-500 hover:underline flex items-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div>YouTube</a>}
                     {game.video_vk_url && <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold text-blue-500 hover:underline flex items-center gap-2"><div className="w-2 h-2 bg-blue-500 rounded-full"></div>VK Видео</a>}
                  </div>
@@ -647,7 +642,7 @@ export function GamePage() {
             </div>
 
             {(hasProtocolAccess || (canManageOfficials && isScheduled)) && (
-              <div className="flex flex-col gap-3 bg-white/60 p-4 rounded-xl border border-graphite/5">
+              <div className="flex flex-col gap-3 bg-white/0 py-6 px-2  border-b border-graphite/10">
                 {hasProtocolAccess && (
                    <button 
                      onClick={() => canEnterLiveDesk && navigate(`/games/${game.id}/live-desk`)}
@@ -655,17 +650,17 @@ export function GamePage() {
                      title={!canEnterLiveDesk ? matchEditAccess.reason : ''}
                      className={`w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm ${
                        canEnterLiveDesk 
-                         ? (game?.is_protocol_signed ? 'bg-graphite/80 text-white hover:bg-graphite' : 'bg-graphite text-white hover:bg-graphite/90') 
+                         ? (game?.is_protocol_signed ? 'bg-graphite/80 text-white hover:bg-graphite' : 'bg-graphite/80 text-white hover:bg-graphite') 
                          : 'bg-graphite/20 text-graphite/50 cursor-not-allowed'
                      }`}
                    >
-                     {game?.is_protocol_signed ? 'Панель секретаря ' : 'Панель секретаря'}
+                     {game?.is_protocol_signed ? 'Панель секретаря' : 'Панель секретаря'}
                    </button>
                 )}
                 {canManageOfficials && isScheduled && (
                    <button 
                      onClick={() => setIsOfficialsModalOpen(true)} 
-                     className="bg-graphite text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-graphite/90 transition-colors shadow-sm"
+                     className="bg-graphite/80 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-graphite transition-colors shadow-sm"
                    >
                      {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
                    </button>
@@ -674,7 +669,7 @@ export function GamePage() {
             )}
 
             {canManageGraphics && (
-              <div className="flex flex-col gap-3 bg-white/60 p-4 rounded-xl border border-graphite/5">
+              <div className="flex flex-col gap-3 bg-white/0 p-2 py-6">
                 <button 
                   onClick={() => window.open(`/games/${gameId}/graphics-panel`, '_blank')}
                   className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"

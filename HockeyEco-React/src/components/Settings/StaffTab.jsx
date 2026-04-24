@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
-import { Table } from '../../ui/Table';
+import { Table } from '../../ui/Table2';
 import { Button } from '../../ui/Button';
 import { Loader } from '../../ui/Loader';
 import { Modal } from '../../modals/Modal';
 import { RoleSelect } from '../../ui/RoleSelect';
 import { AccessFallback } from '../../ui/AccessFallback';
 import { getImageUrl, getToken } from '../../utils/helpers';
+import { Icon } from '../../ui/Icon';
 
 const ROLE_OPTIONS = [
   { value: 'top_manager', label: 'Руководитель' },
@@ -213,14 +214,14 @@ export function StaffTab({ setToast }) {
         if (!canManageStaff || row.user_id === user?.id) return null;
         return (
           <button onClick={() => handleOpenEdit(row)} className="p-2 text-graphite-light hover:text-orange hover:bg-orange/10 rounded-lg transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            <Icon name="edit" className="w-5 h-5" />
           </button>
         );
     }}
   ];
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in-down">
+    <div className="flex flex-col gap-6 animate-zoom-in">
       {!canManageStaff && (
         <AccessFallback variant="readonly" message="У вас нет прав для управления персоналом. Вы находитесь в режиме просмотра." />
       )}
@@ -228,12 +229,12 @@ export function StaffTab({ setToast }) {
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         {/* Левая колонка (Форма) */}
         {canManageStaff && (
-          <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-5">
+          <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
             <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Добавить сотрудника</span>
             
             <div className="flex flex-col w-full">
               <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Номер телефона</span>
-              <div className="relative flex items-center w-full border border-graphite/20 rounded-md bg-white transition-all duration-300 focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)]">
+              <div className="relative flex items-center w-full border border-graphite/40 rounded-md bg-white/30 transition-all duration-300 focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)]">
                 <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/10 py-2.5">+7</div>
                 <input 
                   type="tel" 
@@ -247,7 +248,7 @@ export function StaffTab({ setToast }) {
             </div>
 
             {foundUser && (
-              <div className="bg-white/80 border border-graphite/10 rounded-xl p-5 flex flex-col gap-5 animate-fade-in-down shadow-sm mt-2">
+              <div className="bg-white/80 border border-graphite/10 rounded-xl p-5 flex flex-col gap-5 animate-zoom-in shadow-sm mt-2">
                 <div className="flex items-center gap-4 border-b border-graphite/10 pb-4">
                   <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
                     <img src={getImageUrl(foundUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
@@ -268,10 +269,10 @@ export function StaffTab({ setToast }) {
         )}
 
         {/* Правая колонка (Таблица) */}
-        <div className="flex-1 w-full bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 min-h-[400px] relative">
+        <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 min-h-[400px] relative">
           {isLoadingStaff && (
             <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none">
-              <Loader text="Загрузка персонала..." />
+              <Loader text="" />
             </div>
           )}
           <div className={`transition-opacity duration-300 ease-in-out ${isLoadingStaff ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>

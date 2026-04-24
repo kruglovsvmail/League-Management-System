@@ -4,9 +4,13 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './assets/global.css'
 
+// Регистрация Service Worker для PWA
+import { registerSW } from 'virtual:pwa-register'
+
+registerSW({ immediate: true })
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* Добавляем флаги future, чтобы убрать предупреждения */}
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <App />
     </BrowserRouter>

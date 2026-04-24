@@ -5,17 +5,19 @@ import { DateTimePicker } from '../../ui/DateTimePicker';
 import { Tooltip } from '../../ui/Tooltip';
 import { getImageUrl } from '../../utils/helpers';
 import dayjs from 'dayjs';
+import { useAccess } from '../../hooks/useAccess';
+import { Icon } from '../../ui/Icon';
 
-const REGULAR_ROUNDS = ['1-й круг', '2-й круг', '3-й круг', '4-й круг', '5-й круг', '6-й круг'];
+const REGULAR_ROUNDS = ['1-й круг', '2-й круг', '3-й круг', '4-й круг'];
 
 const colClasses = {
-    number: "w-[5%] min-w-[50px]",       
-    stage: "w-[20%] min-w-[280px]",      
-    date: "w-[14%] min-w-[100px]",       
-    home: "flex-1 min-w-[160px]",        
+    number: "w-[4%] min-w-[20px]",       
+    date: "w-[13%] min-w-[100px]",       
+    stage: "w-[15%] min-w-[140px]",      
+    home: "flex-1 min-w-[190px]",        
     score: "w-[8%] min-w-[60px]",        
-    away: "flex-1 min-w-[160px]",        
-    actions: "w-[8%] min-w-[80px]"       
+    away: "flex-1 min-w-[190px]",        
+    actions: "w-[8%] min-w-[120px]"       
 };
 
 export function GameCard({
@@ -34,6 +36,9 @@ export function GameCard({
     canDelete
 }) {
     const navigate = useNavigate();
+    const { checkAccess } = useAccess();
+    
+    const canChangeStatus = checkAccess('MATCH_STATUS_CHANGE');
 
     const isFinishedOrLive = ['live', 'finished', 'cancelled'].includes(game.status);
     const isHomeSO = game.status === 'finished' && game.end_type === 'so' && game.home_score > game.away_score;
@@ -183,7 +188,7 @@ export function GameCard({
         }
 
         return (
-            <div className={`flex items-center gap-4 px-6 h-[110px] bg-white rounded-xl border transition-all shadow-sm hover:shadow-md ${isFinishedOrLive ? 'opacity-60 border-graphite/5' : 'border-graphite/10'}`}>
+            <div className={`flex items-center gap-4 px-6 h-[110px] bg-white/60 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl transition-all shadow-sm hover:shadow-md ${isFinishedOrLive ? 'opacity-60 border-graphite/5' : 'border-graphite/10'}`}>
                 
                 <div className={`${colClasses.number} shrink-0 flex flex-col items-center gap-1`}>
                     <input 
@@ -197,6 +202,32 @@ export function GameCard({
                         title="Общий номер матча"
                     />
                     <span className="text-[9px] font-mono text-graphite/30">ID:{game.id}</span>
+                </div>
+
+                <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
+
+                <div className={`${colClasses.date} shrink-0 flex flex-col gap-2 relative`}>
+                    <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
+                        <DateTimePicker 
+                            value={game.game_date} 
+                            onChange={(val) => handleFieldChange('game_date', val)} 
+                            placeholder="Дата не назначена"
+                        />
+                    </div>
+                    <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
+                        <Select 
+                            options={arenaOptions}
+                            value={game.location_text || 'Не назначена'}
+                            onChange={(val) => {
+                                if (val === 'Не назначена') handleFieldChange('arena_id', null);
+                                else {
+                                    const a = arenas.find(ar => ar.name === val);
+                                    handleFieldChange('arena_id', a ? a.id : null);
+                                }
+                            }}
+                            disabled={isFinishedOrLive}
+                        />
+                    </div>
                 </div>
 
                 <div className={`${colClasses.stage} shrink-0 flex flex-col gap-2`}>
@@ -252,29 +283,7 @@ export function GameCard({
                     </div>
                 </div>
 
-                <div className={`${colClasses.date} shrink-0 flex flex-col gap-2 relative`}>
-                    <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
-                        <DateTimePicker 
-                            value={game.game_date} 
-                            onChange={(val) => handleFieldChange('game_date', val)} 
-                            placeholder="Дата не назначена"
-                        />
-                    </div>
-                    <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
-                        <Select 
-                            options={arenaOptions}
-                            value={game.location_text || 'Не назначена'}
-                            onChange={(val) => {
-                                if (val === 'Не назначена') handleFieldChange('arena_id', null);
-                                else {
-                                    const a = arenas.find(ar => ar.name === val);
-                                    handleFieldChange('arena_id', a ? a.id : null);
-                                }
-                            }}
-                            disabled={isFinishedOrLive}
-                        />
-                    </div>
-                </div>
+                <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
 
                 <div className={`${colClasses.home} flex justify-end items-center`}>
                     <div className="w-full">
@@ -328,11 +337,13 @@ export function GameCard({
                     </div>
                 </div>
 
+                <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
+
                 <div className={`${colClasses.actions} shrink-0 flex justify-center items-center gap-1`}>
                     {game.isTemp ? (
                         <Tooltip title="Удалить пустой слот" noUnderline={true}>
                             <button onClick={() => onDelete(game.id)} className="text-graphite/30 hover:text-status-rejected transition-colors p-2">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                <Icon name="close" className="w-5 h-5" />
                             </button>
                         </Tooltip>
                     ) : (
@@ -340,7 +351,7 @@ export function GameCard({
                             {editingRowIds.includes(game.id) && !isEditMode && (
                                 <Tooltip title="Готово" noUnderline={true}>
                                     <button onClick={() => setEditingRowIds(prev => prev.filter(id => id !== game.id))} className="text-graphite/40 hover:text-green-500 bg-graphite/5 hover:bg-green-50 transition-colors p-2 rounded-lg">
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        <Icon name="save" className="w-5 h-5" />
                                     </button>
                                 </Tooltip>
                             )}
@@ -354,7 +365,7 @@ export function GameCard({
                                     disabled={game.has_protocol || isFinishedOrLive || !canDelete}
                                     className={`p-2 rounded-lg transition-colors ${game.has_protocol || isFinishedOrLive || !canDelete ? 'text-graphite/20 cursor-not-allowed' : 'text-graphite/40 hover:text-status-rejected hover:bg-status-rejected/10'}`}
                                 >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
+                                    <Icon name="delete" className="w-[18px] h-[18px]" />
                                 </button>
                             </Tooltip>
                         </>
@@ -392,13 +403,22 @@ export function GameCard({
                     window.open(`/games/${game.id}`, '_blank');
                 }
             }}
-            className="flex items-center gap-4 px-6 h-[110px] bg-white/70 rounded-xl border border-graphite/10 cursor-pointer hover:border-orange/40 hover:shadow-md transition-all duration-200 group relative"
+            className="flex items-center gap-4 px-6 h-[110px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl hover:shadow-lg transition-all duration-200 group relative cursor-pointer animate-zoom-in"
         >
             <div className={`${colClasses.number} shrink-0 flex flex-col items-center justify-center`}>
                 <span className="text-[15px] font-black text-graphite/40">{game.game_number || '-'}</span>
                 <span className="text-[9px] font-mono text-graphite/20 mt-0.5">ID:{game.id}</span>
             </div>
             
+            <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
+
+            <div className={`${colClasses.date} shrink-0 flex flex-col justify-center gap-1`}>
+                <span className="text-[12px] font-bold text-graphite">{dateStr}</span>
+                <span className="text-[11px] font-medium text-graphite/50 truncate pr-2" title={game.location_text}>
+                    {game.location_text || 'Арена не назначена'}
+                </span>
+            </div>
+
             <div className={`${colClasses.stage} shrink-0 flex flex-col justify-center items-start gap-1`}>
                 <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider truncate max-w-full ${stageBadgeClass}`} title={viewStageDisplay}>
                     {viewStageDisplay}
@@ -412,18 +432,13 @@ export function GameCard({
                 </span>
             </div>
             
-            <div className={`${colClasses.date} shrink-0 flex flex-col justify-center gap-1`}>
-                <span className="text-[12px] font-bold text-graphite">{dateStr}</span>
-                <span className="text-[11px] font-medium text-graphite/50 truncate pr-2" title={game.location_text}>
-                    {game.location_text || 'Арена не назначена'}
-                </span>
-            </div>
-            
+            <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
+
             <div className={`${colClasses.home} flex items-center justify-end gap-3`}>
                 <span className="text-[14px] font-bold text-graphite text-right leading-tight line-clamp-1">
                     {game.home_team_name && game.home_team_name !== 'Не выбрано' ? game.home_team_name : 'Хозяева'}
                 </span>
-                <div className="w-9 h-9 shrink-0 rounded-md overflow-hidden bg-graphite/5">
+                <div className="w-9 h-9 shrink-0 rounded-md overflow-hidden">
                     <img src={getImageUrl(game.home_team_logo || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="Home" />
                 </div>
             </div>
@@ -445,7 +460,7 @@ export function GameCard({
             </div>
 
             <div className={`${colClasses.away} flex items-center justify-start gap-3`}>
-                <div className="w-9 h-9 shrink-0 rounded-md overflow-hidden bg-graphite/5">
+                <div className="w-9 h-9 shrink-0 rounded-md overflow-hidden">
                     <img src={getImageUrl(game.away_team_logo || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="Away" />
                 </div>
                 <span className="text-[14px] font-bold text-graphite text-left leading-tight line-clamp-1">
@@ -453,15 +468,16 @@ export function GameCard({
                 </span>
             </div>
 
+            <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
+
             <div className={`${colClasses.actions} shrink-0 flex justify-center items-center relative h-full`}>
                 <div className={`transition-opacity duration-200 flex flex-col items-center justify-center gap-1 ${canEdit && game.status === 'scheduled' ? 'group-hover:opacity-0' : ''}`}>
-                    {game.status === 'live' && <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-2 py-1 rounded">Live</span>}
+                    {game.status === 'live' && <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest px-2 py-1 rounded">Live</span>}
                     
                     {game.status === 'finished' && (
                         <div className="flex flex-col items-center gap-1">
                             <span className="text-[10px] font-bold text-graphite/50 uppercase tracking-widest">Завершен</span>
-                            {/* ЯРКИЙ БЕЙДЖ "ТРЕБУЕТСЯ ПЕРЕСЧЕТ" */}
-                            {game.needs_recalc && (
+                            {game.needs_recalc && canChangeStatus && (
                                 <span className="text-[8px] font-black text-orange uppercase tracking-wider text-center leading-tight">
                                     Требуется<br/>пересчет
                                 </span>
@@ -480,13 +496,10 @@ export function GameCard({
                             setEditingRowIds(prev => [...prev, game.id]);
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="absolute inset-0 m-auto w-10 h-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/80 backdrop-blur-sm rounded-lg text-graphite/50 hover:text-orange hover:shadow-sm"
+                        className="absolute inset-0 m-auto w-10 h-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-sm rounded-lg text-graphite/50 hover:text-orange hover:shadow-sm"
                         title="Быстрое редактирование"
                     >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9"></path>
-                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-                        </svg>
+                        <Icon name="edit" className="w-[18px] h-[18px]" />
                     </button>
                 )}
             </div>

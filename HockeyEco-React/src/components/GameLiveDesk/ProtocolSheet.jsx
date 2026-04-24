@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines, 
-  CustomSelect, StylishSelect, StylishInput, EditIcon, DeleteIcon, SaveIcon, PlusIcon, UsersIcon, 
+  CustomSelect, StylishSelect, StylishInput, 
   goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, GOAL_STRENGTH_DISPLAY 
 } from './GameDeskShared';
+import { Icon } from '../../ui/Icon';
 
 const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -43,7 +44,7 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsEditing(false); onDelete(timeoutEvent.id); }}
                     title="Удалить тайм-аут"
                 >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <Icon name="close" className="w-3.5 h-3.5" />
                 </button>
             </div>
         );
@@ -53,7 +54,7 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
         return (
             <button
                 onClick={(e) => { e.stopPropagation(); if (!isReadOnly) setIsEditing(true); }}
-                className={`relative group flex items-center justify-between px-3 rounded-md transition-all border bg-white border-graphite/20 shadow-sm h-[32px] w-[140px] ${isReadOnly ? 'cursor-default opacity-80' : 'hover:border-graphite/40'}`}
+                className={`relative group flex items-center justify-between px-3 rounded-md transition-all border bg-white border-graphite/20 shadow-sm h-[32px] w-[140px] ${isReadOnly ? 'cursor-default opacity-80' : 'hover:border-graphite/25'}`}
                 title={isReadOnly ? "Тайм-аут" : "Редактировать время тайм-аута"}
             >
                 <span className="text-[10px] font-bold uppercase text-graphite-light">ТАЙМ-АУТ</span>
@@ -71,7 +72,7 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
             title={isReadOnly ? "" : "Зафиксировать тайм-аут"}
         >
             <span className={`text-[10px] font-bold uppercase ${isReadOnly ? 'text-graphite/30' : 'text-graphite/50 group-hover:text-orange'}`}>ТАЙМ-АУТ</span>
-            <span className={`font-mono text-[13px] font-bold ${isReadOnly ? 'text-graphite/20' : 'text-graphite/40 group-hover:text-orange'}`}>--:--</span>
+            <span className={`font-mono text-[13px] font-bold ${isReadOnly ? 'text-graphite/20' : 'text-graphite/25 group-hover:text-orange'}`}>--:--</span>
         </button>
     );
 };
@@ -275,15 +276,15 @@ export const ProtocolSheet = ({
 
           <thead>
             <tr className="bg-graphite/5 text-graphite">
-              <th colSpan="4" className="border-t-1 border-l-1 border-r-1 border-b-2 border-graphite/40 py-2 font-bold uppercase tracking-widest text-[10px]">Состав на матч</th>
-              <th colSpan="7" className="border-t-1 border-r-1 border-b-2 border-graphite/40 py-2 font-bold uppercase tracking-widest text-[10px] text-status-accepted">Взятие ворот</th>
-              <th colSpan="6" className="border-t-1 border-r-1 border-b-2 border-graphite/40 py-2 font-bold uppercase tracking-widest text-[10px] text-status-rejected">Удаления</th>
+              <th colSpan="4" className="border-t-1 border-l-1 border-r-1 border-b-2 border-graphite/25 py-2 font-bold uppercase tracking-widest text-[10px]">Состав на матч</th>
+              <th colSpan="7" className="border-t-1 border-r-1 border-b-2 border-graphite/25 py-2 font-bold uppercase tracking-widest text-[10px] text-status-accepted">Взятие ворот</th>
+              <th colSpan="6" className="border-t-1 border-r-1 border-b-2 border-graphite/25 py-2 font-bold uppercase tracking-widest text-[10px] text-status-rejected">Удаления</th>
             </tr>
             <tr className="bg-graphite/15 text-[11px] text-graphite-light uppercase tracking-wider relative z-0">
-              <th className="border-l-2 border-graphite/40 border-r border-graphite/30 py-1.5 font-bold">#</th>
+              <th className="border-l-2 border-graphite/25 border-r border-graphite/30 py-1.5 font-bold">#</th>
               <th className="border-r border-graphite/30 py-1.5 text-left px-2 font-bold">Фамилия, Имя</th>
               <th className="border-r border-graphite/30 py-1.5 font-bold">Поз</th>
-              <th className="border-r-2 border-graphite/40 py-1.5 font-bold">ИГ</th>
+              <th className="border-r-2 border-graphite/25 py-1.5 font-bold">ИГ</th>
               
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted"></th>
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">Время</th>
@@ -291,14 +292,14 @@ export const ProtocolSheet = ({
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">П1</th>
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">П2</th>
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">ИС</th>
-              <th className="border-r-2 border-graphite/40 py-1.5"></th>
+              <th className="border-r-2 border-graphite/25 py-1.5"></th>
               
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">#</th>
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Шт</th>
               <th className="border-r border-graphite/30 py-1.5 text-left px-2 font-bold text-status-rejected">Причина</th> 
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Нач</th>
               <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Окон</th>
-              <th className="border-r-2 border-graphite/40 py-1.5"></th>
+              <th className="border-r-2 border-graphite/25 py-1.5"></th>
             </tr>
           </thead>
           
@@ -316,7 +317,7 @@ export const ProtocolSheet = ({
                   const isActive = timerSeconds >= pStart && timerSeconds < pEnd;
                   const isDelayed = timerSeconds < pStart;
                   if (isActive) { endTimeDisplay = formatTime(pEnd - timerSeconds); endTimeClass = "font-mono font-black text-[13px] text-status-rejected animate-pulse"; }
-                  else if (isFinished) { endTimeDisplay = formatTime(pEnd); endTimeClass = "font-mono font-medium text-[13px] text-graphite/40"; }
+                  else if (isFinished) { endTimeDisplay = formatTime(pEnd); endTimeClass = "font-mono font-medium text-[13px] text-graphite/25"; }
                   else if (isDelayed) { endTimeDisplay = `⏱ ${formatTime(pEnd - pStart)}`; endTimeClass = "font-mono font-bold text-[13px] text-orange"; }
                 } else { endTimeDisplay = formatTime(penalty.penalty_end_time); }
               }
@@ -324,15 +325,15 @@ export const ProtocolSheet = ({
               const isLastRow = i === MAX_ROWS - 1;
 
               return (
-                <tr key={i} className={`even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[34px] ${isLastRow ? 'border-b-2 border-graphite/40' : 'border-b border-graphite/30'}`}>
+                <tr key={i} className={`even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[34px] ${isLastRow ? 'border-b-2 border-graphite/25' : 'border-b border-graphite/30'}`}>
                   {/* РОСТЕР */}
-                  <td className="border-l-2 border-graphite/40 border-r border-graphite/30 font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
+                  <td className="border-l-2 border-graphite/25 border-r border-graphite/30 font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
                   <td className="border-r border-graphite/30 text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">{player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}</td>
                   <td className="border-r border-graphite/30 text-[11px] text-graphite-light font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
-                  <td className={`border-r-2 border-graphite/40 ${isReadOnly ? 'cursor-default' : 'cursor-pointer hover:bg-graphite/10'} font-bold text-base text-status-accepted transition-colors`} onClick={() => !isReadOnly && player && onToggleLineup(player.id, teamId, player.is_in_lineup)}>{player ? (player.is_in_lineup ? '✓' : '') : ''}</td>
+                  <td className={`border-r-2 border-graphite/25 ${isReadOnly ? 'cursor-default' : 'cursor-pointer hover:bg-graphite/10'} font-bold text-base text-status-accepted transition-colors`} onClick={() => !isReadOnly && player && onToggleLineup(player.id, teamId, player.is_in_lineup)}>{player ? (player.is_in_lineup ? '✓' : '') : ''}</td>
 
                   {/* ВЗЯТИЕ ВОРОТ */}
-                  <td className="border-r border-graphite/30 font-bold text-graphite/40 text-[12px]">{goal || (isGoalInput && !isReadOnly) || isEditingGoal ? i + 1 : ''}</td>
+                  <td className="border-r border-graphite/30 font-bold text-graphite/25 text-[12px]">{goal || (isGoalInput && !isReadOnly) || isEditingGoal ? i + 1 : ''}</td>
                   {isEditingGoal && !isReadOnly ? (
                     <>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
@@ -346,7 +347,7 @@ export const ProtocolSheet = ({
                            onChange={e=>setEditGoalData({...editGoalData, str: e.target.value})} 
                         />
                       </td>
-                      <td className="border-r-2 border-graphite/40 p-0 text-center bg-orange/5"><button onClick={saveEditGoal} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><SaveIcon /></button></td>
+                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/5"><button onClick={saveEditGoal} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : goal ? (
                     <>
@@ -355,12 +356,12 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist1_id)}</td>
                       <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist2_id)}</td>
                       <td className="border-r border-graphite/30 text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY[goal.goal_strength] || ''}</td>
-                      <td className="border-r-2 border-graphite/40 p-0 text-center">
+                      <td className="border-r-2 border-graphite/25 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                               {isPlusMinusEnabled && <button onClick={() => onRequestPlusMinus(goal)} className={`transition-colors ${goal.has_plus_minus ? 'text-status-accepted hover:text-status-accepted/80' : 'text-graphite/40 hover:text-status-accepted'}`} title="Показатель полезности (+/-)"><UsersIcon /></button>}
-                               <button onClick={() => startEditGoal(goal)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                               <button onClick={() => onDeleteEvent(goal.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                               {isPlusMinusEnabled && <button onClick={() => onRequestPlusMinus(goal)} className={`transition-colors ${goal.has_plus_minus ? 'text-status-accepted hover:text-status-accepted/80' : 'text-graphite/25 hover:text-status-accepted'}`} title="Показатель полезности (+/-)"><Icon name="users" className="w-[18px] h-[18px]" /></button>}
+                               <button onClick={() => startEditGoal(goal)} className="text-graphite/25 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                               <button onClick={() => onDeleteEvent(goal.id)} className="text-graphite/25 hover:text-status-rejected transition-colors" title="Удалить"><Icon name="delete" className="w-[18px] h-[18px]" /></button>
                             </div>
                          )}
                       </td>
@@ -381,10 +382,10 @@ export const ProtocolSheet = ({
                             }} 
                          />
                       </td>
-                      <td className="border-r-2 border-graphite/40 p-0 text-center"><button onClick={handleAddGoal} className="w-full h-full min-h-[34px] hover:bg-status-accepted/10 text-status-accepted transition-colors flex items-center justify-center"><PlusIcon /></button></td>
+                      <td className="border-r-2 border-graphite/25 p-0 text-center"><button onClick={handleAddGoal} className="w-full h-full min-h-[34px] hover:bg-status-accepted/10 text-status-accepted transition-colors flex items-center justify-center"><Icon name="plus" className="w-6 h-6" /></button></td>
                     </>
                   ) : (
-                    <><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r-2 border-graphite/40"></td></>
+                    <><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r-2 border-graphite/25"></td></>
                   )}
 
                   {/* УДАЛЕНИЯ */}
@@ -395,7 +396,7 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><CustomSelect options={penaltyReasonOptions} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput value={editPenaltyData.start} onChange={e=>setEditPenaltyData({...editPenaltyData, start: formatTimeMask(e.target.value)})} /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput value={editPenaltyData.end} onChange={e=>setEditPenaltyData({...editPenaltyData, end: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r-2 border-graphite/40 p-0 text-center bg-orange/5"><button onClick={saveEditPenalty} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><SaveIcon /></button></td>
+                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/5"><button onClick={saveEditPenalty} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : penalty ? (
                     <>
@@ -404,11 +405,11 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 text-left px-2 text-[11px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-medium" title={penalty.penalty_violation}>{penalty.penalty_violation}</td>
                       <td className="border-r border-graphite/30 font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
                       <td className={`border-r border-graphite/30 ${endTimeClass}`}>{endTimeDisplay}</td>
-                      <td className="border-r-2 border-graphite/40 p-0 text-center">
+                      <td className="border-r-2 border-graphite/25 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                               <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/25 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                               <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/25 hover:text-status-rejected transition-colors" title="Удалить"><Icon name="delete" className="w-[18px] h-[18px]" /></button>
                             </div>
                          )}
                       </td>
@@ -420,10 +421,10 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 p-0.5"><CustomSelect options={penaltyReasonOptions} value={newPenalty.violation} onChange={e=>setNewPenalty({...newPenalty, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
                       <td className="border-r border-graphite/30 p-0.5"><StylishInput value={newPenalty.start} placeholder={formatTime(timerSeconds)} onChange={e=>setNewPenalty({...newPenalty, start: formatTimeMask(e.target.value)})} onBlur={()=>{ if(!newPenalty.start){ const s=timerSeconds; setNewPenalty(p=>({...p, start:formatTime(s), end:formatTime(s + parseInt(p.mins||0)*60)}))} }} /></td>
                       <td className="border-r border-graphite/30 p-0.5"><StylishInput value={newPenalty.end} onChange={e=>setNewPenalty({...newPenalty, end: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r-2 border-graphite/40 p-0 text-center"><button onClick={handleAddPenalty} className="w-full h-full min-h-[34px] hover:bg-status-rejected/10 text-status-rejected transition-colors flex items-center justify-center"><PlusIcon /></button></td>
+                      <td className="border-r-2 border-graphite/25 p-0 text-center"><button onClick={handleAddPenalty} className="w-full h-full min-h-[34px] hover:bg-status-rejected/10 text-status-rejected transition-colors flex items-center justify-center"><Icon name="plus" className="w-6 h-6" /></button></td>
                     </>
                   ) : (
-                    <><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r-2 border-graphite/40"></td></>
+                    <><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r-2 border-graphite/25"></td></>
                   )}
                 </tr>
               );

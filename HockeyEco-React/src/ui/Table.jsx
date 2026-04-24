@@ -38,7 +38,7 @@ export function Table({ columns, data, rowClassName, onRowClick }) {
   };
 
   return (
-    <div className="w-full overflow-x-auto bg-white/50 border border-graphite/20 rounded-xxl font-sans shadow-sm">
+    <div className="w-full overflow-x-auto bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl font-sans shadow-sm">
       <table className="w-full border-collapse table-auto">
         <thead>
           <tr className="bg-black/5">

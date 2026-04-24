@@ -316,7 +316,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
             <div className="flex-1 flex flex-col min-h-0 bg-white border border-graphite/15 rounded-2xl shadow-sm overflow-hidden mx-6 mb-6">
               
               {activeTab === 'stats' && (
-                <div className="flex-1 overflow-y-auto p-5 animate-fade-in [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
+                <div className="flex-1 overflow-y-auto p-5 animate-zoom-in [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
                   <div className="mb-6">
                     <h4 className="text-[12px] font-bold text-graphite-light uppercase tracking-widest border-b border-graphite/10 pb-2 mb-3">Текущие сезоны</h4>
                     {currentSeasonsStats.length > 0 ? (
@@ -338,7 +338,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
               )}
 
               {activeTab === 'matches' && (
-                <div className="flex flex-col h-full min-h-0 animate-fade-in">
+                <div className="flex flex-col h-full min-h-0 animate-zoom-in">
                   <div className="shrink-0 flex gap-4 p-4 border-b border-graphite/10 bg-graphite/5 relative z-[20]">
                     <div className="w-[160px] shrink-0">
                       <Select options={seasonOptions} value={filterSeason} onChange={setFilterSeason} />

@@ -19,6 +19,8 @@ import { ProtocolViewerModal } from '../components/GameLiveDesk/ProtocolViewerMo
 import { Button } from '../ui/Button';
 import { useAccess } from '../hooks/useAccess';
 import { AccessFallback } from '../ui/AccessFallback';
+import { Icon } from '../ui/Icon';
+import { Loader } from '../ui/Loader';
 
 const EditableTimePill = ({ label, field, value, onSave, onClear, isReadOnly }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -58,7 +60,7 @@ const EditableTimePill = ({ label, field, value, onSave, onClear, isReadOnly }) 
                     onClick={(e) => { e.preventDefault(); setIsEditing(false); onClear(field); }}
                     title="Сбросить время"
                 >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <Icon name="close" className="w-3.5 h-3.5" />
                 </button>
             </div>
         );
@@ -545,7 +547,7 @@ export function GameLiveDesk() {
   if (!game || !authUser) {
       return (
           <div className="min-h-screen bg-gray-light text-graphite-light flex items-center justify-center font-bold text-xl uppercase tracking-widest">
-              Загрузка бланка...
+              <Loader text="" />
           </div>
       );
   }
@@ -567,7 +569,7 @@ export function GameLiveDesk() {
             <div className="flex flex-col gap-1.5 items-start">
               <div className="flex items-center">
                   <button onClick={() => navigate(`/games/${gameId}`)} className="flex items-center gap-1 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors uppercase tracking-wider">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path></svg>
+                    <Icon name="chevron_left" className="w-3.5 h-3.5" />
                     Страница матча
                   </button>
                   {isReadOnly && (
@@ -664,7 +666,7 @@ export function GameLiveDesk() {
           {!isReadOnly && (
               <div className="mt-4 mb-12 flex justify-end">
                  <button onClick={() => setIsTechModalOpen(true)} className="px-6 py-3 bg-white text-status-rejected hover:bg-status-rejected hover:text-white border border-status-rejected/20 rounded-xl text-[13px] font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    <Icon name="whistle" className="w-4 h-4" />
                     Назначить технический результат
                  </button>
               </div>

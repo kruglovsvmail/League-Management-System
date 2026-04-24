@@ -18,6 +18,13 @@ export function LoginPage({ onLoginSuccess }) {
   // Глобальные статусы загрузки
   const [isLoading, setIsLoading] = useState(false);
 
+  // PWA Статусы
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIOSPrompt, setShowIOSPrompt] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
   const SERVER_URL = import.meta.env.VITE_API_URL;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -30,6 +37,47 @@ export function LoginPage({ onLoginSuccess }) {
     }
     return () => clearInterval(interval);
   }, [timer]);
+
+  // PWA: Логика установки
+  useEffect(() => {
+    // Проверка, запущено ли приложение уже как PWA
+    const checkStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    setIsStandalone(checkStandalone);
+
+    // Определение iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isIOSDevice);
+
+    // Перехват события установки для Android
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (isIOS) {
+      setShowIOSPrompt(true);
+      return;
+    }
+
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setIsInstallable(false);
+      }
+    }
+  };
 
   const handlePhoneChange = async (e) => {
     const val = e.target.value.replace(/\D/g, ''); 
@@ -90,7 +138,6 @@ export function LoginPage({ onLoginSuccess }) {
       const data = await response.json();
       
       if (data.success) {
-        // Сохраняем и пользователя, и полученный токен
         if (isRemembered) {
           localStorage.setItem('hockeyeco_user', JSON.stringify(data.user));
           localStorage.setItem('hockeyeco_token', data.token);
@@ -156,7 +203,43 @@ export function LoginPage({ onLoginSuccess }) {
         <div className="absolute bottom-[-10%] left-[-10%] w-[700px] h-[700px] rounded-full bg-graphite-dark/20 blur-[150px] pointer-events-none"></div>
       </div>
 
-      <div className="w-full max-w-[400px] bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-2xl shadow-black/5 animate-fade-in-down z-10">
+      {/* Кнопка установки PWA (показывается только в браузере) */}
+      {!isStandalone && (isInstallable || isIOS) && (
+        <div className="absolute top-4 right-4 z-50">
+          <button 
+            onClick={handleInstallClick}
+            className="flex items-center gap-2 bg-white/80 backdrop-blur-md border border-white hover:border-orange text-graphite font-semibold py-2 px-4 rounded-xl shadow-lg transition-all hover:shadow-orange/20"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Установить приложение
+          </button>
+
+          {/* Всплывающая подсказка для iOS */}
+          {showIOSPrompt && isIOS && (
+            <div className="absolute top-full right-0 mt-2 w-64 bg-white shadow-xl rounded-xl p-4 border border-graphite/10 animate-zoom-in">
+              <p className="text-sm text-graphite mb-2">
+                Чтобы установить HockeyEco LMS на ваш iPhone:
+              </p>
+              <ol className="text-sm text-graphite-light space-y-2 list-decimal pl-4">
+                <li>Нажмите иконку <b>«Поделиться»</b> (квадрат со стрелкой вверх) в меню браузера.</li>
+                <li>Выберите <b>«На экран "Домой"»</b>.</li>
+              </ol>
+              <button 
+                onClick={() => setShowIOSPrompt(false)}
+                className="mt-3 w-full text-xs font-semibold text-orange hover:text-graphite transition-colors"
+              >
+                Понятно
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="w-full max-w-[400px] bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-2xl shadow-black/5 animate-zoom-in z-10">
         
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-graphite tracking-tight">HockeyEco <span className="text-orange">LMS</span></h1>
@@ -164,7 +247,7 @@ export function LoginPage({ onLoginSuccess }) {
 
         <div className="text-center mb-8 h-6">
           {userName ? (
-            <p className="text-graphite font-bold text-lg animate-fade-in-down">Привет, {userName}!</p>
+            <p className="text-graphite font-bold text-lg animate-zoom-in">Привет, {userName}!</p>
           ) : (
             <p className="text-graphite-light text-sm font-semibold uppercase tracking-wide">Доступ к вашей панели управления</p>
           )}

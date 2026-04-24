@@ -220,7 +220,7 @@ export function HandbookPage() {
           </div>
           <div className="flex flex-col gap-6">
             {activeTab === 1 && (
-              <div className="space-y-2 animate-fade-in-down">
+              <div className="space-y-2 animate-zoom-in">
                 <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Тип матчей</label>
                 <SegmentButton options={['Все матчи', 'Официал.', 'Товарищ.']} defaultIndex={matchType} onChange={setMatchType} />
               </div>
@@ -232,7 +232,7 @@ export function HandbookPage() {
         </div>
 
         <div className="flex-1 relative z-10 min-h-[500px]">
-          {isLoading && <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none"><Loader text="Загрузка справочника..." /></div>}
+          {isLoading && <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none"><Loader text="" /></div>}
           
           <div className={`transition-opacity duration-300 ease-in-out ${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
             {!isLoading && displayData.length === 0 ? (

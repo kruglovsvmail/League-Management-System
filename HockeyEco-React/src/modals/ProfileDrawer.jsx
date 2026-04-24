@@ -178,7 +178,7 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
                 <span className="text-[13px] font-medium text-graphite">Сменить пароль входа</span>
                 <svg className="text-graphite-light group-hover:text-orange" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
-            ) : (<div className="animate-fade-in-down"><Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Введите новый пароль" /></div>)}
+            ) : (<div className="animate-zoom-in"><Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Введите новый пароль" /></div>)}
 
             {/* PIN-код для ЭЦП */}
             {!isEditingPin ? (
@@ -192,7 +192,7 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
                 </div>
               </button>
             ) : (
-              <div className="animate-fade-in-down relative">
+              <div className="animate-zoom-in relative">
                 <input 
                   type="password" 
                   maxLength={4}

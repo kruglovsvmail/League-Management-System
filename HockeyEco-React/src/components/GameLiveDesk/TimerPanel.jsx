@@ -1,33 +1,10 @@
+// src/components/GameLiveDesk/TimerPanel.jsx
 import React, { useState } from 'react';
 import { formatTime, formatTimeMask, getPeriodLimits, parseTime } from './GameDeskShared';
 import { TimerSettingsDrawer } from '../../modals/TimerSettingsDrawer';
 import { getImageUrl } from '../../utils/helpers';
 import { Button } from '../../ui/Button';
-
-const GearIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-  </svg>
-);
-
-const EditIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-  </svg>
-);
-
-const PlayIcon = () => (
-  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-    <path d="M8 5v14l11-7z" />
-  </svg>
-);
-
-const PauseIcon = () => (
-  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-  </svg>
-);
+import { Icon } from '../../ui/Icon';
 
 export const TimerPanel = ({
   game, currentPeriod, changePeriod, timerSeconds, isTimerRunning, handleTimerAction,
@@ -149,7 +126,7 @@ export const TimerPanel = ({
               className="absolute top-2 right-2 p-1.5 rounded text-white/20 hover:text-white hover:bg-white/10 transition-colors opacity-40 hover:opacity-100"
               title="Редактировать время"
             >
-              <EditIcon />
+              <Icon name="edit" className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -172,9 +149,9 @@ export const TimerPanel = ({
              } disabled:opacity-20 disabled:cursor-not-allowed`}
           >
              {isTimerRunning ? (
-               <><PauseIcon /> СТОП</>
+               <><Icon name="stop" className="w-6 h-6" /> СТОП</>
              ) : (
-               <><PlayIcon /> СТАРТ</>
+               <><Icon name="play" className="w-6 h-6" /> СТАРТ</>
              )}
           </button>
         </div>
@@ -187,7 +164,7 @@ export const TimerPanel = ({
             className="text-white/40 hover:text-white transition-all hover:rotate-90 duration-300" 
             title="Настройки матча"
           >
-            <GearIcon />
+            <Icon name="gear" className="w-5 h-5" />
           </button>
         </div>
       )}

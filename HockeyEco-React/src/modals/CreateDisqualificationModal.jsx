@@ -130,21 +130,21 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
               <SegmentButton options={['Матчи', 'Время', 'Ручной']} defaultIndex={typeIndex} onChange={setTypeIndex} disabled={readOnly} />
             </div>
 
-            <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-xl animate-fade-in">
+            <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-xl animate-zoom-in">
                <div className="flex flex-col gap-1">
                  <label className="text-[11px] font-bold text-status-rejected uppercase">Причина / Пункт</label>
                  <Input placeholder="Например: Подножка, п. 3.2" value={reason} onChange={e => setReason(e.target.value)} disabled={readOnly} />
                </div>
                
                {typeIndex === 0 && (
-                 <div className="flex flex-col gap-1 animate-fade-in-down">
+                 <div className="flex flex-col gap-1 animate-zoom-in">
                    <label className="text-[11px] font-bold text-graphite-light uppercase">Кол-во матчей</label>
                    <Input type="number" min="1" placeholder="Например: 3" value={gamesAssigned} onChange={e => setGamesAssigned(e.target.value)} disabled={readOnly} />
                  </div>
                )}
 
                {typeIndex === 1 && (
-                 <div className="flex flex-col gap-1 animate-fade-in-down mt-2">
+                 <div className="flex flex-col gap-1 animate-zoom-in mt-2">
                    <label className="text-[11px] font-bold text-graphite-light uppercase">Действует до:</label>
                    <DatePicker 
                      value={endDate} 

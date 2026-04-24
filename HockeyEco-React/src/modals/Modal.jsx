@@ -30,14 +30,14 @@ export function Modal({ isOpen, onClose, title, children, size = 'default' }) {
     <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4 sm:p-6">
       {/* Затемнение фона */}
       <div 
-        className="absolute inset-0 bg-graphite/60 backdrop-blur-sm transition-opacity" 
+        className="absolute inset-0 bg-graphite/40 backdrop-blur-[4px] transition-opacity" 
         onClick={onClose}
       />
       
       {/* Контейнер модального окна */}
-      <div className={`relative w-full ${sizeClasses[size]} bg-[#F8F9FA] rounded-xxl shadow-2xl flex flex-col max-h-full animate-fade-in-down`}>
+      <div className={`relative w-full ${sizeClasses[size]} bg-white/80 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl flex flex-col max-h-full animate-zoom-in`}>
         {/* Шапка */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-graphite/10 bg-white rounded-t-xxl shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-graphite/10 bg-white/40 rounded-t-xxl shrink-0">
           <h2 className="text-xl font-black text-graphite uppercase tracking-wide">{title}</h2>
           <button 
             onClick={onClose}

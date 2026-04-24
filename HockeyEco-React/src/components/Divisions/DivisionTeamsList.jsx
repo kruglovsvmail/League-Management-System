@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { getImageUrl, formatAge, getToken } from '../../utils/helpers';
+import { useState } from 'react';
+import { PaperApplicationModal } from '../../modals/PaperApplicationModal';
+import { Badge } from '../../ui/Badge';
+import { Icon } from '../../ui/Icon';
 import { Table } from '../../ui/Table2';
 import { Tabs } from '../../ui/Tabs';
-import { Badge } from '../../ui/Badge';
 import { Tooltip } from '../../ui/Tooltip';
-import { PaperApplicationModal } from '../../modals/PaperApplicationModal';
+import { formatAge, getImageUrl, getToken } from '../../utils/helpers';
 
 // Импортируем новую систему прав
 import { useAccess } from '../../hooks/useAccess';
@@ -180,7 +181,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
 
       return (
         <button onClick={() => onOpenModal(row, 'status')} className="p-2 text-graphite/40 hover:text-orange hover:bg-orange/10 rounded-xl transition-all duration-200" title="Изменить статус">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+          <Icon name="swap" className="w-5 h-5" />
         </button>
       );
     }}
@@ -225,7 +226,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
   return (
     <>
       {!isCompact && (
-        <div className="mb-6 overflow-x-auto pb-2 custom-scrollbar animate-fade-in-down flex items-center min-h-[38px]">
+        <div className="mb-6 overflow-x-auto pb-2 custom-scrollbar animate-zoom-in flex items-center min-h-[38px]">
           <Tabs tabs={tabsCounts} activeTab={activeTab} onChange={onTabChange} />
         </div>
       )}

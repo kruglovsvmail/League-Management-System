@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Icon } from '../../ui/Icon';
 
 const getMatchBadge = (type) => {
     const badges = {
@@ -31,9 +32,7 @@ export function PlayoffStructureView({ brackets = [] }) {
     if (!brackets || brackets.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-12 bg-graphite/5 rounded-2xl border border-dashed border-graphite/20">
-                <svg className="w-12 h-12 text-graphite/20 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
+                <Icon name="divisions" className="w-12 h-12 text-graphite/20 mb-3" />
                 <span className="text-[14px] font-bold text-graphite/40 uppercase tracking-widest">Структура плей-офф не задана</span>
             </div>
         );
@@ -133,7 +132,7 @@ export function PlayoffStructureView({ brackets = [] }) {
                                 <span className="text-[10px] font-black text-graphite/40 uppercase tracking-widest mb-0.5">Раунд {round.order_index}</span>
                                 <span className="text-[13px] font-bold text-graphite leading-tight mb-2 truncate" title={round.name}>{round.name}</span>
                                 <div className="flex items-center gap-1.5 bg-graphite/5 self-start px-2 py-0.5 rounded text-[11px] font-semibold text-graphite/70">
-                                    <svg className="w-3 h-3 text-orange" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
+                                    <Icon name="trophy" className="w-3 h-3 text-orange" />
                                     {formatWinsNeeded(round.wins_needed, true)}
                                 </div>
                             </div>

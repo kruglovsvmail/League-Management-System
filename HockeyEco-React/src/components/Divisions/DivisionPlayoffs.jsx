@@ -107,7 +107,7 @@ export function DivisionPlayoffs({ divisionId }) {
 
       {isLoading ? (
         <div className="h-[300px] flex items-center justify-center border border-dashed border-graphite/10 rounded-xl bg-graphite/[0.02]">
-          <Loader text="Загрузка сеток..." />
+          <Loader text="" />
         </div>
       ) : brackets.length === 0 ? (
         <div className="h-[300px] flex items-center justify-center border-2 border-dashed border-graphite/10 rounded-xl bg-graphite/[0.02]">

@@ -172,7 +172,7 @@ const MatchupSettingsModal = ({ data, activeBracketId, round, matchup, onSave, o
                 
                 <div className="flex-1 relative">
                     {type === 'seed' && (
-                        <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-graphite/10 shadow-sm animate-fade-in absolute w-full">
+                        <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-graphite/10 shadow-sm animate-zoom-in absolute w-full">
                             <span className="text-[13px] font-bold text-graphite uppercase tracking-wide">Номер посева</span>
                             <Stepper 
                                 initialValue={parseInt(refVal, 10) || 1} 
@@ -183,7 +183,7 @@ const MatchupSettingsModal = ({ data, activeBracketId, round, matchup, onSave, o
                     )}
                     
                     {['winner_of', 'loser_of'].includes(type) && (
-                        <div className="flex flex-col gap-4 animate-fade-in absolute w-full">
+                        <div className="flex flex-col gap-4 animate-zoom-in absolute w-full">
                             <Select 
                                 label="Сетка источника"
                                 options={bracketOpts}
@@ -220,7 +220,7 @@ const MatchupSettingsModal = ({ data, activeBracketId, round, matchup, onSave, o
                     )}
 
                     {type === 'manual' && (
-                        <div className="flex h-full items-center justify-center text-graphite/40 text-[13px] font-medium italic animate-fade-in text-center px-4 absolute inset-0">
+                        <div className="flex h-full items-center justify-center text-graphite/40 text-[13px] font-medium italic animate-zoom-in text-center px-4 absolute inset-0">
                             Команда будет определена вручную позже, либо останется пустой
                         </div>
                     )}
@@ -654,7 +654,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
         );
     };
 
-    if (isLoading) return <div className="h-screen w-screen flex items-center justify-center bg-[#F3F4F6]"><Loader text="Загрузка сеток..." /></div>;
+    if (isLoading) return <div className="h-screen w-screen flex items-center justify-center bg-[#F3F4F6]"><Loader text="" /></div>;
 
     return (
         <div 
@@ -906,7 +906,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
                             
                             {/* ОШИБКА ВАЛИДАЦИИ СЫГРАННЫХ МАТЧЕЙ */}
                             {roundModalError && (
-                                <div className="text-status-rejected text-[12px] font-medium mt-1 px-2 animate-fade-in">
+                                <div className="text-status-rejected text-[12px] font-medium mt-1 px-2 animate-zoom-in">
                                     {roundModalError}
                                 </div>
                             )}

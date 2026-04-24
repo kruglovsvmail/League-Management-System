@@ -52,7 +52,7 @@ export function SettingsPage() {
 
   if (!selectedLeague) {
     return (
-      <div className="flex flex-col flex-1 animate-fade-in-down">
+      <div className="flex flex-col flex-1 animate-zoom-in">
         <Header title="Настройки лиги" />
         <main className="p-10 flex flex-1 items-center justify-center">
           <div className="text-center text-graphite-light font-medium text-lg">
@@ -66,7 +66,7 @@ export function SettingsPage() {
   // Если у пользователя нет доступа ни к одной из вкладок настроек
   if (availableTabs.length === 0) {
     return (
-      <div className="flex flex-col flex-1 animate-fade-in-down">
+      <div className="flex flex-col flex-1 animate-zoom-in">
         <Header title="Настройки лиги" />
         <main className="p-10 flex flex-1 items-center justify-center">
           <AccessFallback 
@@ -110,7 +110,7 @@ export function SettingsPage() {
       )}
 
       <div className="px-10 pt-8 relative z-10 flex flex-col gap-8">
-        <div className="bg-white/30 backdrop-blur-md rounded-xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 px-6 pt-4 pb-2 overflow-hidden">
+        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] px-6 pt-4 pb-2 overflow-hidden">
           <Tabs 
             tabs={availableTabs.map(t => t.label)} 
             activeTab={displayTabIndex} 

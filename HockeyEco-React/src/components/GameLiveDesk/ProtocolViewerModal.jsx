@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { getToken } from '../../utils/helpers';
 import { Button } from '../../ui/Button';
 import { Select } from '../../ui/Select';
+import { Icon } from '../../ui/Icon';
 
 export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   const [protocolData, setProtocolData] = useState(null);
-  const [pdfUrl, setPdfUrl] = useState(null); // URL для отображения PDF в iframe
+  const [pdfUrl, setPdfUrl] = useState(null); 
   const [isLoading, setIsLoading] = useState(true);
   
   const [formState, setFormState] = useState({});
@@ -17,19 +18,16 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   const loadDataAndPdf = async () => {
     setIsLoading(true);
     try {
-      // 1. Загружаем JSON-данные для боковой панели подписей
       const resJson = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}`, { headers });
       const apiResponse = await resJson.json();
       if (apiResponse.success) {
           setProtocolData(apiResponse.data);
       }
 
-      // 2. Скачиваем сам сгенерированный PDF-файл
       const resPdf = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}/download`, {
           headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       
-      // ПРОВЕРЯЕМ, УСПЕШНО ЛИ ОТРАБОТАЛ СЕРВЕР
       if (!resPdf.ok) {
           const errorData = await resPdf.text();
           console.error("Ошибка генерации PDF на сервере:", errorData);
@@ -57,7 +55,6 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
       setFormState({});
       setIsSigning(null);
     }
-    // Очистка памяти при закрытии модалки
     return () => {
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     };
@@ -167,7 +164,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                           isSigned ? (
                              <div className="flex items-center justify-center bg-status-accepted/10 border border-status-accepted/20 h-[34px] px-2 rounded-md shrink-0 w-[95px]">
                                 <span className="text-[9px] font-bold text-status-accepted uppercase flex items-center gap-1">
-                                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                   <Icon name="save" className="w-3 h-3" />
                                    Вписано
                                 </span>
                              </div>
@@ -180,7 +177,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                                 className="w-[34px] h-[34px] p-0 !min-w-[34px] !px-0 shrink-0 shadow-sm flex items-center justify-center rounded-md"
                              >
                                 {isSigning !== r.key && (
-                                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                                   <Icon name="save" className="w-4 h-4" />
                                 )}
                              </Button>
                           )
@@ -188,7 +185,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                           isFullySigned ? (
                              <div className="flex items-center justify-center bg-status-accepted/10 border border-status-accepted/20 h-[34px] px-2 rounded-md shrink-0 min-w-[95px]">
                                 <span className="text-[9px] font-bold text-status-accepted uppercase flex items-center gap-1">
-                                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                   <Icon name="save" className="w-3 h-3" />
                                    [{sig.hash}]
                                 </span>
                              </div>
@@ -219,7 +216,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                                   className="w-[34px] h-[34px] p-0 !min-w-[34px] !px-0 shrink-0 shadow-sm flex items-center justify-center rounded-md"
                                >
                                   {isSigning !== r.key && (
-                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                                     <Icon name="save" className="w-4 h-4" />
                                   )}
                                </Button>
                              </>
@@ -247,7 +244,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
         <div className="bg-white rounded-lg border border-graphite/10 shadow-sm p-4">
            <h3 className="font-black text-[13px] text-graphite uppercase tracking-widest mb-3 flex items-center gap-2">
              <span className="bg-graphite text-white w-5 h-5 rounded flex items-center justify-center text-[10px]">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" /></svg>
+                <Icon name="whistle" className="w-3.5 h-3.5" />
              </span>
              Судейская бригада
            </h3>
@@ -274,7 +271,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                           isFullySigned ? (
                              <div className="flex items-center justify-center bg-status-accepted/10 border border-status-accepted/20 h-[34px] px-2 rounded-md shrink-0 min-w-[95px]">
                                 <span className="text-[9px] font-bold text-status-accepted uppercase flex items-center gap-1">
-                                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                   <Icon name="save" className="w-3 h-3" />
                                    [{sig.hash}]
                                 </span>
                              </div>
@@ -300,7 +297,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                                   className="w-[34px] h-[34px] p-0 !min-w-[34px] !px-0 shrink-0 shadow-sm flex items-center justify-center rounded-md"
                                >
                                   {isSigning !== r.key && (
-                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                                     <Icon name="save" className="w-4 h-4" />
                                   )}
                                </Button>
                              </>
@@ -316,7 +313,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex bg-black animate-fade-in">
+    <div className="fixed inset-0 z-[10000] flex bg-black animate-zoom-in">
       {/* ЛЕВАЯ ЧАСТЬ - ПРОСМОТР PDF */}
       <div className="flex-1 h-full relative flex flex-col bg-[#525659]">
         {isLoading && !pdfUrl ? (
@@ -342,7 +339,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
             onClick={onClose} 
             className="text-graphite/60 hover:text-white bg-gray-50 hover:bg-status-rejected transition-colors p-2 rounded-lg border border-graphite/10"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            <Icon name="close" className="w-5 h-5" />
           </button>
         </div>
 

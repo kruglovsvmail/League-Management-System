@@ -7,8 +7,8 @@ export function Badge({ label, type = 'empty' }) {
     oneThird: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-graphite/30', fill: '33.33%' },
     half: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-graphite/30', fill: '50%' },
     twoThirds: { border: 'border-graphite', text: 'text-graphite', bg: 'bg-graphite/30', fill: '66.66%' },
-    filled: { border: 'border-graphite', text: 'text-white', bg: 'bg-graphite', fill: '100%' },
-    expiring: { border: 'border-status-pending', text: 'text-white', bg: 'bg-status-pending', fill: '100%' },
+    filled: { border: 'border-graphite', text: 'text-white', bg: 'bg-graphite/70', fill: '100%' },
+    expiring: { border: 'border-status-pending/70', text: 'text-white', bg: 'bg-status-pending', fill: '100%' },
     expired: { border: 'border-status-rejected', text: 'text-white', bg: 'bg-status-rejected', fill: '100%' },
   };
 

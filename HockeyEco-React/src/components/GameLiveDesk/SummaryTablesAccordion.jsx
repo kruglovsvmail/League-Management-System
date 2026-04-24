@@ -3,32 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { getImageUrl } from '../../utils/helpers';
 import { 
   formatTime, parseTime, formatTimeMask, 
-  StylishInput, CustomSelect, EditIcon, DeleteIcon, SaveIcon, PlusIcon
+  StylishInput, CustomSelect
 } from './GameDeskShared';
 import { ConfirmModal } from '../../modals/ConfirmModal';
-
-const ChevronIcon = ({ isExpanded }) => (
-  <svg 
-    className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} 
-    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
-  </svg>
-);
-
-const ShieldIcon = ({ className = "w-5 h-5" }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
-);
-
-const TargetIcon = ({ className = "w-5 h-5" }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <circle cx="12" cy="12" r="6" />
-    <circle cx="12" cy="12" r="2" fill="currentColor" />
-  </svg>
-);
+import { Icon } from '../../ui/Icon';
 
 export const SummaryTablesAccordion = ({ 
   game, goalieLog, shotsSummary, 
@@ -195,7 +173,7 @@ export const SummaryTablesAccordion = ({
          onClick={() => setIsExpanded(!isExpanded)}
       >
           <div className="font-bold py-1 text-graphite text-base uppercase tracking-wide flex items-center gap-3">
-             <ChevronIcon isExpanded={isExpanded} />
+             <Icon name="chevron" className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
              Время вратарей и броски по периодам
           </div>
       </div>
@@ -208,7 +186,7 @@ export const SummaryTablesAccordion = ({
                  <div className="flex-1 min-w-0 bg-white border shadow-sm rounded-md relative flex flex-col">
                     <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center justify-start gap-3 px-5 py-3 bg-white rounded-t-md">
                         <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center rounded-sm shrink-0">
-                            <ShieldIcon className="w-5 h-5" />
+                            <Icon name="divisions" className="w-5 h-5" />
                         </span>
                         <span className="truncate">Время игры вратарей</span>
                     </div>
@@ -251,7 +229,7 @@ export const SummaryTablesAccordion = ({
                                                     <CustomSelect options={awayGoalieOptions} value={editLogData.away_goalie} onChange={e=>setEditLogData({...editLogData, away_goalie: e.target.value})} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                                                 </td>
                                                 <td className="p-0 text-center">
-                                                    <button onClick={saveEditLog} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><SaveIcon /></button>
+                                                    <button onClick={saveEditLog} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button>
                                                 </td>
                                             </tr>
                                         );
@@ -266,9 +244,9 @@ export const SummaryTablesAccordion = ({
                                                 <td className="p-0 text-center">
                                                     {!isReadOnly && (
                                                         <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                                                            <button onClick={() => startEditLog(log)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
+                                                            <button onClick={() => startEditLog(log)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
                                                             {goalieLog.length > 1 && (
-                                                                <button onClick={() => onRequestDeleteGoalieLog(log.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><DeleteIcon /></button>
+                                                                <button onClick={() => onRequestDeleteGoalieLog(log.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Удалить"><Icon name="delete" className="w-[18px] h-[18px]" /></button>
                                                             )}
                                                         </div>
                                                     )}
@@ -301,7 +279,7 @@ export const SummaryTablesAccordion = ({
                                                         className={`w-full h-full min-h-[36px] transition-colors flex items-center justify-center ${isGoaliesMatch ? 'text-graphite/20 cursor-not-allowed' : 'hover:bg-status-accepted/10 text-status-accepted'}`}
                                                         title={isGoaliesMatch ? 'Вратари не изменились' : 'Добавить запись'}
                                                     >
-                                                        <PlusIcon />
+                                                        <Icon name="plus" className="w-6 h-6" />
                                                     </button>
                                                 </td>
                                             </tr>
@@ -318,7 +296,7 @@ export const SummaryTablesAccordion = ({
                  <div className="flex-1 min-w-0 bg-white border border-graphite/20 shadow-sm rounded-md relative flex flex-col">
                     <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center justify-start gap-3 px-5 py-3 bg-white rounded-t-md">
                         <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center rounded-sm shrink-0">
-                            <TargetIcon className="w-5 h-5" />
+                            <Icon name="puck" className="w-5 h-5" />
                         </span>
                         <span className="truncate">Броски по периодам</span>
                     </div>
@@ -364,7 +342,7 @@ export const SummaryTablesAccordion = ({
                                                     />
                                                 </td>
                                                 <td className="p-0 text-center">
-                                                    <button onClick={saveEditShots} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><SaveIcon /></button>
+                                                    <button onClick={saveEditShots} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button>
                                                 </td>
                                             </tr>
                                         );
@@ -385,8 +363,8 @@ export const SummaryTablesAccordion = ({
                                             <td className="p-0 text-center">
                                                 {!isReadOnly && (
                                                     <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => startEditShots(team.id)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><EditIcon /></button>
-                                                        <button onClick={() => setConfirmClearTeamId(team.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Очистить"><DeleteIcon /></button>
+                                                        <button onClick={() => startEditShots(team.id)} className="text-graphite/40 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                                                        <button onClick={() => setConfirmClearTeamId(team.id)} className="text-graphite/40 hover:text-status-rejected transition-colors" title="Очистить"><Icon name="delete" className="w-[18px] h-[18px]" /></button>
                                                     </div>
                                                 )}
                                             </td>

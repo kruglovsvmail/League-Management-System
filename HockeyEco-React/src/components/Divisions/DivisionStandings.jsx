@@ -103,7 +103,7 @@ export function DivisionStandings({ division }) {
       
       {isLoading ? (
         <div className="h-[200px] flex items-center justify-center">
-          <Loader text="Загрузка таблицы..." />
+          <Loader text="" />
         </div>
       ) : displayData.length > 0 ? (
         <div className="overflow-hidden">

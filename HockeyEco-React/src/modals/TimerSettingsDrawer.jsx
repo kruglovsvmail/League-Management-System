@@ -81,7 +81,7 @@ export function TimerSettingsDrawer({
                 />
               </div>
               {otLength > 0 && (
-                <div className="flex justify-between items-center pl-4 border-l-2 border-graphite/10 animate-fade-in-down">
+                <div className="flex justify-between items-center pl-4 border-l-2 border-graphite/10 animate-zoom-in">
                   <span className="text-[12px] text-graphite-light font-semibold">Длительность ОТ (мин):</span>
                   <input 
                     type="number" 
@@ -107,7 +107,7 @@ export function TimerSettingsDrawer({
                 />
               </div>
               {soLength > 0 && (
-                <div className="flex justify-between items-center pl-4 border-l-2 border-graphite/10 animate-fade-in-down">
+                <div className="flex justify-between items-center pl-4 border-l-2 border-graphite/10 animate-zoom-in">
                   <span className="text-[12px] text-graphite-light font-semibold">Мин. бросков в серии:</span>
                   <input 
                     type="number" 

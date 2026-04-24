@@ -170,7 +170,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
             
             {/* ИНФОРМАЦИОННОЕ ТАБЛО О СТАТУСЕ ОКНА */}
             {selectedDivision && !isWindowOpen && (
-              <div className={`p-3 rounded-xl border text-[12px] leading-tight mt-[-10px] animate-fade-in ${isAdmin ? 'bg-orange/10 border-orange/20 text-orange' : 'bg-status-rejected/5 border-status-rejected/20 text-status-rejected'}`}>
+              <div className={`p-3 rounded-xl border text-[12px] leading-tight mt-[-10px] animate-zoom-in ${isAdmin ? 'bg-orange/10 border-orange/20 text-orange' : 'bg-status-rejected/5 border-status-rejected/20 text-status-rejected'}`}>
                 <span className="font-bold block mb-1">Трансферное окно закрыто</span>
                 {isAdmin 
                   ? 'Вы можете создать заявку благодаря правам администратора.' 
@@ -179,7 +179,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
             )}
 
             {typeIndex === 0 && selectedPlayerId && (
-              <div className="flex flex-col gap-4 p-4 bg-orange/5 border border-orange/20 rounded-xl mt-4 animate-fade-in">
+              <div className="flex flex-col gap-4 p-4 bg-orange/5 border border-orange/20 rounded-xl mt-4 animate-zoom-in">
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-bold text-graphite-light uppercase flex justify-between">
                     Номер на джерси
@@ -187,7 +187,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                   </label>
                   <Input type="number" min="1" max="99" placeholder="Например: 17" value={jerseyNumber} onChange={e => setJerseyNumber(e.target.value)} className={isNumberTaken ? '!border-status-rejected !bg-status-rejected/5 !text-status-rejected' : ''} disabled={readOnly} />
                   {takenNumbers.length > 0 && (
-                    <div className="mt-2 animate-fade-in">
+                    <div className="mt-2 animate-zoom-in">
                       <div className="text-[10px] font-semibold text-graphite-light mb-1.5">Занятые номера:</div>
                       <div className="flex flex-wrap gap-1">
                         {takenNumbers.sort((a,b) => a-b).map(n => (

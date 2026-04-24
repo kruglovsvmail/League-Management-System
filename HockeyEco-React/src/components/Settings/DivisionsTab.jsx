@@ -110,10 +110,10 @@ const PlayoffSummary = ({ divisionId, canEditPlayoff }) => {
         window.open(url, 'PlayoffEditor', features);
     };
 
-    if (isLoading) return <div className="py-10 flex justify-center"><Loader text="Загрузка структуры..." /></div>;
+    if (isLoading) return <div className="py-10 flex justify-center"><Loader text="" /></div>;
 
     return (
-        <div className="flex flex-col gap-8 w-full animate-fade-in-down max-w-full">
+        <div className="flex flex-col gap-8 w-full animate-zoom-in max-w-full">
             <div className="flex justify-between items-center bg-white/60 p-6 rounded-xl border border-graphite/10">
                 <div className="flex flex-col">
                     <span className="text-[15px] font-bold text-graphite uppercase">Управление сетками</span>
@@ -379,7 +379,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 <Switch checked={formData[`${prefix}_has_overtime`]} onChange={(e) => handleChange(`${prefix}_has_overtime`, e.target.checked)} disabled={isLocked} />
             </div>
             {formData[`${prefix}_has_overtime`] && (
-                <div className="flex justify-between items-center gap-4 pt-2 animate-fade-in-down">
+                <div className="flex justify-between items-center gap-4 pt-2 animate-zoom-in">
                     <div className="text-[12px] text-graphite-light font-semibold">Длительность ОТ (мин)</div>
                     <Stepper initialValue={formData[`${prefix}_ot_length`]} onChange={(v) => handleChange(`${prefix}_ot_length`, v)} min={1} max={30} disabled={isLocked} />
                 </div>
@@ -392,7 +392,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 <Switch checked={formData[`${prefix}_has_shootouts`]} onChange={(e) => handleChange(`${prefix}_has_shootouts`, e.target.checked)} disabled={isLocked} />
             </div>
             {formData[`${prefix}_has_shootouts`] && (
-                <div className="flex justify-between items-center gap-4 pt-2 animate-fade-in-down">
+                <div className="flex justify-between items-center gap-4 pt-2 animate-zoom-in">
                     <div className="text-[12px] text-graphite-light font-semibold">Мин. бросков</div>
                     <Stepper initialValue={formData[`${prefix}_so_length`]} onChange={(v) => handleChange(`${prefix}_so_length`, v)} min={0} max={10} disabled={isLocked} />
                 </div>
@@ -407,13 +407,13 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 items-start animate-fade-in-down relative min-h-[500px]">
-      {isLoading && <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none"><Loader text="Загрузка данных..." /></div>}
+    <div className="flex flex-col lg:flex-row gap-8 items-start animate-zoom-in relative min-h-[500px]">
+      {isLoading && <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none"><Loader text="" /></div>}
 
       {/* ЛЕВЫЙ САЙДБАР */}
       <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6">
         
-        <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-4">
+        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-4">
           <Select 
             label="Сезон"
             options={seasons.map(s => s.name)} 
@@ -432,7 +432,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         </div>
 
         {formData && (
-            <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-3 flex flex-col gap-1">
+            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-3 flex flex-col gap-1">
                 {menuItems.map(item => (
                     <button
                         key={item.id}
@@ -450,7 +450,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         )}
 
         {formData && canEdit && activeSection !== 'playoff' && (
-            <div className="bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-4">
+            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-4">
                 <Button 
                     onClick={handleSave} 
                     isLoading={isSaving} 
@@ -465,7 +465,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       </div>
 
       {/* ПРАВЫЙ КОНТЕНТ */}
-      <div className="flex-1 w-full bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 md:p-8 min-h-[500px] relative">
+      <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 md:p-8 min-h-[500px] relative">
         
         {!formData && !isLoading && selectedSeasonId && divisions.length === 0 && (
             <div className="text-center py-20 text-graphite-light font-medium text-[15px]">
@@ -475,7 +475,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         )}
 
         {formData && !isLoading && (
-            <div className="flex flex-col gap-6 font-sans animate-fade-in">
+            <div className="flex flex-col gap-6 font-sans animate-zoom-in">
                 
                 {isLocked && !isCreatingNew && (
                     <div className="mb-2">
@@ -491,7 +491,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 1: ОБЩАЯ ИНФОРМАЦИЯ */}
                 {activeSection === 'general' && (
-                    <div className="flex flex-col gap-8 animate-fade-in-down max-w-4xl">
+                    <div className="flex flex-col gap-8 animate-zoom-in max-w-4xl">
                         <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-5">
                             <span className="text-[14px] font-bold text-graphite uppercase tracking-wider mb-1">Основные данные</span>
                             <Input label="Полное название*" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} disabled={isLocked} />
@@ -521,7 +521,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 2: СРОКИ И ЗАЯВКИ */}
                 {activeSection === 'dates' && (
-                    <div className="flex flex-col gap-8 animate-fade-in-down">
+                    <div className="flex flex-col gap-8 animate-zoom-in">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[14px] font-bold text-graphite uppercase">Сроки турнира*</span>
@@ -569,7 +569,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 3: МЕХАНИКА МАТЧА */}
                 {activeSection === 'mechanics' && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-fade-in-down">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-zoom-in">
                         {showRegular && renderMechanicsBlock('reg', 'Регулярный чемпионат')}
                         {showPlayoff && renderMechanicsBlock('playoff', 'Плей-офф')}
                     </div>
@@ -577,7 +577,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 4: РЕГУЛЯРНЫЙ ЧЕМПИОНАТ */}
                 {activeSection === 'regular' && showRegular && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in-down">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-zoom-in">
                         <div className="flex flex-col gap-6">
                             <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[15px] font-bold text-graphite mb-2 uppercase">Начисление очков</span>
@@ -608,7 +608,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 5: ПЛЕЙ-ОФФ */}
                 {activeSection === 'playoff' && showPlayoff && (
-                    <div className="animate-fade-in-down w-full h-full">
+                    <div className="animate-zoom-in w-full h-full">
                         {isCreatingNew ? (
                             <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-xl text-graphite-light py-12 px-6">
                                 Сначала создайте и сохраните дивизион, чтобы настроить для него сетки плей-офф.

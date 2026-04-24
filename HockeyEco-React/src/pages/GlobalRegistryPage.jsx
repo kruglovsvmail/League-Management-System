@@ -578,7 +578,7 @@ export function GlobalRegistryPage() {
         <div className="flex-1 relative z-10 min-h-[500px]">
           {isLoading && tableData.length === 0 && (
             <div className="absolute inset-0 z-30 flex items-start pt-32 justify-center pointer-events-none">
-              <Loader text="Загрузка реестра..." />
+              <Loader text="" />
             </div>
           )}
           <div className={`transition-opacity duration-300 ease-in-out ${isLoading && tableData.length === 0 ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>

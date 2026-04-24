@@ -97,7 +97,7 @@ export function DivisionsPage() {
   // Если лига не выбрана
   if (!selectedLeague) {
     return (
-      <div className="flex flex-col flex-1 animate-fade-in-down">
+      <div className="flex flex-col flex-1 animate-zoom-in">
         <Header title="Дивизионы" />
         <main className="p-10 flex flex-1 items-center justify-center">
           <div className="text-center text-graphite-light font-medium text-lg">Выберите лигу</div>
@@ -109,7 +109,7 @@ export function DivisionsPage() {
   // БЛОКИРОВКА ДОСТУПА К СТРАНИЦЕ (Заглушка)
   if (!canViewPage) {
     return (
-      <div className="flex flex-col flex-1 animate-fade-in-down">
+      <div className="flex flex-col flex-1 animate-zoom-in">
         <Header title="Дивизионы" />
         <main className="p-6 md:p-10 flex flex-1 flex-col">
           <AccessFallback variant="full" message="У вас нет доступа к просмотру дивизионов. Обратитесь к администратору лиги." />
@@ -123,16 +123,16 @@ export function DivisionsPage() {
       <Header 
         title="Дивизионы" 
         actions={
-          <div className="w-[200px]">
+          <div className="w-32">
             <Select options={seasonOptions} value={currentSeasonName} onChange={(name) => setSelectedSeasonId(seasons.find(s => s.name === name)?.id)} />
           </div>
         }
       />
       {toast && <div className="fixed top-[110px] right-10 z-[9999]"><Toast {...toast} onClose={() => setToast(null)} /></div>}
 
-      <main className="p-6 md:p-10 flex flex-col gap-6 font-sans animate-fade-in-down">
-        {isLoading ? <Loader text="Загрузка дивизионов..." /> : divisions.length === 0 ? (
-          <div className="bg-white/40 border border-dashed border-graphite/20 rounded-xxl p-10 text-center text-graphite-light">Нет дивизионов</div>
+      <main className="p-6 md:p-10 flex flex-col gap-6 font-sans animate-zoom-in">
+        {isLoading ? <Loader text="" /> : divisions.length === 0 ? (
+          <div className="bg-white/0 rounded-xxl p-10 text-center text-graphite/50">Нет дивизионов</div>
         ) : (
           <div className="flex flex-col gap-6">
             {divisions.map(div => (

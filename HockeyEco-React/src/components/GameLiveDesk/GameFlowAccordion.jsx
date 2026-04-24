@@ -2,15 +2,7 @@
 import React, { useState } from 'react';
 import { ProtocolSheet } from './ProtocolSheet';
 import { getImageUrl } from '../../utils/helpers';
-
-const ChevronIcon = ({ isExpanded }) => (
-  <svg 
-    className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} 
-    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7"></path>
-  </svg>
-);
+import { Icon } from '../../ui/Icon';
 
 export const GameFlowAccordion = ({ 
   game, 
@@ -36,7 +28,7 @@ export const GameFlowAccordion = ({
          onClick={() => setIsExpanded(!isExpanded)}
       >
           <div className="font-bold py-1 text-graphite text-base uppercase tracking-wide flex items-center gap-3">
-             <ChevronIcon isExpanded={isExpanded} />
+             <Icon name="chevron" className={`w-6 h-6 text-graphite-light transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
              Ход игры (Основное время и ОТ)
           </div>
       </div>

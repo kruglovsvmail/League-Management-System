@@ -219,7 +219,7 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col animate-fade-in overflow-hidden">
+          <div className="flex-1 flex flex-col animate-zoom-in overflow-hidden">
             <div className="p-6 bg-white border-b border-graphite/10 flex items-center gap-4 shrink-0">
               <img 
                 src={getImageUrl(selectedUser.avatar_url || '/default/user_default.webp')} 

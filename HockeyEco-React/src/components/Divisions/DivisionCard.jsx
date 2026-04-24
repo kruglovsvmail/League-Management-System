@@ -6,6 +6,7 @@ import { DivisionStandings } from './DivisionStandings';
 import { DivisionPlayoffs } from './DivisionPlayoffs';
 import { Loader } from '../../ui/Loader';
 import { Tabs } from '../../ui/Tabs';
+import { Icon } from '../../ui/Icon';
 import { PlayerProfileModal } from '../../modals/PlayerProfileModal';
 
 // Импортируем новую систему прав
@@ -335,7 +336,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const isStatusClickable = canChangeTeamStatus && selectedTeam?.status !== 'revision';
 
   return (
-    <div className="bg-white/50 backdrop-blur-xl rounded-xxl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] overflow-hidden font-sans w-full transition-all duration-300 relative">
+    <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl hover:shadow-lg overflow-hidden font-sans w-full transition-all duration-300 relative animate-zoom-in">
       <div 
         className="p-6 md:p-8 flex flex-col xl:flex-row gap-8 items-center justify-between relative z-10 cursor-pointer group hover:transition-colors"
         onClick={toggleExpand}
@@ -380,9 +381,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
             }`}
             title="Турнирная таблица и плей-офф"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+            <Icon name="standings" className="w-5 h-5" />
             <span className="hidden xl:inline">{viewMode === 'sport' ? 'Таблицы' : 'Команды'}</span>
           </button>
 
@@ -400,28 +399,23 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
               title={division.is_published ? "Дивизион опубликован (Нажмите, чтобы скрыть)" : "Дивизион скрыт (Нажмите, чтобы опубликовать)"}
             >
               {division.is_published ? (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
+                <Icon name="view" className="w-5 h-5" />
               ) : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                </svg>
+                <Icon name="view_off" className="w-5 h-5" />
               )}
             </button>
           )}
 
           {canDeleteDivision && (
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="w-12 h-12 rounded-lg flex items-center justify-center text-status-rejected hover:bg-graphite/5 hover:transition-all duration-300" title="Удалить дивизион">
-              <svg className="w-8 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              <Icon name="delete" className="w-5 h-5" />
             </button>
           )}
           <div className="w-px mx-6 h-10 bg-graphite/20 mx-1 hidden xl:block"></div>
           <button 
             className={`w-12 h-12 rounded-lg border-1 flex items-center justify-center transition-all duration-300 ${isExpanded ? 'border-orange text-orange bg-orange/5' : 'border-graphite/10 text-graphite/40 group-hover:border-orange group-hover:text-orange group-hover:bg-orange/5'}`}
           >
-            <svg className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+            <Icon name="chevron" className="w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180'" />
           </button>
         </div>
       </div>
@@ -435,15 +429,13 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
               <div className="p-6 md:p-8 pt-4 bg-gradient-to-b from-graphite/[0.03] to-transparent border-t border-graphite/5 flex gap-6 items-start w-full">
                 <div className={`transition-all duration-300 ease-in-out overflow-hidden flex flex-col ${isDetailVisible ? 'w-[100px] shrink-0' : 'w-full'}`}>
                   {isCompactView && (
-                    <div className="mb-6 pb-2 w-full animate-fade-in flex items-center h-[40px]">
+                    <div className="mb-6 pb-2 w-full animate-zoom-in flex items-center h-[40px]">
                       <button 
                         onClick={closeDetailPanel}
                         className="w-10 h-10 mx-auto rounded-lg flex items-center justify-center text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 transition-all duration-300"
                         title="Вернуться к списку команд"
                       >
-                        <svg className="w-6 h-6 pr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                        </svg>
+                        <Icon name="chevron_left" className="w-6 h-6 pr-0.5" />
                       </button>
                     </div>
                   )}
@@ -473,16 +465,14 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                         className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
                         title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
                       >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                        </svg>
+                        <Icon name="swap" className="w-4 h-4" />
                         {STATUS_LABELS[selectedTeam.status] || 'Статус команды'}
                       </button>
                     </div>
                     <div className="relative transition-all duration-300 min-h-[150px]">
                       {isRosterLoading && (
                         <div className="absolute inset-0 z-10 flex items-start pt-16 justify-center transition-all duration-700">
-                          <Loader text="Загрузка состава..." />
+                          <Loader text="" />
                         </div>
                       )}
                       <div className={`transition-opacity duration-300 ${isRosterLoading ? 'opacity-5 pointer-events-none' : 'opacity-100'}`}>
