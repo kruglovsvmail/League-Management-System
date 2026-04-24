@@ -17,15 +17,18 @@ export function StaticBroadcastButton({
     data: { 
       type: dragType, 
       label: title,
-      isSource: true // Флаг, что это плашка из правой колонки, а не из плейлиста
+      isSource: true // Флаг для отличия плашек доноров от элементов плейлиста
     },
-    disabled: !dragType, // Отключаем drag, если это не перетаскиваемый элемент
+    disabled: !dragType, // Отключаем drag, если идентификатор не задан
   });
 
-  // Во время перетаскивания (когда копия летит за пальцем) оригинал делаем блеклым
+  // Стили для предотвращения системных конфликтов при удержании
   const style = {
-    opacity: isDragging ? 0.3 : 1,
-    // transform мы не применяем, так как за перемещение будет отвечать DragOverlay
+    opacity: isDragging ? 0.5 : 1,
+    WebkitTouchCallout: 'none', // Запрет системного меню/лупы на iOS
+    WebkitUserSelect: 'none',   // Запрет выделения текста
+    userSelect: 'none',
+    touchAction: 'none'         // Предотвращение скролла страницы при захвате плашки
   };
 
   return (
@@ -33,9 +36,14 @@ export function StaticBroadcastButton({
       <div
         ref={setNodeRef}
         style={style}
-        {...listeners}   // Вешаем слушатели dnd-kit (удержание, клик)
-        {...attributes}  // Служебные атрибуты dnd-kit
+        {...listeners}   
+        {...attributes}  
         onClick={onClick}
+        onContextMenu={(e) => {
+          // Блокируем контекстное меню браузера при долгом нажатии.
+          // Это предотвращает прерывание (touchcancel) сессии перетаскивания.
+          if (dragType) e.preventDefault();
+        }}
         role="button"
         tabIndex={0}
         className={`relative flex flex-col items-center justify-center text-center transition-colors duration-200 border-r border-b border-graphite/20 outline-none select-none overflow-hidden group touch-none
@@ -46,12 +54,10 @@ export function StaticBroadcastButton({
           }
           ${dragType && !isDragging ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
         `}
-        title={isActive ? "Нажмите, чтобы убрать из эфира" : "Нажмите или удерживайте, чтобы добавить в автопилот"}
+        title={isActive ? "Нажмите, чтобы убрать из эфира" : "Удерживайте для автопилота или нажмите для эфира"}
       >
         
-        {/* Иконку-хваталку мы УДАЛИЛИ. Вся кнопка теперь активна */}
-
-        {/* Маркер активного состояния (Статичный или Анимированный для Арены) */}
+        {/* Индикатор прогресса для активных плашек (например, Арена или Комментатор) */}
         {isActive && (
           <div className="absolute top-0 left-0 right-0 h-1 bg-status-accepted/20">
              {progressType === 'once' ? (
@@ -72,7 +78,11 @@ export function StaticBroadcastButton({
         
         {hasTimer ? (
           <>
-            <div className="flex items-center justify-center gap-4 mb-3" onClick={e => e.stopPropagation()}>
+            <div 
+              onPointerDown={e => e.stopPropagation()} // Защита: нажатие на кнопки не запускает Drag
+              onClick={e => e.stopPropagation()}       // Защита: клик по кнопкам не триггерит onClick всей плашки
+              className="flex items-center justify-center gap-4 mb-3" 
+            >
               <span className={`font-mono text-2xl font-black leading-none min-w-[70px] text-right ${isTimerCritical ? 'text-status-rejected animate-pulse' : 'text-graphite/60'}`}>
                 {timerDisplay}
               </span>
@@ -80,23 +90,25 @@ export function StaticBroadcastButton({
               {isTimerRunning ? (
                 <button 
                   onClick={onTimerPause} 
-                  className="h-6 px-2 rounded-full bg-status-rejected text-white hover:bg-status-rejected/90 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 z-10 relative" 
-                  title="Поставить таймер на паузу"
+                  className="h-6 px-2 rounded-full bg-status-rejected text-white hover:bg-status-rejected/90 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 z-10 relative"
                 >
                   <span className="text-[10px] font-black uppercase tracking-widest mt-0.5">Пауза</span>
                 </button>
               ) : (
                 <button 
                   onClick={onTimerStart} 
-                  className="h-6 px-2 rounded-full bg-status-accepted text-white hover:bg-status-accepted/90 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 z-10 relative" 
-                  title="Запустить таймер"
+                  className="h-6 px-2 rounded-full bg-status-accepted text-white hover:bg-status-accepted/90 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 z-10 relative"
                 >
                  <span className="text-[10px] font-black uppercase tracking-widest mt-0.5">Старт</span>
                 </button>
               )}
             </div>
 
-            <div onClick={e => e.stopPropagation()} className="cursor-default mt-1 z-10 relative">
+            <div 
+              onPointerDown={e => e.stopPropagation()} 
+              onClick={e => e.stopPropagation()} 
+              className="cursor-default mt-1 z-10 relative"
+            >
                <Stepper initialValue={timerValue} min={1} max={30} onChange={onTimerChange} />
             </div>
           </>
@@ -104,7 +116,11 @@ export function StaticBroadcastButton({
           <>
             <div className="flex flex-col items-center justify-center w-full z-10 relative">
                <span className="text-[10px] font-bold uppercase tracking-widest text-graphite/40 mb-2 mt-1">{stepperLabel}</span>
-               <div onClick={e => e.stopPropagation()} className="cursor-default">
+               <div 
+                 onPointerDown={e => e.stopPropagation()} 
+                 onClick={e => e.stopPropagation()} 
+                 className="cursor-default"
+               >
                  <Stepper initialValue={stepperValue} min={stepperMin} max={stepperMax} onChange={onStepperChange} />
                </div>
             </div>
