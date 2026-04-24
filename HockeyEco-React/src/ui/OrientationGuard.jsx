@@ -1,26 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 
 export function OrientationGuard({ children }) {
   const [isBlocked, setIsBlocked] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
+    // Исключение для страницы авторизации — разрешаем вертикальный режим!
+    if (location.pathname === '/login') {
+      setIsBlocked(false);
+      return;
+    }
+
     const checkOrientation = () => {
-      // 1. Проверяем, что это мобильное устройство или планшет (ширина меньше 850px)
-      // Берем screen.width для надежности на телефонах
+      // 1. Проверяем, что это мобильное устройство или планшет
       const isMobile = window.innerWidth <= 850 || window.screen.width <= 850; 
-      
-      // 2. Используем нативный медиа-запрос браузера для 100% точного определения портрета
+      // 2. Используем нативный медиа-запрос браузера
       const isPortrait = window.matchMedia("(orientation: portrait)").matches;
-      
-      // Выводим в консоль для отладки
-      console.log(`[Guard] Ширина: ${window.innerWidth}, Мобилка: ${isMobile}, Портрет: ${isPortrait}`);
       
       setIsBlocked(isMobile && isPortrait);
     };
 
     checkOrientation();
     
-    // Слушаем изменение размера окна (поворот экрана на телефоне)
+    // Слушаем изменение размера окна и повороты устройства
     window.addEventListener('resize', checkOrientation);
     window.addEventListener('orientationchange', checkOrientation);
     
@@ -28,20 +31,19 @@ export function OrientationGuard({ children }) {
       window.removeEventListener('resize', checkOrientation);
       window.removeEventListener('orientationchange', checkOrientation);
     };
-  }, []);
+  }, [location.pathname]); // Перезапускаем проверку при смене адреса
 
   return (
     <>
       {children}
       
-      {/* Заглушка. style={{ zIndex }} используем напрямую, чтобы Tailwind точно не обрезал его */}
+      {/* Заглушка */}
       {isBlocked && (
         <div 
           style={{ zIndex: 9999999 }}
           className="fixed inset-0 w-full h-full bg-graphite flex flex-col items-center justify-center p-6 text-center text-white backdrop-blur-xl touch-none"
         >
           <div className="mb-8 relative flex items-center justify-center w-80 h-80 rounded-full bg-white/5 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.3)]">
-            
             <svg 
               className="w-56 h-56 text-orange animate-rotate-phone origin-center drop-shadow-lg" 
               fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -49,7 +51,6 @@ export function OrientationGuard({ children }) {
               <rect x="5" y="2" width="14" height="20" rx="3" ry="3" strokeWidth="2"/>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01 M12 5h.01"/>
             </svg>
-
           </div>
           
           <h2 className="text-[60px] font-black uppercase tracking-widest mb-4">
