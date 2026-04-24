@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    basicSsl(),
     VitePWA({
       // Стратегия обновления: автоматическое применение новых файлов после скачивания
       registerType: 'autoUpdate',
@@ -25,7 +27,7 @@ export default defineConfig({
         description: 'Система управления лигой HockeyEco',
         theme_color: '#ffffff',
         background_color: '#e0e0e0',
-        display: 'standalone', // Это убирает навигацию браузера
+        display: 'fullscreen', // Это убирает навигацию браузера
         orientation: 'any',    // Разрешаем поворот экрана
         icons: [
           {
