@@ -21,7 +21,6 @@ export function LoginPage({ onLoginSuccess }) {
   const [isStandalone, setIsStandalone] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Новое состояние: блокируем анимации до полной настройки экрана
   const [isReady, setIsReady] = useState(false);
 
   const [isChrome, setIsChrome] = useState(false);
@@ -31,9 +30,6 @@ export function LoginPage({ onLoginSuccess }) {
   const SERVER_URL = import.meta.env.VITE_API_URL;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  // ==========================================
-  // МАГИЯ ДИНАМИЧЕСКОГО VIEWPORT С ЗАЩИТОЙ ОТ АНИМАЦИЙ
-  // ==========================================
   useEffect(() => {
     const viewportMeta = document.querySelector('meta[name="viewport"]');
     let originalContent = '';
@@ -43,8 +39,6 @@ export function LoginPage({ onLoginSuccess }) {
       viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
     }
 
-    // Даем браузеру 100мс на то, чтобы применить новый масштаб, 
-    // прежде чем разрешим CSS-анимации
     const readyTimer = setTimeout(() => setIsReady(true), 100);
 
     return () => {
@@ -188,7 +182,7 @@ export function LoginPage({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen flex items-start sm:items-center justify-center relative p-4 pt-10 sm:pt-4 font-sans overflow-hidden">
+    <div className="min-h-[100dvh] flex items-start sm:items-center justify-center relative p-4 pt-10 pb-28 sm:pt-4 sm:pb-4 font-sans overflow-x-hidden overflow-y-auto">
       
       {/* Фоновые градиенты */}
       <div className="fixed inset-0 z-[-1] bg-[#e0e0e0ff]">
@@ -196,7 +190,7 @@ export function LoginPage({ onLoginSuccess }) {
         <div className="absolute bottom-[-10%] left-[-10%] w-[700px] h-[700px] rounded-full bg-graphite-dark/20 blur-[150px] pointer-events-none"></div>
       </div>
 
-      {/* Единый контейнер карточки (Включаем анимацию только когда isReady) */}
+      {/* Единый контейнер карточки */}
       <div className={`relative flex flex-col sm:flex-row items-stretch bg-white/60 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-2xl shadow-black/5 z-20 ${isReady ? 'transition-all duration-500 ease-in-out' : ''}`}>
         
         {/* ЛЕВАЯ ЧАСТЬ: Основная форма авторизации */}
@@ -310,11 +304,11 @@ export function LoginPage({ onLoginSuccess }) {
         <div 
           className={`overflow-hidden relative z-10 ${isReady ? 'transition-all duration-500 ease-in-out' : ''} ${
             isMenuOpen 
-              ? 'h-[400px] sm:h-auto w-full sm:w-[320px] opacity-100 border-t sm:border-t-0 sm:border-l border-graphite/10' 
-              : 'h-0 sm:h-auto w-full sm:w-0 opacity-0 border-none'
+              ? 'max-h-[500px] sm:max-h-none w-full sm:w-[320px] opacity-100 sm:border-t-0 sm:border-l border-graphite/10' 
+              : 'max-h-0 sm:max-h-none w-full sm:w-0 opacity-0 border-none'
           }`}
         >
-          <div className="w-[calc(100vw-32px)] sm:w-[320px] p-6 sm:p-8 sm:pl-0 h-full flex flex-col overflow-y-auto custom-scrollbar">
+          <div className="w-[calc(100vw-32px)] sm:w-[320px] p-6 sm:p-8 sm:pl-0 h-full flex flex-col">
             
             <div className="h-full pt-6 sm:pt-0 sm:pl-8 flex flex-col text-graphite/50">
               
@@ -400,7 +394,7 @@ export function LoginPage({ onLoginSuccess }) {
                         </div>
                       )}
                       <div className="hidden sm:block text-[10px] leading-relaxed text-graphite/50 bg-white/30 p-2.5 rounded-lg border border-graphite/5">
-                        Для ПК: Нажмите <span className="bg-graphite text-white px-1.5 py-0.5 rounded-md">Ctrl + F5</span>
+                        Для ПК: Нажмите  —  <span className="bg-graphite/70 text-white px-1.5 py-0.5 rounded-md">Ctrl + F5</span> / <span className="bg-graphite/70 text-white px-1.5 py-0.5 rounded-md">⌥ + ⌘ + R</span>
                       </div>
                     </div>
                   </section>
