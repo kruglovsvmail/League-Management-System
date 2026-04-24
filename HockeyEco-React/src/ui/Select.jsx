@@ -16,6 +16,20 @@ export function Select({
   const [searchTerm, setSearchTerm] = useState('');
   const selectRef = useRef(null);
   const [coords, setCoords] = useState({ left: 0, top: 0, width: 0 });
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Определяем, является ли устройство мобильным или сенсорным
+  useEffect(() => {
+    const checkMobile = () => {
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const hasMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      return hasTouch || hasMobileUA;
+    };
+    setIsMobile(checkMobile());
+  }, []);
+
+  // Итоговый флаг: поиск включен только если это запрошено пропсами И мы не на мобилке
+  const effectiveIsSearchable = isSearchable && !isMobile;
 
   const normalizedOptions = options.map(opt => 
     typeof opt === 'object' && opt !== null ? opt : { value: opt, label: opt, disabled: false }
@@ -24,7 +38,7 @@ export function Select({
   const selectedOption = normalizedOptions.find(opt => String(opt.value) === String(value));
   const displayValue = selectedOption ? selectedOption.label : '';
 
-  const filteredOptions = isSearchable && searchTerm
+  const filteredOptions = effectiveIsSearchable && searchTerm
     ? normalizedOptions.filter(opt => String(opt.label).toLowerCase().includes(searchTerm.toLowerCase()))
     : normalizedOptions;
 
@@ -85,7 +99,7 @@ export function Select({
       
       <div className="relative" ref={selectRef}>
         
-        {isSearchable ? (
+        {effectiveIsSearchable ? (
           <div className="relative w-full h-full">
              <input
                 className={`${sizeClass} w-full rounded-md border flex items-center transition-all duration-300 outline-none text-[13px] font-semibold text-graphite placeholder:font-medium placeholder-graphite/40 ${
@@ -127,7 +141,7 @@ export function Select({
             className={`portal-dropdown absolute bg-white/50 backdrop-blur-[14px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-zoom-in overflow-y-auto max-h-[320px] ${scrollbarStyles}`}
             style={{ top: `${coords.top}px`, left: `${coords.left}px`, width: `${Math.max(coords.width, 100)}px` }}
           >
-            {isSearchable && (
+            {effectiveIsSearchable && (
               <div className="px-3 py-2 hover:bg-graphite/5 cursor-pointer text-graphite/40 text-xs text-left transition-colors" onClick={() => handleSelect('', { value: '', label: '—' })}>—</div>
             )}
             

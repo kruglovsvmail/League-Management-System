@@ -43,6 +43,12 @@ export default {
         shimmer: {
           '0%': { backgroundPosition: '200% 0' },
           '100%': { backgroundPosition: '-200% 0' },
+        },
+        // НОВЫЙ KEYFRAME ДЛЯ ВРАЩЕНИЯ ТЕЛЕФОНА
+        'rotate-phone': {
+          '0%, 15%': { transform: 'rotate(0deg)' },
+          '35%, 65%': { transform: 'rotate(-90deg)' }, // Повернули и держим
+          '85%, 100%': { transform: 'rotate(0deg)' }, // Вернули обратно
         }
       },
       animation: {
@@ -50,6 +56,8 @@ export default {
         'slide-in': 'slide-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards',
         'slide-out': 'slide-out 0.3s forwards',
         shimmer: 'shimmer 1.5s infinite linear',
+        // НОВАЯ АНИМАЦИЯ
+        'rotate-phone': 'rotate-phone 3s cubic-bezier(0.4, 0, 0.2, 1) infinite',
       }
     },
   },

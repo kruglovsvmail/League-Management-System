@@ -24,6 +24,7 @@ import { PlayoffConstructor } from './components/Settings/PlayoffConstructor';
 import { AdminLayout } from './AdminLayout';
 import { Loader } from './ui/Loader';
 import { PERMISSIONS, ROLES } from './utils/permissions';
+import { OrientationGuard } from './ui/OrientationGuard';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -128,7 +129,7 @@ export default function App() {
   };
 
   return (
-    <>
+    <OrientationGuard>
       {showGlobalLoader && (
         <div className={`fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-500 ease-in-out ${isInitializing ? 'opacity-100' : 'opacity-0'}`}>
           <Loader text="Запуск HockeyEco Pro..." />
@@ -191,6 +192,6 @@ export default function App() {
           </Route>
         </Routes>
       )}
-    </>
+    </OrientationGuard>
   );
 }

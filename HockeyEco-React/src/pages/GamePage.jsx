@@ -671,7 +671,7 @@ export function GamePage() {
             {canManageGraphics && (
               <div className="flex flex-col gap-3 bg-white/0 p-2 py-6">
                 <button 
-                  onClick={() => window.open(`/games/${gameId}/graphics-panel`, '_blank')}
+                  onClick={() => navigate(`/games/${gameId}/graphics-panel`)}
                   className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
                 >
                   Панель трансляции
