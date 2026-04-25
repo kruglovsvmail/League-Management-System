@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader } from '../../ui/Loader';
 import { getToken, getImageUrl } from '../../utils/helpers';
+import { useAccess } from '../../hooks/useAccess';
 
 const formatNextGameDate = (dateString) => {
   if (!dateString) return 'Дата не назначена';
@@ -37,13 +38,18 @@ const formatWinsNeeded = (wins, capitalize = false) => {
 };
 
 export function DivisionPlayoffs({ divisionId }) {
+  const { checkAccess } = useAccess();
+  // Права на управление распределением
+  const canManagePlayoff = checkAccess('PLAYOFF_DISTRIBUTE') || checkAccess('SETTINGS_PLAYOFF_CONSTRUCTOR');
+
   const [brackets, setBrackets] = useState([]);
   const [games, setGames] = useState([]);
+  const [allTeams, setAllTeams] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
+  const fetchPlayoffs = () => {
     if (!divisionId) return;
-
     setIsLoading(true);
     fetch(`${import.meta.env.VITE_API_URL}/api/divisions/${divisionId}/playoff`, {
       headers: { 'Authorization': `Bearer ${getToken()}` }
@@ -53,11 +59,60 @@ export function DivisionPlayoffs({ divisionId }) {
       if (data.success) {
         setBrackets(data.brackets || []);
         setGames(data.games || []);
+        setAllTeams(data.allTeams || []);
       }
     })
     .catch(err => console.error('Ошибка загрузки плей-офф:', err))
     .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchPlayoffs();
   }, [divisionId]);
+
+  const handleDistribute = async () => {
+    setIsProcessing(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/divisions/${divisionId}/playoff/distribute`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      if (res.ok) fetchPlayoffs();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setIsProcessing(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/divisions/${divisionId}/playoff/reset`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      if (res.ok) fetchPlayoffs();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleManualSelect = async (matchupId, field, teamId) => {
+    try {
+      const payload = { [field]: teamId || null };
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/divisions/${divisionId}/playoff/${matchupId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) fetchPlayoffs();
+    } catch (err) {
+      console.error('Ошибка ручного выбора:', err);
+    }
+  };
 
   const getMatchupStats = (matchup) => {
     if (!matchup.team1_id || !matchup.team2_id) return { finishedGames: [], nextGame: null };
@@ -73,36 +128,89 @@ export function DivisionPlayoffs({ divisionId }) {
     return { finishedGames, nextGame };
   };
 
-  const renderTeamBox = (name, logo, wins, isWinner, isTbd) => (
-    <div className={`flex items-center justify-between border rounded-md transition-colors p-2 ${
-      isWinner 
-        ? 'bg-white shadow-[0_0_0_1px_rgba(255,122,0,0.3)]' 
-        : 'bg-white/60 border-graphite/10'
-    }`}>
-      <div className="flex items-center overflow-hidden gap-2">
-        {isTbd ? (
-           <div className="bg-graphite/5 rounded-full shrink-0 w-5 h-5 flex items-center justify-center text-[10px] text-graphite/40 font-bold">?</div>
-        ) : logo ? (
-           <img src={getImageUrl(logo)} className="object-contain shrink-0 w-5 h-5" alt="logo" />
-        ) : (
-           <div className="bg-graphite/10 rounded-full shrink-0 w-5 h-5" />
+  const renderTeamBox = (matchup, teamIndex) => {
+    const isTeam1 = teamIndex === 1;
+    const teamId = isTeam1 ? matchup.team1_id : matchup.team2_id;
+    const wins = isTeam1 ? matchup.team1_wins : matchup.team2_wins;
+    const isWinner = matchup.winner_id && matchup.winner_id === teamId;
+    const isTbd = !teamId;
+    const name = isTeam1 ? (matchup.team1_name || matchup.team1_short) : (matchup.team2_name || matchup.team2_short);
+    const logo = isTeam1 ? matchup.team1_logo : matchup.team2_logo;
+    const sourceType = isTeam1 ? matchup.team1_source_type : matchup.team2_source_type;
+
+    return (
+      <div className={`flex items-center justify-between border rounded-md transition-colors p-2 ${
+        isWinner 
+          ? 'bg-white shadow-[0_0_0_1px_rgba(255,122,0,0.3)]' 
+          : 'bg-white/60 border-graphite/10'
+      }`}>
+        <div className="flex items-center overflow-hidden gap-2 w-full">
+          {isTbd ? (
+             <div className="bg-graphite/5 rounded-full shrink-0 w-5 h-5 flex items-center justify-center text-[10px] text-graphite/40 font-bold">?</div>
+          ) : logo ? (
+             <img src={getImageUrl(logo)} className="object-contain shrink-0 w-5 h-5" alt="logo" />
+          ) : (
+             <div className="bg-graphite/10 rounded-full shrink-0 w-5 h-5" />
+          )}
+          
+          {isTbd && sourceType === 'manual' && canManagePlayoff ? (
+             <select 
+               className="text-[12px] bg-transparent outline-none w-full text-graphite font-bold cursor-pointer"
+               onChange={(e) => handleManualSelect(matchup.id, isTeam1 ? 'team1_id' : 'team2_id', e.target.value)}
+             >
+                <option value="">Выберите...</option>
+                {allTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+             </select>
+          ) : (
+             <span className={`font-bold truncate text-[13px] ${isWinner ? 'text-orange' : isTbd ? 'text-graphite/40' : 'text-graphite/90'}`}>
+                {isTbd ? 'Ожидается' : (name || 'Неизвестно')}
+             </span>
+          )}
+        </div>
+        {!isTbd && (
+          <span className={`font-black text-center shrink-0 w-5 text-[13px] ${isWinner ? 'text-orange' : 'text-graphite-light'}`}>
+            {wins || 0}
+          </span>
         )}
-        <span className={`font-bold truncate text-[13px] ${isWinner ? 'text-orange' : isTbd ? 'text-graphite/40' : 'text-graphite/90'}`}>
-          {isTbd ? 'Ожидается' : (name || 'Неизвестно')}
-        </span>
       </div>
-      <span className={`font-black text-center shrink-0 w-5 text-[13px] ${isWinner ? 'text-orange' : 'text-graphite-light'}`}>
-        {!isTbd ? (wins || 0) : '-'}
-      </span>
-    </div>
+    );
+  };
+
+  // Проверяем, есть ли хотя бы один заполненный слот (чтобы показать кнопку сброса)
+  const isDistributed = brackets.some(b => 
+    b.rounds.some(r => 
+        r.matchups.some(m => m.team1_id !== null || m.team2_id !== null)
+    )
   );
 
   return (
     <div className="w-full flex flex-col">
-      <div className="mb-6 flex items-center min-h-[38px]">
+      <div className="mb-6 flex items-center justify-between min-h-[38px]">
         <h3 className="text-[18px] font-black text-graphite leading-tight tracking-tight">
           Сетки Плей-офф
         </h3>
+        
+        {canManagePlayoff && brackets.length > 0 && (
+           <div className="flex items-center">
+              {isDistributed ? (
+                 <button 
+                   onClick={handleReset} 
+                   disabled={isProcessing}
+                   className="px-4 py-2 bg-status-rejected/10 text-status-rejected rounded-lg text-sm font-bold hover:bg-status-rejected hover:text-white transition-colors disabled:opacity-50"
+                 >
+                   {isProcessing ? 'Обработка...' : 'Сбросить плей-офф'}
+                 </button>
+              ) : (
+                 <button 
+                   onClick={handleDistribute} 
+                   disabled={isProcessing}
+                   className="px-4 py-2 bg-orange/10 text-orange rounded-lg text-sm font-bold hover:bg-orange hover:text-white transition-colors disabled:opacity-50"
+                 >
+                   {isProcessing ? 'Распределяем...' : 'Распределить команды'}
+                 </button>
+              )}
+           </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -120,7 +228,6 @@ export function DivisionPlayoffs({ divisionId }) {
           {brackets.map((bracket, bIdx) => (
             <div key={bracket.id} className="flex flex-col relative w-full">
               
-              {/* Заголовок Сетки */}
               <div className="flex items-center gap-3 mb-6">
                 <h4 className="text-[16px] font-bold text-graphite">
                   {bracket.name}
@@ -132,7 +239,6 @@ export function DivisionPlayoffs({ divisionId }) {
                 )}
               </div>
 
-              {/* Холст раундов */}
               <div className="overflow-x-auto pb-6 custom-scrollbar w-full">
                 <div className="flex gap-10 min-w-max">
                   {bracket.rounds?.map((round, rIdx) => {
@@ -141,7 +247,6 @@ export function DivisionPlayoffs({ divisionId }) {
                     return (
                       <div key={round.id} className="flex flex-col gap-6 w-[260px]">
                         
-                        {/* Заголовок раунда */}
                         <div className="text-[12px] font-black uppercase text-graphite-light text-center border-b border-graphite/10 pb-2">
                           {round.name} 
                           <span className="block text-[10px] font-medium text-graphite/40 mt-0.5 normal-case">
@@ -149,18 +254,10 @@ export function DivisionPlayoffs({ divisionId }) {
                           </span>
                         </div>
 
-                        {/* Серии (Матчапы) */}
                         <div className="flex flex-col justify-around h-full flex-1 gap-6">
                           {round.matchups?.map(matchup => {
                             const stats = getMatchupStats(matchup);
                             const hasTooltipData = stats.finishedGames.length > 0 || stats.nextGame;
-                            
-                            const isTeam1Winner = matchup.winner_id && matchup.winner_id === matchup.team1_id;
-                            const isTeam2Winner = matchup.winner_id && matchup.winner_id === matchup.team2_id;
-                            
-                            const isTeam1Tbd = !matchup.team1_id;
-                            const isTeam2Tbd = !matchup.team2_id;
-
                             const matchType = matchup.ui_metadata?.match_type || 'regular';
                             const badge = getMatchBadge(matchType);
 
@@ -170,7 +267,6 @@ export function DivisionPlayoffs({ divisionId }) {
 
                             return (
                               <div key={matchup.id} className="relative group flex items-center">
-                                {/* Карточка матчапа */}
                                 <div className="flex flex-col gap-1 bg-graphite/[0.03] p-1.5 rounded-lg border border-transparent group-hover:border-graphite/20 transition-all w-full relative z-20">
                                   {badge && (
                                     <div className="flex justify-center pb-1">
@@ -179,11 +275,10 @@ export function DivisionPlayoffs({ divisionId }) {
                                         </span>
                                     </div>
                                   )}
-                                  {renderTeamBox(matchup.team1_name || matchup.team1_short, matchup.team1_logo, matchup.team1_wins, isTeam1Winner, isTeam1Tbd)}
-                                  {renderTeamBox(matchup.team2_name || matchup.team2_short, matchup.team2_logo, matchup.team2_wins, isTeam2Winner, isTeam2Tbd)}
+                                  {renderTeamBox(matchup, 1)}
+                                  {renderTeamBox(matchup, 2)}
                                 </div>
 
-                                {/* Тултип с матчами серии */}
                                 {hasTooltipData && (
                                   <div className={`absolute top-1/2 -translate-y-1/2 ${tooltipPosClass} w-[280px] bg-white border border-graphite/20 shadow-[0_15px_40px_rgba(0,0,0,0.15)] rounded-xl p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] pointer-events-none before:content-[''] before:absolute before:top-1/2 before:-translate-y-1/2 before:border-[6px] before:border-transparent`}>
                                     

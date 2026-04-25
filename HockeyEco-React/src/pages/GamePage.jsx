@@ -101,15 +101,11 @@ export function GamePage() {
       .map(([role, off]) => ({ user_id: off.id, role }));
   }, [game]);
 
-  // ==========================================================================
-  // ПРОВЕРКИ ПРАВ ДОСТУПА (С УЧЕТОМ ВРЕМЕНИ И ПОДПИСЕЙ СЕКРЕТАРЯ)
-  // ==========================================================================
   const matchEditAccess = game ? checkMatchEditAccess(game, gameStaffArray) : { hasAccess: false };
 
   const canView = checkAccess('MATCH_PAGE_VIEW', { gameStaff: gameStaffArray });
   const canEditGameInfo = checkAccess('MATCH_EDIT_INFO');
   
-  // Статус и Составы могут менять только те, у кого есть базовая роль И открыт доступ (не заблокировано подписью/временем)
   const baseCanManageStatus = checkAccess('MATCH_STATUS_CHANGE', { gameStaff: gameStaffArray });
   const canManageStatus = baseCanManageStatus && matchEditAccess.hasAccess;
   
@@ -119,9 +115,6 @@ export function GamePage() {
   const canManageOfficials = checkAccess('MATCH_ASSIGN_STAFF');
   const canManageGraphics = checkAccess('MATCH_WEB_GRAPHICS_PANEL', { gameStaff: gameStaffArray });
 
-  // Логика кнопки Панели Секретаря:
-  // Если права есть, мы рендерим кнопку.
-  // Разрешаем вход (canEnterLiveDesk), если доступ открыт (matchEditAccess.hasAccess) ИЛИ протокол уже подписан (входим в режиме чтения)
   const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
   const canEnterLiveDesk = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
 
@@ -363,10 +356,6 @@ export function GamePage() {
         parts.push({ text: `${h}:${a}` });
     }
 
-    if (scores['OT'] && (scores['OT'].home > 0 || scores['OT'].away > 0)) {
-        parts.push({ text: `${scores['OT'].home}:${scores['OT'].away}`, label: 'ОТ' });
-    }
-
     if (parts.length === 0) return null;
 
     return (
@@ -376,7 +365,6 @@ export function GamePage() {
             {parts.map((part, index) => (
                 <React.Fragment key={index}>
                     <span className="flex items-center gap-1.5 text-[14px] font-bold text-graphite/80 tracking-widest leading-none">
-                        {part.label && <span className="text-[11px] font-black text-graphite/40 tracking-normal uppercase">{part.label}</span>}
                         {part.text}
                     </span>
                     <div className="w-[1px] h-3 bg-graphite/20 rounded-full"></div>
@@ -386,8 +374,13 @@ export function GamePage() {
     );
   };
 
-  const isHomeSO = game?.status === 'finished' && game?.end_type === 'so' && game?.home_score > game?.away_score;
-  const isAwaySO = game?.status === 'finished' && game?.end_type === 'so' && game?.away_score > game?.home_score;
+  const homeExtra = game?.status === 'finished' && game?.home_score > game?.away_score 
+      ? (game?.end_type === 'so' ? 'Б' : game?.end_type === 'ot' ? 'ОТ' : null) 
+      : null;
+      
+  const awayExtra = game?.status === 'finished' && game?.away_score > game?.home_score 
+      ? (game?.end_type === 'so' ? 'Б' : game?.end_type === 'ot' ? 'ОТ' : null) 
+      : null;
 
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
@@ -418,7 +411,7 @@ export function GamePage() {
                 {/* Хозяева */}
                 <div className="flex-1 flex items-center justify-end gap-5">
                   <span className="text-[18px] md:text-[22px] font-black text-graphite text-right leading-tight">{game.home_team_name}</span>
-                  <img src={getImageUrl(game.home_team_logo || '/default/Logo_team_default.webp')} className="w-16 h-16 md:w-20 md:h-20 object-contain drop-shadow-sm" alt="Home" />
+                  <img src={getImageUrl(game.home_team_logo || '/default/Logo_team_default.webp')} className="w-16 h-16 md:w-28 md:h-28 mr-16 object-contain drop-shadow-sm" alt="Home" />
                 </div>
 
                 {/* Центральный блок Счета */}
@@ -443,13 +436,13 @@ export function GamePage() {
                   ) : (
                     <>
                       <div className="relative inline-flex items-center justify-center gap-3 text-[40px] md:text-[52px] font-black tracking-tighter leading-none text-graphite">
-                        {isHomeSO && <span className="absolute right-full mt-2 mr-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                        {homeExtra && <span className="absolute right-full mt-2 mr-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">{homeExtra}</span>}
                         
                         <span className="w-12 md:w-16 text-right">{game.status === 'scheduled' ? '-' : game.home_score}</span>
                         <span className="text-graphite/20 pb-2 md:pb-3">:</span>
                         <span className="w-12 md:w-16 text-left">{game.status === 'scheduled' ? '-' : game.away_score}</span>
                         
-                        {isAwaySO && <span className="absolute left-full mt-2 ml-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                        {awayExtra && <span className="absolute left-full mt-2 ml-0 text-[20px] md:text-[24px] text-orange top-1/2 -translate-y-1/2">{awayExtra}</span>}
                       </div>
                       {getPeriodScoresString()}
                     </>
@@ -458,7 +451,7 @@ export function GamePage() {
 
                 {/* Гости */}
                 <div className="flex-1 flex items-center justify-start gap-5">
-                  <img src={getImageUrl(game.away_team_logo || '/default/Logo_team_default.webp')} className="w-16 h-16 md:w-20 md:h-20 object-contain drop-shadow-sm" alt="Away" />
+                  <img src={getImageUrl(game.away_team_logo || '/default/Logo_team_default.webp')} className="w-16 h-16 md:w-28 md:h-28 ml-16 object-contain drop-shadow-sm" alt="Away" />
                   <span className="text-[18px] md:text-[22px] font-black text-graphite text-left leading-tight">{game.away_team_name}</span>
                 </div>
               </div>

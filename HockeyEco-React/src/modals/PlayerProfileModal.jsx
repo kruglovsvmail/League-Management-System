@@ -202,15 +202,38 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
         }
 
         return (
-          <span className={`font-black px-2.5 py-1 rounded-md shadow-sm ${techColorClass}`} title="Технический результат">
-            {playerTechResult} : {opponentTechResult}
+          <span className={`inline-flex items-center justify-center font-black py-1 rounded-md shadow-sm w-[86px] ${techColorClass}`} title="Технический результат">
+            <span className="grid grid-cols-[1fr_auto_1fr] w-full items-center gap-1.5 px-2">
+              <span className="text-right">{playerTechResult}</span>
+              <span className="opacity-50">:</span>
+              <span className="text-left">{opponentTechResult}</span>
+            </span>
           </span>
         );
       }
 
+      const extra = r.end_type === 'so' ? 'Б' : r.end_type === 'ot' ? 'ОТ' : null;
+      const playerWon = playerScore > opponentScore;
+
+      // ИСПОЛЬЗУЕМ GRID ДЛЯ ИДЕАЛЬНОЙ ЦЕНТРОВКИ ДВОЕТОЧИЯ
       return (
-        <span className={`font-black px-2.5 py-1 rounded-md shadow-sm ${scoreColorClass}`}>
-          {playerScore} : {opponentScore}
+        <span className={`inline-flex items-center justify-center font-black py-1 rounded-md shadow-sm w-[86px] ${scoreColorClass}`}>
+          <span className="grid grid-cols-[1fr_auto_1fr] w-full items-center gap-1.5 px-1.5">
+            {/* Левая часть (Счет игрока + возможный индикатор ОТ/Б слева) */}
+            <span className="flex items-center justify-end gap-1">
+              {playerWon && extra && <span className="text-[10px] opacity-80 leading-none font-black">{extra}</span>}
+              <span>{playerScore}</span>
+            </span>
+            
+            {/* Центр (Двоеточие, всегда жестко по центру) */}
+            <span className="opacity-50 flex items-center justify-center">:</span>
+            
+            {/* Правая часть (Счет соперника + возможный индикатор ОТ/Б справа) */}
+            <span className="flex items-center justify-start gap-1">
+              <span>{opponentScore}</span>
+              {!playerWon && extra && <span className="text-[10px] opacity-80 leading-none font-black">{extra}</span>}
+            </span>
+          </span>
         </span>
       );
     }},

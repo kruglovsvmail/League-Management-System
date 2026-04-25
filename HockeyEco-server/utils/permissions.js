@@ -64,6 +64,8 @@ export const PERMISSIONS = {
   SETTINGS_QUAL_CREATE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN], // Создание новых квалификаций
   SETTINGS_QUAL_DELETE: [ROLES.TOP_MANAGER], // Удаление квалификаций
   SETTINGS_PLAYOFF_CONSTRUCTOR: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN], // Доступ к конструктору сетки плей-офф
+  PLAYOFF_DISTRIBUTE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN], // Распределение команд в плей-офф
+  PLAYOFF_RESET: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN], // Сброс сетки плей-офф
 
   // --------------------------------------------------------------------------
   // РАЗДЕЛ: ТРАНСФЕРЫ

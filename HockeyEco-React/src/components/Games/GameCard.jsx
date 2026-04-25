@@ -41,8 +41,16 @@ export function GameCard({
     const canChangeStatus = checkAccess('MATCH_STATUS_CHANGE');
 
     const isFinishedOrLive = ['live', 'finished', 'cancelled'].includes(game.status);
-    const isHomeSO = game.status === 'finished' && game.end_type === 'so' && game.home_score > game.away_score;
-    const isAwaySO = game.status === 'finished' && game.end_type === 'so' && game.away_score > game.home_score;
+    
+    // Универсальные проверки на буллиты или овертайм (Б или ОТ)
+    const homeExtra = game.status === 'finished' && game.home_score > game.away_score 
+        ? (game.end_type === 'so' ? 'Б' : game.end_type === 'ot' ? 'ОТ' : null) 
+        : null;
+        
+    const awayExtra = game.status === 'finished' && game.away_score > game.home_score 
+        ? (game.end_type === 'so' ? 'Б' : game.end_type === 'ot' ? 'ОТ' : null) 
+        : null;
+
     const isRowEditing = isEditMode || editingRowIds.includes(game.id) || game.isTemp;
 
     const arenaOptions = ['Не назначена', ...arenas.map(a => a.name)];
@@ -140,7 +148,6 @@ export function GameCard({
         let awayOptions = [];
 
        if (game.has_protocol && !game.isTemp) {
-            // Добавляем текущее название команды первым пунктом, чтобы Select его отобразил
             homeOptions = [game.home_team_name || 'Хозяева', 'Очистите события и составы'];
             awayOptions = [game.away_team_name || 'Гости', 'Очистите события и составы'];
         } else {
@@ -289,22 +296,20 @@ export function GameCard({
                 <div className={`${colClasses.home} flex justify-end items-center`}>
                     <div className="w-full">
                         <Select 
-    disabled={isFinishedOrLive}
-    options={homeOptions}
-    // Показываем имя команды, если оно есть, иначе — "Хозяева"
-    value={game.home_team_name && game.home_team_name !== 'Не выбрано' ? game.home_team_name : 'Хозяева'}
-    onChange={(val) => {
-        // Если выбран блокирующий пункт — ничего не делаем
-        if (val.includes('Очистите')) return;
-        
-        if (val === 'Хозяева' || val === 'Не выбрано') {
-            handleFieldChange('home_team_id', null);
-        } else {
-            const t = approvedTeams.find(team => team.name === val);
-            handleFieldChange('home_team_id', t ? t.team_id : null);
-        }
-    }}
-/>
+                            disabled={isFinishedOrLive}
+                            options={homeOptions}
+                            value={game.home_team_name && game.home_team_name !== 'Не выбрано' ? game.home_team_name : 'Хозяева'}
+                            onChange={(val) => {
+                                if (val.includes('Очистите')) return;
+                                
+                                if (val === 'Хозяева' || val === 'Не выбрано') {
+                                    handleFieldChange('home_team_id', null);
+                                } else {
+                                    const t = approvedTeams.find(team => team.name === val);
+                                    handleFieldChange('home_team_id', t ? t.team_id : null);
+                                }
+                            }}
+                        />
                     </div>
                 </div>
 
@@ -323,11 +328,11 @@ export function GameCard({
                                 </div>
                             ) : (
                                 <>
-                                    {isHomeSO && <span className="absolute right-full mr-1 text-[11px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                                    {homeExtra && <span className="absolute right-full mr-1 text-[11px] text-orange top-1/2 -translate-y-1/2">{homeExtra}</span>}
                                     <span className="w-5 flex justify-end">{game.home_score || 0}</span>
                                     <span className="text-graphite/40 mx-1.5 relative -top-[1px]">:</span>
                                     <span className="w-5 flex justify-start">{game.away_score || 0}</span>
-                                    {isAwaySO && <span className="absolute left-full ml-1 text-[11px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                                    {awayExtra && <span className="absolute left-full ml-1 text-[11px] text-orange top-1/2 -translate-y-1/2">{awayExtra}</span>}
                                 </>
                             )}
                         </div>
@@ -339,22 +344,20 @@ export function GameCard({
                 <div className={`${colClasses.away} flex justify-start items-center`}>
                     <div className="w-full">
                         <Select 
-    disabled={isFinishedOrLive}
-    options={awayOptions}
-    // Показываем имя команды, если оно есть, иначе — "Гости"
-    value={game.away_team_name && game.away_team_name !== 'Не выбрано' ? game.away_team_name : 'Гости'}
-    onChange={(val) => {
-        // Если выбран блокирующий пункт — ничего не делаем
-        if (val.includes('Очистите')) return;
+                            disabled={isFinishedOrLive}
+                            options={awayOptions}
+                            value={game.away_team_name && game.away_team_name !== 'Не выбрано' ? game.away_team_name : 'Гости'}
+                            onChange={(val) => {
+                                if (val.includes('Очистите')) return;
 
-        if (val === 'Гости' || val === 'Не выбрано') {
-            handleFieldChange('away_team_id', null);
-        } else {
-            const t = approvedTeams.find(team => team.name === val);
-            handleFieldChange('away_team_id', t ? t.team_id : null);
-        }
-    }}
-/>
+                                if (val === 'Гости' || val === 'Не выбрано') {
+                                    handleFieldChange('away_team_id', null);
+                                } else {
+                                    const t = approvedTeams.find(team => team.name === val);
+                                    handleFieldChange('away_team_id', t ? t.team_id : null);
+                                }
+                            }}
+                        />
                     </div>
                 </div>
 
@@ -413,18 +416,15 @@ export function GameCard({
         'bg-graphite/5 text-graphite/40';
 
     return (
-        <div 
+        <a 
+            href={`/games/${game.id}`}
             onClick={(e) => {
-                if (e.ctrlKey || e.metaKey) window.open(`/games/${game.id}`, '_blank');
-                else navigate(`/games/${game.id}`);
-            }}
-            onMouseDown={(e) => {
-                if (e.button === 1) {
+                if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                     e.preventDefault();
-                    window.open(`/games/${game.id}`, '_blank');
+                    navigate(`/games/${game.id}`);
                 }
             }}
-            className="flex items-center gap-4 px-6 h-[110px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl hover:shadow-lg transition-all duration-200 group relative cursor-pointer animate-zoom-in"
+            className="flex items-center gap-4 px-6 h-[110px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl hover:shadow-lg transition-all duration-200 group relative cursor-pointer animate-zoom-in block"
         >
             <div className={`${colClasses.number} shrink-0 flex flex-col items-center justify-center`}>
                 <span className="text-[15px] font-black text-graphite/40">{game.game_number || '-'}</span>
@@ -479,11 +479,11 @@ export function GameCard({
                     </div>
                 ) : (
                     <div className={`relative inline-flex items-center justify-center text-[22px] font-black tracking-tighter ${game.status === 'live' ? 'text-blue-500' : 'text-graphite'}`}>
-                        {isHomeSO && <span className="absolute right-full mr-1 text-[12px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                        {homeExtra && <span className="absolute right-full mr-1 text-[12px] text-orange top-1/2 -translate-y-1/2">{homeExtra}</span>}
                         <span className="w-6 flex justify-end">{game.home_score || 0}</span>
                         <span className="text-graphite/30 mx-2 relative -top-[2px]">:</span>
                         <span className="w-6 flex justify-start">{game.away_score || 0}</span>
-                        {isAwaySO && <span className="absolute left-full ml-1 text-[12px] text-orange top-1/2 -translate-y-1/2">Б</span>}
+                        {awayExtra && <span className="absolute left-full ml-1 text-[12px] text-orange top-1/2 -translate-y-1/2">{awayExtra}</span>}
                     </div>
                 )}
             </div>
@@ -519,19 +519,21 @@ export function GameCard({
                 </div>
 
                 {canEdit && game.status === 'scheduled' && (
-                    <button
+                    <div
+                        role="button"
                         onClick={(e) => {
+                            e.preventDefault(); 
                             e.stopPropagation(); 
                             setEditingRowIds(prev => [...prev, game.id]);
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="absolute inset-0 m-auto w-10 h-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-sm rounded-lg text-graphite/50 hover:text-orange hover:shadow-sm"
+                        className="absolute inset-0 m-auto w-10 h-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-sm rounded-lg text-graphite/50 hover:text-orange hover:shadow-sm cursor-pointer"
                         title="Быстрое редактирование"
                     >
                         <Icon name="edit" className="w-[18px] h-[18px]" />
-                    </button>
+                    </div>
                 )}
             </div>
-        </div>
+        </a>
     );
 }

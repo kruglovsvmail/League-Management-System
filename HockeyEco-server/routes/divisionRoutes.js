@@ -15,7 +15,9 @@ import {
     getDivisionStandings,
     getPlayoffBracket,
     savePlayoffConstructor,
-    updatePlayoffMatchup
+    updatePlayoffMatchup,
+    distributePlayoffTeams,
+    resetPlayoffGrid
 } from '../controllers/divisionController.js';
 
 const router = express.Router();
@@ -51,5 +53,9 @@ router.post('/divisions/:id/playoff/save-constructor', requirePermission('SETTIN
 
 // Ручная замена команд в сетке
 router.put('/divisions/:id/playoff/:matchupId', requirePermission('SETTINGS_PLAYOFF_CONSTRUCTOR'), updatePlayoffMatchup);
+
+// Маршруты для распределения и сброса сетки Плеф-офф
+router.post('/divisions/:id/playoff/distribute', requirePermission('PLAYOFF_DISTRIBUTE'), distributePlayoffTeams);
+router.post('/divisions/:id/playoff/reset', requirePermission('PLAYOFF_RESET'), resetPlayoffGrid);
 
 export default router;

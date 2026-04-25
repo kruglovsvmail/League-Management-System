@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
+import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 
 const checkOverlap = (appStart, appEnd, trStart, trEnd) => {
     if (!appStart || !appEnd || !trStart || !trEnd) return false;
@@ -100,7 +101,7 @@ export const getDivisions = async (req, res) => {
         `, [seasonId]);
         res.json({ success: true, data: result.rows });
     } catch (err) {
-        console.error('Ошибка получения дивизионов:', err);
+        console.error('Ошибка получения дивизиона:', err);
         res.status(500).json({ success: false, error: 'Ошибка получения дивизионов' });
     }
 };
@@ -207,6 +208,13 @@ export const updateDivision = async (req, res) => {
             await pool.query(`UPDATE divisions SET regulations_url = NULL WHERE id = $1`, [id]);
         }
 
+        try {
+            await recalculateDivisionStandings(id);
+            await recalculatePlayoffs(id);
+        } catch (calcErr) {
+            console.error('Ошибка автоматического пересчета:', calcErr);
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка обновления дивизиона:', err);
@@ -287,33 +295,20 @@ export const getDivisionStandings = async (req, res) => {
         const { id } = req.params;
         const result = await pool.query(`
             SELECT 
-                ds.id,
-                ds.team_id,
-                ds.games_played,
-                ds.wins_reg,
-                ds.wins_ot,
-                ds.draws,
-                ds.losses_ot,
-                ds.losses_reg,
-                ds.goals_for,
-                ds.goals_against,
-                ds.points,
-                ds.rank,
+                ds.id, ds.team_id, ds.games_played, ds.wins_reg, ds.wins_ot, ds.draws,
+                ds.losses_ot, ds.losses_reg, ds.goals_for, ds.goals_against, ds.points, ds.rank,
                 (ds.goals_for - ds.goals_against) as goals_diff,
-                t.name as team_name,
-                t.short_name,
-                t.logo_url
+                t.name as team_name, t.short_name, t.logo_url
             FROM division_standings ds
             JOIN teams t ON ds.team_id = t.id
             JOIN tournament_teams tt ON tt.team_id = t.id AND tt.division_id = ds.division_id
-            WHERE ds.division_id = $1 
-              AND tt.status = 'approved'
+            WHERE ds.division_id = $1 AND tt.status = 'approved'
             ORDER BY ds.rank ASC
         `, [id]);
         
         res.json({ success: true, data: result.rows });
     } catch (err) {
-        console.error('Ошибка получения турнирной таблицы:', err);
+        console.error('Ошибка получения таблицы:', err);
         res.status(500).json({ success: false, error: 'Ошибка получения турнирной таблицы' });
     }
 };
@@ -362,12 +357,7 @@ export const getPlayoffBracket = async (req, res) => {
             ORDER BY series_number ASC, game_date ASC
         `, [id]);
 
-        res.json({ 
-            success: true, 
-            brackets, 
-            allTeams: teamsRes.rows, 
-            games: gamesRes.rows 
-        });
+        res.json({ success: true, brackets, allTeams: teamsRes.rows, games: gamesRes.rows });
     } catch (err) {
         console.error('Ошибка получения сетки плей-офф:', err);
         res.status(500).json({ success: false, error: 'Ошибка получения сетки плей-офф' });
@@ -400,34 +390,26 @@ export const savePlayoffConstructor = async (req, res) => {
                 
                 roundGames.forEach(g => {
                     if (!g.home_team_id || !g.away_team_id) return;
-                    
                     const pairKey = [g.home_team_id, g.away_team_id].sort().join('-');
                     if (!pairGroups[pairKey]) pairGroups[pairKey] = { played: 0, scheduled: [] };
                     
-                    if (g.status === 'live' || g.status === 'finished') {
-                        pairGroups[pairKey].played++;
-                    } else if (g.status === 'scheduled') {
-                        pairGroups[pairKey].scheduled.push(g.id);
-                    }
+                    if (g.status === 'live' || g.status === 'finished') pairGroups[pairKey].played++;
+                    else if (g.status === 'scheduled') pairGroups[pairKey].scheduled.push(g.id);
                 });
 
                 for (const pairKey in pairGroups) {
                     const group = pairGroups[pairKey];
-                    
                     if (group.played > maxGames) {
                         await client.query('ROLLBACK');
                         return res.status(400).json({
                             success: false,
-                            error: `В раунде "${r.name}" уже проведено ${group.played} матчей в рамках одной серии. Сначала удалите сыгранные матчи.`
+                            error: `В раунде "${r.name}" уже проведено ${group.played} матчей в серии. Удалите сыгранные матчи.`
                         });
                     }
-                    
                     const totalActive = group.played + group.scheduled.length;
                     if (totalActive > maxGames) {
                         const excess = totalActive - maxGames;
-                        for (let i = 0; i < excess; i++) {
-                            gamesToCancel.push(group.scheduled[i]);
-                        }
+                        for (let i = 0; i < excess; i++) gamesToCancel.push(group.scheduled[i]);
                     }
                 }
             }
@@ -471,7 +453,6 @@ export const savePlayoffConstructor = async (req, res) => {
                     `, [roundId, m.matchup_number, m.team1_source_type, t1SourceId, m.team2_source_type, t2SourceId, m.ui_metadata || {}]);
                     
                     const matchupId = mRes.rows[0].id;
-                    
                     if (m.tempId) matchupMap[m.tempId] = matchupId; 
 
                     if (['winner_of', 'loser_of'].includes(m.team1_source_type)) {
@@ -487,20 +468,17 @@ export const savePlayoffConstructor = async (req, res) => {
         for (const update of updates) {
             const realSourceId = matchupMap[update.tempRef];
             if (realSourceId) {
-                await client.query(`
-                    UPDATE playoff_matchups SET ${update.field} = $1 WHERE id = $2
-                `, [realSourceId, update.matchupId]);
+                await client.query(`UPDATE playoff_matchups SET ${update.field} = $1 WHERE id = $2`, [realSourceId, update.matchupId]);
             }
         }
 
         await client.query('COMMIT');
         await recalculatePlayoffs(id);
-
         res.json({ success: true });
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Ошибка сохранения конструктора плей-офф:', err);
+        console.error('Ошибка сохранения конструктора:', err);
         res.status(500).json({ success: false, error: err.message || 'Ошибка сохранения сетки' });
     } finally {
         client.release();
@@ -512,17 +490,129 @@ export const updatePlayoffMatchup = async (req, res) => {
         const { id, matchupId } = req.params;
         const { team1_id, team2_id } = req.body;
         
-        await pool.query(`
-            UPDATE playoff_matchups 
-            SET team1_id = $1, team2_id = $2 
-            WHERE id = $3
-        `, [team1_id || null, team2_id || null, matchupId]);
-        
-        await recalculatePlayoffs(id);
+        // Ручная замена команды (например, для manual)
+        const updates = [];
+        const values = [];
+        let idx = 1;
+
+        if (team1_id !== undefined) {
+            updates.push(`team1_id = $${idx++}`);
+            values.push(team1_id || null);
+        }
+        if (team2_id !== undefined) {
+            updates.push(`team2_id = $${idx++}`);
+            values.push(team2_id || null);
+        }
+
+        if (updates.length > 0) {
+            values.push(matchupId);
+            await pool.query(`UPDATE playoff_matchups SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+            await recalculatePlayoffs(id);
+        }
 
         res.json({ success: true });
     } catch (err) {
-        console.error('Ошибка обновления пары:', err);
-        res.status(500).json({ success: false, error: 'Ошибка обновления' });
+        console.error('Ошибка ручной установки команд:', err);
+        res.status(500).json({ success: false, error: 'Ошибка установки команд' });
+    }
+};
+
+// ==========================================
+// НОВОЕ: РАСПРЕДЕЛЕНИЕ И СБРОС
+// ==========================================
+
+export const distributePlayoffTeams = async (req, res) => {
+    const { id: divisionId } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Получаем турнирную таблицу для посева
+        const standingsRes = await client.query(`
+            SELECT team_id, rank
+            FROM division_standings
+            WHERE division_id = $1
+            ORDER BY rank ASC
+        `, [divisionId]);
+        const standings = standingsRes.rows;
+
+        // Ищем все матчапы, в которых используется посев (seed)
+        const slotsRes = await client.query(`
+            SELECT pm.id, pm.team1_source_type, pm.team1_source_id, pm.team2_source_type, pm.team2_source_id
+            FROM playoff_matchups pm
+            JOIN playoff_rounds pr ON pm.round_id = pr.id
+            JOIN playoff_brackets pb ON pr.bracket_id = pb.id
+            WHERE pb.division_id = $1 AND (pm.team1_source_type = 'seed' OR pm.team2_source_type = 'seed')
+        `, [divisionId]);
+
+        for (const slot of slotsRes.rows) {
+            let updates = [];
+            let values = [];
+            let idx = 1;
+
+            if (slot.team1_source_type === 'seed' && slot.team1_source_id) {
+                const team = standings.find(s => s.rank === slot.team1_source_id);
+                if (team) {
+                    updates.push(`team1_id = $${idx++}`);
+                    values.push(team.team_id);
+                }
+            }
+
+            if (slot.team2_source_type === 'seed' && slot.team2_source_id) {
+                const team = standings.find(s => s.rank === slot.team2_source_id);
+                if (team) {
+                    updates.push(`team2_id = $${idx++}`);
+                    values.push(team.team_id);
+                }
+            }
+
+            if (updates.length > 0) {
+                values.push(slot.id);
+                await client.query(`UPDATE playoff_matchups SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+            }
+        }
+
+        await client.query('COMMIT');
+        
+        // Запускаем пересчет плей-офф (чтобы обновить победителей, если вдруг уже есть игры)
+        await recalculatePlayoffs(divisionId);
+        
+        res.json({ success: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка распределения команд:', err);
+        res.status(500).json({ success: false, error: 'Ошибка распределения команд' });
+    } finally {
+        client.release();
+    }
+};
+
+export const resetPlayoffGrid = async (req, res) => {
+    const { id: divisionId } = req.params;
+    const client = await pool.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        // Обнуляем все результаты и команды в сетках этого дивизиона
+        await client.query(`
+            UPDATE playoff_matchups
+            SET team1_id = NULL, team2_id = NULL, winner_id = NULL, loser_id = NULL, team1_wins = 0, team2_wins = 0
+            WHERE round_id IN (
+                SELECT pr.id FROM playoff_rounds pr
+                JOIN playoff_brackets pb ON pr.bracket_id = pb.id
+                WHERE pb.division_id = $1
+            )
+        `, [divisionId]);
+        
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch(err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка сброса плей-офф:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сброса плей-офф' });
+    } finally {
+        client.release();
     }
 };

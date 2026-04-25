@@ -382,12 +382,12 @@ export function GamesPage() {
                                 ))}
 
                                 {isEditMode && canCreate && (
-                                    <div className="mt-4 flex justify-center border-2 border-dashed border-graphite/50 rounded-lg hover:bg-white/10">
+                                    <div className="mt-4 flex justify-center border-2 border-dashed border-graphite/20 rounded-lg hover:bg-white/10 hover:border-graphite/50">
                                         <Button 
                                             onClick={handleCreateGame} 
                                             isLoading={isCreating}
                                             disabled={isCreating}
-                                            className="bg-transparent w-full h-[90px] text-[18px] text-graphite/50"
+                                            className="bg-transparent w-full h-[90px] text-[18px] text-graphite/40"
                                         >
                                             + Добавить матч
                                         </Button>

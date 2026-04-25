@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
 import { Select } from '../../ui/Select';
@@ -18,17 +18,31 @@ const TYPE_OPTIONS = ['Регулярный чемпионат', 'Плей-оф�
 const TYPE_MAP = { 'Регулярный чемпионат': 'regular', 'Плей-офф': 'playoff', 'Регулярный + Плей-офф': 'mixed' };
 const REV_TYPE_MAP = { 'regular': 'Регулярный чемпионат', 'playoff': 'Плей-офф', 'mixed': 'Регулярный + Плей-офф' };
 
-const CRITERIA_OPTIONS = ['Очные встречи', 'Разница шайб', 'Заброшенные шайбы', 'Количество очков', 'Количество побед'];
+const CRITERIA_OPTIONS = ['Очные встречи', 'Разница шайб', 'Заброшенные шайбы', 'Количество очков', 'Количество побед в осн. время'];
+
+const CRITERIA_MAP = {
+  'Количество очков': 'points',
+  'Очные встречи': 'h2h',
+  'Разница шайб': 'goals_diff',
+  'Заброшенные шайбы': 'goals_for',
+  'Количество побед в основное время': 'wins_reg'
+};
+
+const REV_CRITERIA_MAP = Object.fromEntries(
+  Object.entries(CRITERIA_MAP).map(([k, v]) => [v, k])
+);
 
 const getInitialFormData = (div = null) => {
   if (div) {
-    let parsedCriteria = CRITERIA_OPTIONS;
+    let parsedCriteria = ['h2h', 'goals_diff', 'goals_for', 'points', 'wins_reg']; 
     try {
       if (div.ranking_criteria) {
         const parsed = typeof div.ranking_criteria === 'string' ? JSON.parse(div.ranking_criteria) : div.ranking_criteria;
         if (Array.isArray(parsed) && parsed.length === 5) parsedCriteria = parsed;
       }
     } catch (e) {}
+
+    const uiCriteria = parsedCriteria.map(item => REV_CRITERIA_MAP[item] || item);
 
     return {
       ...div,
@@ -39,9 +53,8 @@ const getInitialFormData = (div = null) => {
       application_end: div.application_end ? div.application_end.split('T')[0] : null,
       transfer_start: div.transfer_start ? div.transfer_start.split('T')[0] : null,
       transfer_end: div.transfer_end ? div.transfer_end.split('T')[0] : null,
-      ranking_criteria: parsedCriteria,
+      ranking_criteria: uiCriteria,
       
-      // Flat Fields for Regular
       reg_periods_count: div.reg_periods_count ?? 3, 
       reg_period_length: div.reg_period_length ?? 20, 
       reg_has_overtime: div.reg_has_overtime ?? true, 
@@ -50,7 +63,6 @@ const getInitialFormData = (div = null) => {
       reg_so_length: div.reg_so_length ?? 3, 
       reg_track_plus_minus: div.reg_track_plus_minus ?? false,
 
-      // Flat Fields for Playoff
       playoff_periods_count: div.playoff_periods_count ?? 3, 
       playoff_period_length: div.playoff_period_length ?? 20, 
       playoff_has_overtime: div.playoff_has_overtime ?? true, 
@@ -146,7 +158,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const { selectedLeague } = useOutletContext();
   const { checkAccess } = useAccess();
   
-  // Матрица прав доступа
   const canView = checkAccess('SETTINGS_DIVISIONS_VIEW');
   const canEdit = checkAccess('SETTINGS_DIVISIONS_EDIT');
   const canCreate = checkAccess('SETTINGS_DIVISIONS_CREATE');
@@ -170,6 +181,11 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const [regCleared, setRegCleared] = useState(false);
 
   const [activeSection, setActiveSection] = useState('general');
+
+  // Управление перетаскиванием (Мышь + Тач)
+  const dragItem = useRef(null);
+  const dragOverItem = useRef(null);
+  const [draggingIndex, setDraggingIndex] = useState(null);
 
   useEffect(() => { if (selectedLeague?.id && canView) fetchSeasons(); }, [selectedLeague, canView]);
 
@@ -249,11 +265,49 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   }, [setHeaderActions, canCreate, selectedSeasonId, selectedDivisionId, divisions]);
 
   const handleChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
-  const handleCriteriaChange = (index, value) => {
-    const newCriteria = [...formData.ranking_criteria];
-    newCriteria[index] = value;
-    handleChange('ranking_criteria', newCriteria);
+
+  // ---- УНИВЕРСАЛЬНАЯ ЛОГИКА DRAG-AND-DROP (Mouse + Touch) ----
+  const applyDrag = () => {
+    if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
+        const newCriteria = [...formData.ranking_criteria];
+        const draggedItemContent = newCriteria[dragItem.current];
+        newCriteria.splice(dragItem.current, 1);
+        newCriteria.splice(dragOverItem.current, 0, draggedItemContent);
+        handleChange('ranking_criteria', newCriteria);
+    }
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setDraggingIndex(null);
   };
+
+  // Десктопные события (HTML5)
+  const handleDragStart = (e, index) => {
+    dragItem.current = index;
+    setDraggingIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const handleDragEnter = (e, index) => { dragOverItem.current = index; };
+  const handleDragEnd = () => applyDrag();
+
+  // Мобильные события (Touch API)
+  const handleTouchStart = (e, index) => {
+    dragItem.current = index;
+    setDraggingIndex(index);
+  };
+  const handleTouchMove = (e) => {
+    if (dragItem.current === null) return;
+    const touch = e.touches[0];
+    const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (elem) {
+        const item = elem.closest('[data-dnd-index]');
+        if (item) {
+            const hoverIndex = parseInt(item.getAttribute('data-dnd-index'), 10);
+            if (!isNaN(hoverIndex)) dragOverItem.current = hoverIndex;
+        }
+    }
+  };
+  const handleTouchEnd = () => applyDrag();
+  // -----------------------------------------------------------
 
   const isOverlap = () => {
     if (!formData) return false;
@@ -299,6 +353,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       const payload = {
         ...formData,
         tournament_type: TYPE_MAP[formData.tournament_type],
+        ranking_criteria: formData.ranking_criteria.map(item => CRITERIA_MAP[item] || item),
         clear_logo: logoCleared, clear_regulations: regCleared
       };
 
@@ -358,7 +413,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
     setActiveSection('general');
   }
 
-  // --- Вспомогательный рендер для блоков механики (DRY) ---
   const renderMechanicsBlock = (prefix, title) => (
      <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-5">
         <span className="text-[14px] font-bold text-graphite uppercase tracking-wider">{title}</span>
@@ -598,14 +652,55 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Обоюдное поражение (-/-)</span> <Stepper initialValue={formData.points_tech_draw} onChange={(v) => handleChange('points_tech_draw', v)} max={10} disabled={isLocked} /></div>
                             </div>
                         </div>
+                        
+                        {/* Обновленный блок с Drag-and-Drop (Мышь + Тач) */}
                         <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-4 relative z-50">
-                            <span className="text-[15px] font-bold text-graphite mb-2 uppercase">Приоритет при равенстве очков</span>
-                            {[0, 1, 2, 3, 4].map(i => (
-                                <div key={i} className="flex items-center gap-4">
-                                    <span className="w-8 h-8 bg-graphite text-white rounded-lg flex justify-center items-center text-[13px] font-bold shrink-0">{i+1}</span>
-                                    <Select options={CRITERIA_OPTIONS} value={formData.ranking_criteria[i]} onChange={(v) => handleCriteriaChange(i, v)} disabled={isLocked} />
+                            <span className="text-[15px] font-bold text-graphite mb-1 uppercase">Приоритет при равенстве очков</span>
+                            <div className="flex flex-col gap-1">
+                                {formData.ranking_criteria.map((criteria, index) => (
+                                    <div
+                                        key={criteria}
+                                        data-dnd-index={index}
+                                        draggable={!isLocked}
+                                        onDragStart={(e) => handleDragStart(e, index)}
+                                        onDragEnter={(e) => handleDragEnter(e, index)}
+                                        onDragEnd={handleDragEnd}
+                                        onDragOver={(e) => e.preventDefault()}
+                                        className={`flex items-center gap-4 p-3 rounded-xl border transition-all duration-200
+                                            ${isLocked 
+                                                ? 'bg-white/50 border-graphite/5 opacity-70 cursor-not-allowed' 
+                                                : 'bg-white border-graphite/10 shadow-sm cursor-grab hover:border-orange hover:shadow-md'
+                                            }
+                                            ${draggingIndex === index ? 'opacity-40 scale-[0.98] ring-1 ring-orange shadow-lg' : ''}
+                                        `}
+                                    >
+                                        <span className="w-8 h-8 bg-graphite text-white rounded-lg flex justify-center items-center text-[13px] font-bold shrink-0">
+                                            {index + 1}
+                                        </span>
+                                        <span className="text-[14px] font-semibold text-graphite flex-1">
+                                            {criteria}
+                                        </span>
+                                        
+                                        {!isLocked && (
+                                            <div 
+                                                className="text-graphite-light opacity-40 hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing flex items-center justify-center p-1 touch-none"
+                                                onTouchStart={(e) => handleTouchStart(e, index)}
+                                                onTouchMove={handleTouchMove}
+                                                onTouchEnd={handleTouchEnd}
+                                            >
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            {!isLocked && (
+                                <div className="text-[11px] text-graphite-light mt-2 text-center">
+                                    Потяните за иконку, чтобы изменить приоритет
                                 </div>
-                            ))}
+                            )}
                         </div>
                     </div>
                 )}

@@ -73,6 +73,7 @@ export const getPlayerProfile = async (req, res) => {
         g.id as game_id,
         g.game_date,
         g.is_technical,
+        g.end_type,
         s.name as season_name, 
         
         l.short_name as league_name, 

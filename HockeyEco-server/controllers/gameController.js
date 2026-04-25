@@ -752,14 +752,18 @@ export const updateGameStatus = async (req, res) => {
                 await recalculatePlayerStatistics(game.division_id);
 
                 // 3. Пересчет общей статистики команд-участниц
-                const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
-                if (teamsToUpdate.length > 0) {
-                    await recalculateTeamStatistics(teamsToUpdate);
-                }
-            } catch (calcErr) {
-                console.error(`Ошибка при автоматическом пересчете для дивизиона ${game.division_id}:`, calcErr);
-            }
+        const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
+        if (teamsToUpdate.length > 0) {
+            await recalculateTeamStatistics(teamsToUpdate);
         }
+        
+        // НОВОЕ: Сбрасываем флаг у всех остальных матчей дивизиона, так как статистика теперь актуальна
+        await client.query('UPDATE games SET needs_recalc = false WHERE division_id = $1', [game.division_id]);
+
+    } catch (calcErr) {
+        console.error(`Ошибка при автоматическом пересчете для дивизиона ${game.division_id}:`, calcErr);
+    }
+}
 
         res.json({ success: true });
     } catch (err) {
@@ -1046,8 +1050,8 @@ export const recalculateGameStats = async (req, res) => {
         }
     }
 
-        // СБРАСЫВАЕМ ФЛАГ ПОСЛЕ УСПЕШНОГО ПЕРЕСЧЕТА
-        await pool.query('UPDATE games SET needs_recalc = false WHERE id = $1', [gameId]);
+        // СБРАСЫВАЕМ ФЛАГ ДЛЯ ВСЕХ МАТЧЕЙ ДИВИЗИОНА ПОСЛЕ УСПЕШНОГО ПЕРЕСЧЕТА
+        await pool.query('UPDATE games SET needs_recalc = false WHERE division_id = $1', [game.division_id]);
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка ручного пересчета:', err);

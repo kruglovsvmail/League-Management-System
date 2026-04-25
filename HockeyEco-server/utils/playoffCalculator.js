@@ -5,9 +5,9 @@ export const recalculatePlayoffs = async (divisionId) => {
     try {
         await client.query('BEGIN');
 
-        // Получаем все пары плей-офф через JOIN с раундами и сетками (строго по вашей БД)
+        // Получаем все пары плей-офф через JOIN с раундами и сетками
         const matchupsRes = await client.query(`
-            SELECT pm.id, pm.team1_id, pm.team2_id, pm.winner_id, pm.matchup_number,
+            SELECT pm.id, pm.team1_id, pm.team2_id, pm.winner_id, pm.loser_id, pm.matchup_number,
                    pr.id as round_id, pr.wins_needed, pr.order_index, pr.bracket_id
             FROM playoff_matchups pm
             JOIN playoff_rounds pr ON pm.round_id = pr.id
@@ -77,7 +77,6 @@ export const recalculatePlayoffs = async (divisionId) => {
             let newWinnerId = null;
             let newLoserId = null;
             
-            // Если в настройках раунда не указано количество побед, по умолчанию считаем до 2-х
             const winsNeeded = matchup.wins_needed || 2;
 
             if (team1Wins >= winsNeeded) {
@@ -88,7 +87,7 @@ export const recalculatePlayoffs = async (divisionId) => {
                 newLoserId = t1;
             }
 
-            // Если победитель определился, продвигаем его дальше по сетке
+            // Если победитель определился, продвигаем его (и проигравшего) дальше по сетке
             if (newWinnerId) {
                 await client.query(`
                     UPDATE playoff_matchups 
@@ -96,7 +95,7 @@ export const recalculatePlayoffs = async (divisionId) => {
                     WHERE id = $3
                 `, [newWinnerId, newLoserId, matchup.id]);
                 
-                await promotePlayoffWinner(client, matchup, newWinnerId);
+                await promotePlayoffTeams(client, matchup, newWinnerId, newLoserId);
             }
         }
 
@@ -110,29 +109,42 @@ export const recalculatePlayoffs = async (divisionId) => {
     }
 };
 
-// Функция продвижения победителя дальше по сетке
-const promotePlayoffWinner = async (client, matchup, winnerId) => {
-    // Ищем матч следующего раунда в той же сетке (bracket_id)
-    const nextRoundIndex = matchup.order_index + 1;
-    const nextMatchupNumber = Math.ceil(matchup.matchup_number / 2);
-
-    const bracketRes = await client.query(`
-        SELECT pm.id, pm.team1_id, pm.team2_id 
-        FROM playoff_matchups pm
-        JOIN playoff_rounds pr ON pm.round_id = pr.id
-        WHERE pr.bracket_id = $1 AND pr.order_index = $2 AND pm.matchup_number = $3
-    `, [matchup.bracket_id, nextRoundIndex, nextMatchupNumber]);
+// Мощная функция продвижения команд, использующая связи в Базе Данных (winner_of / loser_of)
+const promotePlayoffTeams = async (client, matchup, winnerId, loserId) => {
     
-    if (bracketRes.rows.length === 0) return; // Финал, дальше продвигать некуда
+    // 1. Продвигаем ПОБЕДИТЕЛЯ (ищем матчи, где этот матч указан как источник победителя)
+    const nextWinnerMatchupsRes = await client.query(`
+        SELECT id, team1_source_type, team1_source_id, team2_source_type, team2_source_id
+        FROM playoff_matchups
+        WHERE (team1_source_type = 'winner_of' AND team1_source_id = $1)
+           OR (team2_source_type = 'winner_of' AND team2_source_id = $1)
+    `, [matchup.id]);
 
-    const nextMatchup = bracketRes.rows[0];
-    
-    // Если матч нечетный - команда идет в слот team1, если четный - в team2
-    const isTeam1 = matchup.matchup_number % 2 !== 0;
+    for (const nextMatchup of nextWinnerMatchupsRes.rows) {
+        if (nextMatchup.team1_source_type === 'winner_of' && nextMatchup.team1_source_id === matchup.id) {
+            await client.query('UPDATE playoff_matchups SET team1_id = $1 WHERE id = $2', [winnerId, nextMatchup.id]);
+        }
+        if (nextMatchup.team2_source_type === 'winner_of' && nextMatchup.team2_source_id === matchup.id) {
+            await client.query('UPDATE playoff_matchups SET team2_id = $1 WHERE id = $2', [winnerId, nextMatchup.id]);
+        }
+    }
 
-    if (isTeam1) {
-        await client.query('UPDATE playoff_matchups SET team1_id = $1 WHERE id = $2', [winnerId, nextMatchup.id]);
-    } else {
-        await client.query('UPDATE playoff_matchups SET team2_id = $1 WHERE id = $2', [winnerId, nextMatchup.id]);
+    // 2. Продвигаем ПРОИГРАВШЕГО (ищем матчи, где этот матч указан как источник проигравшего, например за 3 место)
+    if (loserId) {
+        const nextLoserMatchupsRes = await client.query(`
+            SELECT id, team1_source_type, team1_source_id, team2_source_type, team2_source_id
+            FROM playoff_matchups
+            WHERE (team1_source_type = 'loser_of' AND team1_source_id = $1)
+               OR (team2_source_type = 'loser_of' AND team2_source_id = $1)
+        `, [matchup.id]);
+
+        for (const nextMatchup of nextLoserMatchupsRes.rows) {
+            if (nextMatchup.team1_source_type === 'loser_of' && nextMatchup.team1_source_id === matchup.id) {
+                await client.query('UPDATE playoff_matchups SET team1_id = $1 WHERE id = $2', [loserId, nextMatchup.id]);
+            }
+            if (nextMatchup.team2_source_type === 'loser_of' && nextMatchup.team2_source_id === matchup.id) {
+                await client.query('UPDATE playoff_matchups SET team2_id = $1 WHERE id = $2', [loserId, nextMatchup.id]);
+            }
+        }
     }
 };
