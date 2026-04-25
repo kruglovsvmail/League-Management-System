@@ -26,6 +26,11 @@ import { getToken } from '../utils/helpers';
 
 export function WebGraphicsPanel() {
   const { gameId } = useParams();
+
+  // Устанавливаем заголовок вкладки
+  useEffect(() => {
+    document.title = 'Панель управления трансляцией | LMS';
+  }, []);
   
   const {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,

@@ -136,6 +136,11 @@ export function GameLiveDesk() {
   const { gameId } = useParams();
   const navigate = useNavigate(); 
 
+// Устанавливаем заголовок вкладки
+  useEffect(() => {
+    document.title = 'Панель секретаря | LMS';
+  }, []);
+
   const [game, setGame] = useState(null);
   const [events, setEvents] = useState([]);
   const [homeRoster, setHomeRoster] = useState([]);

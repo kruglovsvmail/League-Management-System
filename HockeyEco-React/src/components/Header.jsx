@@ -1,7 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Breadcrumbs } from '../ui/Breadcrumbs';
 
 export function Header({ title = "Раздел", breadcrumbs = [], actions, subtitle }) {
+  
+  // Синхронизируем заголовок компонента с вкладкой браузера
+  useEffect(() => {
+    document.title = title ? `${title} | LMS` : 'LMS';
+  }, [title]);
+
   return (
     <header className="h-24 bg-white/30 backdrop-blur-[12px] border-b-[1px] border-white/40 flex items-center justify-between px-10 sticky top-0 z-30 w-full shrink-0">
       <div className="flex flex-col justify-center">
