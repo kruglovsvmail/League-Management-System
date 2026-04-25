@@ -43,6 +43,9 @@ export default defineConfig({
       },
 
       workbox: {
+        // Отключаем дебаг-логи Workbox в консоли
+        mode: 'production', 
+        
         // Очищаем старые кэши при обновлении
         cleanupOutdatedCaches: true,
         

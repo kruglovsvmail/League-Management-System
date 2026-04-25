@@ -37,6 +37,9 @@ export const getPlayerProfile = async (req, res) => {
         d.name as division_name,
         
         t.name as team_name,
+        t.name as team_full_name,
+        t.logo_url as team_logo,
+        t.city as team_city,
         
         tr.position,
         lq.short_name as qual_name,

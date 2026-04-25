@@ -293,7 +293,7 @@ export function GamesPage() {
                 title="Расписание матчей" 
                 actions={
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
+                        <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
                             <span className={`text-[12px] font-bold uppercase tracking-wider ${showFinished ? 'text-orange' : 'text-graphite-light'}`}>
                                 Завершенные
                             </span>
@@ -301,7 +301,7 @@ export function GamesPage() {
                         </div>
 
                         {canEdit && (
-                            <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm">
+                            <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
                                 <span className={`text-[12px] font-bold uppercase tracking-wider ${isEditMode ? 'text-orange' : 'text-graphite-light'}`}>
                                     Редакт.
                                 </span>
@@ -309,31 +309,29 @@ export function GamesPage() {
                             </div>
                         )}
 
-                        {divisions.length > 0 && (
-                            <div className="w-56">
-                                <Select 
-                                    options={divisionOptions} 
-                                    value={currentDivisionName} 
-                                    onChange={(selectedName) => {
-                                        const d = divisions.find(d => d.name === selectedName);
-                                        if (d) setSelectedDivisionId(d.id);
-                                    }} 
-                                />
-                            </div>
-                        )}
+                        <div className="w-56 animate-zoom-in">
+                            <Select 
+                                options={divisionOptions} 
+                                value={currentDivisionName || 'Загрузка...'} 
+                                onChange={(selectedName) => {
+                                    const d = divisions.find(d => d.name === selectedName);
+                                    if (d) setSelectedDivisionId(d.id);
+                                }} 
+                                disabled={divisions.length === 0}
+                            />
+                        </div>
 
-                        {seasons.length > 0 && (
-                            <div className="w-32">
-                                <Select 
-                                    options={seasonOptions} 
-                                    value={currentSeasonName} 
-                                    onChange={(selectedName) => {
-                                        const s = seasons.find(s => s.name === selectedName);
-                                        if (s) setSelectedSeasonId(s.id);
-                                    }} 
-                                />
-                            </div>
-                        )}
+                        <div className="w-32 animate-zoom-in">
+                            <Select 
+                                options={seasonOptions} 
+                                value={currentSeasonName || 'Загрузка...'} 
+                                onChange={(selectedName) => {
+                                    const s = seasons.find(s => s.name === selectedName);
+                                    if (s) setSelectedSeasonId(s.id);
+                                }} 
+                                disabled={seasons.length === 0}
+                            />
+                        </div>
                     </div>
                 }
             />
@@ -384,14 +382,14 @@ export function GamesPage() {
                                 ))}
 
                                 {isEditMode && canCreate && (
-                                    <div className="mt-4 flex justify-center">
+                                    <div className="mt-4 flex justify-center border-2 border-dashed border-graphite/50 rounded-lg hover:bg-white/10">
                                         <Button 
                                             onClick={handleCreateGame} 
                                             isLoading={isCreating}
                                             disabled={isCreating}
-                                            className="px-8 py-3 shadow-[0_4px_15px_rgba(255,107,0,0.2)]"
+                                            className="bg-transparent w-full h-[90px] text-[18px] text-graphite/50"
                                         >
-                                            + Добавить слот матча
+                                            + Добавить матч
                                         </Button>
                                     </div>
                                 )}

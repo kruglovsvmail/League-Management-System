@@ -2,6 +2,8 @@
 import pool from '../config/db.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
+import { recalculatePlayerStatistics } from '../utils/playerStatsCalculator.js';
+import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 
 // ============================================================================
 // ВНУТРЕННИЙ ПОМОЩНИК ДЛЯ ПРОВЕРКИ ПРАВ РЕДАКТИРОВАНИЯ (ЗАЩИТА ОТ СЕКРЕТАРЕЙ)
@@ -695,27 +697,29 @@ export const updateGameStatus = async (req, res) => {
         }
         const game = gameRes.rows[0];
 
+        // ВАЖНО: Мы больше никогда не затираем реальный счет нулями или пятерками!
+        // Просто берем то, что уже было сохранено в базе (реальные голы).
         let finalHomeScore = game.home_score;
         let finalAwayScore = game.away_score;
         let endType = game.end_type;
-        let isTechnical = false;
+        
+        // Теперь isTechnical это строка (или null), а не boolean
+        let isTechnical = null;
 
         if (incomingEndType === 'tech') {
-            isTechnical = true;
             endType = 'tech';
             
+            // Маппинг старых значений с фронтенда в новые строковые статусы БД
             if (tech_result === 'home_win') {
-                finalHomeScore = 5;
-                finalAwayScore = 0;
+                isTechnical = '+/-';
             } else if (tech_result === 'away_win') {
-                finalHomeScore = 0;
-                finalAwayScore = 5;
+                isTechnical = '-/+';
             } else if (tech_result === 'both_lose') {
-                finalHomeScore = 0;
-                finalAwayScore = 0;
+                isTechnical = '-/-';
             }
+            
         } else {
-            isTechnical = false;
+            isTechnical = null; // Сбрасываем технический результат при отмене
             
             if (endType !== 'so') {
                 const goalsRes = await client.query(`SELECT period FROM game_events WHERE game_id = $1 AND event_type = 'goal'`, [gameId]);
@@ -737,10 +741,21 @@ export const updateGameStatus = async (req, res) => {
 
         await client.query('COMMIT');
 
+        // Комплексный пересчет при завершении или назначении технаря
         if ((status === 'finished' || game.status === 'finished' || isTechnical) && game.division_id) {
             try {
+                // 1. Пересчет турнирной таблицы (уже работает с новыми '+/-')
                 if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
                 else await recalculateDivisionStandings(game.division_id);
+
+                // 2. Пересчет личной статистики игроков
+                await recalculatePlayerStatistics(game.division_id);
+
+                // 3. Пересчет общей статистики команд-участниц
+                const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
+                if (teamsToUpdate.length > 0) {
+                    await recalculateTeamStatistics(teamsToUpdate);
+                }
             } catch (calcErr) {
                 console.error(`Ошибка при автоматическом пересчете для дивизиона ${game.division_id}:`, calcErr);
             }
@@ -1017,9 +1032,19 @@ export const recalculateGameStats = async (req, res) => {
         const game = gameRes.rows[0];
 
         if (game.division_id) {
-            if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
-            else await recalculateDivisionStandings(game.division_id);
+        // 1. Таблица
+        if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
+        else await recalculateDivisionStandings(game.division_id);
+
+        // 2. Статистика игроков
+        await recalculatePlayerStatistics(game.division_id);
+
+        // 3. Статистика команд
+        const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
+        if (teamsToUpdate.length > 0) {
+            await recalculateTeamStatistics(teamsToUpdate);
         }
+    }
 
         // СБРАСЫВАЕМ ФЛАГ ПОСЛЕ УСПЕШНОГО ПЕРЕСЧЕТА
         await pool.query('UPDATE games SET needs_recalc = false WHERE id = $1', [gameId]);

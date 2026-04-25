@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext, Link } from 'react-router-dom';
 import { getToken, getImageUrl } from '../utils/helpers';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
@@ -394,9 +394,9 @@ export function GamePage() {
       <Header 
         title="Матч" 
         subtitle={
-          <button onClick={() => navigate('/games')} className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
+          <Link to="/games" className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
             <Icon name="chevron_left" className="w-4 h-4" /> К списку матчей
-          </button>
+          </Link>
         } 
       />
 
@@ -427,13 +427,13 @@ export function GamePage() {
                   
                   {game.is_technical ? (
                     <>
-                      <div className="relative inline-flex items-center justify-center gap-3 text-[40px] md:text-[52px] font-black tracking-tighter leading-none text-status-rejected">
-                        <span className="text-center w-12 md:w-16 text-right">
-                          {game.home_score > game.away_score ? '+' : '-'}
+                      <div className="relative inline-flex items-center justify-center text-[40px] md:text-[52px] font-black tracking-tighter leading-none text-status-rejected">
+                        <span className="w-12 md:w-16 flex justify-end">
+                          {typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+'}
                         </span>
-                        <span className="text-graphite/20 pb-2 md:pb-3">:</span>
-                        <span className="text-center w-12 md:w-16 text-left">
-                          {game.away_score > game.home_score ? '+' : '-'}
+                        <span className="text-graphite/20 mx-3 md:mx-4 relative -top-1 md:-top-1.5">:</span>
+                        <span className="w-12 md:w-16 flex justify-start">
+                          {typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-'}
                         </span>
                       </div>
                       <div className="mt-3 text-[10px] font-black text-status-rejected uppercase tracking-widest bg-status-rejected/10 px-3 py-1.5 rounded-lg border border-status-rejected/20 text-center leading-tight">
@@ -644,18 +644,22 @@ export function GamePage() {
             {(hasProtocolAccess || (canManageOfficials && isScheduled)) && (
               <div className="flex flex-col gap-3 bg-white/0 py-6 px-2  border-b border-graphite/10">
                 {hasProtocolAccess && (
-                   <button 
-                     onClick={() => canEnterLiveDesk && navigate(`/games/${game.id}/live-desk`)}
-                     disabled={!canEnterLiveDesk}
-                     title={!canEnterLiveDesk ? matchEditAccess.reason : ''}
-                     className={`w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm ${
-                       canEnterLiveDesk 
-                         ? (game?.is_protocol_signed ? 'bg-graphite/80 text-white hover:bg-graphite' : 'bg-graphite/80 text-white hover:bg-graphite') 
-                         : 'bg-graphite/20 text-graphite/50 cursor-not-allowed'
-                     }`}
-                   >
-                     {game?.is_protocol_signed ? 'Панель секретаря' : 'Панель секретаря'}
-                   </button>
+                   canEnterLiveDesk ? (
+                     <Link
+                       to={`/games/${game.id}/live-desk`}
+                       className="block text-center w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm bg-graphite/80 text-white hover:bg-graphite"
+                     >
+                       {game?.is_protocol_signed ? 'Панель секретаря' : 'Панель секретаря'}
+                     </Link>
+                   ) : (
+                     <button
+                       disabled
+                       title={matchEditAccess.reason}
+                       className="w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm bg-graphite/20 text-graphite/50 cursor-not-allowed"
+                     >
+                       Панель секретаря
+                     </button>
+                   )
                 )}
                 {canManageOfficials && isScheduled && (
                    <button 
@@ -670,12 +674,12 @@ export function GamePage() {
 
             {canManageGraphics && (
               <div className="flex flex-col gap-3 bg-white/0 p-2 py-6">
-                <button 
-                  onClick={() => navigate(`/games/${gameId}/graphics-panel`)}
-                  className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
+                <Link 
+                  to={`/games/${gameId}/graphics-panel`}
+                  className="block text-center bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
                 >
                   Панель трансляции
-                </button>
+                </Link>
                 <button 
                   onClick={handleCopyOBSLink}
                   className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"

@@ -6,33 +6,25 @@ export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange }) 
   // Наш супер-сложный фон
 const complexMeshGradient = {
   backgroundImage: `
-    /* 1. Строгая инженерная микро-сетка (создает системный паттерн и текстуру данных) */
-    repeating-linear-gradient(0deg, rgba(20, 30, 40, 0.02) 0px, rgba(20, 30, 40, 0.02) 1px, transparent 1px, transparent 32px),
-    repeating-linear-gradient(90deg, rgba(20, 30, 40, 0.02) 0px, rgba(20, 30, 40, 0.02) 1px, transparent 1px, transparent 32px),
+    /* 1. Основной мягкий свет сверху (создает объем) */
+    radial-gradient(circle at 50% -20%, #b4b4b4ff 0%, transparent 50%),
 
-    /* 2. Макро-векторы и технологические диагонали (задают направление и динамику) */
-    repeating-linear-gradient(135deg, transparent 0px, transparent 200px, rgba(255, 255, 255, 0.5) 200px, rgba(255, 255, 255, 0.5) 201px, transparent 201px, transparent 400px),
-    repeating-linear-gradient(45deg, transparent 0px, transparent 150px, rgba(20, 30, 40, 0.03) 150px, rgba(20, 30, 40, 0.03) 151px, transparent 151px, transparent 300px),
+    /* 2. Теплый акцент: Насыщенный персиковый/оранжевый (для глубины размытия) */
+    radial-gradient(circle at 85% 30%, rgba(203, 203, 203, 0.33) 0%, transparent 50%),
 
-    /* 3. Концентрические кольца-радары (добавляют фокусность и системную глубину в левом углу) */
-    repeating-radial-gradient(circle at 10% 20%, transparent 0, transparent 60px, rgba(255, 255, 255, 0.15) 60px, rgba(255, 255, 255, 0.15) 61px),
+    /* 3. Мягкий золотисто-бежевый (воздушность) */
+    radial-gradient(circle at 15% 45%, rgba(164, 164, 164, 0.34) 0%, transparent 45%),
 
-    /* 4. Атмосферное освещение (Mesh-база: переходы от холодного серого к теплым бежевым теням) */
-    radial-gradient(ellipse 100% 100% at 20% 0%, #baaf92ff 0%, transparent 60%),     /* Чистый светлый источник сверху */
-    radial-gradient(ellipse 120% 100% at 85% 15%, #bbd0ddff 0%, transparent 65%),     /* Теплый титановый (беж) справа */
-    radial-gradient(ellipse 100% 120% at 10% 90%, #bfcbd7ff 0%, transparent 60%),     /* Глубокий стальной серый снизу слева */
-    radial-gradient(ellipse 120% 100% at 90% 85%, #d1b99bff 0%, transparent 65%),     /* Мягкий платиновый снизу справа */
-    radial-gradient(circle at 50% 50%, #cae4a6ff 0%, transparent 50%),                /* Нейтральный центр для контента */
+    /* 4. Нижний теплый контур (поддержка "жидкого стекла") */
+    radial-gradient(circle at 70% 85%, rgba(181, 181, 181, 0.24) 0%, transparent 40%),
 
-    /* 5. Объемное виньетирование (создает атмосферу большого, глубокого пространства) */
-    radial-gradient(circle at 50% 50%, transparent 40%, rgba(120, 125, 130, 0.15) 100%),
-
-    /* 6. Базовая градиентная подложка (матовый металлик) */
-    linear-gradient(135deg, #e8ecef 0%, #d4d8db 50%, #c5c1ba 100%)
+    /* 5. Базовая чистая подложка в стиле HockeyEco */
+    linear-gradient(135deg, #d3d3d3ff 0%, #edeef0 100%)
   `,
   backgroundAttachment: 'fixed',
   backgroundSize: 'cover',
-  backgroundPosition: 'center'
+  backgroundPosition: 'center',
+  backgroundColor: '#f5f7f8'
 };
 
   return (

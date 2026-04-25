@@ -5,222 +5,131 @@ export const recalculateDivisionStandings = async (divisionId) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Получаем правила начисления очков и КРИТЕРИИ СОРТИРОВКИ
-        const divRes = await client.query(
-            `SELECT points_win_reg, points_win_ot, points_draw, points_loss_ot, points_loss_reg, 
-                    points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria
-             FROM divisions 
-             WHERE id = $1`,
-            [divisionId]
-        );
-        
-        if (divRes.rows.length === 0) {
-            throw new Error(`Дивизион с ID ${divisionId} не найден`);
-        }
-        
-        const rules = divRes.rows[0];
+        // Получаем правила турнира (берем из divisions, так как division_rules нет)
+        const rulesRes = await client.query(`
+            SELECT points_win_reg, points_win_ot, points_draw,
+                   points_loss_ot, points_loss_reg, 
+                   points_tech_win, points_tech_loss
+            FROM divisions WHERE id = $1
+        `, [divisionId]);
 
-        const ptsWinReg = Number(rules.points_win_reg ?? 3);
-        const ptsWinOt = Number(rules.points_win_ot ?? 2);
-        const ptsDraw = Number(rules.points_draw ?? 1);
-        const ptsLossOt = Number(rules.points_loss_ot ?? 1);
-        const ptsLossReg = Number(rules.points_loss_reg ?? 0);
+        const dbRules = rulesRes.rows[0] || {};
 
-        const ptsTechWin = Number(rules.points_tech_win ?? 3);
-        const ptsTechLoss = Number(rules.points_tech_loss ?? 0);
-        const ptsTechDraw = Number(rules.points_tech_draw ?? 0);
+        const ptsWinReg = dbRules.points_win_reg ?? 3;
+        const ptsWinOt = dbRules.points_win_ot ?? 2;
+        const ptsWinSo = dbRules.points_win_ot ?? 2; 
+        const ptsDraw = dbRules.points_draw ?? 1;
+        const ptsLossReg = dbRules.points_loss_reg ?? 0;
+        const ptsLossOt = dbRules.points_loss_ot ?? 1;
+        const ptsLossSo = dbRules.points_loss_ot ?? 1;
+        const ptsTechWin = dbRules.points_tech_win ?? 3;
+        const ptsTechLoss = dbRules.points_tech_loss ?? 0;
 
-        let rankingCriteria = [];
-        if (rules.ranking_criteria) {
-            rankingCriteria = typeof rules.ranking_criteria === 'string' 
-                ? JSON.parse(rules.ranking_criteria) 
-                : rules.ranking_criteria;
-        }
-
-        // 2. Получаем все сыгранные матчи
-        const gamesRes = await client.query(
-            `SELECT 
-                g.id, 
-                g.home_team_id, 
-                g.away_team_id, 
-                g.home_score, 
-                g.away_score,
-                g.end_type,
-                g.is_technical,
-                EXISTS(
-                    SELECT 1 FROM game_events ge 
-                    WHERE ge.game_id = g.id AND ge.period IN ('OT', 'SO')
-                ) as has_ot_events
-             FROM games g
-             WHERE g.division_id = $1 
-               AND g.status = 'finished' 
-               AND g.stage_type = 'regular'`,
-            [divisionId]
-        );
-
-        // 3. Агрегация базовой статистики
+        // Инициализируем статистику для всех команд дивизиона
+        const teamsRes = await client.query('SELECT team_id FROM tournament_teams WHERE division_id = $1', [divisionId]);
         const stats = {};
+        teamsRes.rows.forEach(t => {
+            stats[t.team_id] = {
+                games_played: 0, wins_reg: 0, wins_ot: 0, wins_so: 0,
+                draws: 0, losses_so: 0, losses_ot: 0, losses_reg: 0,
+                goals_for: 0, goals_against: 0, points: 0
+            };
+        });
 
-        const initTeam = (teamId) => {
-            if (!stats[teamId]) {
-                stats[teamId] = {
-                    teamId: Number(teamId),
-                    games_played: 0, wins_reg: 0, wins_ot: 0, draws: 0,
-                    losses_ot: 0, losses_reg: 0, goals_for: 0, goals_against: 0, points: 0
-                };
-            }
-        };
+        // Получаем все завершенные матчи
+        const gamesRes = await client.query(`
+            SELECT home_team_id, away_team_id, home_score, away_score, end_type, is_technical
+            FROM games 
+            WHERE division_id = $1 AND status = 'finished'
+        `, [divisionId]);
 
         gamesRes.rows.forEach(game => {
             const home = game.home_team_id;
             const away = game.away_team_id;
-            
-            const hScore = Number(game.home_score || 0);
-            const aScore = Number(game.away_score || 0);
-            const isOt = game.has_ot_events || ['ot', 'so'].includes(game.end_type);
 
-            initTeam(home);
-            initTeam(away);
+            if (!stats[home] || !stats[away]) return;
+
+            const homeScore = game.home_score || 0;
+            const awayScore = game.away_score || 0;
+            const endType = game.end_type || 'reg';
 
             stats[home].games_played += 1;
             stats[away].games_played += 1;
 
             if (game.is_technical) {
-                if (hScore > aScore) {
-                    stats[home].wins_reg += 1; stats[home].points += ptsTechWin;
-                    stats[away].losses_reg += 1; stats[away].points += ptsTechLoss;
-                } else if (aScore > hScore) {
-                    stats[away].wins_reg += 1; stats[away].points += ptsTechWin;
-                    stats[home].losses_reg += 1; stats[home].points += ptsTechLoss;
-                } else {
-                    stats[home].losses_reg += 1; stats[home].points += ptsTechDraw;
-                    stats[away].losses_reg += 1; stats[away].points += ptsTechDraw;
+                const techStatus = game.is_technical; // '+/-', '-/+', '-/-'
+
+                if (techStatus === '+/-') {
+                    stats[home].wins_reg += 1;
+                    stats[home].points += ptsTechWin;
+                    stats[away].losses_reg += 1;
+                    stats[away].points += ptsTechLoss;
+                } else if (techStatus === '-/+') {
+                    stats[away].wins_reg += 1;
+                    stats[away].points += ptsTechWin;
+                    stats[home].losses_reg += 1;
+                    stats[home].points += ptsTechLoss;
+                } else if (techStatus === '-/-') {
+                    stats[home].losses_reg += 1;
+                    stats[home].points += ptsTechLoss;
+                    stats[away].losses_reg += 1;
+                    stats[away].points += ptsTechLoss;
                 }
-                return; // Технический матч дальше не обрабатываем (голы не считаем)
+                return;
             }
 
-            stats[home].goals_for += hScore;
-            stats[home].goals_against += aScore;
-            stats[away].goals_for += aScore;
-            stats[away].goals_against += hScore;
+            stats[home].goals_for += homeScore;
+            stats[home].goals_against += awayScore;
+            stats[away].goals_for += awayScore;
+            stats[away].goals_against += homeScore;
 
-            if (hScore > aScore) {
-                if (isOt) {
-                    stats[home].wins_ot += 1; stats[home].points += ptsWinOt;
-                    stats[away].losses_ot += 1; stats[away].points += ptsLossOt;
-                } else {
-                    stats[home].wins_reg += 1; stats[home].points += ptsWinReg;
-                    stats[away].losses_reg += 1; stats[away].points += ptsLossReg;
-                }
-            } else if (aScore > hScore) {
-                if (isOt) {
-                    stats[away].wins_ot += 1; stats[away].points += ptsWinOt;
-                    stats[home].losses_ot += 1; stats[home].points += ptsLossOt;
-                } else {
-                    stats[away].wins_reg += 1; stats[away].points += ptsWinReg;
-                    stats[home].losses_reg += 1; stats[home].points += ptsLossReg;
-                }
+            if (homeScore > awayScore) {
+                if (endType === 'reg') { stats[home].wins_reg += 1; stats[home].points += ptsWinReg; stats[away].losses_reg += 1; stats[away].points += ptsLossReg; }
+                else if (endType === 'ot') { stats[home].wins_ot += 1; stats[home].points += ptsWinOt; stats[away].losses_ot += 1; stats[away].points += ptsLossOt; }
+                else if (endType === 'so' || endType === 'pen') { stats[home].wins_so += 1; stats[home].points += ptsWinSo; stats[away].losses_so += 1; stats[away].points += ptsLossSo; }
+            } else if (awayScore > homeScore) {
+                if (endType === 'reg') { stats[away].wins_reg += 1; stats[away].points += ptsWinReg; stats[home].losses_reg += 1; stats[home].points += ptsLossReg; }
+                else if (endType === 'ot') { stats[away].wins_ot += 1; stats[away].points += ptsWinOt; stats[home].losses_ot += 1; stats[home].points += ptsLossOt; }
+                else if (endType === 'so' || endType === 'pen') { stats[away].wins_so += 1; stats[away].points += ptsWinSo; stats[home].losses_so += 1; stats[home].points += ptsLossSo; }
             } else {
                 stats[home].draws += 1; stats[home].points += ptsDraw;
                 stats[away].draws += 1; stats[away].points += ptsDraw;
             }
         });
 
-        const statsArray = Object.values(stats);
-
-        const compareH2H = (a, b) => {
-            let ptsA = 0, ptsB = 0;
-            let gdA = 0, gdB = 0;
-            
-            gamesRes.rows.forEach(g => {
-                const isHomeA = g.home_team_id === a.teamId && g.away_team_id === b.teamId;
-                const isHomeB = g.home_team_id === b.teamId && g.away_team_id === a.teamId;
-                if (!isHomeA && !isHomeB) return;
-                
-                const hScore = Number(g.home_score || 0);
-                const aScore = Number(g.away_score || 0);
-                const isOt = g.has_ot_events || ['ot', 'so'].includes(g.end_type);
-                
-                if (g.is_technical) {
-                    if (isHomeA) {
-                        if (hScore > aScore) { ptsA += ptsTechWin; ptsB += ptsTechLoss; }
-                        else if (aScore > hScore) { ptsB += ptsTechWin; ptsA += ptsTechLoss; }
-                        else { ptsA += ptsTechDraw; ptsB += ptsTechDraw; }
-                    } else {
-                        if (hScore > aScore) { ptsB += ptsTechWin; ptsA += ptsTechLoss; }
-                        else if (aScore > hScore) { ptsA += ptsTechWin; ptsB += ptsTechLoss; }
-                        else { ptsA += ptsTechDraw; ptsB += ptsTechDraw; }
-                    }
-                    return;
-                }
-
-                if (isHomeA) {
-                    gdA += (hScore - aScore); gdB += (aScore - hScore);
-                    if (hScore > aScore) { ptsA += isOt ? ptsWinOt : ptsWinReg; ptsB += isOt ? ptsLossOt : ptsLossReg; }
-                    else if (aScore > hScore) { ptsB += isOt ? ptsWinOt : ptsWinReg; ptsA += isOt ? ptsLossOt : ptsLossReg; }
-                    else { ptsA += ptsDraw; ptsB += ptsDraw; }
-                } else {
-                    gdB += (hScore - aScore); gdA += (aScore - hScore);
-                    if (hScore > aScore) { ptsB += isOt ? ptsWinOt : ptsWinReg; ptsA += isOt ? ptsLossOt : ptsLossReg; }
-                    else if (aScore > hScore) { ptsA += isOt ? ptsWinOt : ptsWinReg; ptsB += isOt ? ptsLossOt : ptsLossReg; }
-                    else { ptsA += ptsDraw; ptsB += ptsDraw; }
-                }
-            });
-            
-            if (ptsA !== ptsB) return ptsB - ptsA;
-            if (gdA !== gdB) return gdB - gdA;
-            return 0;
-        };
-
-        const criteriaComparators = {
-            'Разница шайб': (a, b) => (b.goals_for - b.goals_against) - (a.goals_for - a.goals_against),
-            'Заброшенные шайбы': (a, b) => b.goals_for - a.goals_for,
-            'Количество очков': (a, b) => b.points - a.points,
-            'Количество побед': (a, b) => (b.wins_reg + b.wins_ot) - (a.wins_reg + a.wins_ot),
-            'Очные встречи': compareH2H
-        };
-
-        statsArray.sort((a, b) => {
-            if (b.points !== a.points) return b.points - a.points;
-
-            for (const criteria of rankingCriteria) {
-                const cmpFunc = criteriaComparators[criteria];
-                if (cmpFunc) {
-                    const res = cmpFunc(a, b);
-                    if (res !== 0) return res;
-                }
-            }
-            
-            return (b.wins_reg - a.wins_reg); 
-        });
-
-        statsArray.forEach((teamStats, index) => {
-            teamStats.rank = index + 1;
-        });
-
-        await client.query(`DELETE FROM division_standings WHERE division_id = $1`, [divisionId]);
-
-        const insertQuery = `
-            INSERT INTO division_standings
-            (division_id, team_id, games_played, wins_reg, wins_ot, draws, losses_ot, losses_reg, goals_for, goals_against, points, rank)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        `;
-
-        for (const tStats of statsArray) {
-            await client.query(insertQuery, [
-                divisionId, tStats.teamId, tStats.games_played, 
-                tStats.wins_reg, tStats.wins_ot, tStats.draws, 
-                tStats.losses_ot, tStats.losses_reg, 
-                tStats.goals_for, tStats.goals_against, tStats.points,
-                tStats.rank
+        // Записываем обновленные данные в division_standings
+        for (const [teamId, data] of Object.entries(stats)) {
+            await client.query(`
+                INSERT INTO division_standings 
+                (division_id, team_id, games_played, wins_reg, wins_ot, draws, losses_ot, losses_reg, goals_for, goals_against, points, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+                ON CONFLICT (division_id, team_id) 
+                DO UPDATE SET
+                    games_played = EXCLUDED.games_played,
+                    wins_reg = EXCLUDED.wins_reg, 
+                    wins_ot = EXCLUDED.wins_ot, 
+                    draws = EXCLUDED.draws, 
+                    losses_ot = EXCLUDED.losses_ot, 
+                    losses_reg = EXCLUDED.losses_reg,
+                    goals_for = EXCLUDED.goals_for, 
+                    goals_against = EXCLUDED.goals_against, 
+                    points = EXCLUDED.points,
+                    updated_at = NOW()
+            `, [
+                divisionId, teamId, data.games_played, data.wins_reg, 
+                data.wins_ot + data.wins_so, // Буллиты суммируем с ОТ, так как в БД нет отдельной колонки
+                data.draws, 
+                data.losses_ot + data.losses_so, // То же самое для поражений
+                data.losses_reg,
+                data.goals_for, data.goals_against, data.points
             ]);
         }
 
         await client.query('COMMIT');
-    } catch (error) {
+    } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Ошибка при пересчете турнирной таблицы:', error);
-        throw error;
+        console.error('Ошибка в recalculateDivisionStandings:', err);
+        throw err;
     } finally {
         client.release();
     }

@@ -415,7 +415,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
           <button 
             className={`w-12 h-12 rounded-lg border-1 flex items-center justify-center transition-all duration-300 ${isExpanded ? 'border-orange text-orange bg-orange/5' : 'border-graphite/10 text-graphite/40 group-hover:border-orange group-hover:text-orange group-hover:bg-orange/5'}`}
           >
-            <Icon name="chevron" className="w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180'" />
+            <Icon name="chevron" className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
           </button>
         </div>
       </div>

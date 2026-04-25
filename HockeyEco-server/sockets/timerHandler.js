@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 
+// IN-MEMORY хранилище таймеров. Живет в оперативной памяти сервера (очень быстрое)
 const activeTimers = {}; 
 
 const syncTimerToDB = async (gameId, timerObj) => {
@@ -18,16 +19,16 @@ const syncTimerToDB = async (gameId, timerObj) => {
           updated_at = NOW()
     `, [
       gameId, 
-      timerObj.seconds, 
-      timerObj.isRunning, 
-      timerObj.controller, 
-      JSON.stringify(timerObj.penalties),
-      timerObj.periodLength,
-      timerObj.otLength,
-      timerObj.period
+      timerObj.seconds || 0, 
+      timerObj.isRunning || false, 
+      timerObj.controller || 'secretary', 
+      JSON.stringify(timerObj.penalties || []),
+      timerObj.periodLength || 20,
+      timerObj.otLength || 5,
+      timerObj.period || '1'
     ]);
   } catch (err) {
-    console.error('Ошибка сохранения таймера в БД:', err.message);
+    console.error(`Ошибка сохранения таймера в БД (Матч ${gameId}):`, err.message);
   }
 };
 
@@ -37,115 +38,88 @@ export default function setupTimerSockets(io) {
     socket.on('join_game', async (gameId) => {
       socket.join(`game_${gameId}`);
       
-      if (!activeTimers[gameId]) {
+      // Если таймер уже есть в памяти сервера, отдаем его мгновенно
+      if (activeTimers[gameId]) {
+        socket.emit('timer_state', activeTimers[gameId]);
+      } else {
+        // Если сервер перезагружался, достаем последнее состояние из БД
         try {
           const res = await pool.query('SELECT * FROM game_timers WHERE game_id = $1', [gameId]);
           if (res.rows.length > 0) {
+            const row = res.rows[0];
             activeTimers[gameId] = {
-              seconds: res.rows[0].time_seconds || 0,
-              period: res.rows[0].period || '1',
-              isRunning: res.rows[0].is_running || false,
-              controller: res.rows[0].controller || 'secretary',
-              penalties: res.rows[0].penalties || [],
-              periodLength: res.rows[0].period_length || 20,
-              otLength: res.rows[0].ot_length || 5,
-              intervalId: null
+              seconds: row.time_seconds || 0,
+              isRunning: row.is_running || false,
+              controller: row.controller || 'secretary',
+              penalties: typeof row.penalties === 'string' ? JSON.parse(row.penalties) : (row.penalties || []),
+              periodLength: row.period_length || 20,
+              otLength: row.ot_length || 5,
+              period: row.period || '1'
             };
           } else {
-            activeTimers[gameId] = { seconds: 0, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5, intervalId: null };
+             // Дефолтное состояние, если в БД еще ничего нет
+            activeTimers[gameId] = { seconds: 0, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5 };
           }
+          socket.emit('timer_state', activeTimers[gameId]);
         } catch (e) {
-          activeTimers[gameId] = { seconds: 0, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5, intervalId: null };
+          console.error('Ошибка загрузки таймера при подключении:', e);
         }
       }
-      
-      socket.emit('timer_state', {
-        seconds: activeTimers[gameId].seconds,
-        period: activeTimers[gameId].period,
-        isRunning: activeTimers[gameId].isRunning,
-        controller: activeTimers[gameId].controller,
-        penalties: activeTimers[gameId].penalties,
-        periodLength: activeTimers[gameId].periodLength,
-        otLength: activeTimers[gameId].otLength
-      });
     });
 
+    // =========================================================
+    // ВОССТАНОВЛЕННЫЕ СОБЫТИЯ ДЛЯ ВЕБ-ГРАФИКИ (OBS)
+    // =========================================================
     socket.on('score_updated', (data) => { if (data?.gameId) io.to(`game_${data.gameId}`).emit('score_updated'); });
     socket.on('game_updated', (data) => { if (data?.gameId) io.to(`game_${data.gameId}`).emit('game_updated'); });
     socket.on('trigger_obs_overlay', (data) => { if (data?.gameId) io.to(`game_${data.gameId}`).emit('trigger_obs_overlay', data); });
 
-    socket.on('timer_action', async ({ gameId, action, value, penaltyId, penaltyData, seconds, period, periodLength, otLength }) => {
+    socket.on('timer_action', async (payload) => {
+      // Поддерживаем как новый формат (timerData), так и старый (value)
+      const { gameId, action, timerData, penaltyData, penaltyId, value } = payload;
+      
+      // Обновляем состояние в оперативной памяти
+      if (!activeTimers[gameId]) {
+        activeTimers[gameId] = timerData || { seconds: 0, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5 };
+      } else if (timerData) {
+        activeTimers[gameId] = { ...activeTimers[gameId], ...timerData };
+      }
+
       const timer = activeTimers[gameId];
-      if (!timer) return;
 
-      if (action === 'start') {
-        if (!timer.isRunning) {
-          timer.isRunning = true;
-          io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: true, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-          
-          timer.intervalId = setInterval(() => {
-            let stateChanged = false;
-            if (timer.isRunning) { timer.seconds++; stateChanged = true; }
-            if (timer.isRunning) {
-              timer.penalties.forEach(p => { if (p.isRunning && p.remaining > 0) { p.remaining--; stateChanged = true; } });
-            }
-            const initialLen = timer.penalties.length;
-            timer.penalties = timer.penalties.filter(p => p.remaining > 0);
-            if (timer.penalties.length !== initialLen) stateChanged = true;
-
-            if (stateChanged) {
-              io.to(`game_${gameId}`).emit('timer_tick', { seconds: timer.seconds, isRunning: timer.isRunning, penalties: timer.penalties });
-            }
-          }, 1000);
-        }
-      } 
-      else if (action === 'stop') {
-        if (timer.isRunning) {
-          timer.isRunning = false;
-          if (timer.intervalId) { clearInterval(timer.intervalId); timer.intervalId = null; }
-          io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: false, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-          syncTimerToDB(gameId, timer);
-        }
-      } 
-      else if (action === 'set_time') {
-        timer.seconds = seconds !== undefined ? seconds : value;
-        io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-        syncTimerToDB(gameId, timer);
-      } 
-      else if (action === 'set_period') {
-        timer.period = period;
-        io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-        syncTimerToDB(gameId, timer);
-      }
-      else if (action === 'update_settings') {
-        timer.periodLength = periodLength;
-        timer.otLength = otLength;
-        io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-        syncTimerToDB(gameId, timer);
-      }
-      else if (action === 'delegate') {
-        timer.controller = value;
-        io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-        syncTimerToDB(gameId, timer);
-      }
-      else if (action === 'add_penalty') {
+      // Обработка специфических экшенов (штрафы и делегирование)
+      if (action === 'delegate') {
+        timer.controller = value; 
+      } else if (action === 'add_penalty' && penaltyData) {
+        if (!timer.penalties) timer.penalties = [];
         timer.penalties.push(penaltyData);
-        io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-        syncTimerToDB(gameId, timer);
+      } else if (action === 'toggle_penalty' && penaltyId) {
+        const p = timer.penalties?.find(x => x.id === penaltyId);
+        if (p) p.isRunning = !p.isRunning;
+      } else if (action === 'remove_penalty' && penaltyId) {
+        timer.penalties = timer.penalties?.filter(x => x.id !== penaltyId);
       }
-      else if (action === 'toggle_penalty') {
-        const p = timer.penalties.find(x => x.id === penaltyId);
-        if (p) {
-            p.isRunning = !p.isRunning;
-            io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
-            syncTimerToDB(gameId, timer);
-        }
-      }
-      else if (action === 'remove_penalty') {
-        timer.penalties = timer.penalties.filter(x => x.id !== penaltyId);
-        io.to(`game_${gameId}`).emit('timer_state', { seconds: timer.seconds, period: timer.period, isRunning: timer.isRunning, controller: timer.controller, penalties: timer.penalties, periodLength: timer.periodLength, otLength: timer.otLength });
+
+      // МГНОВЕННО РАССЫЛАЕМ НОВОЕ ВРЕМЯ ВСЕМ ЗРИТЕЛЯМ/ТРАНСЛЯЦИЯМ (Включая OBS)
+      io.to(`game_${gameId}`).emit('timer_state', timer);
+
+      // =========================================================
+      // СПАСАЕМ ДИСК: Пишем в БД ТОЛЬКО при важных событиях.
+      // Действие 'sync' (каждую секунду) игнорируется для БД!
+      // =========================================================
+      const importantActions = [
+        'stop', 'set_time', 'set_period', 'change_period', 'update_settings', 'delegate',
+        'add_penalty', 'toggle_penalty', 'remove_penalty'
+      ];
+
+      if (importantActions.includes(action)) {
         syncTimerToDB(gameId, timer);
       }
     });
+
+    socket.on('leave_game', (gameId) => {
+      socket.leave(`game_${gameId}`);
+    });
+
   });
 }

@@ -33,6 +33,10 @@ export function ScoreBoardWidget({
   const homePens = activePenalties?.filter(p => p.team_id === game.home_team_id) || [];
   const awayPens = activePenalties?.filter(p => p.team_id === game.away_team_id) || [];
 
+  const isTech = !!game.is_technical;
+  const techHome = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+';
+  const techAway = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-';
+
   return (
     <div 
       onClick={onToggle}
@@ -79,7 +83,7 @@ export function ScoreBoardWidget({
           <span className="text-[20px] font-bold uppercase tracking-wide truncate w-full text-center text-graphite">{homeShortName}</span>
           
           {/* Штрафы хозяев */}
-          {homePens.length > 0 && (
+          {homePens.length > 0 && !isTech && (
             <div className="flex flex-col gap-0.5 mt-1.5 w-full items-center">
               {homePens.map((p, i) => <span key={i} className="text-[9px] font-mono font-bold bg-status-rejected/10 text-status-rejected px-1 rounded">{formatTime(p.remaining)}</span>)}
             </div>
@@ -90,9 +94,19 @@ export function ScoreBoardWidget({
         <div className="flex flex-col items-center justify-center w-[40%]">
            
            <div className="flex items-center justify-center gap-2 mb-1.5">
-             <span className="text-3xl font-black text-graphite leading-none">{game.home_score || 0}</span>
-             <span className="text-graphite/30 font-black text-2xl leading-none -mt-1">:</span>
-             <span className="text-3xl font-black text-graphite leading-none">{game.away_score || 0}</span>
+             {isTech ? (
+               <>
+                 <span className="text-3xl font-black text-status-rejected leading-none">{techHome}</span>
+                 <span className="text-graphite/30 font-black text-2xl leading-none -mt-1">:</span>
+                 <span className="text-3xl font-black text-status-rejected leading-none">{techAway}</span>
+               </>
+             ) : (
+               <>
+                 <span className="text-3xl font-black text-graphite leading-none">{game.home_score || 0}</span>
+                 <span className="text-graphite/30 font-black text-2xl leading-none -mt-1">:</span>
+                 <span className="text-3xl font-black text-graphite leading-none">{game.away_score || 0}</span>
+               </>
+             )}
            </div>
            
            {/* Крупный таймер (Остаток) */}
@@ -102,8 +116,8 @@ export function ScoreBoardWidget({
              </span>
            </div>
            
-           <span className="text-[12spx] font-bold text-graphite/40 uppercase tracking-widest mt-1.5">
-              {currentPeriod === 'OT' ? 'Овертайм' : currentPeriod === 'SO' ? 'Буллиты' : `${currentPeriod} период`}
+           <span className={`text-[12spx] font-bold uppercase tracking-widest mt-1.5 ${isTech ? 'text-status-rejected' : 'text-graphite/40'}`}>
+              {isTech ? 'Технический результат' : currentPeriod === 'OT' ? 'Овертайм' : currentPeriod === 'SO' ? 'Буллиты' : `${currentPeriod} период`}
            </span>
         </div>
 
@@ -113,7 +127,7 @@ export function ScoreBoardWidget({
           <span className="text-[20px] font-bold uppercase tracking-wide truncate w-full text-center text-graphite">{awayShortName}</span>
           
           {/* Штрафы гостей */}
-          {awayPens.length > 0 && (
+          {awayPens.length > 0 && !isTech && (
             <div className="flex flex-col gap-0.5 mt-1.5 w-full items-center">
               {awayPens.map((p, i) => <span key={i} className="text-[9px] font-mono font-bold bg-status-rejected/10 text-status-rejected px-1 rounded">{formatTime(p.remaining)}</span>)}
             </div>

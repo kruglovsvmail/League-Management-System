@@ -46,13 +46,14 @@ export function TechDefeatModal({ isOpen, onClose, game, onSuccess }) {
   const [selectedResult, setSelectedResult] = useState('none');
   const [isSaving, setIsSaving] = useState(false);
 
-  // При открытии модалки вычисляем текущий результат из БД
   useEffect(() => {
     if (isOpen && game) {
-      if (game.is_technical) {
-        if (game.home_score > game.away_score) setSelectedResult('home_win');
-        else if (game.away_score > game.home_score) setSelectedResult('away_win');
-        else setSelectedResult('both_lose');
+      if (game.is_technical === '+/-') {
+        setSelectedResult('home_win');
+      } else if (game.is_technical === '-/+') {
+        setSelectedResult('away_win');
+      } else if (game.is_technical === '-/-') {
+        setSelectedResult('both_lose');
       } else {
         setSelectedResult('none');
       }
@@ -62,9 +63,13 @@ export function TechDefeatModal({ isOpen, onClose, game, onSuccess }) {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // Принудительно отправляем статус. Если снимаем технарь - отправляем текущий статус 
+      // (даже если он 'finished'), чтобы бэкенд гарантированно запустил пересчет.
+      const targetStatus = selectedResult === 'none' ? (game.status || 'scheduled') : 'finished';
+
       const payload = selectedResult === 'none'
-        ? { status: game.status, end_type: 'regular', tech_result: null }
-        : { status: 'finished', end_type: 'tech', tech_result: selectedResult };
+        ? { status: targetStatus, end_type: 'regular', tech_result: null }
+        : { status: targetStatus, end_type: 'tech', tech_result: selectedResult };
 
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${game.id}/status`, {
         method: 'PUT',

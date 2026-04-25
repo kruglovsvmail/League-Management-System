@@ -55,6 +55,10 @@ export default function Scoreboard({
   const homeColorHex = '#FF5722'; 
   const awayColorHex = '#0EA5E9'; 
 
+  const isTech = !!game.is_technical;
+  const techHome = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+';
+  const techAway = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-';
+
   // =======================================================================
   // ЛОГИКА СЕРИИ БУЛЛИТОВ
   // =======================================================================
@@ -120,7 +124,7 @@ export default function Scoreboard({
   // =======================================================================
   // ВНУТРЕННИЙ КОМПОНЕНТ СТРОКИ КОМАНДЫ
   // =======================================================================
-  const TeamRow = ({ logo, shortName, score, color, penalties, shootoutShots, isTopRow }) => (
+  const TeamRow = ({ logo, shortName, score, color, penalties, shootoutShots, isTopRow, isTechnical }) => (
     <div className={`flex items-stretch h-[44px] bg-zinc-900 relative ${isTopRow ? 'border-b border-zinc-800' : ''}`}>
       <div className="w-2 shrink-0 z-10" style={{ backgroundColor: color }}></div>
       
@@ -133,31 +137,33 @@ export default function Scoreboard({
             {shortName}
           </span>
         </div>
-        <span className="font-mono font-black text-3xl text-white tracking-tighter">
+        <span className={`font-mono font-black text-3xl tracking-tighter ${isTechnical ? 'text-status-rejected' : 'text-white'}`}>
           {score}
         </span>
       </div>
 
-      {/* Отрисовываем либо слоты Буллитов, либо таймеры Штрафов */}
-      {currentPeriod === 'SO' ? (
-        <div className="flex items-center bg-zinc-900/80 px-4 border-l border-zinc-800 z-0">
-          <div className="skew-x-[10deg] flex gap-2 items-center justify-center">
-            {Array.from({ length: displaySlots }).map((_, i) => {
-              const shot = shootoutShots[i];
-              if (!shot) return <div key={i} className="w-2.5 h-2.5 rounded-full border-2 border-zinc-600/50"></div>; // Пустой слот
-              if (shot.event_type === 'shootout_goal') return <ShootoutGoalIcon key={i} />; // Гол
-              return <ShootoutMissIcon key={i} />; // Мимо
-            })}
+      {/* Отрисовываем либо слоты Буллитов, либо таймеры Штрафов, если это НЕ технический результат */}
+      {!isTechnical && (
+        currentPeriod === 'SO' ? (
+          <div className="flex items-center bg-zinc-900/80 px-4 border-l border-zinc-800 z-0">
+            <div className="skew-x-[10deg] flex gap-2 items-center justify-center">
+              {Array.from({ length: displaySlots }).map((_, i) => {
+                const shot = shootoutShots[i];
+                if (!shot) return <div key={i} className="w-2.5 h-2.5 rounded-full border-2 border-zinc-600/50"></div>; // Пустой слот
+                if (shot.event_type === 'shootout_goal') return <ShootoutGoalIcon key={i} />; // Гол
+                return <ShootoutMissIcon key={i} />; // Мимо
+              })}
+            </div>
           </div>
-        </div>
-      ) : penalties.length > 0 && (
-        <div className="flex items-center bg-yellow-400 px-3 border-l border-zinc-800 z-0">
-          <div className="skew-x-[10deg] flex gap-3 text-black font-mono font-black text-xl tracking-tighter">
-            {penalties.map(p => (
-              <span key={p.id}>{formatTime(p.remaining)}</span>
-            ))}
+        ) : penalties.length > 0 && (
+          <div className="flex items-center bg-yellow-400 px-3 border-l border-zinc-800 z-0">
+            <div className="skew-x-[10deg] flex gap-3 text-black font-mono font-black text-xl tracking-tighter">
+              {penalties.map(p => (
+                <span key={p.id}>{formatTime(p.remaining)}</span>
+              ))}
+            </div>
           </div>
-        </div>
+        )
       )}
     </div>
   );
@@ -172,12 +178,12 @@ export default function Scoreboard({
         
         <div className="flex flex-col">
           <TeamRow 
-            logo={homeLogo} shortName={homeShortName} score={game.home_score} 
-            color={homeColorHex} penalties={visibleHome} shootoutShots={homeShootout} isTopRow={true} 
+            logo={homeLogo} shortName={homeShortName} score={isTech ? techHome : game.home_score} 
+            color={homeColorHex} penalties={visibleHome} shootoutShots={homeShootout} isTopRow={true} isTechnical={isTech}
           />
           <TeamRow 
-            logo={awayLogo} shortName={awayShortName} score={game.away_score} 
-            color={awayColorHex} penalties={visibleAway} shootoutShots={awayShootout} isTopRow={false} 
+            logo={awayLogo} shortName={awayShortName} score={isTech ? techAway : game.away_score} 
+            color={awayColorHex} penalties={visibleAway} shootoutShots={awayShootout} isTopRow={false} isTechnical={isTech}
           />
         </div>
 
@@ -195,7 +201,16 @@ export default function Scoreboard({
         </div>
       </div>
 
-      {strengthText && currentPeriod !== 'SO' && (
+      {/* Вывод плашки Технического Результата или Большинства */}
+      {isTech ? (
+        <div className="flex justify-start ml-8 -mt-1 z-[-1]">
+          <div className="skew-x-[-10deg] px-5 py-1 rounded-b-sm border-x border-b border-zinc-950 shadow-md bg-status-rejected text-white">
+            <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em]">
+              ТЕХНИЧЕСКИЙ РЕЗУЛЬТАТ
+            </span>
+          </div>
+        </div>
+      ) : strengthText && currentPeriod !== 'SO' ? (
         <div className="flex justify-start ml-8 -mt-1 z-[-1]">
           <div className={`skew-x-[-10deg] px-5 py-1 rounded-b-sm border-x border-b border-zinc-950 shadow-md ${isPP ? 'bg-yellow-400 text-black' : 'bg-zinc-800 text-white'}`}>
             <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em]">
@@ -203,7 +218,8 @@ export default function Scoreboard({
             </span>
           </div>
         </div>
-      )}
+      ) : null}
+      
     </AnimationWrapper>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Modal } from './Modal';
 import { Loader } from '../ui/Loader';
 import { Table } from '../ui/Table2';
@@ -91,11 +91,6 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     return Math.abs(new Date(diff).getUTCFullYear() - 1970);
   };
 
-  const goToGame = (gameId) => {
-    onClose();
-    navigate(`/games/${gameId}`);
-  };
-
   if (!isOpen) return null;
 
   const skaterColumns = [
@@ -106,7 +101,15 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
        </Tooltip>
     )},
     { label: 'Дивизион', width: 'w-[220px]', render: r => r.division_name },
-    { label: 'Команда', render: r => <span className="text-graphite">{r.team_name}</span> },
+    { label: 'Команда', render: r => (
+       <Tooltip 
+         logo={getImageUrl(r.team_logo || r.logo || '/default/Logo_team_default.webp')} 
+         title={r.team_full_name || r.team_full || r.team_name} 
+         subtitle={r.team_city || r.city}
+       >
+         <span className="text-graphite hover:text-orange transition-colors cursor-default">{r.team_name}</span>
+       </Tooltip>
+    )},
     { label: 'Квал.', width: 'text-center', render: r => r.qual_name ? (
        <Tooltip title={r.qual_full_name} subtitle={r.qual_description}>
          <span><Badge label={r.qual_name} type="filled" /></span>
@@ -128,7 +131,15 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
        </Tooltip>
     )},
     { label: 'Дивизион', width: 'w-[220px]', render: r => r.division_name },
-    { label: 'Команда', render: r => <span className="text-graphite">{r.team_name}</span> },
+    { label: 'Команда', render: r => (
+       <Tooltip 
+         logo={getImageUrl(r.team_logo || r.logo || '/default/Logo_team_default.webp')} 
+         title={r.team_full_name || r.team_full || r.team_name} 
+         subtitle={r.team_city || r.city}
+       >
+         <span className="text-graphite hover:text-orange transition-colors cursor-default">{r.team_name}</span>
+       </Tooltip>
+    )},
     { label: 'Квал.', width: 'text-center', render: r => r.qual_name ? (
        <Tooltip title={r.qual_full_name} subtitle={r.qual_description}>
          <span><Badge label={r.qual_name} type="filled" /></span>
@@ -155,7 +166,14 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
         </div>
     )},
     { label: 'Тип', width: 'w-[40px] text-center', render: r => <span className="text-[13px] text-graphite">{r.stage_type === 'playoff' ? 'ПО' : 'Рег.'}</span> },
-    { label: 'Команда', width: 'w-[250px] text-right', render: r => <span className="text-[13px] text-graphite">{r.player_team_id === r.home_team_id ? r.home_team_full : (r.away_team_full || '-')}</span> },
+    { label: 'Команда', width: 'w-[250px] text-right', render: r => {
+      const [full, logo, city] = r.player_team_id === r.home_team_id ? [r.home_team_full, r.home_team_logo, r.home_team_city] : [r.away_team_full, r.away_team_logo, r.away_team_city];
+      return (
+          <Tooltip logo={getImageUrl(logo || '/default/Logo_team_default.webp')} title={full} subtitle={city}>
+              <span className="text-[13px] hover:text-orange text-graphite-light transition-colors cursor-default">{full || '-'}</span>
+          </Tooltip>
+      );
+    }},
     { label: 'Счет',  width: 'w-[120px] text-center', render: r => {
       const isHome = r.player_team_id === r.home_team_id;
       const playerScore = isHome ? r.home_score : r.away_score;
@@ -166,9 +184,26 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
       else if (playerScore < opponentScore) scoreColorClass = 'text-status-rejected bg-status-rejected/10'; 
 
       if (r.is_technical) {
+        let playerTechResult = '-';
+        let opponentTechResult = '-';
+
+        if (typeof r.is_technical === 'string' && r.is_technical.includes('/')) {
+          const [homeTech, awayTech] = r.is_technical.split('/');
+          playerTechResult = isHome ? homeTech : awayTech;
+          opponentTechResult = isHome ? awayTech : homeTech;
+        } else {
+          playerTechResult = playerScore > opponentScore ? '+' : '-';
+          opponentTechResult = opponentScore > playerScore ? '+' : '-';
+        }
+
+        let techColorClass = 'text-status-rejected bg-status-rejected/10';
+        if (playerTechResult === '+') {
+          techColorClass = 'text-status-accepted bg-status-accepted/10';
+        }
+
         return (
-          <span className={`font-black px-2.5 py-1 rounded-md shadow-sm ${scoreColorClass}`} title="Технический результат">
-            {playerScore > opponentScore ? '+' : '-'}:{opponentScore > playerScore ? '+' : '-'}
+          <span className={`font-black px-2.5 py-1 rounded-md shadow-sm ${techColorClass}`} title="Технический результат">
+            {playerTechResult} : {opponentTechResult}
           </span>
         );
       }
@@ -183,7 +218,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
       const [full, logo, city] = r.player_team_id === r.home_team_id ? [r.away_team_full, r.away_team_logo, r.away_team_city] : [r.home_team_full, r.home_team_logo, r.home_team_city];
       return (
           <Tooltip logo={getImageUrl(logo || '/default/Logo_team_default.webp')} title={full} subtitle={city}>
-              <span className="text-[13px] hover:text-orange text-graphite-light">{full || '-'}</span>
+              <span className="text-[13px] hover:text-orange text-graphite-light transition-colors cursor-default">{full || '-'}</span>
           </Tooltip>
       );
     }},
@@ -193,15 +228,16 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
       </span> 
     )},
     { label: '', width: 'w-[50px] text-right', render: r => (
-      <button 
-        onClick={() => goToGame(r.game_id)}
+      <Link 
+        to={`/games/${r.game_id}`}
+        onClick={onClose}
         className="text-orange text-[12px] underline hover:no-underline transition-transform hover:scale-110 inline-flex"
         title="Перейти к матчу"
       >
         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
           <path d="m560-240-56-58 142-142H160v-80h486L504-662l56-58 240 240-240 240Z"/>
         </svg>
-      </button>
+      </Link>
     )}
   ];
 

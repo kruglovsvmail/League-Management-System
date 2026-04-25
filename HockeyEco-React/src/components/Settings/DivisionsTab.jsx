@@ -408,8 +408,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 items-start animate-zoom-in relative min-h-[500px]">
-      {isLoading && <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none"><Loader text="" /></div>}
-
       {/* ЛЕВЫЙ САЙДБАР */}
       <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6">
         
@@ -467,6 +465,12 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       {/* ПРАВЫЙ КОНТЕНТ */}
       <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 md:p-8 min-h-[500px] relative">
         
+        {isLoading && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                <Loader text="" />
+            </div>
+        )}
+
         {!formData && !isLoading && selectedSeasonId && divisions.length === 0 && (
             <div className="text-center py-20 text-graphite-light font-medium text-[15px]">
                 В этом сезоне еще нет созданных дивизионов.<br/>

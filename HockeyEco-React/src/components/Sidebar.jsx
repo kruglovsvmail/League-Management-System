@@ -96,7 +96,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
               className="flex justify-center cursor-pointer group transition-all pb-2"
               title={selectedLeague?.name ? `Лига: ${selectedLeague.name} (нажмите, чтобы изменить)` : 'Выбрать лигу'}
             >
-              <div className={`w-[90px] h-[90px] shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${
+              <div className={`w-[110px] h-[110px] shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${
                 hasValidLogo ? '' : 'bg-white rounded-xl overflow-hidden shadow-md group-hover:shadow-lg'
               }`}>
                 {hasValidLogo ? (

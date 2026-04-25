@@ -5,167 +5,134 @@ export const recalculatePlayoffs = async (divisionId) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Получаем все сетки дивизиона (Основная всегда идет первой)
-        const bracketsRes = await client.query(
-            'SELECT * FROM playoff_brackets WHERE division_id = $1 ORDER BY is_main DESC, id ASC', 
-            [divisionId]
-        );
-        const brackets = bracketsRes.rows;
-
-        if (brackets.length === 0) {
-            await client.query('ROLLBACK');
-            return;
-        }
-
-        // 2. Получаем турнирную таблицу для посева (seed)
-        const standingsRes = await client.query(`
-            SELECT team_id, rank 
-            FROM division_standings 
-            WHERE division_id = $1 
-            ORDER BY rank ASC
+        // Получаем все пары плей-офф через JOIN с раундами и сетками (строго по вашей БД)
+        const matchupsRes = await client.query(`
+            SELECT pm.id, pm.team1_id, pm.team2_id, pm.winner_id, pm.matchup_number,
+                   pr.id as round_id, pr.wins_needed, pr.order_index, pr.bracket_id
+            FROM playoff_matchups pm
+            JOIN playoff_rounds pr ON pm.round_id = pr.id
+            JOIN playoff_brackets pb ON pr.bracket_id = pb.id
+            WHERE pb.division_id = $1
+            ORDER BY pr.order_index ASC, pm.matchup_number ASC
         `, [divisionId]);
-        const standings = standingsRes.rows;
 
-        const getTeamBySeed = (seedNumber) => {
-            const team = standings.find(s => s.rank === Number(seedNumber));
-            return team ? team.team_id : null;
-        };
+        const matchups = matchupsRes.rows;
 
-        // 3. Получаем все завершенные игры плей-офф в дивизионе
+        // Получаем все завершенные матчи плей-офф
         const gamesRes = await client.query(`
-            SELECT home_team_id, away_team_id, home_score, away_score, is_technical
+            SELECT id, home_team_id, away_team_id, home_score, away_score, 
+                   end_type, is_technical
             FROM games
             WHERE division_id = $1 AND stage_type = 'playoff' AND status = 'finished'
         `, [divisionId]);
-        const games = gamesRes.rows;
 
-        // 4. ИЗМЕНЕНИЕ: Загружаем ВСЕ матчи ВСЕХ сеток дивизиона разом, 
-        // чтобы кросс-ссылки (переходы из одной сетки в другую) могли найтись
-        const allMatchupsRes = await client.query(`
-            SELECT m.*, r.wins_needed, r.order_index, r.bracket_id
-            FROM playoff_matchups m
-            JOIN playoff_rounds r ON m.round_id = r.id
-            WHERE r.bracket_id IN (SELECT id FROM playoff_brackets WHERE division_id = $1)
-        `, [divisionId]);
-        let allMatchups = allMatchupsRes.rows;
+        for (const matchup of matchups) {
+            // Если победитель уже определен - идем дальше
+            if (matchup.winner_id) continue;
 
-        // ИЗМЕНЕНИЕ: Добавляем цикл каскадного обновления (Cascade Resolution)
-        // Сетки могут зависеть друг от друга. Обновляем, пока есть изменения в составах пар или победителях.
-        let hasChanges = true;
-        let iterationCount = 0;
-        const MAX_ITERATIONS = 5; // Защита от бесконечного цикла
+            const t1 = matchup.team1_id;
+            const t2 = matchup.team2_id;
+            
+            // Если команды еще не определены, нет смысла считать
+            if (!t1 || !t2) continue;
 
-        while (hasChanges && iterationCount < MAX_ITERATIONS) {
-            hasChanges = false;
-            iterationCount++;
+            // Находим матчи, где играли именно эти две команды
+            const matches = gamesRes.rows.filter(g => 
+                (g.home_team_id === t1 && g.away_team_id === t2) ||
+                (g.home_team_id === t2 && g.away_team_id === t1)
+            );
 
-            for (const bracket of brackets) {
-                const roundsRes = await client.query(
-                    'SELECT * FROM playoff_rounds WHERE bracket_id = $1 ORDER BY order_index ASC',
-                    [bracket.id]
-                );
-                const rounds = roundsRes.rows;
+            if (matches.length === 0) continue;
 
-                for (const round of rounds) {
-                    const roundMatchups = allMatchups
-                        .filter(m => m.round_id === round.id)
-                        .sort((a, b) => a.matchup_number - b.matchup_number);
+            let team1Wins = 0, team2Wins = 0;
 
-                    for (let m of roundMatchups) {
-                        let newTeam1Id = m.team1_id;
-                        let newTeam2Id = m.team2_id;
+            matches.forEach(game => {
+                const homeScore = game.home_score || 0;
+                const awayScore = game.away_score || 0;
+                const isTeam1Home = game.home_team_id === t1;
 
-                        // --- РАЗРЕШЕНИЕ ИСТОЧНИКА КОМАНДЫ 1 (Глобальный поиск) ---
-                        if (m.team1_source_type === 'seed') {
-                            newTeam1Id = getTeamBySeed(m.team1_source_id);
-                        } else if (m.team1_source_type === 'winner_of') {
-                            const sourceMatchup = allMatchups.find(src => src.id === m.team1_source_id);
-                            newTeam1Id = sourceMatchup ? sourceMatchup.winner_id : null;
-                        } else if (m.team1_source_type === 'loser_of') {
-                            const sourceMatchup = allMatchups.find(src => src.id === m.team1_source_id);
-                            newTeam1Id = sourceMatchup ? sourceMatchup.loser_id : null;
-                        }
+                let homeWonGame = false;
+                let awayWonGame = false;
 
-                        // --- РАЗРЕШЕНИЕ ИСТОЧНИКА КОМАНДЫ 2 (Глобальный поиск) ---
-                        if (m.team2_source_type === 'seed') {
-                            newTeam2Id = getTeamBySeed(m.team2_source_id);
-                        } else if (m.team2_source_type === 'winner_of') {
-                            const sourceMatchup = allMatchups.find(src => src.id === m.team2_source_id);
-                            newTeam2Id = sourceMatchup ? sourceMatchup.winner_id : null;
-                        } else if (m.team2_source_type === 'loser_of') {
-                            const sourceMatchup = allMatchups.find(src => src.id === m.team2_source_id);
-                            newTeam2Id = sourceMatchup ? sourceMatchup.loser_id : null;
-                        }
-
-                        // Если команда продвинулась/упала в сетку, сохраняем изменения
-                        if (newTeam1Id !== m.team1_id || newTeam2Id !== m.team2_id) {
-                            await client.query(`
-                                UPDATE playoff_matchups 
-                                SET team1_id = $1, team2_id = $2 
-                                WHERE id = $3
-                            `, [newTeam1Id, newTeam2Id, m.id]);
-                            
-                            m.team1_id = newTeam1Id;
-                            m.team2_id = newTeam2Id;
-                            hasChanges = true; // Триггерим еще один проход, т.к. изменение могло повлиять дальше
-                        }
-
-                        // Если обе команды известны, считаем победы в их серии
-                        if (m.team1_id && m.team2_id) {
-                            let t1Wins = 0;
-                            let t2Wins = 0;
-
-                            games.forEach(g => {
-                                const isHome1 = g.home_team_id === m.team1_id && g.away_team_id === m.team2_id;
-                                const isHome2 = g.home_team_id === m.team2_id && g.away_team_id === m.team1_id;
-
-                                if (isHome1 || isHome2) {
-                                    const hScore = Number(g.home_score || 0);
-                                    const aScore = Number(g.away_score || 0);
-
-                                    if (g.is_technical) {
-                                        if (hScore > aScore) { if (isHome1) t1Wins++; else t2Wins++; }
-                                        else if (aScore > hScore) { if (isHome2) t1Wins++; else t2Wins++; }
-                                        return; 
-                                    }
-
-                                    if (hScore > aScore) { if (isHome1) t1Wins++; else t2Wins++; }
-                                    else if (aScore > hScore) { if (isHome2) t1Wins++; else t2Wins++; }
-                                }
-                            });
-
-                            let winnerId = null;
-                            let loserId = null;
-
-                            if (t1Wins >= round.wins_needed) { winnerId = m.team1_id; loserId = m.team2_id; }
-                            else if (t2Wins >= round.wins_needed) { winnerId = m.team2_id; loserId = m.team1_id; }
-
-                            // Если результат серии изменился, сохраняем в БД и память
-                            if (winnerId !== m.winner_id || loserId !== m.loser_id || t1Wins !== m.team1_wins || t2Wins !== m.team2_wins) {
-                                await client.query(`
-                                    UPDATE playoff_matchups
-                                    SET team1_wins = $1, team2_wins = $2, winner_id = $3, loser_id = $4
-                                    WHERE id = $5
-                                `, [t1Wins, t2Wins, winnerId, loserId, m.id]);
-                                
-                                m.team1_wins = t1Wins;
-                                m.team2_wins = t2Wins;
-                                m.winner_id = winnerId;
-                                m.loser_id = loserId;
-                                hasChanges = true; // Победа в серии может затриггерить следующего соперника
-                            }
-                        }
-                    }
+                if (game.is_technical) {
+                    if (game.is_technical === '+/-') homeWonGame = true;
+                    else if (game.is_technical === '-/+') awayWonGame = true;
+                } else {
+                    if (homeScore > awayScore) homeWonGame = true;
+                    else if (awayScore > homeScore) awayWonGame = true;
                 }
+
+                if (homeWonGame) { isTeam1Home ? team1Wins++ : team2Wins++; }
+                else if (awayWonGame) { isTeam1Home ? team2Wins++ : team1Wins++; }
+            });
+
+            // Обновляем счет побед в серии
+            await client.query(`
+                UPDATE playoff_matchups 
+                SET team1_wins = $1, team2_wins = $2
+                WHERE id = $3
+            `, [team1Wins, team2Wins, matchup.id]);
+
+            // ПРОВЕРКА ЗАВЕРШЕНИЯ СЕРИИ
+            let newWinnerId = null;
+            let newLoserId = null;
+            
+            // Если в настройках раунда не указано количество побед, по умолчанию считаем до 2-х
+            const winsNeeded = matchup.wins_needed || 2;
+
+            if (team1Wins >= winsNeeded) {
+                newWinnerId = t1;
+                newLoserId = t2;
+            } else if (team2Wins >= winsNeeded) {
+                newWinnerId = t2;
+                newLoserId = t1;
+            }
+
+            // Если победитель определился, продвигаем его дальше по сетке
+            if (newWinnerId) {
+                await client.query(`
+                    UPDATE playoff_matchups 
+                    SET winner_id = $1, loser_id = $2
+                    WHERE id = $3
+                `, [newWinnerId, newLoserId, matchup.id]);
+                
+                await promotePlayoffWinner(client, matchup, newWinnerId);
             }
         }
 
         await client.query('COMMIT');
-    } catch (error) {
+    } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Ошибка при пересчете плей-офф:', error);
-        throw error;
+        console.error('Ошибка в recalculatePlayoffs:', err);
+        throw err;
     } finally {
         client.release();
+    }
+};
+
+// Функция продвижения победителя дальше по сетке
+const promotePlayoffWinner = async (client, matchup, winnerId) => {
+    // Ищем матч следующего раунда в той же сетке (bracket_id)
+    const nextRoundIndex = matchup.order_index + 1;
+    const nextMatchupNumber = Math.ceil(matchup.matchup_number / 2);
+
+    const bracketRes = await client.query(`
+        SELECT pm.id, pm.team1_id, pm.team2_id 
+        FROM playoff_matchups pm
+        JOIN playoff_rounds pr ON pm.round_id = pr.id
+        WHERE pr.bracket_id = $1 AND pr.order_index = $2 AND pm.matchup_number = $3
+    `, [matchup.bracket_id, nextRoundIndex, nextMatchupNumber]);
+    
+    if (bracketRes.rows.length === 0) return; // Финал, дальше продвигать некуда
+
+    const nextMatchup = bracketRes.rows[0];
+    
+    // Если матч нечетный - команда идет в слот team1, если четный - в team2
+    const isTeam1 = matchup.matchup_number % 2 !== 0;
+
+    if (isTeam1) {
+        await client.query('UPDATE playoff_matchups SET team1_id = $1 WHERE id = $2', [winnerId, nextMatchup.id]);
+    } else {
+        await client.query('UPDATE playoff_matchups SET team2_id = $1 WHERE id = $2', [winnerId, nextMatchup.id]);
     }
 };

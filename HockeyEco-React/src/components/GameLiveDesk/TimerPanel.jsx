@@ -46,24 +46,33 @@ export const TimerPanel = ({
 
   const periodsArray = Array.from({ length: periodsCount }, (_, i) => String(i + 1)).concat(['OT', 'SO']);
 
+  const isTech = game?.is_technical;
+  const techHome = typeof isTech === 'string' ? isTech.split('/')[0] : '+';
+  const techAway = typeof isTech === 'string' ? isTech.split('/')[1] : '-';
+
   return (
     <div className="w-[20%] h-full flex flex-col z-10 border-l border-white/5 shadow-[-4px_0_24px_rgba(0,0,0,0.2)] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white p-6 overflow-y-auto custom-scrollbar">
       
-      <div className="flex justify-center items-center gap-4 mb-8 bg-white/5 py-5 px-3 border border-white/10 rounded-xl shadow-inner">
-        <div className="flex flex-col items-center w-1/3 gap-1">
+      <div className="flex justify-center items-center gap-4 mb-8 bg-white/5 py-5 px-3 border border-white/10 rounded-xl shadow-inner relative">
+        {isTech && (
+            <div className="absolute top-2 left-0 right-0 flex justify-center">
+                <span className="text-[8px] font-black text-status-rejected uppercase tracking-widest bg-status-rejected/10 border border-status-rejected/20 px-2 py-0.5 rounded">Тех. результат</span>
+            </div>
+        )}
+        <div className={`flex flex-col items-center w-1/3 gap-1 ${isTech ? 'mt-3' : ''}`}>
           {homeLogo && <img src={homeLogo} alt={homeShortName} className="w-16 h-16 object-contain drop-shadow-md mb-1" />}
           <span className="text-[12px] text-white/50 uppercase font-black tracking-widest leading-none truncate w-full text-center">{homeShortName}</span>
-          <span className="text-5xl font-black text-white leading-none mt-1">{game?.home_score || 0}</span>
+          <span className={`font-black leading-none mt-1 ${isTech ? 'text-status-rejected text-[44px]' : 'text-white text-5xl'}`}>{isTech ? techHome : (game?.home_score || 0)}</span>
         </div>
         
-        <div className="flex flex-col justify-center items-center pb-1">
+        <div className={`flex flex-col justify-center items-center pb-1 ${isTech ? 'mt-3' : ''}`}>
           <span className="text-white/30 font-bold text-3xl mb-1">:</span>
         </div>
 
-        <div className="flex flex-col items-center w-1/3 gap-1">
+        <div className={`flex flex-col items-center w-1/3 gap-1 ${isTech ? 'mt-3' : ''}`}>
           {awayLogo && <img src={awayLogo} alt={awayShortName} className="w-16 h-16 object-contain drop-shadow-md mb-1" />}
           <span className="text-[12px] text-white/50 uppercase font-black tracking-widest leading-none truncate w-full text-center">{awayShortName}</span>
-          <span className="text-5xl font-black text-white leading-none mt-1">{game?.away_score || 0}</span>
+          <span className={`font-black leading-none mt-1 ${isTech ? 'text-status-rejected text-[44px]' : 'text-white text-5xl'}`}>{isTech ? techAway : (game?.away_score || 0)}</span>
         </div>
       </div>
 

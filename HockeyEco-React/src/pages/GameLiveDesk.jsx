@@ -144,12 +144,25 @@ export function GameLiveDesk() {
   const [goalieLog, setGoalieLog] = useState([]);
   const [shotsSummary, setShotsSummary] = useState([]);
 
-  // --- ЛОГИКА АВТОРИЗАЦИИ ДЛЯ ПОЛНОЭКРАННОЙ СТРАНИЦЫ ---
   const [authUser, setAuthUser] = useState(null);
   
-  // Ищем лигу текущего матча в профиле юзера, чтобы права отработали точно
   const activeLeague = authUser?.leagues?.find(l => l.id === game?.league_id) || null;
   const { checkAccess, checkMatchEditAccess } = useAccess(authUser, activeLeague);
+
+  // --- ЛОГИКА АВТОРИЗАЦИИ И ПРАВ ДОСТУПА (ПЕРЕНЕСЕНО НАВЕРХ) ---
+  const gameStaffArray = useMemo(() => {
+    if (!game?.officials) return [];
+    return Object.entries(game.officials)
+      .filter(([role, off]) => off && off.id)
+      .map(([role, off]) => ({ user_id: off.id, role }));
+  }, [game]);
+
+  const matchEditAccess = checkMatchEditAccess(game, gameStaffArray);
+  const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
+  
+  const canAccessPanel = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
+  const isReadOnly = !matchEditAccess.hasAccess;
+  // -------------------------------------------------------------
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -267,28 +280,50 @@ export function GameLiveDesk() {
     return () => newSocket.disconnect();
   }, [gameId]);
 
+  // ======================================================================
+  // ИЗМЕНЕНИЯ ТАЙМЕРА (Локальное тикание + Оптимизированная отправка sync)
+  // ======================================================================
   useEffect(() => {
     let interval = null;
-    if (isTimerRunning) {
-      interval = setInterval(() => setTimerSeconds(prev => prev + 1), 1000);
+    if (isTimerRunning && !isReadOnly) {
+      interval = setInterval(() => {
+          setTimerSeconds(prev => {
+              const next = prev + 1;
+              if (socket?.connected && !ignoreSocketRef.current) {
+                  socket.emit('timer_action', { 
+                      gameId, 
+                      action: 'sync', 
+                      timerData: { seconds: next } 
+                  });
+              }
+              return next;
+          });
+      }, 1000);
     }
     return () => clearInterval(interval);
-  }, [isTimerRunning]);
+  }, [isTimerRunning, socket, gameId, isReadOnly]);
 
   useEffect(() => {
     const limits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
     if (isTimerRunning && limits.end > 0 && timerSeconds >= limits.end) {
       handleTimerAction('stop');
-      socket?.emit('timer_action', { gameId, action: 'set_time', seconds: limits.end });
+      socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: limits.end } });
       setTimerSeconds(limits.end);
     }
   }, [timerSeconds, isTimerRunning, currentPeriod, periodLength, otLength, periodsCount]);
 
   const handleTimerAction = (action) => {
     lockSocketUpdates();
-    if (action === 'start') setIsTimerRunning(true);
-    if (action === 'stop') setIsTimerRunning(false);
-    socket?.emit('timer_action', { gameId, action });
+    let newRunning = isTimerRunning;
+    if (action === 'start') newRunning = true;
+    if (action === 'stop') newRunning = false;
+    
+    setIsTimerRunning(newRunning);
+    socket?.emit('timer_action', { 
+        gameId, 
+        action, 
+        timerData: { isRunning: newRunning, seconds: timerSeconds, period: currentPeriod }
+    });
   };
 
   const changePeriod = (period) => {
@@ -296,14 +331,22 @@ export function GameLiveDesk() {
     setCurrentPeriod(period);
     const limits = getPeriodLimits(period, periodLength, otLength, periodsCount);
     setTimerSeconds(limits.start);
-    socket?.emit('timer_action', { gameId, action: 'set_period', period });
-    socket?.emit('timer_action', { gameId, action: 'set_time', seconds: limits.start });
+    
+    socket?.emit('timer_action', { 
+        gameId, 
+        action: 'change_period', 
+        timerData: { period, seconds: limits.start, isRunning: false } 
+    });
     socket?.emit('game_updated', { gameId });
   };
 
   const saveTimerSettings = async () => {
     lockSocketUpdates();
-    socket?.emit('timer_action', { gameId, action: 'update_settings', periodsCount, periodLength, otLength, soLength, trackPlusMinus });
+    socket?.emit('timer_action', { 
+        gameId, 
+        action: 'update_settings', 
+        timerData: { periodLength, otLength }
+    });
     try {
       await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/timer-settings`, {
         method: 'PUT', headers, body: JSON.stringify({ 
@@ -313,6 +356,7 @@ export function GameLiveDesk() {
       });
     } catch(e) { console.error(e); }
   };
+  // ======================================================================
 
   const toggleLineup = async (rosterId, teamId, currentState) => {
     const updateState = (prev) => prev.map(p => p.id === rosterId ? { ...p, is_in_lineup: !currentState } : p);
@@ -531,19 +575,6 @@ export function GameLiveDesk() {
       }
   };
 
-  const gameStaffArray = useMemo(() => {
-    if (!game?.officials) return [];
-    return Object.entries(game.officials)
-      .filter(([role, off]) => off && off.id)
-      .map(([role, off]) => ({ user_id: off.id, role }));
-  }, [game]);
-
-  const matchEditAccess = checkMatchEditAccess(game, gameStaffArray);
-  const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
-  
-  const canAccessPanel = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
-  const isReadOnly = !matchEditAccess.hasAccess;
-
   if (!game || !authUser) {
       return (
           <div className="min-h-screen bg-gray-light text-graphite-light flex items-center justify-center font-bold text-xl uppercase tracking-widest">
@@ -691,7 +722,7 @@ export function GameLiveDesk() {
         onSetTime={(secs) => {
           lockSocketUpdates();
           setTimerSeconds(secs);
-          socket?.emit('timer_action', { gameId, action: 'set_time', seconds: secs });
+          socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: secs } });
         }}
         isReadOnly={isReadOnly}
       />

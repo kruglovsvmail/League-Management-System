@@ -139,12 +139,13 @@ export function GameCard({
         let homeOptions = [];
         let awayOptions = [];
 
-        if (game.has_protocol && !game.isTemp) {
-            homeOptions = ['Очистите события и составы'];
-            awayOptions = ['Очистите события и составы'];
+       if (game.has_protocol && !game.isTemp) {
+            // Добавляем текущее название команды первым пунктом, чтобы Select его отобразил
+            homeOptions = [game.home_team_name || 'Хозяева', 'Очистите события и составы'];
+            awayOptions = [game.away_team_name || 'Гости', 'Очистите события и составы'];
         } else {
-            homeOptions = ['Не выбрано', ...approvedTeams.filter(t => t.team_id !== game.away_team_id).map(t => t.name)];
-            awayOptions = ['Не выбрано', ...approvedTeams.filter(t => t.team_id !== game.home_team_id).map(t => t.name)];
+            homeOptions = ['Хозяева', ...approvedTeams.filter(t => t.team_id !== game.away_team_id).map(t => t.name)];
+            awayOptions = ['Гости', ...approvedTeams.filter(t => t.team_id !== game.home_team_id).map(t => t.name)];
         }
 
         const currentBracket = game.stage_type === 'playoff'
@@ -288,17 +289,22 @@ export function GameCard({
                 <div className={`${colClasses.home} flex justify-end items-center`}>
                     <div className="w-full">
                         <Select 
-                            disabled={isFinishedOrLive}
-                            options={homeOptions}
-                            value={game.home_team_name || 'Не выбрано'}
-                            onChange={(val) => {
-                                if (val.includes('Очистите') || val === 'Не выбрано') handleFieldChange('home_team_id', null);
-                                else {
-                                    const t = approvedTeams.find(team => team.name === val);
-                                    handleFieldChange('home_team_id', t ? t.team_id : null);
-                                }
-                            }}
-                        />
+    disabled={isFinishedOrLive}
+    options={homeOptions}
+    // Показываем имя команды, если оно есть, иначе — "Хозяева"
+    value={game.home_team_name && game.home_team_name !== 'Не выбрано' ? game.home_team_name : 'Хозяева'}
+    onChange={(val) => {
+        // Если выбран блокирующий пункт — ничего не делаем
+        if (val.includes('Очистите')) return;
+        
+        if (val === 'Хозяева' || val === 'Не выбрано') {
+            handleFieldChange('home_team_id', null);
+        } else {
+            const t = approvedTeams.find(team => team.name === val);
+            handleFieldChange('home_team_id', t ? t.team_id : null);
+        }
+    }}
+/>
                     </div>
                 </div>
 
@@ -306,11 +312,21 @@ export function GameCard({
                     {game.status !== 'scheduled' ? (
                         <div className={`relative inline-flex items-center justify-center ${game.status === 'live' ? 'text-blue-500' : 'text-graphite/60'}`}>
                             {game.is_technical ? (
-                                <span className="text-status-rejected">{game.home_score > game.away_score ? '+' : '-'}:{game.away_score > game.home_score ? '+' : '-'}</span>
+                                <div className="relative inline-flex items-center justify-center text-status-rejected">
+                                    <span className="w-5 flex justify-end">
+                                        {typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+'}
+                                    </span>
+                                    <span className="text-graphite/40 mx-1.5 relative -top-[1px]">:</span>
+                                    <span className="w-5 flex justify-start">
+                                        {typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-'}
+                                    </span>
+                                </div>
                             ) : (
                                 <>
                                     {isHomeSO && <span className="absolute right-full mr-1 text-[11px] text-orange top-1/2 -translate-y-1/2">Б</span>}
-                                    {game.home_score || 0}:{game.away_score || 0}
+                                    <span className="w-5 flex justify-end">{game.home_score || 0}</span>
+                                    <span className="text-graphite/40 mx-1.5 relative -top-[1px]">:</span>
+                                    <span className="w-5 flex justify-start">{game.away_score || 0}</span>
                                     {isAwaySO && <span className="absolute left-full ml-1 text-[11px] text-orange top-1/2 -translate-y-1/2">Б</span>}
                                 </>
                             )}
@@ -323,17 +339,22 @@ export function GameCard({
                 <div className={`${colClasses.away} flex justify-start items-center`}>
                     <div className="w-full">
                         <Select 
-                            disabled={isFinishedOrLive}
-                            options={awayOptions}
-                            value={game.away_team_name || 'Не выбрано'}
-                            onChange={(val) => {
-                                if (val.includes('Очистите') || val === 'Не выбрано') handleFieldChange('away_team_id', null);
-                                else {
-                                    const t = approvedTeams.find(team => team.name === val);
-                                    handleFieldChange('away_team_id', t ? t.team_id : null);
-                                }
-                            }}
-                        />
+    disabled={isFinishedOrLive}
+    options={awayOptions}
+    // Показываем имя команды, если оно есть, иначе — "Гости"
+    value={game.away_team_name && game.away_team_name !== 'Не выбрано' ? game.away_team_name : 'Гости'}
+    onChange={(val) => {
+        // Если выбран блокирующий пункт — ничего не делаем
+        if (val.includes('Очистите')) return;
+
+        if (val === 'Гости' || val === 'Не выбрано') {
+            handleFieldChange('away_team_id', null);
+        } else {
+            const t = approvedTeams.find(team => team.name === val);
+            handleFieldChange('away_team_id', t ? t.team_id : null);
+        }
+    }}
+/>
                     </div>
                 </div>
 
@@ -448,12 +469,20 @@ export function GameCard({
                     <span className="text-[18px] font-black text-graphite/30 tracking-widest">-:-</span>
                 ) : game.is_technical ? (
                     <div className="relative inline-flex items-center justify-center text-[22px] font-black tracking-tighter text-status-rejected">
-                        {game.home_score > game.away_score ? '+' : '-'}:{game.away_score > game.home_score ? '+' : '-'}
+                        <span className="w-6 flex justify-end">
+                            {typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+'}
+                        </span>
+                        <span className="text-graphite/30 mx-2 relative -top-[2px]">:</span>
+                        <span className="w-6 flex justify-start">
+                            {typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-'}
+                        </span>
                     </div>
                 ) : (
                     <div className={`relative inline-flex items-center justify-center text-[22px] font-black tracking-tighter ${game.status === 'live' ? 'text-blue-500' : 'text-graphite'}`}>
                         {isHomeSO && <span className="absolute right-full mr-1 text-[12px] text-orange top-1/2 -translate-y-1/2">Б</span>}
-                        {game.home_score || 0}:{game.away_score || 0}
+                        <span className="w-6 flex justify-end">{game.home_score || 0}</span>
+                        <span className="text-graphite/30 mx-2 relative -top-[2px]">:</span>
+                        <span className="w-6 flex justify-start">{game.away_score || 0}</span>
                         {isAwaySO && <span className="absolute left-full ml-1 text-[12px] text-orange top-1/2 -translate-y-1/2">Б</span>}
                     </div>
                 )}
