@@ -313,51 +313,24 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex flex-col md:flex-row bg-black animate-zoom-in">
-      {/* ЛЕВАЯ ЧАСТЬ - ПРОСМОТР PDF (Адаптивная высота на мобильных) */}
-      <div className="w-full h-[35vh] md:h-full md:flex-1 relative flex flex-col bg-[#525659] shrink-0 border-b md:border-b-0 border-white/10">
+    <div className="fixed inset-0 z-[10000] flex bg-black animate-zoom-in">
+      {/* ЛЕВАЯ ЧАСТЬ - ПРОСМОТР PDF */}
+      <div className="flex-1 h-full relative flex flex-col bg-[#525659]">
         {isLoading && !pdfUrl ? (
            <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white">
               <svg className="w-10 h-10 animate-spin text-orange" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
            </div>
         ) : (
-          <>
-            {/* Десктопная версия (iframe) */}
-            <iframe 
-               src={pdfUrl || ''} 
-               className="hidden md:block w-full h-full border-none bg-white"
-               title="Официальный протокол матча"
-            />
-            
-            {/* Мобильная карточка-заглушка (glassmorphism style) */}
-            <div className="md:hidden w-full h-full flex flex-col items-center justify-center p-4 bg-gradient-to-br from-[#525659] to-[#3a3d40] relative overflow-hidden">
-               {/* Декоративные размытые круги на фоне */}
-               <div className="absolute top-[-20%] left-[-10%] w-32 h-32 bg-orange/20 rounded-full blur-2xl"></div>
-               <div className="absolute bottom-[-10%] right-[-10%] w-40 h-40 bg-black/20 rounded-full blur-2xl"></div>
-               
-               <div className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-2xl flex flex-col items-center text-center shadow-2xl relative z-10">
-                  <svg className="w-10 h-10 text-white/90 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <h3 className="text-white font-black text-sm mb-1 uppercase tracking-wider">Протокол PDF</h3>
-                  <p className="text-white/70 text-[11px] mb-4 max-w-[220px] leading-tight">Мобильные браузеры не поддерживают встроенный просмотр.</p>
-                  <a 
-                     href={pdfUrl} 
-                     target="_blank" 
-                     rel="noopener noreferrer"
-                     className="px-6 py-2.5 bg-orange hover:bg-orange/90 text-white rounded-xl font-bold uppercase tracking-widest text-[11px] shadow-lg active:scale-95 transition-all flex items-center gap-2"
-                  >
-                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                     Открыть файл
-                  </a>
-               </div>
-            </div>
-          </>
+          <iframe 
+             src={pdfUrl || ''} 
+             className="w-full h-full border-none bg-white"
+             title="Официальный протокол матча"
+          />
         )}
       </div>
 
-      {/* ПРАВАЯ ЧАСТЬ - ПАНЕЛЬ ПОДПИСЕЙ (Адаптивная ширина) */}
-      <div className="w-full md:w-[480px] flex-1 md:flex-none h-full bg-[#F4F5F7] flex flex-col shadow-[-20px_0_40px_rgba(0,0,0,0.2)] z-10">
+      {/* ПРАВАЯ ЧАСТЬ - ПАНЕЛЬ ПОДПИСЕЙ */}
+      <div className="w-[480px] h-full bg-[#F4F5F7] flex flex-col shadow-[-20px_0_40px_rgba(0,0,0,0.2)] z-10 shrink-0">
         <div className="px-6 py-3 border-b border-graphite/10 flex justify-between items-center bg-white shrink-0 shadow-sm z-20">
           <div className="flex flex-col">
             <h2 className="font-black text-[18px] text-graphite uppercase tracking-tight">Подписание протокола</h2>
@@ -370,9 +343,9 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-6 py-2 custom-scrollbar">
           {protocolData && (
-             <div className="w-full pb-8">
+             <div className="w-full">
                 <input type="password" style={{ position: 'absolute', opacity: 0, width: 0, height: 0, border: 'none' }} tabIndex="-1" />
                 
                 {renderTeamSection('home', protocolData.home?.name || '')}

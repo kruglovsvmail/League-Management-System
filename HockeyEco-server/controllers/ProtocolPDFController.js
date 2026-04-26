@@ -332,24 +332,16 @@ export const downloadProtocolPDF = async (req, res) => {
         const htmlContent = await getProtocolHtml(leagueId, protocolData);
 
         // 3. Запускаем Puppeteer и создаем PDF
-        const launchOptions = {
+        const browser = await puppeteer.launch({
             headless: 'new',
+            executablePath: '/usr/bin/chromium', // Указываем путь к браузеру в Docker
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
                 '--disable-gpu'
-            ]
-        };
-
-        // Динамически определяем путь к браузеру
-        if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-            launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        } else if (process.platform === 'linux') {
-            launchOptions.executablePath = '/usr/bin/chromium'; // Путь для Timeweb / Docker
-        }
-
-        const browser = await puppeteer.launch(launchOptions);
+            ] 
+        });
         const page = await browser.newPage();
         
         // Загружаем HTML и ждем подгрузки веб-шрифтов (Open Sans)
