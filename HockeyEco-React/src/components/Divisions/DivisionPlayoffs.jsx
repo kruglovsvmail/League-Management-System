@@ -187,7 +187,7 @@ export function DivisionPlayoffs({ divisionId }) {
     <div className="w-full flex flex-col">
       <div className="mb-6 flex items-center justify-between min-h-[38px]">
         <h3 className="text-[18px] font-black text-graphite leading-tight tracking-tight">
-          Сетки Плей-офф
+          Стадия Плей-офф
         </h3>
         
         {canManagePlayoff && brackets.length > 0 && (

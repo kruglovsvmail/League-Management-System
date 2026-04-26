@@ -97,7 +97,7 @@ export function DivisionStandings({ division }) {
     <div className="w-full flex flex-col mb-8">
       <div className="mb-6 flex items-center min-h-[38px]">
         <h3 className="text-[18px] font-black text-graphite leading-tight tracking-tight">
-          Турнирная таблица
+          Регулярный чемпионат
         </h3>
       </div>
       
