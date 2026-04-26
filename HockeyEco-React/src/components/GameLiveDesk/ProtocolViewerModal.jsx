@@ -7,15 +7,16 @@ import { Icon } from '../../ui/Icon';
 
 export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   const [protocolData, setProtocolData] = useState(null);
-  const [pdfUrl, setPdfUrl] = useState(null); 
+  const [htmlContent, setHtmlContent] = useState(''); 
   const [isLoading, setIsLoading] = useState(true);
   
   const [formState, setFormState] = useState({});
   const [isSigning, setIsSigning] = useState(null); 
+  const [zoom, setZoom] = useState(1.0);
 
   const headers = { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
 
-  const loadDataAndPdf = async () => {
+  const loadProtocolData = async () => {
     setIsLoading(true);
     try {
       const resJson = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}`, { headers });
@@ -24,26 +25,31 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
           setProtocolData(apiResponse.data);
       }
 
-      const resPdf = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}/download`, {
-          headers: { 'Authorization': `Bearer ${getToken()}` }
-      });
-      
-      if (!resPdf.ok) {
-          const errorData = await resPdf.text();
-          console.error("Ошибка генерации PDF на сервере:", errorData);
-          alert("Ошибка на сервере при создании PDF. Посмотрите консоль браузера (F12).");
-          setPdfUrl(null);
-          return;
+      const resHtml = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}/html`, { headers });
+      if (resHtml.ok) {
+          let htmlText = await resHtml.text();
+          
+          // Инъекция стилей для печати:
+          // Ставим margin: 0 для самой страницы принтера.
+          // Таким образом принтер не будет добавлять свои поля, 
+          // а использует исключительно padding: 16pt, заложенный в protocol-default.js
+          const printStyles = `
+            <style>
+              @media print {
+                @page { size: A4; margin: 0; }
+                body { 
+                  margin: 0 !important; 
+                  box-shadow: none !important;
+                  -webkit-print-color-adjust: exact; 
+                  print-color-adjust: exact; 
+                }
+              }
+            </style>
+          `;
+          setHtmlContent(htmlText + printStyles);
       }
-
-      const blob = await resPdf.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-      setPdfUrl(objectUrl);
-
     } catch (err) { 
-      console.error('Ошибка загрузки протокола:', err); 
+      console.error('Ошибка загрузки данных протокола:', err); 
     } finally { 
       setIsLoading(false); 
     }
@@ -51,13 +57,13 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
 
   useEffect(() => {
     if (isOpen) {
-      loadDataAndPdf();
+      loadProtocolData();
       setFormState({});
       setIsSigning(null);
+      setZoom(1.0);
+    } else {
+      setHtmlContent(''); 
     }
-    return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-    };
   }, [isOpen, gameId]);
 
   const updateForm = (role, field, value) => {
@@ -84,7 +90,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
       
       if (data.success) {
         setFormState(prev => { const next = { ...prev }; delete next[role]; return next; });
-        await loadDataAndPdf(); 
+        await loadProtocolData(); 
       } else {
         alert(data.error || 'Ошибка подписания');
       }
@@ -94,6 +100,17 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
       setIsSigning(null);
     }
   };
+
+  const handlePrint = () => {
+    const iframe = document.getElementById('protocol-frame');
+    if (iframe && iframe.contentWindow) {
+      iframe.focus();
+      iframe.contentWindow.print();
+    }
+  };
+
+  const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2.0));
+  const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));
 
   if (!isOpen) return null;
 
@@ -314,22 +331,59 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
 
   return (
     <div className="fixed inset-0 z-[10000] flex bg-black animate-zoom-in">
-      {/* ЛЕВАЯ ЧАСТЬ - ПРОСМОТР PDF */}
-      <div className="flex-1 h-full relative flex flex-col bg-[#525659]">
-        {isLoading && !pdfUrl ? (
-           <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white">
+      
+      {/* ЛЕВАЯ ЧАСТЬ - ПРОСМОТР */}
+      <div className="flex-1 h-full relative overflow-hidden bg-[#bababaff] flex flex-col">
+        {isLoading ? (
+           <div className="w-full h-full flex items-center justify-center text-white">
               <svg className="w-10 h-10 animate-spin text-orange" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
            </div>
         ) : (
-          <iframe 
-             src={pdfUrl || ''} 
-             className="w-full h-full border-none bg-white"
-             title="Официальный протокол матча"
-          />
+           <>
+              {/* ПАНЕЛЬ ИНСТРУМЕНТОВ: ГОРИЗОНТАЛЬНАЯ ПО ЦЕНТРУ СВЕРХУ (glassmorphism) */}
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-5 bg-white/10 backdrop-blur-[6px] border border-white/30 text-graphite px-6 py-2.5 rounded-full shadow-2xl z-50">
+                  <button 
+                      onClick={handlePrint} 
+                      className="flex items-center gap-2 hover:text-orange transition-colors uppercase text-[11px] font-bold tracking-wider border-r border-white/50 pr-5" 
+                      title="Напечатать протокол"
+                  >
+                      <Icon name="clock" className="w-4 h-4" />
+                      Печать
+                  </button>
+                  
+                  <div className="flex items-center gap-4 pl-1">
+                      <button onClick={zoomOut} className="w-9 h-9 flex items-center justify-center rounded-[12px] hover:text-orange hover:bg-white/20 transition-colors font-black text-2xl leading-none" title="Уменьшить масштаб">-</button>
+                      <span className="text-[16px] font-mono font-black min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
+                      <button onClick={zoomIn} className="w-9 h-9 flex items-center justify-center rounded-[12px] hover:text-orange hover:bg-white/20 transition-colors font-black text-2xl leading-none" title="Увеличить масштаб">+</button>
+                  </div>
+              </div>
+
+              {/* ЦЕНТРИРОВАННЫЙ ЛИСТ А4 */}
+              <div className="flex-1 overflow-auto w-full flex justify-center py-20 custom-scrollbar">
+                  <div 
+                      className="bg-white shadow-[0_0_50px_rgba(0,0,0,0.6)] transition-transform duration-200"
+                      style={{ 
+                          width: '210mm', 
+                          height: '297mm',
+                          transform: `scale(${zoom})`,
+                          transformOrigin: 'top center',
+                          margin: `0 ${Math.max(0, (zoom - 1) * 210 / 2)}mm`,
+                          marginBottom: `${(zoom - 1) * 297}mm`
+                      }}
+                  >
+                      <iframe 
+                         id="protocol-frame"
+                         srcDoc={htmlContent} 
+                         className="w-full h-full border-none pointer-events-none" 
+                         title="Официальный протокол матча"
+                      />
+                  </div>
+              </div>
+           </>
         )}
       </div>
 
-      {/* ПРАВАЯ ЧАСТЬ - ПАНЕЛЬ ПОДПИСЕЙ */}
+      {/* ПРАВАЯ ЧАСТЬ - ПОДПИСИ */}
       <div className="w-[480px] h-full bg-[#F4F5F7] flex flex-col shadow-[-20px_0_40px_rgba(0,0,0,0.2)] z-10 shrink-0">
         <div className="px-6 py-3 border-b border-graphite/10 flex justify-between items-center bg-white shrink-0 shadow-sm z-20">
           <div className="flex flex-col">

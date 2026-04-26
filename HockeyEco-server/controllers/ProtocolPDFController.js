@@ -6,7 +6,7 @@ import puppeteer from 'puppeteer';
 import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
 
 // ============================================================================
-// ВНУТРЕННЯЯ ФУНКЦИЯ: Сбор всех данных из БД (используется для JSON и PDF)
+// ВНУТРЕННЯЯ ФУНКЦИЯ: Сбор всех данных из БД (используется для JSON, HTML и PDF)
 // ============================================================================
 const fetchRawProtocolData = async (gameId) => {
     const gameQuery = `
@@ -158,7 +158,7 @@ const fetchRawProtocolData = async (gameId) => {
 };
 
 // ============================================================================
-// ВНУТРЕННЯЯ ФУНКЦИЯ: Подготовка данных для рендера (перенос из ProtocolConverter.js)
+// ВНУТРЕННЯЯ ФУНКЦИЯ: Подготовка данных для рендера
 // ============================================================================
 const prepareProtocolData = (apiData) => {
     if (!apiData || !apiData.info || !apiData.teams) return null;
@@ -316,22 +316,40 @@ export const getProtocolData = async (req, res) => {
     }
 };
 
+/**
+ * Возвращает только HTML содержимое протокола для предпросмотра
+ */
+export const getProtocolHtmlView = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+        const rawData = await fetchRawProtocolData(gameId);
+        if (!rawData) return res.status(404).send('Матч не найден');
+        
+        const leagueId = rawData.info.league_id || 0;
+        const protocolData = prepareProtocolData(rawData);
+        
+        const htmlContent = await getProtocolHtml(leagueId, protocolData);
+        
+        res.setHeader('Content-Type', 'text/html');
+        res.send(htmlContent);
+    } catch (error) {
+        console.error('Ошибка получения HTML протокола:', error);
+        res.status(500).send('Ошибка генерации протокола');
+    }
+};
+
 export const downloadProtocolPDF = async (req, res) => {
     try {
         const { gameId } = req.params;
         
-        // 1. Получаем и подготавливаем данные
         const rawData = await fetchRawProtocolData(gameId);
         if (!rawData) return res.status(404).json({ success: false, error: 'Матч не найден' });
         
-        // Получаем leagueId (из division_id) для выбора шаблона в фабрике
         const leagueId = rawData.info.league_id || 0;
         const protocolData = prepareProtocolData(rawData);
         
-        // 2. Генерируем HTML через асинхронную фабрику шаблонов
         const htmlContent = await getProtocolHtml(leagueId, protocolData);
 
-        // 3. Формируем опции для Puppeteer
         const puppeteerOptions = {
             headless: 'new',
             args: [
@@ -342,22 +360,15 @@ export const downloadProtocolPDF = async (req, res) => {
             ] 
         };
 
-        // Если явно задана переменная окружения, используем её
         if (process.env.PUPPETEER_EXECUTABLE_PATH) {
             puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        } 
-        // Иначе, если мы на сервере Linux (в Docker), используем путь по умолчанию для образа
-        else if (process.platform === 'linux') {
+        } else if (process.platform === 'linux') {
             puppeteerOptions.executablePath = '/usr/bin/chromium';
         }
-        // На локальной машине (Windows/Mac) свойство executablePath не задается, 
-        // и Puppeteer будет использовать скачанный в node_modules браузер.
 
-        // Запускаем Puppeteer
         const browser = await puppeteer.launch(puppeteerOptions);
         const page = await browser.newPage();
         
-        // Загружаем HTML и ждем подгрузки веб-шрифтов (Open Sans)
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         
         const pdfBuffer = await page.pdf({
@@ -368,9 +379,8 @@ export const downloadProtocolPDF = async (req, res) => {
 
         await browser.close();
 
-        // 4. Отправляем PDF клиенту в бинарном виде (Buffer)
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="protocol_${gameId}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="protocol_${gameId}.pdf"`);
         res.send(Buffer.from(pdfBuffer));
 
     } catch (error) {

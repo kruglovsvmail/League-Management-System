@@ -160,16 +160,16 @@ export const getHtml = (data) => {
     <head>
         <meta charset="UTF-8">
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
             * { box-sizing: border-box; }
             div { display: flex; flex-direction: column; }
             span { display: inline; }
             body { 
                 margin: 0; 
                 width: 210mm; min-height: 297mm; 
-                font-family: 'Open Sans', Arial, sans-serif; 
+                font-family: 'Roboto', Arial, sans-serif; 
                 background-color: #fff;
-                padding: 0pt;
+                padding: 50pt;
                 font-size: 9pt;
             }
             .headerContainer { text-align: center; margin-bottom: 2pt; align-items: center; }

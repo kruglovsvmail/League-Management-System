@@ -47,11 +47,11 @@ export const recalculateDivisionStandings = async (divisionId) => {
             };
         });
 
-        // 4. Получаем сыгранные матчи
+        // 4. Получаем сыгранные матчи (только регулярный чемпионат)
         const gamesRes = await client.query(`
             SELECT home_team_id, away_team_id, home_score, away_score, end_type, is_technical
             FROM games 
-            WHERE division_id = $1 AND status = 'finished'
+            WHERE division_id = $1 AND status = 'finished' AND stage_type = 'regular'
         `, [divisionId]);
 
         const playedGames = gamesRes.rows;
