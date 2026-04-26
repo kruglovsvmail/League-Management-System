@@ -341,13 +341,13 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
         ) : (
            <>
               {/* ПАНЕЛЬ ИНСТРУМЕНТОВ: ГОРИЗОНТАЛЬНАЯ ПО ЦЕНТРУ СВЕРХУ (glassmorphism) */}
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-5 bg-white/10 backdrop-blur-[6px] border border-white/30 text-graphite px-6 py-2.5 rounded-full shadow-2xl z-50">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-5 bg-white/10 backdrop-blur-[6px] border border-white/30 text-graphite px-6 py-2.5 rounded-full shadow-2xl z-50">
                   <button 
                       onClick={handlePrint} 
                       className="flex items-center gap-2 hover:text-orange transition-colors uppercase text-[11px] font-bold tracking-wider border-r border-white/50 pr-5" 
                       title="Напечатать протокол"
                   >
-                      <Icon name="clock" className="w-4 h-4" />
+                      <Icon name="download" className="w-4 h-4" />
                       Печать
                   </button>
                   
