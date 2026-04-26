@@ -331,17 +331,30 @@ export const downloadProtocolPDF = async (req, res) => {
         // 2. Генерируем HTML через асинхронную фабрику шаблонов
         const htmlContent = await getProtocolHtml(leagueId, protocolData);
 
-        // 3. Запускаем Puppeteer и создаем PDF
-        const browser = await puppeteer.launch({
+        // 3. Формируем опции для Puppeteer
+        const puppeteerOptions = {
             headless: 'new',
-            executablePath: '/usr/bin/chromium', // Указываем путь к браузеру в Docker
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
                 '--disable-dev-shm-usage',
                 '--disable-gpu'
             ] 
-        });
+        };
+
+        // Если явно задана переменная окружения, используем её
+        if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+            puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        } 
+        // Иначе, если мы на сервере Linux (в Docker), используем путь по умолчанию для образа
+        else if (process.platform === 'linux') {
+            puppeteerOptions.executablePath = '/usr/bin/chromium';
+        }
+        // На локальной машине (Windows/Mac) свойство executablePath не задается, 
+        // и Puppeteer будет использовать скачанный в node_modules браузер.
+
+        // Запускаем Puppeteer
+        const browser = await puppeteer.launch(puppeteerOptions);
         const page = await browser.newPage();
         
         // Загружаем HTML и ждем подгрузки веб-шрифтов (Open Sans)
