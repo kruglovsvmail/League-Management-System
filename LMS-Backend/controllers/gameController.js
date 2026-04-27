@@ -1,4 +1,4 @@
-// HockeyEco-server/controllers/gameController.js
+// LMS-Backend/controllers/gameController.js
 import pool from '../config/db.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';

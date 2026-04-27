@@ -1,4 +1,4 @@
-// HockeyEco-React/src/utils/graphicsHelpers.js
+// LMS-Frontend/src/utils/graphicsHelpers.js
 import { getImageUrl } from './helpers'; // Импортируем существующую функцию
 
 export const getSafeUrl = (url) => {

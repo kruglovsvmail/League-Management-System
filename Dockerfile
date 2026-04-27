@@ -41,4 +41,4 @@ EXPOSE 3001
 
 # ЗАПУСКАЕМ НАПРЯМУЮ ЧЕРЕЗ NODE, А НЕ ЧЕРЕЗ NPM
 # Это уберет ошибки SIGTERM из логов
-CMD ["node", "HockeyEco-server/server.js"]
+CMD ["node", "LMS-Backend/server.js"]

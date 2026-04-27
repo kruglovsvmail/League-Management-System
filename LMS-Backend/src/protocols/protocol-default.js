@@ -1,4 +1,4 @@
-// HockeyEco-server/src/protocols/protocol-default.js
+// LMS-Backend/src/protocols/protocol-default.js
 
 const formatTime = (totalSeconds) => {
     if (totalSeconds === undefined || totalSeconds === null) return '';

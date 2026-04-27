@@ -1,4 +1,4 @@
-// HockeyEco-server/src/controllers/ProtocolPDFController.js
+// LMS-Backend/src/controllers/ProtocolPDFController.js
 import pool from '../config/db.js';
 import bcrypt from 'bcrypt';
 import puppeteer from 'puppeteer';

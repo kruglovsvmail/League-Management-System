@@ -1,4 +1,4 @@
-// HockeyEco-server/controllers/GameLiveDeskController.js
+// LMS-Backend/controllers/GameLiveDeskController.js
 import pool from '../config/db.js';
 
 /**

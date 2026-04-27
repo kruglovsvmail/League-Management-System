@@ -1,4 +1,4 @@
-// HockeyEco-server/src/protocols/protocol-factory.js
+// LMS-Backend/src/protocols/protocol-factory.js
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';

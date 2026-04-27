@@ -1,4 +1,4 @@
-// HockeyEco-server/server.js
+// LMS-Backend/server.js
 import 'dotenv/config'; 
 import express from 'express';
 import cors from 'cors';
