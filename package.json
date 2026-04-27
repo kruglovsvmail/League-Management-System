@@ -1,10 +1,9 @@
 {
-  "name": "hockeyeco-team-pwa",
+  "name": "hockey-lms-root",
   "version": "1.0.0",
-  "description": "LMS система управления лигами",
   "scripts": {
-    "postinstall": "npm install --prefix backend && npm install --prefix Frontend",
-    "build": "npm run build --prefix Frontend",
-    "start": "npm start --prefix Backend"
+    "build-server": "cd LMS-Backend && npm install",
+    "start-server": "node LMS-Backend/server.js",
+    "build-client": "cd LMS-Frontend && npm install && npm run build"
   }
 }
