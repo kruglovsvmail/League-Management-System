@@ -351,7 +351,7 @@ export function GamesPage() {
                         <Loader />
                     </div>
                 ) : (
-                    <div className="max-w-[1400px] mx-auto flex flex-col gap-3">
+                    <div className="w-full mx-auto flex flex-col gap-4">
                         {!selectedDivisionId ? (
                             <div className="text-center py-20 text-graphite/50 font-medium bg-white/0 rounded-2xl">
                                 Выберите дивизион для просмотра расписания

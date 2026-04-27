@@ -407,9 +407,9 @@ export function LoginPage({ onLoginSuccess }) {
         {/* ЯРЛЫК (Шеврон) - Адаптивное позиционирование */}
         <div 
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className={`absolute z-[40] cursor-pointer group hover:bg-graphite-dark transition-colors bg-graphite shadow-xl flex items-center justify-center
+          className={`absolute z-[40] cursor-pointer group hover:bg-graphite/10 transition-colors bg-white/20 border border-white/50 flex items-center justify-center
             sm:left-full sm:top-[16%] sm:translate-x-0 sm:translate-y-0 sm:rounded-r-2xl sm:px-1.5 sm:py-6 sm:rounded-b-none
-            left-1/2 -translate-x-1/2 top-full rounded-b-2xl px-6 py-1.5
+            left-3/4 -translate-x-1/2 top-full rounded-b-2xl px-6 py-1.5
           `}
           title={isMenuOpen ? "Скрыть меню" : "Установка PWA"}
         >

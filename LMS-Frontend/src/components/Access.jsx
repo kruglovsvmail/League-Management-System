@@ -1,3 +1,4 @@
+// HockeyEco/src/components/Access.jsx
 import React from 'react';
 import { useAccess } from '../hooks/useAccess';
 

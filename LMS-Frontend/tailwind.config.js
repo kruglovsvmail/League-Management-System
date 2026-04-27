@@ -18,6 +18,11 @@ export default {
         'status-accepted': 'rgb(var(--status-accepted) / <alpha-value>)',
         'status-rejected': 'rgb(var(--status-rejected) / <alpha-value>)',
       },
+
+      boxShadow: {
+        'lg': '0px 0px 20px -3px rgba(0, 0, 0, 0.2)',
+      },
+
       borderRadius: {
         sm: 'var(--radius-sm)',
         md: 'var(--radius-md)',
