@@ -25,22 +25,44 @@ import registryRoutes from './routes/registryRoutes.js';
 import teamManagementRoutes from './routes/teamManagementRoutes.js';
 import gameRoutes from './routes/gameRoutes.js';
 import gameLiveDeskRoutes from './routes/gameLiveDeskRoutes.js';
-import protocolPDFRoutes from './routes/protocolPDFRoutes.js'; // <-- НАШ НОВЫЙ РОУТЕР
+import protocolPDFRoutes from './routes/protocolPDFRoutes.js';
 
 import pool from './config/db.js';
 
 const app = express();
 const server = createServer(app);
 
+// --- Настройка CORS ---
+// Формируем список разрешенных доменов в зависимости от окружения
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [process.env.FRONTEND_URL] // В проде строго только один URL из .env
+  : [
+      process.env.FRONTEND_URL, // Твой IP для телефона
+      'http://localhost:5173',  // Для локальной разработки на ПК
+      'http://127.0.0.1:5173'   // Альтернативный локальный адрес
+    ].filter(Boolean);
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS policy violation: ${origin} is not allowed`));
+    }
+  },
+  credentials: true
+};
+
 // --- ИНИЦИАЛИЗАЦИЯ SOCKET.IO ---
 const io = new Server(server, {
   cors: {
-    origin: '*', // В продакшене лучше указать URL твоего фронта
-    methods: ["GET", "POST"]
+    origin: allowedOrigins, // Передаем массив разрешенных доменов в сокеты
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Простой хелс-чек БД
@@ -76,7 +98,15 @@ app.use('/api', registryRoutes);
 app.use('/api', teamManagementRoutes);
 app.use('/api', gameRoutes);
 app.use('/api', gameLiveDeskRoutes);
-app.use('/api', protocolPDFRoutes); // <-- ПОДКЛЮЧИЛИ РОУТЕР ДЛЯ ПРОТОКОЛОВ
+app.use('/api', protocolPDFRoutes); 
+
+// --- Обработка ошибок ---
+app.use((err, req, res, next) => {
+  if (err.message && err.message.startsWith('CORS')) {
+    return res.status(403).json({ success: false, message: 'Доступ запрещен настройками CORS' });
+  }
+  next(err);
+});
 
 // Инициализация вынесенной логики
 setupTimerSockets(io);
@@ -85,7 +115,12 @@ setupCronJobs();
 const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Сервер HockeyEco LMS (HTTP + WebSockets) запущен на порту ${PORT}`);
+  console.log(`
+🚀 Сервер HockeyEco LMS (HTTP + WebSockets) запущен!
+📡 Порт: ${PORT}
+🛡️ Окружение: ${process.env.NODE_ENV || 'development'}
+🌍 CORS разрешен для: ${allowedOrigins.join(', ')}
+  `);
 });
 
 process.on('uncaughtException', (err) => { console.error('🔥 Критическая ошибка (uncaughtException):', err); });
