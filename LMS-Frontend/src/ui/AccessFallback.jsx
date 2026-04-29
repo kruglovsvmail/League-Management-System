@@ -9,7 +9,7 @@ export function AccessFallback({
   // Режим 1: Информационный баннер "Только чтение" для форм и настроек
   if (variant === 'readonly') {
     return (
-      <div className="flex items-center gap-3 w-full bg-slate-50/80 backdrop-slate-sm border border-slate-200/60 px-4 py-2 rounded-xl mb-2 shadow-sm transition-all hover:bg-slate-50">
+      <div className="flex items-center gap-3 w-full bg-slate-50/80 backdrop-slate-sm border border-slate-200/60 px-4 py-2 rounded-md mb-2 shadow-sm transition-all hover:bg-slate-50">
         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white shadow-sm border border-slate-100 shrink-0">
           <Icon name="lock" className="w-4 h-4 text-slate-500" />
         </div>

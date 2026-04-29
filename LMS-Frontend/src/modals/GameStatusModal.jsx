@@ -96,7 +96,7 @@ export function GameStatusModal({ isOpen, onClose, game, onSuccess, readOnly = f
           <div 
             key={opt.value}
             onClick={() => setSelectedStatus(opt.value)}
-            className={`flex items-center gap-4 p-3.5 rounded-xl cursor-pointer transition-all border ${
+            className={`flex items-center gap-4 p-3.5 rounded-md cursor-pointer transition-all border ${
               selectedStatus === opt.value 
                 ? `${opt.styles.border} ${opt.styles.bg}` 
                 : `border-graphite/10 ${opt.styles.hover} hover:bg-black/5`

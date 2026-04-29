@@ -98,7 +98,7 @@ export function TechDefeatModal({ isOpen, onClose, game, onSuccess }) {
           <div 
             key={opt.value}
             onClick={() => setSelectedResult(opt.value)}
-            className={`flex items-center gap-4 p-3 rounded-xl transition-all border ${
+            className={`flex items-center gap-4 p-3 rounded-md transition-all border ${
               selectedResult === opt.value 
                 ? `${opt.styles.border} ${opt.styles.bg}` 
                 : `border-graphite/10 cursor-pointer ${opt.styles.hover} hover:bg-black/5`

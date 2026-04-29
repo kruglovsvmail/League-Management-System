@@ -15,7 +15,7 @@ export function Badge({ label, type = 'empty' }) {
   const current = types[type] || types.empty;
 
   return (
-    <div className={`relative inline-flex items-center justify-center gap-1.5 w-[58px] h-[24px] rounded-xl text-[0.7rem] font-semibold border ${current.border} ${current.text} overflow-hidden`}>
+    <div className={`relative inline-flex items-center justify-center gap-1.5 w-[58px] h-[24px] rounded-md text-[0.7rem] font-semibold border ${current.border} ${current.text} overflow-hidden`}>
       {/* Фон (прогресс) */}
       <div 
         className={`absolute top-0 left-0 bottom-0 z-0 ${current.bg}`} 

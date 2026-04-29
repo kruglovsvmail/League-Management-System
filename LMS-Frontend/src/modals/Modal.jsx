@@ -35,7 +35,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'default' }) {
       />
       
       {/* Контейнер модального окна */}
-      <div className={`relative w-full ${sizeClasses[size]} bg-white/80 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl flex flex-col max-h-full animate-zoom-in`}>
+      <div className={`relative w-full ${sizeClasses[size]} bg-white/80 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg flex flex-col max-h-full animate-zoom-in`}>
         {/* Шапка */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-graphite/10 bg-white/40 rounded-t-xxl shrink-0">
           <h2 className="text-xl font-black text-graphite uppercase tracking-wide">{title}</h2>

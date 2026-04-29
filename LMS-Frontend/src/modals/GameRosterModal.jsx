@@ -309,7 +309,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                 </div>
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
                   {filteredAvailable.map(p => (
-                    <div key={p.id} className="flex items-center justify-between p-3 hover:bg-orange/5 rounded-xl group transition-colors border border-transparent hover:border-orange/10">
+                    <div key={p.id} className="flex items-center justify-between p-3 hover:bg-orange/5 rounded-md group transition-colors border border-transparent hover:border-orange/10">
                       <div className="flex items-center gap-3 min-w-0 pr-2">
                         <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
                         <div className="min-w-0 flex flex-col justify-center">

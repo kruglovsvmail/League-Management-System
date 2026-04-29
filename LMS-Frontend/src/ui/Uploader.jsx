@@ -67,7 +67,7 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
       {(file || previewUrl) && (
         <div className="flex-1 flex flex-col items-center gap-2 animate-zoom-in w-full h-full">
           <div 
-            className={`group flex-1 w-full relative flex items-center justify-center ${isDisabled ? 'cursor-default' : 'cursor-pointer'} ${isDefaultPreview ? 'rounded-2xl' : 'rounded-xl'} ${isDocument ? 'bg-transparent transition-all duration-300' : 'bg-transparent bg-contain bg-no-repeat bg-center'}`}
+            className={`group flex-1 w-full relative flex items-center justify-center ${isDisabled ? 'cursor-default' : 'cursor-pointer'} ${isDefaultPreview ? 'rounded-2xl' : 'rounded-md'} ${isDocument ? 'bg-transparent transition-all duration-300' : 'bg-transparent bg-contain bg-no-repeat bg-center'}`}
             style={!isDocument ? { backgroundImage: `url(${previewUrl})` } : {}}
             onClick={() => !isDisabled && fileInputRef.current.click()}
           >

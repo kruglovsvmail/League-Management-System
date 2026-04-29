@@ -98,7 +98,7 @@ export default function IntermissionOverlay({ game, overlay, timerSeconds, perio
       isVisible={isVisible}
       className="absolute inset-0 flex items-center justify-center z-50 p-20"
     >
-      <div className="flex flex-col items-center w-full max-w-[1500px] relative overflow-hidden rounded-xxl shadow-2xl transform-gpu">
+      <div className="flex flex-col items-center w-full max-w-[1500px] relative overflow-hidden rounded-lg shadow-2xl transform-gpu">
         
         {/* ГЛОБАЛЬНЫЙ БЛИК */}
         <div className="absolute top-0 bottom-0 w-[80%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
@@ -226,11 +226,11 @@ export default function IntermissionOverlay({ game, overlay, timerSeconds, perio
                             className={`absolute inset-0 flex items-center rounded-lg bg-zinc-950 p-6 transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${positionClass}`}
                           >
                             {/* Фото игрока */}
-                            <div className="relative w-48 h-48 rounded-xxl shrink-0 mr-6">
+                            <div className="relative w-48 h-48 rounded-lg shrink-0 mr-6">
                                <img 
                                  src={getPlayerPhoto(goal)} 
                                  alt="Player" 
-                                 className="w-full h-full rounded-xxl object-cover object-top" 
+                                 className="w-full h-full rounded-lg object-cover object-top" 
                                  onError={(e) => { e.target.src = defaultAvatar; }}
                                />
                                <div className="absolute -bottom-3 -right-4 w-20 h-20 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center p-2 shadow-lg">

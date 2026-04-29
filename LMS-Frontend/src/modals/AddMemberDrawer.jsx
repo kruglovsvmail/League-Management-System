@@ -198,7 +198,7 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
             </div>
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-2">
               {users.map(u => (
-                <div key={u.id || u.user_id} onClick={() => setSelectedUser(u)} className="flex items-center gap-4 p-4 bg-white rounded-xl border border-graphite/10 cursor-pointer hover:border-orange hover:shadow-sm transition-all">
+                <div key={u.id || u.user_id} onClick={() => setSelectedUser(u)} className="flex items-center gap-4 p-4 bg-white rounded-md border border-graphite/10 cursor-pointer hover:border-orange hover:shadow-sm transition-all">
                   <img 
                     src={getImageUrl(u.avatar_url || '/default/user_default.webp')} 
                     className="w-10 h-10 object-cover rounded-lg bg-graphite/5" 
@@ -223,7 +223,7 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
             <div className="p-6 bg-white border-b border-graphite/10 flex items-center gap-4 shrink-0">
               <img 
                 src={getImageUrl(selectedUser.avatar_url || '/default/user_default.webp')} 
-                className="w-16 h-16 object-cover rounded-xl bg-graphite/5 shadow-sm" 
+                className="w-16 h-16 object-cover rounded-md bg-graphite/5 shadow-sm" 
                 alt="avatar"
                 onError={(e) => { e.target.src = getImageUrl('/default/user_default.webp') }}
               />
@@ -239,12 +239,12 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
               {type === 'base' && (
                 <div className="space-y-6">
                   {isAlreadyInBase ? (
-                    <div className="p-4 bg-status-rejected/10 border border-status-rejected/30 rounded-xl flex gap-3 items-start">
+                    <div className="p-4 bg-status-rejected/10 border border-status-rejected/30 rounded-md flex gap-3 items-start">
                       <svg className="w-5 h-5 text-status-rejected shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                       <p className="text-[13px] font-bold text-status-rejected leading-tight">Этот пользователь уже числится в Базе команды.</p>
                     </div>
                   ) : (
-                    <div className="p-4 bg-orange/10 border border-orange/30 rounded-xl">
+                    <div className="p-4 bg-orange/10 border border-orange/30 rounded-md">
                       <p className="text-[13px] font-bold text-orange leading-tight">Пользователь будет привязан к команде. После этого его можно будет добавить в состав или штаб.</p>
                     </div>
                   )}
@@ -253,7 +253,7 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
               {type === 'roster' && (
                 <div className="space-y-6">
                   {isAlreadyInRoster && (
-                    <div className="p-4 bg-status-rejected/10 border border-status-rejected/30 rounded-xl flex gap-3 items-start">
+                    <div className="p-4 bg-status-rejected/10 border border-status-rejected/30 rounded-md flex gap-3 items-start">
                       <svg className="w-5 h-5 text-status-rejected shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                       <p className="text-[13px] font-bold text-status-rejected leading-tight">Этот игрок уже находится в игровом ростере команды.</p>
                     </div>
@@ -269,7 +269,7 @@ export function AddMemberDrawer({ isOpen, onClose, teamId, type, onSuccess, rost
                 <div className="space-y-3">
                   <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide mb-2 block">Роли в команде (можно выбрать несколько)</label>
                   {ROLES.map(role => (
-                    <div key={role.id} onClick={() => toggleRole(role.id)} className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${selectedRoles.has(role.id) ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-graphite/30'}`}>
+                    <div key={role.id} onClick={() => toggleRole(role.id)} className={`flex items-center gap-3 p-4 rounded-md border cursor-pointer transition-all ${selectedRoles.has(role.id) ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-graphite/30'}`}>
                       <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${selectedRoles.has(role.id) ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>
                         {selectedRoles.has(role.id) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>}
                       </div>

@@ -381,7 +381,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                     {currentSeasonsStats.length > 0 ? (
                       <Table columns={isGoalieTab ? goalieColumns : skaterColumns} data={currentSeasonsStats} />
                     ) : (
-                      <div className="text-center text-graphite-light p-5 bg-graphite/5 rounded-xl border border-dashed border-graphite/20">Нет статистики в текущих сезонах</div>
+                      <div className="text-center text-graphite-light p-5 bg-graphite/5 rounded-md border border-dashed border-graphite/20">Нет статистики в текущих сезонах</div>
                     )}
                   </div>
 
@@ -390,7 +390,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                     {pastSeasonsStats.length > 0 ? (
                       <Table columns={isGoalieTab ? goalieColumns : skaterColumns} data={pastSeasonsStats} />
                     ) : (
-                      <div className="text-center text-graphite-light p-5 bg-graphite/5 rounded-xl border border-dashed border-graphite/20">Нет истории в прошедших сезонах</div>
+                      <div className="text-center text-graphite-light p-5 bg-graphite/5 rounded-md border border-dashed border-graphite/20">Нет истории в прошедших сезонах</div>
                     )}
                   </div>
                 </div>
@@ -414,7 +414,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                     {filteredMatches.length > 0 ? (
                       <Table columns={matchColumns} data={filteredMatches} />
                     ) : (
-                      <div className="text-center text-graphite-light p-10 mt-5 bg-white rounded-xl border border-dashed border-graphite/20">Матчи не найдены по заданным фильтрам</div>
+                      <div className="text-center text-graphite-light p-10 mt-5 bg-white rounded-md border border-dashed border-graphite/20">Матчи не найдены по заданным фильтрам</div>
                     )}
                   </div>
                 </div>

@@ -172,7 +172,7 @@ const MatchupSettingsModal = ({ data, activeBracketId, round, matchup, onSave, o
                 
                 <div className="flex-1 relative">
                     {type === 'seed' && (
-                        <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-graphite/10 shadow-sm animate-zoom-in absolute w-full">
+                        <div className="flex items-center justify-between p-4 bg-white rounded-md border border-graphite/10 shadow-sm animate-zoom-in absolute w-full">
                             <span className="text-[13px] font-bold text-graphite uppercase tracking-wide">Номер посева</span>
                             <Stepper 
                                 initialValue={parseInt(refVal, 10) || 1} 
@@ -646,7 +646,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
         return (
             <button 
                 onClick={addRound}
-                className="absolute flex items-center justify-center bg-white/5 backdrop-blur-[8px] hover:bg-white border-2 border-dashed border-gray-300 hover:border-orange text-gray-500 hover:text-orange transition-all rounded-xl pointer-events-auto z-10 shadow-sm"
+                className="absolute flex items-center justify-center bg-white/5 backdrop-blur-[8px] hover:bg-white border-2 border-dashed border-gray-300 hover:border-orange text-gray-500 hover:text-orange transition-all rounded-md pointer-events-auto z-10 shadow-sm"
                 style={{ left: `${btnX}px`, top: '50px', width: '220px', height: '64px' }}
             >
                 <span className="font-bold text-sm">+ Добавить раунд</span>
@@ -701,7 +701,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
             </div>
 
             <div className="absolute top-5 right-5 pointer-events-auto flex items-center gap-3 z-[60]">
-                <div className="bg-white/20 backdrop-blur-xl border border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.04)] rounded-xl px-4 py-2.5 text-[13px] font-bold text-graphite/60 tracking-widest select-none">
+                <div className="bg-white/20 backdrop-blur-xl border border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.04)] rounded-md px-4 py-2.5 text-[13px] font-bold text-graphite/60 tracking-widest select-none">
                     {Math.round(zoom * 100)}%
                 </div>
                 <Button 
@@ -746,7 +746,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
                             <div key={round.id} className="absolute flex flex-col gap-3 w-[230px] pointer-events-auto" style={{ left: `${round.x}px`, top: `${round.y}px` }}>
                                 <div onMouseDown={(e) => handleRoundDragStart(e, round)} 
                                      onDoubleClick={() => { setEditRoundParams({ id: round.id, name: round.name, originalName: round.name, wins: round.wins }); setRoundModalError(''); }}
-                                     className={`bg-orange/5 backdrop-blur-[8px] rounded-xl p-3 border shadow-sm flex flex-col gap-2 z-20 cursor-grab ${nodeDragging?.id === round.id ? 'border-orange ring-2 ring-orange/30' : 'border-slate-300 hover:border-slate-400'}`}>
+                                     className={`bg-orange/5 backdrop-blur-[8px] rounded-md p-3 border shadow-sm flex flex-col gap-2 z-20 cursor-grab ${nodeDragging?.id === round.id ? 'border-orange ring-2 ring-orange/30' : 'border-slate-300 hover:border-slate-400'}`}>
                                     <div className="flex items-center gap-2">
                                         <span className="w-5 h-5 rounded-full bg-graphite text-white font-bold text-[10px] flex items-center justify-center shrink-0">{round.order}</span>
                                         <span className="text-[14px] font-bold text-graphite truncate" title={round.name}>{round.name}</span>
@@ -769,7 +769,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
                                         const badge = getMatchBadge(matchup.match_type);
                                         return (
                                         <div key={matchup.id} onMouseDown={(e) => handleMatchupDragStart(e, round.id, matchup)} onDoubleClick={() => setEditMatchupParams({ roundId: round.id, matchupId: matchup.id })}
-                                            className={`absolute flex flex-col w-[230px] bg-white border rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-grab group/card ${nodeDragging?.matchupId === matchup.id ? 'border-orange ring-2 ring-orange/30 z-30' : 'border-gray-200 z-10'}`} style={{ top: `${matchup.y}px` }}>
+                                            className={`absolute flex flex-col w-[230px] bg-white border rounded-md shadow-sm hover:shadow-md transition-shadow cursor-grab group/card ${nodeDragging?.matchupId === matchup.id ? 'border-orange ring-2 ring-orange/30 z-30' : 'border-gray-200 z-10'}`} style={{ top: `${matchup.y}px` }}>
                                             
                                             <div className="flex justify-between items-center px-2 py-1.5 border-b border-gray-100 rounded-t-xl bg-gray-50/50">
                                                 <div className="flex items-center gap-1.5">
@@ -892,7 +892,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
                             onChange={e => setEditRoundParams({...editRoundParams, name: e.target.value})} 
                         />
                         <div className="flex flex-col gap-1">
-                            <div className="flex items-center justify-between p-2 bg-graphite/5 rounded-xl border border-graphite/10">
+                            <div className="flex items-center justify-between p-2 bg-graphite/5 rounded-md border border-graphite/10">
                                 <span className="text-[12px] font-bold text-graphite uppercase tracking-wide px-2">Необходимое количество побед</span>
                                 <Stepper 
                                     initialValue={editRoundParams.wins} 

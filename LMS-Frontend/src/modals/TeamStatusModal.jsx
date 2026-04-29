@@ -71,7 +71,7 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
           <div 
             key={opt.value}
             onClick={() => !readOnly && setSelectedStatus(opt.value)}
-            className={`flex items-center gap-4 p-3.5 rounded-xl transition-all border ${
+            className={`flex items-center gap-4 p-3.5 rounded-md transition-all border ${
               selectedStatus === opt.value 
                 ? `${opt.styles.border} ${opt.styles.bg}` 
                 : `border-graphite/10 ${opt.styles.hover} hover:bg-black/5`

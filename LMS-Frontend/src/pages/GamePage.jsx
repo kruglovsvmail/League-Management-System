@@ -268,7 +268,7 @@ export function GamePage() {
     ];
 
     return (
-      <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-6 pt-5 shadow-sm flex flex-col h-full animate-zoom-in">
+      <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 pt-5 shadow-sm flex flex-col h-full animate-zoom-in">
         <div className="flex items-center justify-between border-b border-graphite/10 pb-3 mb-4 shrink-0">
           <div className="flex flex-wrap items-center gap-3 w-full justify-between">
              <span className="text-[12px] font-black uppercase text-graphite/40 tracking-widest">{side === 'home' ? 'Хозяева' : 'Гости'}</span>
@@ -406,7 +406,7 @@ export function GamePage() {
           
           <div className="flex-1 relative z-10 flex flex-col min-w-0 gap-6">
             
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-sm p-6 md:p-6 animate-zoom-in">
+            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 md:p-6 animate-zoom-in">
               <div className="flex items-center justify-between mb-8 flex-1">
                 {/* Хозяева */}
                 <div className="flex-1 flex items-center justify-end gap-5">
@@ -474,7 +474,7 @@ export function GamePage() {
               )}
 
               {tabIndex === 1 && (
-                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
+                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Обслуживающие матч</h3>
                   </div>
@@ -509,7 +509,7 @@ export function GamePage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-20 text-graphite-light border border-dashed border-graphite/10 rounded-xl">
+                    <div className="flex flex-col items-center justify-center py-20 text-graphite-light border border-dashed border-graphite/10 rounded-md">
                       <span className="text-[14px] font-medium text-graphite/60 mb-1">Бригада арбитров не назначена</span>
                     </div>
                   )}
@@ -517,7 +517,7 @@ export function GamePage() {
               )}
 
               {tabIndex === 2 && (
-                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
+                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Ход Матча</h3>
                   </div>
@@ -577,7 +577,7 @@ export function GamePage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-16 text-graphite-light border border-dashed border-graphite/10 rounded-xl">
+                    <div className="flex flex-col items-center justify-center py-16 text-graphite-light border border-dashed border-graphite/10 rounded-md">
                       <span className="text-[14px] font-medium text-graphite/60">Событий пока нет</span>
                     </div>
                   )}
@@ -586,7 +586,7 @@ export function GamePage() {
             </div>
           </div>
 
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl p-5 flex flex-col gap-1 shadow-sm z-20 animate-zoom-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-5 flex flex-col gap-1 shadow-sm z-20 animate-zoom-in">
             
             <div className="flex flex-col gap-4 bg-white/0 py-5 px-3 border-b border-graphite/10">
               <div>
@@ -640,7 +640,7 @@ export function GamePage() {
                    canEnterLiveDesk ? (
                      <Link
                        to={`/games/${game.id}/live-desk`}
-                       className="block text-center w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm bg-graphite/80 text-white hover:bg-graphite"
+                       className="block text-center w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/80 text-white hover:bg-graphite"
                      >
                        {game?.is_protocol_signed ? 'Панель секретаря' : 'Панель секретаря'}
                      </Link>
@@ -648,7 +648,7 @@ export function GamePage() {
                      <button
                        disabled
                        title={matchEditAccess.reason}
-                       className="w-full py-2.5 rounded-xl text-[12px] font-bold transition-all shadow-sm bg-graphite/20 text-graphite/50 cursor-not-allowed"
+                       className="w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/20 text-graphite/50 cursor-not-allowed"
                      >
                        Панель секретаря
                      </button>
@@ -657,7 +657,7 @@ export function GamePage() {
                 {canManageOfficials && isScheduled && (
                    <button 
                      onClick={() => setIsOfficialsModalOpen(true)} 
-                     className="bg-graphite/80 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-graphite transition-colors shadow-sm"
+                     className="bg-graphite/80 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite transition-colors shadow-sm"
                    >
                      {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
                    </button>
@@ -669,13 +669,13 @@ export function GamePage() {
               <div className="flex flex-col gap-3 bg-white/0 p-2 py-6">
                 <Link 
                   to={`/games/${gameId}/graphics-panel`}
-                  className="block text-center bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
+                  className="block text-center bg-green-500 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
                 >
                   Панель трансляции
                 </Link>
                 <button 
                   onClick={handleCopyOBSLink}
-                  className="bg-green-500 text-white w-full py-2.5 rounded-xl text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
+                  className="bg-green-500 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
                 >
                   {obsCopied ? 'Ссылка скопирована!' : 'Ссылка для OBS'}
                 </button>
@@ -726,7 +726,7 @@ const OfficialCard = ({ label, official }) => {
 };
 
 const ScoreBadge = ({ score }) => (
-  <div className="bg-graphite/5 px-4 py-1.5 rounded-xl border border-graphite/10 text-[18px] font-black text-graphite/80 tracking-widest shadow-inner">
+  <div className="bg-graphite/5 px-4 py-1.5 rounded-md border border-graphite/10 text-[18px] font-black text-graphite/80 tracking-widest shadow-inner">
     {score}
   </div>
 );
@@ -749,7 +749,7 @@ const EventCard = ({ ev, isHome }) => {
   }
 
   return (
-    <div className={`flex items-start gap-4 p-4 rounded-xxl border ${borderClass} bg-gradient-to-br ${bgClass} shadow-sm hover:shadow-md transition-all w-full max-w-[340px] ${isHome ? 'flex-row' : 'flex-row-reverse text-right'}`}>
+    <div className={`flex items-start gap-4 p-4 rounded-lg border ${borderClass} bg-gradient-to-br ${bgClass} shadow-sm hover:shadow-md transition-all w-full max-w-[340px] ${isHome ? 'flex-row' : 'flex-row-reverse text-right'}`}>
       <div className="relative shrink-0 mt-1">
         <img 
           src={getImageUrl(ev.primary_photo_url || ev.primary_avatar_url || '/default/user_default.webp')} 

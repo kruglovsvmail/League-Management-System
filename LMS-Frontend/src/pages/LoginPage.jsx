@@ -191,19 +191,19 @@ export function LoginPage({ onLoginSuccess }) {
       </div>
 
       {/* Единый контейнер карточки */}
-      <div className={`relative flex flex-col sm:flex-row items-stretch bg-white/60 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-2xl shadow-black/5 z-20 ${isReady ? 'transition-all duration-500 ease-in-out' : ''}`}>
+      <div className={`relative flex flex-col mt-[-3rem] sm:flex-row items-stretch bg-white/60 backdrop-blur-xl border border-white/80 sm:rounded-[1rem] shadow-2xl shadow-black/5 z-20 ${isReady ? 'transition-all duration-500 ease-in-out' : ''}`}>
         
-        {/* ЛЕВАЯ ЧАСТЬ: Основная форма авторизации */}
-        <div className="w-[calc(100vw-32px)] sm:w-[400px] p-6 sm:p-8 shrink-0 relative z-20 bg-white/40 sm:bg-transparent rounded-[2rem] sm:rounded-none">
-          <div className="text-center mb-6">
+{/* ЛЕВАЯ ЧАСТЬ: Основная форма авторизации */}
+        <div className="w-[calc(100vw-0px)] sm:w-[400px] p-10 sm:p-8 shrink-0 relative  z-20 sm:bg-transparent rounded-[2rem] sm:rounded-none">
+          <div className="text-left mb-3">
             <h1 className="text-4xl font-bold text-graphite tracking-tight">HockeyEco <span className="text-orange">LMS</span></h1>
           </div>
 
-          <div className="text-center mb-8 h-6">
+          <div className="text-left mb-8 h-6">
             {userName ? (
               <p className="text-graphite font-bold text-lg animate-zoom-in">Привет, {userName}!</p>
             ) : (
-              <p className="text-graphite-light text-sm font-semibold uppercase tracking-wide leading-none">Доступ к панели управления</p>
+              <p className="text-graphite-light text-sm font-semibold uppercase tracking-wide leading-none">Система управления лигой</p>
             )}
           </div>
 
@@ -293,7 +293,7 @@ export function LoginPage({ onLoginSuccess }) {
             </div>
 
             <div className="pt-2 relative z-20">
-              <Button onClick={handleLogin} isLoading={isLoading} loadingText="Вход..." className="w-full shadow-lg shadow-orange/20">
+              <Button onClick={handleLogin} isLoading={isLoading} loadingText="Вход..." className="w-full text-[16px] shadow-lg h-12 shadow-orange/20">
                 Войти в систему
               </Button>
             </div>
@@ -308,7 +308,7 @@ export function LoginPage({ onLoginSuccess }) {
               : 'max-h-0 sm:max-h-none w-full sm:w-0 opacity-0 border-none'
           }`}
         >
-          <div className="w-[calc(100vw-32px)] sm:w-[320px] p-6 sm:p-8 sm:pl-0 h-full flex flex-col">
+          <div className="w-[calc(100vw-0px)] sm:w-[320px] p-8 sm:p-8 sm:pl-0 h-full flex flex-col">
             
             <div className="h-full pt-6 sm:pt-0 sm:pl-8 flex flex-col text-graphite/50">
               
@@ -332,7 +332,7 @@ export function LoginPage({ onLoginSuccess }) {
                 <div className="space-y-6 flex-1 flex flex-col">
                   <section>
                     {isStandalone ? (
-                      <div className="p-3 rounded-xl border border-status-accepted/30 bg-status-accepted/5 text-center">
+                      <div className="p-3 rounded-md border border-status-accepted/30 bg-status-accepted/5 text-center">
                         <span className="text-[10px] font-bold text-status-accepted/70 uppercase tracking-widest">Установлено</span>
                       </div>
                     ) : (
@@ -340,11 +340,11 @@ export function LoginPage({ onLoginSuccess }) {
                         {isSafari ? (
                           <div className="space-y-3">
                             <p className="text-[10px] font-bold uppercase tracking-wider mb-2">Браузер Safari:</p>
-                            <div className="flex items-center gap-3 bg-white/60 p-2.5 rounded-xl border border-graphite/10">
+                            <div className="flex items-center gap-3 bg-white/60 p-2.5 rounded-md border border-graphite/10">
                               <svg className="w-4 h-4 text-graphite/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4m0 0L8 6m4-4v13"/></svg>
                               <span className="text-[11px] font-medium leading-tight text-graphite/70">1. Нажмите «Поделиться» (внизу)</span>
                             </div>
-                            <div className="flex items-center gap-3 bg-white/60 p-2.5 rounded-xl border border-graphite/10">
+                            <div className="flex items-center gap-3 bg-white/60 p-2.5 rounded-md border border-graphite/10">
                               <div className="w-4 h-4 rounded flex items-center justify-center shrink-0 text-[14px] font-bold text-graphite/50 border border-graphite/20">+</div>
                               <span className="text-[11px] font-medium leading-tight text-graphite/70">2. Нажмите «На экран "Домой"»</span>
                             </div>
@@ -355,7 +355,7 @@ export function LoginPage({ onLoginSuccess }) {
                             <button 
                               onClick={handleInstallClick} 
                               disabled={!isInstallable}
-                              className={`w-full py-2.5 rounded-xl border text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                              className={`w-full py-2.5 rounded-md border text-[11px] font-bold uppercase tracking-widest transition-colors ${
                                 isInstallable 
                                   ? 'bg-white/50 border-graphite/20 text-graphite/60 hover:border-orange hover:text-orange shadow-sm'
                                   : 'bg-transparent border-graphite/10 text-graphite/30 cursor-not-allowed'
@@ -408,8 +408,8 @@ export function LoginPage({ onLoginSuccess }) {
         <div 
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className={`absolute z-[40] cursor-pointer group hover:bg-graphite/10 transition-colors bg-white/20 border border-white/50 flex items-center justify-center
-            sm:left-full sm:top-[16%] sm:translate-x-0 sm:translate-y-0 sm:rounded-r-2xl sm:px-1.5 sm:py-6 sm:rounded-b-none
-            left-3/4 -translate-x-1/2 top-full rounded-b-2xl px-6 py-1.5
+            sm:left-full sm:top-[16%] sm:translate-x-0 sm:translate-y-0 sm:rounded-r-full sm:px-1.5 sm:py-6 sm:rounded-b-none
+            left-3/4 -translate-x-1/2 top-full w-[120px] h-[30px] sm:h-[90px] sm:w-[30px] rounded-b-full px-6 py-2
           `}
           title={isMenuOpen ? "Скрыть меню" : "Установка PWA"}
         >

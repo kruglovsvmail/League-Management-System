@@ -95,7 +95,7 @@ export function Tooltip({ children, logo, title, subtitle, position = 'top', noU
           // --- НАСТРОЙКА 2: СКОРОСТЬ АНИМАЦИИ ---
           // duration-200 (200мс) — это скорость изменения прозрачности. 
           // Можете заменить на duration-300 или duration-500, если хотите медленнее.
-          className="absolute z-[100010] bg-white/90 backdrop-blur-[10px] border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] rounded-xl p-3 flex items-start gap-3.5 pointer-events-none animate-zoom-in transition-opacity duration-200"
+          className="absolute z-[100010] bg-white/90 backdrop-blur-[10px] border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] rounded-md p-3 flex items-start gap-3.5 pointer-events-none animate-zoom-in transition-opacity duration-200"
           style={{ left: coords.left, top: coords.top }}
         >
           {logo && (

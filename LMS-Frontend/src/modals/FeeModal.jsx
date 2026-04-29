@@ -21,7 +21,7 @@ export function FeeModal({ isOpen, onClose, onSave, isSaving = false, initialPai
         <AccessFallback variant="readonly" message="Режим просмотра. Изменение статуса оплаты недоступно." />
       )}
 
-      <div className="flex items-center justify-between bg-white/60 p-5 rounded-xl border border-graphite/10 mb-6 mt-2">
+      <div className="flex items-center justify-between bg-white/60 p-5 rounded-md border border-graphite/10 mb-6 mt-2">
         <div className="flex flex-col gap-1">
           <span className="font-bold text-[14px] text-graphite">Взнос участника оплачен</span>
           <span className="text-[12px] text-graphite-light">{playerName} внес оплату</span>

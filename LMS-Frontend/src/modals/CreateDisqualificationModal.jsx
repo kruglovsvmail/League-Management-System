@@ -130,7 +130,7 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
               <SegmentButton options={['Матчи', 'Время', 'Ручной']} defaultIndex={typeIndex} onChange={setTypeIndex} disabled={readOnly} />
             </div>
 
-            <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-xl animate-zoom-in">
+            <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-md animate-zoom-in">
                <div className="flex flex-col gap-1">
                  <label className="text-[11px] font-bold text-status-rejected uppercase">Причина / Пункт</label>
                  <Input placeholder="Например: Подножка, п. 3.2" value={reason} onChange={e => setReason(e.target.value)} disabled={readOnly} />
@@ -177,7 +177,7 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
                   <div 
                     key={p.tournament_roster_id} 
                     onClick={() => { if (!readOnly) setSelectedRosterId(p.tournament_roster_id); }} 
-                    className={`flex items-center gap-4 p-3 rounded-xl border transition-all duration-300 ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'} ${selectedRosterId === p.tournament_roster_id ? 'border-status-rejected bg-status-rejected/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}
+                    className={`flex items-center gap-4 p-3 rounded-md border transition-all duration-300 ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'} ${selectedRosterId === p.tournament_roster_id ? 'border-status-rejected bg-status-rejected/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}
                   >
                     <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
                       <img src={getImageUrl(p.team_member_photo_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />

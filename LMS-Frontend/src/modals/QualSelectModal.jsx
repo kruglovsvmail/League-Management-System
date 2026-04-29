@@ -36,7 +36,7 @@ export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQ
         
         <div 
           onClick={() => !readOnly && setSelectedId(null)}
-          className={`flex items-center gap-4 p-3 rounded-xl transition-all border ${
+          className={`flex items-center gap-4 p-3 rounded-md transition-all border ${
             selectedId === null 
               ? 'border-orange bg-orange/10' 
               : 'border-graphite/10' 
@@ -59,7 +59,7 @@ export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQ
             <div 
               key={qual.id}
               onClick={() => !readOnly && setSelectedId(qual.id)}
-              className={`flex items-center gap-4 p-3 rounded-xl transition-all border ${
+              className={`flex items-center gap-4 p-3 rounded-md transition-all border ${
                 selectedId === qual.id 
                   ? 'border-orange bg-orange/10' 
                   : 'border-graphite/10'

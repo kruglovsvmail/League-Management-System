@@ -276,7 +276,7 @@ export function WebGraphicsPanel() {
       <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
         {activeDragData ? (
           activeDragData.isSource ? (
-            <div className="w-[160px] p-3 bg-white/90 backdrop-blur-md border-2 border-status-accepted rounded-xl shadow-2xl scale-105 flex items-center justify-center opacity-90">
+            <div className="w-[160px] p-3 bg-white/90 backdrop-blur-md border-2 border-status-accepted rounded-md shadow-2xl scale-105 flex items-center justify-center opacity-90">
                <span className="text-[12px] font-black uppercase tracking-widest text-status-accepted">{activeDragData.label}</span>
             </div>
           ) : (

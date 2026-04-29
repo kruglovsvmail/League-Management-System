@@ -126,7 +126,7 @@ const PlayoffSummary = ({ divisionId, canEditPlayoff }) => {
 
     return (
         <div className="flex flex-col gap-8 w-full animate-zoom-in max-w-full">
-            <div className="flex justify-between items-center bg-white/60 p-6 rounded-xl border border-graphite/10">
+            <div className="flex justify-between items-center bg-white/60 p-6 rounded-md border border-graphite/10">
                 <div className="flex flex-col">
                     <span className="text-[15px] font-bold text-graphite uppercase">Управление сетками</span>
                     <span className="text-[12px] text-graphite-light mt-1">
@@ -146,7 +146,7 @@ const PlayoffSummary = ({ divisionId, canEditPlayoff }) => {
                     <PlayoffStructureView brackets={brackets} />
                 </div>
             ) : (
-                 <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-xl text-graphite-light py-12 px-6">
+                 <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-md text-graphite-light py-12 px-6">
                     Плей-офф еще не настроен. {canEditPlayoff ? 'Откройте конструктор, чтобы создать сетки.' : ''}
                 </div>
             )}
@@ -414,7 +414,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   }
 
   const renderMechanicsBlock = (prefix, title) => (
-     <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-5">
+     <div className="bg-white/60 p-5 rounded-md border border-graphite/10 flex flex-col gap-5">
         <span className="text-[14px] font-bold text-graphite uppercase tracking-wider">{title}</span>
         
         <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
@@ -465,7 +465,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       {/* ЛЕВЫЙ САЙДБАР */}
       <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-6">
         
-        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-4">
+        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-4">
           <Select 
             label="Сезон"
             options={seasons.map(s => s.name)} 
@@ -484,12 +484,12 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         </div>
 
         {formData && (
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-3 flex flex-col gap-1">
+            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-3 flex flex-col gap-1">
                 {menuItems.map(item => (
                     <button
                         key={item.id}
                         onClick={() => setActiveSection(item.id)}
-                        className={`flex items-center px-4 py-3 rounded-xl transition-all duration-300 text-[14px] font-bold tracking-wide
+                        className={`flex items-center px-4 py-3 rounded-md transition-all duration-300 text-[14px] font-bold tracking-wide
                         ${activeSection === item.id 
                             ? 'bg-orange/10 text-orange' 
                             : 'text-graphite hover:bg-black/5 hover:text-orange'
@@ -502,7 +502,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         )}
 
         {formData && canEdit && activeSection !== 'playoff' && (
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-4">
+            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-4">
                 <Button 
                     onClick={handleSave} 
                     isLoading={isSaving} 
@@ -517,7 +517,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       </div>
 
       {/* ПРАВЫЙ КОНТЕНТ */}
-      <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 md:p-8 min-h-[500px] relative">
+      <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 md:p-8 min-h-[500px] relative">
         
         {isLoading && (
             <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
@@ -550,7 +550,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 {/* РАЗДЕЛ 1: ОБЩАЯ ИНФОРМАЦИЯ */}
                 {activeSection === 'general' && (
                     <div className="flex flex-col gap-8 animate-zoom-in max-w-4xl">
-                        <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-5">
+                        <div className="bg-white/60 p-6 rounded-md border border-graphite/10 flex flex-col gap-5">
                             <span className="text-[14px] font-bold text-graphite uppercase tracking-wider mb-1">Основные данные</span>
                             <Input label="Полное название*" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} disabled={isLocked} />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -559,11 +559,11 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             </div>
                             <div className="flex flex-col w-full mt-2">
                                 <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Описание (необязательно)</label>
-                                <textarea value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} disabled={isLocked} className="w-full min-h-[110px] px-4 py-3 border border-graphite/20 rounded-xl bg-white/50 text-graphite text-[13px] outline-none focus:border-orange focus:bg-white resize-none disabled:opacity-60 transition-colors" placeholder="Введите краткое описание или особенности дивизиона..." />
+                                <textarea value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} disabled={isLocked} className="w-full min-h-[110px] px-4 py-3 border border-graphite/20 rounded-md bg-white/50 text-graphite text-[13px] outline-none focus:border-orange focus:bg-white resize-none disabled:opacity-60 transition-colors" placeholder="Введите краткое описание или особенности дивизиона..." />
                             </div>
                         </div>
 
-                        <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-5">
+                        <div className="bg-white/60 p-6 rounded-md border border-graphite/10 flex flex-col gap-5">
                             <span className="text-[14px] font-bold text-graphite uppercase tracking-wider mb-1">Логотип и регламент</span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div>
@@ -581,17 +581,17 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 {activeSection === 'dates' && (
                     <div className="flex flex-col gap-8 animate-zoom-in">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-4">
+                            <div className="bg-white/60 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[14px] font-bold text-graphite uppercase">Сроки турнира*</span>
                                 <DatePicker placeholder="Старт" value={formData.start_date} onChange={(val) => handleChange('start_date', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.end_date} onChange={(val) => handleChange('end_date', val)} disabled={isLocked} />
                             </div>
-                            <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-4">
+                            <div className="bg-white/60 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[14px] font-bold text-graphite uppercase">Заявки*</span>
                                 <DatePicker placeholder="Старт" value={formData.application_start} onChange={(val) => handleChange('application_start', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.application_end} onChange={(val) => handleChange('application_end', val)} disabled={isLocked} />
                             </div>
-                            <div className="bg-white/60 p-5 rounded-xl border border-graphite/10 flex flex-col gap-4">
+                            <div className="bg-white/60 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[14px] font-bold text-graphite uppercase">Трансферы</span>
                                 <DatePicker placeholder="Старт" value={formData.transfer_start} onChange={(val) => handleChange('transfer_start', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.transfer_end} onChange={(val) => handleChange('transfer_end', val)} disabled={isLocked} />
@@ -599,25 +599,25 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                         </div>
 
                         {isOverlap() && (
-                            <div className="p-4 bg-status-rejected/10 border border-status-rejected/20 rounded-xl text-[13px] font-bold text-status-rejected text-center">
+                            <div className="p-4 bg-status-rejected/10 border border-status-rejected/20 rounded-md text-[13px] font-bold text-status-rejected text-center">
                                 Периоды заявочной кампании и трансферного окна не могут пересекаться!
                             </div>
                         )}
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                            <div className="p-4 bg-white/60 rounded-xl border border-graphite/10 flex flex-col gap-3 justify-between">
+                            <div className="p-4 bg-white/60 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
                                 <div><div className="font-bold text-graphite uppercase text-[12px]">Только цифровые</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Без загрузки скана заявочного листа.</div></div>
                                 <Switch checked={formData.digital_applications_only} onChange={(e) => handleChange('digital_applications_only', e.target.checked)} disabled={isLocked} />
                             </div>
-                            <div className="p-4 bg-white/60 rounded-xl border border-graphite/10 flex flex-col gap-3 justify-between">
+                            <div className="p-4 bg-white/60 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
                                 <div><div className="font-bold text-graphite uppercase text-[12px]">Мед. справка</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать медицинскую справку.</div></div>
                                 <Switch checked={formData.req_med_cert} onChange={(e) => handleChange('req_med_cert', e.target.checked)} disabled={isLocked} />
                             </div>
-                            <div className="p-4 bg-white/60 rounded-xl border border-graphite/10 flex flex-col gap-3 justify-between">
+                            <div className="p-4 bg-white/60 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
                                 <div><div className="font-bold text-graphite uppercase text-[12px]">Страховка</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать полис страхования.</div></div>
                                 <Switch checked={formData.req_insurance} onChange={(e) => handleChange('req_insurance', e.target.checked)} disabled={isLocked} />
                             </div>
-                            <div className="p-4 bg-white/60 rounded-xl border border-graphite/10 flex flex-col gap-3 justify-between">
+                            <div className="p-4 bg-white/60 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
                                 <div><div className="font-bold text-graphite uppercase text-[12px]">Согласие игрока</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать согласие на обработку ПДн.</div></div>
                                 <Switch checked={formData.req_consent} onChange={(e) => handleChange('req_consent', e.target.checked)} disabled={isLocked} />
                             </div>
@@ -637,7 +637,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 {activeSection === 'regular' && showRegular && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-zoom-in">
                         <div className="flex flex-col gap-6">
-                            <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-4">
+                            <div className="bg-white/60 p-6 rounded-md border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[15px] font-bold text-graphite mb-2 uppercase">Начисление очков</span>
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Победа в осн. время</span> <Stepper initialValue={formData.points_win_reg} onChange={(v) => handleChange('points_win_reg', v)} max={10} disabled={isLocked} /></div>
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Победа в ОТ / Буллиты</span> <Stepper initialValue={formData.points_win_ot} onChange={(v) => handleChange('points_win_ot', v)} max={10} disabled={isLocked} /></div>
@@ -645,7 +645,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Поражение в ОТ / Буллиты</span> <Stepper initialValue={formData.points_loss_ot} onChange={(v) => handleChange('points_loss_ot', v)} max={10} disabled={isLocked} /></div>
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Поражение в осн. время</span> <Stepper initialValue={formData.points_loss_reg} onChange={(v) => handleChange('points_loss_reg', v)} max={10} disabled={isLocked} /></div>
                             </div>
-                            <div className="bg-status-rejected/5 p-6 rounded-xl border border-status-rejected/20 flex flex-col gap-4">
+                            <div className="bg-status-rejected/5 p-6 rounded-md border border-status-rejected/20 flex flex-col gap-4">
                                 <span className="text-[15px] font-bold text-status-rejected mb-2 uppercase">Технические результаты</span>
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническая победа (+/-)</span> <Stepper initialValue={formData.points_tech_win} onChange={(v) => handleChange('points_tech_win', v)} max={10} disabled={isLocked} /></div>
                                 <div className="flex justify-between items-center"><span className="text-[13px] font-semibold text-graphite">Техническое поражение (-/+)</span> <Stepper initialValue={formData.points_tech_loss} onChange={(v) => handleChange('points_tech_loss', v)} max={10} disabled={isLocked} /></div>
@@ -654,7 +654,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                         </div>
                         
                         {/* Обновленный блок с Drag-and-Drop (Мышь + Тач) */}
-                        <div className="bg-white/60 p-6 rounded-xl border border-graphite/10 flex flex-col gap-4 relative z-50">
+                        <div className="bg-white/60 p-6 rounded-md border border-graphite/10 flex flex-col gap-4 relative z-50">
                             <span className="text-[15px] font-bold text-graphite mb-1 uppercase">Приоритет при равенстве очков</span>
                             <div className="flex flex-col gap-1">
                                 {formData.ranking_criteria.map((criteria, index) => (
@@ -666,7 +666,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                         onDragEnter={(e) => handleDragEnter(e, index)}
                                         onDragEnd={handleDragEnd}
                                         onDragOver={(e) => e.preventDefault()}
-                                        className={`flex items-center gap-4 p-3 rounded-xl border transition-all duration-200
+                                        className={`flex items-center gap-4 p-3 rounded-md border transition-all duration-200
                                             ${isLocked 
                                                 ? 'bg-white/50 border-graphite/5 opacity-70 cursor-not-allowed' 
                                                 : 'bg-white border-graphite/10 shadow-sm cursor-grab hover:border-orange hover:shadow-md'
@@ -709,7 +709,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 {activeSection === 'playoff' && showPlayoff && (
                     <div className="animate-zoom-in w-full h-full">
                         {isCreatingNew ? (
-                            <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-xl text-graphite-light py-12 px-6">
+                            <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-md text-graphite-light py-12 px-6">
                                 Сначала создайте и сохраните дивизион, чтобы настроить для него сетки плей-офф.
                             </div>
                         ) : (

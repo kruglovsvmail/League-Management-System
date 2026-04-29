@@ -22,7 +22,7 @@ export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSav
       <div className="flex flex-col gap-3 mb-6 font-sans mt-2">
         <div 
           onClick={() => !readOnly && setStatus(true)}
-          className={`flex items-center gap-4 p-4 rounded-xl transition-all border ${
+          className={`flex items-center gap-4 p-4 rounded-md transition-all border ${
             status === true 
               ? 'border-status-accepted bg-status-accepted/10' 
               : 'border-graphite/10 hover:border-status-accepted/40 hover:bg-black/5'
@@ -39,7 +39,7 @@ export function PublishStatusModal({ isOpen, onClose, isPublished, onSave, isSav
 
         <div 
           onClick={() => !readOnly && setStatus(false)}
-          className={`flex items-center gap-4 p-4 rounded-xl transition-all border ${
+          className={`flex items-center gap-4 p-4 rounded-md transition-all border ${
             status === false 
               ? 'border-orange bg-orange/10' 
               : 'border-graphite/10 hover:border-orange/40 hover:bg-black/5'

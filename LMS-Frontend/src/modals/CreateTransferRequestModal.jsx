@@ -170,7 +170,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
             
             {/* ИНФОРМАЦИОННОЕ ТАБЛО О СТАТУСЕ ОКНА */}
             {selectedDivision && !isWindowOpen && (
-              <div className={`p-3 rounded-xl border text-[12px] leading-tight mt-[-10px] animate-zoom-in ${isAdmin ? 'bg-orange/10 border-orange/20 text-orange' : 'bg-status-rejected/5 border-status-rejected/20 text-status-rejected'}`}>
+              <div className={`p-3 rounded-md border text-[12px] leading-tight mt-[-10px] animate-zoom-in ${isAdmin ? 'bg-orange/10 border-orange/20 text-orange' : 'bg-status-rejected/5 border-status-rejected/20 text-status-rejected'}`}>
                 <span className="font-bold block mb-1">Трансферное окно закрыто</span>
                 {isAdmin 
                   ? 'Вы можете создать заявку благодаря правам администратора.' 
@@ -179,7 +179,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
             )}
 
             {typeIndex === 0 && selectedPlayerId && (
-              <div className="flex flex-col gap-4 p-4 bg-orange/5 border border-orange/20 rounded-xl mt-4 animate-zoom-in">
+              <div className="flex flex-col gap-4 p-4 bg-orange/5 border border-orange/20 rounded-md mt-4 animate-zoom-in">
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-bold text-graphite-light uppercase flex justify-between">
                     Номер на джерси
@@ -215,7 +215,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                 <div className="text-center text-graphite-light py-10 mt-10 text-sm">Подходящих игроков не найдено</div>
               ) : (
                 filteredPlayers.map(p => (
-                  <div key={p.id} onClick={() => handlePlayerSelect(p)} className={`flex items-center gap-4 p-3 rounded-xl border transition-all duration-300 ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'} ${selectedPlayerId === p.id ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}>
+                  <div key={p.id} onClick={() => handlePlayerSelect(p)} className={`flex items-center gap-4 p-3 rounded-md border transition-all duration-300 ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'} ${selectedPlayerId === p.id ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}>
                     <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
                       <img src={getImageUrl(p.member_photo || p.avatar_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
                     </div>

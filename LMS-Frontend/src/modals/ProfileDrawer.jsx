@@ -123,7 +123,7 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
 
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-7">
           <div className="flex flex-col items-center gap-4">
-            <div className="w-[140px] [&_.gap-4]:!hidden [&_.rounded-xl]:!rounded-xxl [&_.rounded-xl]:!bg-graphite/5">
+            <div className="w-[140px] [&_.gap-4]:!hidden [&_.rounded-md]:!rounded-lg [&_.rounded-md]:!bg-graphite/5">
               <Uploader heightClass="h-[140px]" initialUrl={user?.avatarUrl ? getImageUrl(user.avatarUrl) : null} onFileSelect={(file) => setAvatarFile(file)} />
             </div>
             <div className="text-center">

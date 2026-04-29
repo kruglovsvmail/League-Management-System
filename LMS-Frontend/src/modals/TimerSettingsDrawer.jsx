@@ -40,7 +40,7 @@ export function TimerSettingsDrawer({
 
         <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar flex flex-col gap-6">
           
-          <div className="bg-white border border-graphite/5 shadow-sm p-5 rounded-xl space-y-5">
+          <div className="bg-white border border-graphite/5 shadow-sm p-5 rounded-md space-y-5">
             {/* ПЕРИОДЫ */}
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-bold text-graphite">Количество периодов:</span>
@@ -124,7 +124,7 @@ export function TimerSettingsDrawer({
             </div>
           </div>
 
-          <div className="bg-white border border-graphite/5 shadow-sm p-5 rounded-xl">
+          <div className="bg-white border border-graphite/5 shadow-sm p-5 rounded-md">
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-bold text-graphite">Учет полезности (+/-)</span>
               <Switch 

@@ -117,7 +117,7 @@ export function DivisionStandings({ division }) {
           />
         </div>
       ) : (
-        <div className="h-[200px] flex items-center justify-center border-2 border-dashed border-graphite/10 rounded-xl bg-graphite/[0.02]">
+        <div className="h-[200px] flex items-center justify-center border-2 border-dashed border-graphite/10 rounded-md bg-graphite/[0.02]">
           <span className="text-sm font-medium text-graphite-light/50">
             В дивизионе пока нет допущенных команд
           </span>

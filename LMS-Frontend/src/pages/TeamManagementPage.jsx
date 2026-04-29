@@ -408,14 +408,14 @@ export function TeamManagementPage() {
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         {selectedTeam && (
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-xxl p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-zoom-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-lg p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-zoom-in">
             <div className="flex flex-col items-center mb-4 text-center">
               <img src={getImageUrl(selectedTeam.logo_url) || '/default/Logo_team_default.webp'} className="w-16 h-16 object-contain mb-3" />
               <span className="font-black text-[16px] leading-tight">{selectedTeam.name}</span>
               {selectedTeam.city && <span className="text-[12px] font-bold text-graphite-light mt-1">{selectedTeam.city}</span>}
             </div>
             {['base', 'roster', 'staff', 'tournaments'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`text-left px-4 py-3 rounded-xl font-bold transition-all ${activeTab === tab ? 'bg-white text-orange shadow-sm' : 'text-graphite-light hover:bg-white/40'}`}>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`text-left px-4 py-3 rounded-md font-bold transition-all ${activeTab === tab ? 'bg-white text-orange shadow-sm' : 'text-graphite-light hover:bg-white/40'}`}>
                 {tab === 'base' ? 'База команды' : tab === 'roster' ? 'Игровой состав' : tab === 'staff' ? 'Персонал (Штаб)' : 'Заявки в лигу'}
               </button>
             ))}
@@ -424,12 +424,12 @@ export function TeamManagementPage() {
 
         <div className="flex-1 relative z-10 min-h-[500px]">
           {!selectedTeam ? (
-            <div className="bg-white/40 border border-graphite/10 rounded-xxl p-8 animate-zoom-in">
+            <div className="bg-white/40 border border-graphite/10 rounded-lg p-8 animate-zoom-in">
               <Input placeholder="Поиск команды..." value={teamSearchQuery} onChange={(e) => setTeamSearchQuery(e.target.value)} />
               {isSearchingTeams ? <Loader text="Поиск..." /> : (
                 <div className="grid grid-cols-2 xl:grid-cols-3 gap-5 mt-6">
                   {teamsList.map(t => (
-                    <div key={t.id} onClick={() => setSelectedTeam(t)} className="flex items-center gap-4 p-5 bg-white rounded-xl border cursor-pointer hover:border-orange shadow-sm group">
+                    <div key={t.id} onClick={() => setSelectedTeam(t)} className="flex items-center gap-4 p-5 bg-white rounded-md border cursor-pointer hover:border-orange shadow-sm group">
                       <img src={getImageUrl(t.logo_url) || '/default/Logo_team_default.webp'} className="w-12 h-12 object-contain" />
                       <div className="flex flex-col min-w-0">
                         <span className="font-bold group-hover:text-orange truncate">{t.name}</span>
@@ -442,7 +442,7 @@ export function TeamManagementPage() {
             </div>
           ) : (
             <>
-              <div className={`bg-white/85 rounded-xxl shadow-sm border border-graphite/10 p-8 animate-zoom-in ${activeTab === 'tournaments' ? 'mb-6' : ''}`}>
+              <div className={`bg-white/85 rounded-lg shadow-sm border border-graphite/10 p-8 animate-zoom-in ${activeTab === 'tournaments' ? 'mb-6' : ''}`}>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-black text-graphite uppercase tracking-wide">
                     {activeTab === 'base' ? 'База команды' : activeTab === 'roster' ? 'Игровой состав' : activeTab === 'staff' ? 'Штаб команды' : 'Заявки в лигу'}
@@ -487,7 +487,7 @@ export function TeamManagementPage() {
                       onUpdatePlayer={(rosterId, overrides) => handleUpdateAppPlayerInline(app.id, rosterId, overrides)}
                       onUpdateStaff={(userId, newRole) => handleUpdateAppStaffInline(app.id, userId, newRole)}
                     />
-                  )) : <div className="text-center py-10 text-graphite-light bg-white/40 border border-graphite/10 rounded-xl">Заявок не найдено</div>}
+                  )) : <div className="text-center py-10 text-graphite-light bg-white/40 border border-graphite/10 rounded-md">Заявок не найдено</div>}
                 </div>
               )}
             </>
@@ -643,7 +643,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
   if (canEditRoster) appStaffColumns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeleteStaff(r.user_id)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
 
   return (
-    <div className="bg-white/70 border border-graphite/10 rounded-xxl shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white/70 border border-graphite/10 rounded-lg shadow-sm hover:shadow-md transition-shadow">
       
       <div className="p-5 flex items-center justify-between cursor-pointer group relative" onClick={() => setIsExpanded(!isExpanded)}>
         
@@ -692,7 +692,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
           <div className="p-5 bg-graphite/[0.02] border-t border-graphite/10">
             
             {(!app.digital_applications_only) && (
-              <div className="mb-5 p-4 bg-white rounded-xl border border-graphite/10 flex flex-col md:flex-row md:items-center gap-4 shadow-sm">
+              <div className="mb-5 p-4 bg-white rounded-md border border-graphite/10 flex flex-col md:flex-row md:items-center gap-4 shadow-sm">
                 <span className="text-[13px] font-bold text-graphite uppercase tracking-wide">Документы заявки:</span>
                 
                 <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
@@ -728,7 +728,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
             )}
 
             {isPaperBlocked && (
-              <div className="mb-4 p-4 bg-orange/10 border border-orange/20 rounded-xl text-[13px] text-orange">
+              <div className="mb-4 p-4 bg-orange/10 border border-orange/20 rounded-md text-[13px] text-orange">
                 Ожидается проверка загруженного бумажного заявочного листа Лигой. 
                 После того как Лига прикрепит исправленный скан, вы сможете добавлять игроков и персонал в состав.
               </div>
@@ -900,7 +900,7 @@ function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, currentApp
           {availableRoster.map(r => {
             const isSelected = selectedPlayers.has(r.user_id);
             return (
-              <div key={r.user_id} onClick={() => { const s = new Set(selectedPlayers); if(s.has(r.user_id)) s.delete(r.user_id); else s.add(r.user_id); setSelectedPlayers(s); }} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
+              <div key={r.user_id} onClick={() => { const s = new Set(selectedPlayers); if(s.has(r.user_id)) s.delete(r.user_id); else s.add(r.user_id); setSelectedPlayers(s); }} className={`flex items-center gap-4 p-4 rounded-md border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
                 <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5" alt="avatar" />
                 <span className="block font-bold text-graphite text-[14px]">{r.last_name} {r.first_name}</span>
@@ -986,7 +986,7 @@ function AddAppStaffDrawer({ isOpen, onClose, globalStaff, teamId, appId, curren
           {availableStaff.map(s => {
             const isSelected = selectedUsers.has(s.user_id);
             return (
-              <div key={s.user_id} onClick={() => toggleUser(s)} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
+              <div key={s.user_id} onClick={() => toggleUser(s)} className={`flex items-center gap-4 p-4 rounded-md border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
                 <img src={getImageUrl(s.photo_url || s.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5 shrink-0" alt="avatar" />
                 <div className="flex flex-col min-w-0">

@@ -110,7 +110,7 @@ export function SettingsPage() {
       )}
 
       <div className="px-10 pt-8 relative z-10 flex flex-col gap-8">
-        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] px-6 pt-4 pb-2 overflow-hidden">
+        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] px-6 pt-4 pb-2 overflow-hidden">
           <Tabs 
             tabs={availableTabs.map(t => t.label)} 
             activeTab={displayTabIndex} 

@@ -103,7 +103,7 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess, readOnly 
                   onChange={(i) => setForm({...form, home_jersey_type: i === 0 ? 'dark' : 'light'})} 
                 />
               </div>
-              <div className="mt-4 w-[130px] h-[130px] bg-graphite/[0.02] border border-graphite/10 rounded-xl flex flex-col items-center justify-center p-3 relative group overflow-hidden">
+              <div className="mt-4 w-[130px] h-[130px] bg-graphite/[0.02] border border-graphite/10 rounded-md flex flex-col items-center justify-center p-3 relative group overflow-hidden">
                 <img src={getImageUrl(homeJerseyImg)} alt="Home Jersey" className="w-full h-full object-contain drop-shadow-sm transition-transform group-hover:scale-105 duration-300" />
               </div>
             </div>
@@ -121,7 +121,7 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess, readOnly 
                   onChange={(i) => setForm({...form, away_jersey_type: i === 0 ? 'dark' : 'light'})} 
                 />
               </div>
-              <div className="mt-4 w-[130px] h-[130px] bg-graphite/[0.02] border border-graphite/10 rounded-xl flex flex-col items-center justify-center p-3 relative group overflow-hidden">
+              <div className="mt-4 w-[130px] h-[130px] bg-graphite/[0.02] border border-graphite/10 rounded-md flex flex-col items-center justify-center p-3 relative group overflow-hidden">
                 <img src={getImageUrl(awayJerseyImg)} alt="Away Jersey" className="w-full h-full object-contain drop-shadow-sm transition-transform group-hover:scale-105 duration-300" />
               </div>
             </div>

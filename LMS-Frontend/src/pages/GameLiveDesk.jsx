@@ -701,7 +701,7 @@ export function GameLiveDesk() {
 
           {!isReadOnly && (
               <div className="mt-4 mb-12 flex justify-end">
-                 <button onClick={() => setIsTechModalOpen(true)} className="px-6 py-3 bg-white text-status-rejected hover:bg-status-rejected hover:text-white border border-status-rejected/20 rounded-xl text-[13px] font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2">
+                 <button onClick={() => setIsTechModalOpen(true)} className="px-6 py-3 bg-white text-status-rejected hover:bg-status-rejected hover:text-white border border-status-rejected/20 rounded-md text-[13px] font-bold uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2">
                     <Icon name="whistle" className="w-4 h-4" />
                     Назначить технический результат
                  </button>

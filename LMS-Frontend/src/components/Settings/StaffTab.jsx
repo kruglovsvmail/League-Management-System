@@ -229,7 +229,7 @@ export function StaffTab({ setToast }) {
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         {/* Левая колонка (Форма) */}
         {canManageStaff && (
-          <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
+          <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
             <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Добавить сотрудника</span>
             
             <div className="flex flex-col w-full">
@@ -248,7 +248,7 @@ export function StaffTab({ setToast }) {
             </div>
 
             {foundUser && (
-              <div className="bg-white/80 border border-graphite/10 rounded-xl p-5 flex flex-col gap-5 animate-zoom-in shadow-sm mt-2">
+              <div className="bg-white/80 border border-graphite/10 rounded-md p-5 flex flex-col gap-5 animate-zoom-in shadow-sm mt-2">
                 <div className="flex items-center gap-4 border-b border-graphite/10 pb-4">
                   <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
                     <img src={getImageUrl(foundUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
@@ -269,7 +269,7 @@ export function StaffTab({ setToast }) {
         )}
 
         {/* Правая колонка (Таблица) */}
-        <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 min-h-[400px] relative">
+        <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 min-h-[400px] relative">
           {isLoadingStaff && (
             <div className="absolute inset-0 z-30 flex items-start pt-20 justify-center pointer-events-none">
               <Loader text="" />
@@ -291,7 +291,7 @@ export function StaffTab({ setToast }) {
         <Modal isOpen={!!editModalUser} onClose={() => setEditModalUser(null)} title="Редактирование ролей" size="medium">
           {editModalUser && (
             <div className="flex flex-col gap-6 font-sans">
-               <div className="flex items-center gap-4 bg-graphite/5 p-4 rounded-xl border border-graphite/10">
+               <div className="flex items-center gap-4 bg-graphite/5 p-4 rounded-md border border-graphite/10">
                   <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-white">
                       <img src={getImageUrl(editModalUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
                   </div>

@@ -53,7 +53,7 @@ export const TimerPanel = ({
   return (
     <div className="w-[20%] h-full flex flex-col z-10 border-l border-white/5 shadow-[-4px_0_24px_rgba(0,0,0,0.2)] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white p-6 overflow-y-auto custom-scrollbar">
       
-      <div className="flex justify-center items-center gap-4 mb-8 bg-white/5 py-5 px-3 border border-white/10 rounded-xl shadow-inner relative">
+      <div className="flex justify-center items-center gap-4 mb-8 bg-white/5 py-5 px-3 border border-white/10 rounded-md shadow-inner relative">
         {isTech && (
             <div className="absolute top-2 left-0 right-0 flex justify-center">
                 <span className="text-[8px] font-black text-status-rejected uppercase tracking-widest bg-status-rejected/10 border border-status-rejected/20 px-2 py-0.5 rounded">Тех. результат</span>

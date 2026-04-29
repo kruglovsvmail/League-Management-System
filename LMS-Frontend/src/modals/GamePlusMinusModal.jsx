@@ -88,7 +88,7 @@ export function GamePlusMinusModal({ isOpen, onClose, gameId, event, scoringTeam
     <Modal isOpen={isOpen} onClose={onClose} title="Показатель полезности (+/-)" size="wide">
       
       {/* Шапка информации о голе */}
-      <div className="mb-6 bg-white border border-graphite/10 rounded-xl p-4 text-center shadow-sm">
+      <div className="mb-6 bg-white border border-graphite/10 rounded-md p-4 text-center shadow-sm">
         <div className="text-sm font-bold text-graphite/50 uppercase tracking-widest mb-1">Гол на {formatTime(event.time_seconds)}</div>
         <div className="text-xl font-black text-graphite">
           {scoringTeam.name} <span className="text-graphite/40 font-medium px-2">забили в ворота</span> {concedingTeam.name}

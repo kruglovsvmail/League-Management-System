@@ -198,7 +198,7 @@ export function DisqualificationsPage() {
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         
         {/* ЛЕВАЯ ПАНЕЛЬ ФИЛЬТРОВ */}
-        <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-6 custom-scrollbar z-20">
+        <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-6 custom-scrollbar z-20">
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Статус</label>
             <SegmentButton options={['Активные', 'Отбытые', 'Отмененные']} defaultIndex={statusFilterIndex} onChange={setStatusFilterIndex} />
@@ -237,7 +237,7 @@ export function DisqualificationsPage() {
 
                 return (
                   <div key={d.id} className="mb-3">
-                    <div className={`bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl overflow-hidden transition-all duration-100 ${isExpanded ? 'border-status-rejected/30 shadow-mg' : 'hover:border-status-rejected/50 shadow-mg'}`}>
+                    <div className={`bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg overflow-hidden transition-all duration-100 ${isExpanded ? 'border-status-rejected/30 shadow-mg' : 'hover:border-status-rejected/50 shadow-mg'}`}>
                       
                       <div onClick={() => toggleExpand(d.id)} className="p-4 grid grid-cols-[100px_48px_1fr_48px_1fr_150px_10px] gap-4 items-center cursor-pointer select-none">
                         <div className="text-center">

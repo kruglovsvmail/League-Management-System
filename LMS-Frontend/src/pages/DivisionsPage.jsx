@@ -132,7 +132,7 @@ export function DivisionsPage() {
 
       <main className="p-6 md:p-10 flex flex-col gap-6 font-sans animate-zoom-in">
         {isLoading ? <Loader text="" /> : divisions.length === 0 ? (
-          <div className="bg-white/0 rounded-xxl p-10 text-center text-graphite/50">Нет дивизионов</div>
+          <div className="bg-white/0 rounded-lg p-10 text-center text-graphite/50">Нет дивизионов</div>
         ) : (
           <div className="flex flex-col gap-6">
             {divisions.map(div => (

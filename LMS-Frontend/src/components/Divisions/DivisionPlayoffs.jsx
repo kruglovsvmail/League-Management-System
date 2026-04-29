@@ -214,11 +214,11 @@ export function DivisionPlayoffs({ divisionId }) {
       </div>
 
       {isLoading ? (
-        <div className="h-[300px] flex items-center justify-center border border-dashed border-graphite/10 rounded-xl bg-graphite/[0.02]">
+        <div className="h-[300px] flex items-center justify-center border border-dashed border-graphite/10 rounded-md bg-graphite/[0.02]">
           <Loader text="" />
         </div>
       ) : brackets.length === 0 ? (
-        <div className="h-[300px] flex items-center justify-center border-2 border-dashed border-graphite/10 rounded-xl bg-graphite/[0.02]">
+        <div className="h-[300px] flex items-center justify-center border-2 border-dashed border-graphite/10 rounded-md bg-graphite/[0.02]">
           <span className="text-sm font-medium text-graphite-light/50">
             Сетка плей-офф еще не сформирована
           </span>
@@ -280,7 +280,7 @@ export function DivisionPlayoffs({ divisionId }) {
                                 </div>
 
                                 {hasTooltipData && (
-                                  <div className={`absolute top-1/2 -translate-y-1/2 ${tooltipPosClass} w-[280px] bg-white border border-graphite/20 shadow-[0_15px_40px_rgba(0,0,0,0.15)] rounded-xl p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] pointer-events-none before:content-[''] before:absolute before:top-1/2 before:-translate-y-1/2 before:border-[6px] before:border-transparent`}>
+                                  <div className={`absolute top-1/2 -translate-y-1/2 ${tooltipPosClass} w-[280px] bg-white border border-graphite/20 shadow-[0_15px_40px_rgba(0,0,0,0.15)] rounded-md p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] pointer-events-none before:content-[''] before:absolute before:top-1/2 before:-translate-y-1/2 before:border-[6px] before:border-transparent`}>
                                     
                                     {stats.finishedGames.length > 0 && (
                                       <div className="flex flex-col gap-2">

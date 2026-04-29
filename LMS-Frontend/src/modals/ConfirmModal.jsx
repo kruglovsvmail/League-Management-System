@@ -8,7 +8,7 @@ export function ConfirmModal({ isOpen, onClose, onConfirm, isLoading = false }) 
 
   return createPortal(
     <div className={`fixed inset-0 bg-black/40 backdrop-blur-md z-[100005] flex justify-center items-center p-5 transition-all duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-      <div className={`bg-white/85 border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-xl p-[30px] w-full max-w-[380px] text-center transition-transform duration-300 cubic-bezier(0.2, 0.8, 0.2, 1) ${isOpen ? 'translate-y-0 scale-100' : 'translate-y-5 scale-95'}`}>
+      <div className={`bg-white/85 border border-white/50 shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-md p-[30px] w-full max-w-[380px] text-center transition-transform duration-300 cubic-bezier(0.2, 0.8, 0.2, 1) ${isOpen ? 'translate-y-0 scale-100' : 'translate-y-5 scale-95'}`}>
         
         <div className="w-16 h-16 rounded-full mx-auto mb-5 bg-status-rejected/10 text-status-rejected flex justify-center items-center">
           <div className="w-8 h-8">{alertIcon}</div>

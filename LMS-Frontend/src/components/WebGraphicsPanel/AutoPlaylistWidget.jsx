@@ -230,7 +230,7 @@ export function AutoPlaylistWidget({
                <button
                   onClick={handleStartStop}
                   disabled={validSequence.length === 0}
-                  className={`w-full h-[36px] rounded-xxl text-[11px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-1.5 mt-auto
+                  className={`w-full h-[36px] rounded-lg text-[11px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-1.5 mt-auto
                     ${validSequence.length === 0 ? 'bg-gray-bg-light border border-graphite/10 text-graphite/30 cursor-not-allowed'
                     : isRunning ? 'bg-status-rejected text-white hover:bg-status-rejected/90'
                     : 'bg-status-accepted text-white hover:bg-status-accepted/90'}`}

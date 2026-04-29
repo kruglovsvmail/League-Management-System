@@ -180,7 +180,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
       if (!canChangeStatus) return null;
 
       return (
-        <button onClick={() => onOpenModal(row, 'status')} className="p-2 text-graphite/40 hover:text-orange hover:bg-orange/10 rounded-xl transition-all duration-200" title="Изменить статус">
+        <button onClick={() => onOpenModal(row, 'status')} className="p-2 text-graphite/40 hover:text-orange hover:bg-orange/10 rounded-md transition-all duration-200" title="Изменить статус">
           <Icon name="swap" className="w-5 h-5" />
         </button>
       );

@@ -37,7 +37,7 @@ export function LeagueSelectModal({ isOpen, onClose, leagues, currentLeagueId, o
             <div 
               key={league.id}
               onClick={() => setSelectedId(league.id)}
-              className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all border ${
+              className={`flex items-center gap-4 p-3 rounded-md cursor-pointer transition-all border ${
                 selectedId === league.id 
                   ? 'border-orange bg-orange/10' 
                   : 'border-graphite/10 hover:border-orange/40 hover:bg-black/5'

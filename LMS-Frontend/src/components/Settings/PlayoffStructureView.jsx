@@ -127,7 +127,7 @@ export function PlayoffStructureView({ brackets = [] }) {
                         <button 
                             key={b.id}
                             onClick={() => setActiveBracketId(b.id)}
-                            className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all duration-300 ${
+                            className={`px-5 py-2 rounded-md text-[13px] font-bold transition-all duration-300 ${
                                 String(activeBracketId) === String(b.id) 
                                 ? 'bg-graphite text-white shadow-lg scale-100' 
                                 : 'bg-white/60 backdrop-blur-md border border-white/40 text-graphite/60 hover:bg-white hover:shadow-md'

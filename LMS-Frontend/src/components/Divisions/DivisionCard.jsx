@@ -336,7 +336,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const isStatusClickable = canChangeTeamStatus && selectedTeam?.status !== 'revision';
 
   return (
-    <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-xxl hover:shadow-lg overflow-hidden font-sans w-full transition-all duration-300 relative animate-zoom-in">
+    <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg hover:shadow-lg overflow-hidden font-sans w-full transition-all duration-300 relative animate-zoom-in">
       <div 
         className="p-6 md:p-8 flex flex-col xl:flex-row gap-8 items-center justify-between relative z-10 cursor-pointer group hover:transition-colors"
         onClick={toggleExpand}
