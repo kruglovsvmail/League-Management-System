@@ -52,7 +52,6 @@ export default defineConfig({
         runtimeCaching: [
           {
             // API запросы (данные): Network First
-            // Сначала идем в сеть, если сети нет — берем из кэша
             urlPattern: /^https?:\/\/.*\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
@@ -66,7 +65,6 @@ export default defineConfig({
           },
           {
             // Статические ресурсы (картинки, логотипы, аватарки): Stale-While-Revalidate
-            // Показываем старое из кэша мгновенно, в фоне обновляем на новое
             urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|webp)/i,
             handler: 'StaleWhileRevalidate',
             options: {
@@ -87,32 +85,22 @@ export default defineConfig({
     port: 5173,
   },
   
-  // --- ДОБАВЛЕНО: Настройка сборки и разделения кода (Code Splitting) ---
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          // Если модуль находится в папке node_modules, выносим его в отдельный чанк
-          if (id.includes('node_modules')) {
-            // Выделяем ядро React в отдельный файл
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              return 'vendor-react';
-            }
-            // Выделяем тяжелый генератор PDF
-            if (id.includes('@react-pdf')) {
-              return 'vendor-pdf';
-            }
-            // Выделяем библиотеку Drag-and-Drop (используется для конструктора плей-офф)
-            if (id.includes('@dnd-kit')) {
-              return 'vendor-dnd';
-            }
-            // Все остальные сторонние библиотеки пойдут в общий vendor
-            return 'vendor-utils';
-          }
+        // Используем объектный синтаксис для безопасного разделения без циклических зависимостей
+        manualChunks: {
+          'vendor-pdf': ['@react-pdf/renderer'],
+          'vendor-dnd': [
+            '@dnd-kit/core', 
+            '@dnd-kit/modifiers', 
+            '@dnd-kit/sortable', 
+            '@dnd-kit/utilities'
+          ]
         }
       }
     },
-    // Немного увеличиваем лимит предупреждения, так как vendor-react может весить ~600kb, и это нормально
+    // Немного увеличиваем лимит предупреждения для оставшегося бандла
     chunkSizeWarningLimit: 800,
   }
 })
