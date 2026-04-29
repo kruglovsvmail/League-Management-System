@@ -1,7 +1,7 @@
 # Используем легковесный образ Node.js
 FROM node:20-slim
 
-# Обновляем пакеты и устанавливаем Chromium, шрифты и все нужные библиотеки
+# Обновляем пакеты и устанавливаем Chromium, шрифты и все нужные библиотеки для Puppeteer
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -25,20 +25,22 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
+# Заставляем Puppeteer использовать системный Chromium и отключаем его внутреннюю загрузку
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 # Создаем рабочую папку внутри контейнера
 WORKDIR /app
 
-# Копируем абсолютно все файлы вашего проекта внутрь
-COPY . .
+# Копируем ТОЛЬКО бэкенд, так как фронтенд деплоится отдельным сервисом
+COPY LMS-Backend/ ./LMS-Backend/
 
-# Устанавливаем зависимости сервера и клиента
-# Используем --include=dev если для сборки фронтенда нужны devDependencies
-RUN npm run build-server
-RUN npm run build-client
+# Переходим в папку бэкенда и устанавливаем только серверные зависимости
+WORKDIR /app/LMS-Backend
+RUN npm install
 
 # Открываем порт 3001
 EXPOSE 3001
 
 # ЗАПУСКАЕМ НАПРЯМУЮ ЧЕРЕЗ NODE, А НЕ ЧЕРЕЗ NPM
-# Это уберет ошибки SIGTERM из логов
-CMD ["node", "LMS-Backend/server.js"]
+CMD ["node", "server.js"]
