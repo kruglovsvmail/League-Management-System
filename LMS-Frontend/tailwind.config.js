@@ -20,7 +20,7 @@ export default {
       },
 
       boxShadow: {
-        'lg': '0px 0px 20px -3px rgba(0, 0, 0, 0.2)',
+        'lg': '0px 0px 20px -3px rgba(0, 0, 0, 0.1)',
       },
 
       borderRadius: {

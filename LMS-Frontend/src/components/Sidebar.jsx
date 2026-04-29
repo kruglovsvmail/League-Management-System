@@ -68,8 +68,8 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
       key={item.path}
       to={item.path}
       className={({ isActive }) => `
-        flex items-center gap-3.5 px-3 py-3 rounded-lg transition-all duration-200 group border border-transparent
-        ${isActive ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]' : 'text-gray-400 hover:border-white/20'}
+        flex items-center gap-3.5 px-3 py-3 transition-all  duration-100 group hover:bg-white/5
+        ${isActive ? 'bg-white/15 text-white border-r-[4px] border-orange' : 'text-gray-400 hover:border-white/20'}
       `}
     >
       {({ isActive }) => (
@@ -78,7 +78,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
             name={item.icon} 
             className={`w-5 h-5 transition-colors duration-200 ${isActive ? 'text-orange' : 'opacity-60'}`} 
           />
-          <span className={`text-[13px] tracking-wide ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>
+          <span className={`text-[13px] tracking-wide ${isActive ? 'font-normal' : 'font-normal'}`}>{item.name}</span>
         </>
       )}
     </NavLink>
@@ -117,7 +117,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
         </div>
 
         {/* Навигация */}
-        <nav className="flex-1 overflow-y-auto px-2 mt-0 custom-scrollbar">
+        <nav className="flex-1 overflow-y-auto px-0 mt-0 custom-scrollbar">
           <div className="space-y-0.5">
             {baseMenuItems.map(renderNavLink)}
           </div>
@@ -147,11 +147,11 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
               />
             </div>
             <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[13px] font-bold truncate text-white leading-tight">
+              <span className="text-[13px] font-normal truncate text-white leading-tight">
                 {user?.firstName || 'Имя'} {user?.lastName ? `${user.lastName.charAt(0)}.` : ''}
               </span>
               <span 
-                className="text-[11px] font-medium text-orange/80 mt-1 leading-[1.2] line-clamp-2"
+                className="text-[11px] font-normal text-orange/80 mt-1 leading-[1.2] line-clamp-2"
                 title={displayRole}
               >
                 {displayRole}

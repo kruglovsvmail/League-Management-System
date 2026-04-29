@@ -320,13 +320,24 @@ export const updateUser = async (req, res) => {
         const userRes = await pool.query('SELECT virtual_code FROM users WHERE id = $1', [id]);
         let current_code = userRes.rows[0].virtual_code;
         let final_code = current_code;
+        let shouldClearCredentials = false;
 
+        // Если переводим РЕАЛЬНОГО пользователя в ВИРТУАЛЬНОГО
         if (is_virtual && !current_code) {
             final_code = generateVirtualCode(); 
+            shouldClearCredentials = true; // Ставим флаг на затирку доступов
+
+            // Генерируем новую фейковую почту, чтобы освободить реальный email пользователя
+            const now = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const dateStr = `${pad(now.getDate())}${pad(now.getMonth() + 1)}${now.getFullYear()}${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+            email = `temp_${dateStr}_${crypto.randomBytes(4).toString('hex')}@users.lms`;
+            
         } else if (!is_virtual) {
             final_code = null; 
         }
 
+        // Если почта пустая и это не процесс конвертации (обработанный выше)
         if (!email || email.trim() === '') {
             const now = new Date();
             const pad = (n) => String(n).padStart(2, '0');
@@ -334,11 +345,33 @@ export const updateUser = async (req, res) => {
             email = `${dateStr}_${id}@users.lms`;
         }
 
-        await pool.query(
-            `UPDATE users SET first_name = $1, last_name = $2, middle_name = $3, email = $4, phone = $5, virtual_code = $6, birth_date = $7, gender = $8, height = $9, weight = $10, grip = $11 
-             WHERE id = $12`,
-            [first_name, last_name, middle_name, email, phone || null, final_code, birth_date || null, gender || null, height || null, weight || null, grip || null, id]
-        );
+        // Динамическое формирование запроса для затирки пароля и ЭЦП
+        let query = `
+            UPDATE users 
+            SET first_name = $1, last_name = $2, middle_name = $3, email = $4, phone = $5, virtual_code = $6, birth_date = $7, gender = $8, height = $9, weight = $10, grip = $11
+        `;
+        
+        if (shouldClearCredentials) {
+            query += `, password_hash = NULL, sign_pin_hash = NULL`;
+        }
+        
+        query += ` WHERE id = $12`;
+
+        await pool.query(query, [
+            first_name, 
+            last_name, 
+            middle_name, 
+            email, 
+            phone || null, 
+            final_code, 
+            birth_date || null, 
+            gender || null, 
+            height || null, 
+            weight || null, 
+            grip || null, 
+            id
+        ]);
+
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
