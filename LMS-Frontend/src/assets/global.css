@@ -17,8 +17,8 @@ html {
 
 :root {
   /* Базовые цвета в формате RGB (для поддержки opacity в Tailwind) */
-  --orange: 255 122 0;
-  --orange-hover: 224 106 0;
+  --orange: 200 100 50;
+  --orange-hover: 180 80 30;
   --graphite: 20 20 20;
   --graphite-light: 72 72 74;
   --graphite-dark: 32 32 34;

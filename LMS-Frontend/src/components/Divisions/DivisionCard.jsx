@@ -313,7 +313,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const STATUS_LABELS = {
     approved: 'Команда допущена',
     pending: 'Команда на проверке',
-    revision: 'Команда на исправлении',
+    revision: 'Команда К доработке',
     rejected: 'Команда отклонена'
   };
 

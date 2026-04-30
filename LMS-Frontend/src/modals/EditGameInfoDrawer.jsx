@@ -9,7 +9,7 @@ export function EditGameInfoDrawer({ isOpen, onClose, game, onSuccess, readOnly 
   const [form, setForm] = useState({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // Проверка статуса матча: Джерси можно менять только у матчей "В расписании" (scheduled)
+  // Проверка статуса матча: Джерси можно менять только у матчей "Предстоящий" (scheduled)
   const isStatusLocked = game && game.status !== 'scheduled';
   
   // Джерси блокируются, если либо нет прав, либо матч уже начался

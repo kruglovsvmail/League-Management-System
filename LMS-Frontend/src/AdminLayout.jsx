@@ -6,25 +6,17 @@ export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange }) 
   // Наш супер-сложный фон
 const complexMeshGradient = {
   backgroundImage: `
-    /* 1. Основной мягкий свет сверху (создает объем) */
-    radial-gradient(circle at 50% -20%, #b4b4b4ff 0%, transparent 50%),
+    /* 1. Эффект виньетки (затемнение по краям создает эффект "коробки" и погружает центр в глубину) */
+    radial-gradient(circle at 50% 50%, transparent 50%, rgba(119, 119, 119, 0.35) 100%),
 
-    /* 2. Теплый акцент: Насыщенный персиковый/оранжевый (для глубины размытия) */
-    radial-gradient(circle at 85% 30%, rgba(203, 203, 203, 0.33) 0%, transparent 50%),
 
-    /* 3. Мягкий золотисто-бежевый (воздушность) */
-    radial-gradient(circle at 15% 45%, rgba(164, 164, 164, 0.34) 0%, transparent 45%),
-
-    /* 4. Нижний теплый контур (поддержка "жидкого стекла") */
-    radial-gradient(circle at 70% 85%, rgba(181, 181, 181, 0.24) 0%, transparent 40%),
-
-    /* 5. Базовая чистая подложка в стиле HockeyEco */
-    linear-gradient(135deg, #d3d3d3ff 0%, #edeef0 100%)
+    /* 15. Базовая подложка */
+    linear-gradient(135deg, #d6cec6ff 0%, #c3c3c3ff 100%)
   `,
   backgroundAttachment: 'fixed',
   backgroundSize: 'cover',
   backgroundPosition: 'center',
-  backgroundColor: '#f5f7f8'
+  backgroundColor: '#acb1b8'
 };
 
   return (

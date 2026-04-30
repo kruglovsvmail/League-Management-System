@@ -24,17 +24,17 @@ const STATUS_OPTIONS = [
       text: 'text-orange', hover: 'hover:border-orange/40', 
       dot: 'bg-orange'
     },
-    desc: 'Заявка ожидает решения администратора' 
+    desc: 'Заявка ожидает решения' 
   },
   { 
     value: 'revision', 
-    label: 'На исправлении', 
+    label: 'К доработке', 
     styles: {
       bg: 'bg-blue-500/10', border: 'border-blue-500', 
       text: 'text-blue-600', hover: 'hover:border-blue-500/40', 
       dot: 'bg-blue-500'
     },
-    desc: 'Команда исправляет недочеты в заявке' 
+    desc: 'Команда исправляет недочеты или дополняет заявку' 
   },
   { 
     value: 'rejected', 

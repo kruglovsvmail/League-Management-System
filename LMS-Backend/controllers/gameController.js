@@ -993,7 +993,7 @@ export const deleteGame = async (req, res) => {
         }
         
         if (gameRes.rows[0].status !== 'scheduled') {
-            return res.status(400).json({ success: false, error: 'Удалить можно только матч со статусом "В расписании"' });
+            return res.status(400).json({ success: false, error: 'Удалить можно только матч со статусом "Предстоящий"' });
         }
 
         const depRes = await pool.query(`

@@ -8,7 +8,7 @@ import { AccessFallback } from '../ui/AccessFallback';
 const STATUS_OPTIONS = [
   { 
     value: 'scheduled', 
-    label: 'В расписании', 
+    label: 'Предстоящий', 
     styles: {
       bg: 'bg-orange/10', border: 'border-orange', 
       text: 'text-orange', hover: 'hover:border-orange/40', 

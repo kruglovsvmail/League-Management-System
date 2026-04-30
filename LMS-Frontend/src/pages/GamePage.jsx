@@ -193,7 +193,7 @@ export function GamePage() {
         }
         break;
       default: 
-        content = "В расписании"; 
+        content = "Предстоящий"; 
         if (canManageStatus) {
           badgeClass += "bg-orange/10 text-orange hover:bg-orange hover:text-white cursor-pointer group shadow-sm"; 
         } else {

@@ -381,7 +381,7 @@ export function GameCard({
                             )}
                             <Tooltip 
                                 title={!canDelete ? 'Нет прав на удаление' : isFinishedOrLive || game.has_protocol ? 'Невозможно удалить' : 'Удалить матч'}
-                                subtitle={isFinishedOrLive ? 'Только статус "В расписании"' : game.has_protocol ? 'Очистите протокол' : null}
+                                subtitle={isFinishedOrLive ? 'Только статус "Предстоящий"' : game.has_protocol ? 'Очистите протокол' : null}
                                 noUnderline={true}
                             >
                                 <button 
@@ -515,7 +515,7 @@ export function GameCard({
                     )}
                     
                     {game.status === 'cancelled' && <span className="text-[10px] font-bold text-status-rejected uppercase tracking-widest">Отменен</span>}
-                    {game.status === 'scheduled' && <span className="text-[10px] font-bold text-orange uppercase tracking-widest">В расписании</span>}
+                    {game.status === 'scheduled' && <span className="text-[10px] font-bold text-orange uppercase tracking-widest">Предстоящий</span>}
                 </div>
 
                 {canEdit && game.status === 'scheduled' && (

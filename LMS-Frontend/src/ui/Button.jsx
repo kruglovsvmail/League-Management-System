@@ -10,7 +10,7 @@ export function Button({
   loadingText = 'Сохранение...' 
 }) {
   
-  const baseClasses = "relative flex items-center justify-center gap-2 px-6 py-2.5 rounded-md font-bold text-[13px] transition-all duration-100 border-none before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/25";
+  const baseClasses = "relative flex items-center justify-center gap-2 px-6 py-2.5 rounded-md font-bold text-[13px] transition-all duration-100 border-none before:rounded-md before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/25";
   const activeClasses = "bg-orange text-white cursor-pointer hover:bg-orange-hover shadow-[0_4px_10px_rgba(255,107,0,0.2)] hover:shadow-[0_6px_15px_rgba(255,107,0,0.4)]";
   const disabledClasses = "bg-graphite/10 text-graphite/40 cursor-not-allowed shadow-none";
   
