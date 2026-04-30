@@ -4,7 +4,7 @@ FROM node:20-slim
 # Переключаем зеркала Debian на Яндекс (чтобы избежать зависаний сети)
 RUN sed -i 's/deb.debian.org/mirror.yandex.ru/g' /etc/apt/sources.list.d/debian.sources || true
 
-# Обновляем пакеты и устанавливаем Chromium с нужными библиотеками по IPv4
+# Обновляем пакеты и устанавливаем Chromium, а также Python и инструменты сборки (g++, make) для bcrypt
 RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -25,6 +25,9 @@ RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y \
     libglib2.0-0 \
     libgbm1 \
     libasound2 \
+    python3 \
+    make \
+    g++ \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -32,14 +35,14 @@ RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Создаем рабочую папку (теперь это будет просто /app)
+# Создаем рабочую папку
 WORKDIR /app
 
-# Сначала копируем только файлы зависимостей (это ускорит будущие сборки за счет кэша)
+# Сначала копируем только файлы зависимостей
 COPY package*.json ./
 RUN npm install
 
-# Копируем весь остальной код бэкенда (точка означает "всё из текущей папки")
+# Копируем весь остальной код бэкенда
 COPY . .
 
 # Открываем порт 3001
