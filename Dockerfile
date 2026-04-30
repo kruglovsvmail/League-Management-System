@@ -2,7 +2,8 @@
 FROM node:20-slim
 
 # Обновляем пакеты и устанавливаем Chromium, шрифты и все нужные библиотеки для Puppeteer
-RUN apt-get update && apt-get install -y \
+# Флаг Acquire::ForceIPv4=true добавлен для обхода зависаний сети
+RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y \
     chromium \
     fonts-liberation \
     libnss3 \
