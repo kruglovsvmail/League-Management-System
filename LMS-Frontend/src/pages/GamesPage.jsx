@@ -178,7 +178,6 @@ export function GamesPage() {
         let extraUpdates = {};
 
         if ('game_date' in updatesObj && updatesObj.game_date) {
-    //DateTimePicker уже присылает UTC ISO строку, просто сохраняем её
     payloads.game_date = updatesObj.game_date;
 }
         

@@ -256,10 +256,11 @@ onUpdate(game.id, updates);
                         ) : (
                             <div className={isDateDisabled ? 'pointer-events-none' : ''}>
                                 <DateTimePicker 
-                                    value={game.game_date} 
-                                    onChange={(val) => handleFieldChange('game_date', val)} 
-                                    placeholder="Дата не назначена"
-                                />
+    value={game.game_date} 
+    onChange={(val) => handleFieldChange('game_date', val)} 
+    placeholder="Дата не назначена"
+    timezone={arenas.find(a => String(a.id) === String(game.arena_id))?.timezone || 'UTC'}
+/>
                             </div>
                         )}
                     </div>

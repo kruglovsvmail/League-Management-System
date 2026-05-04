@@ -86,6 +86,7 @@ export const getPublicGameById = async (req, res) => {
                    a.name as arena_name,
                    a.city as arena_city,
                    a.address as arena_address,
+                   a.timezone as arena_timezone, -- ДОБАВЛЕНО
                    gt.periods_count, gt.track_plus_minus, gt.shootout_status,
                    
                    (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
@@ -270,6 +271,7 @@ export const getGames = async (req, res) => {
                 g.stage_type, g.stage_label, g.series_number, g.game_number,
                 g.home_team_id, g.away_team_id, g.arena_id,
                 a.name as location_text,
+                a.timezone as arena_timezone, -- ДОБАВЛЕНО
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 d.name as division_name,
@@ -335,6 +337,7 @@ export const getGameById = async (req, res) => {
                 g.*,
                 gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.track_plus_minus, gt.shootout_status,
                 a.name as location_text,
+                a.timezone as arena_timezone, -- ДОБАВЛЕНО
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
                 COALESCE(htt.custom_jersey_dark_url, ht.jersey_dark_url) as home_jersey_dark,
                 COALESCE(htt.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light,
@@ -426,12 +429,14 @@ export const getGameById = async (req, res) => {
 export const getArenas = async (req, res) => {
     try {
         const { leagueId } = req.query;
-        let query = `SELECT id, name, city FROM arenas WHERE status = 'active'`;
+        // ДОБАВЛЕНО timezone в базовый запрос
+        let query = `SELECT id, name, city, timezone FROM arenas WHERE status = 'active'`;
         const params = [];
 
         if (leagueId) {
             query = `
-                SELECT a.id, a.name, a.city 
+                -- ДОБАВЛЕНО a.timezone в запрос с фильтром по лиге
+                SELECT a.id, a.name, a.city, a.timezone 
                 FROM arenas a
                 JOIN league_arenas la ON a.id = la.arena_id
                 WHERE a.status = 'active' AND la.league_id = $1
