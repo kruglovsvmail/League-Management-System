@@ -5,6 +5,12 @@ import { getToken } from '../../utils/helpers';
 export function useWebGraphicsPanel(gameId) {
   const [game, setGame] = useState(null);
   const [events, setEvents] = useState([]);
+  const [timerData, setTimerData] = useState({
+    accumulatedSeconds: 0,
+    startedAt: null,
+    isRunning: false,
+    serverTimeOffset: 0
+  });
   const [timerSeconds, setTimerSeconds] = useState(0); 
   const [currentPeriod, setCurrentPeriod] = useState('1');
   const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -61,19 +67,26 @@ export function useWebGraphicsPanel(gameId) {
     setSocket(newSocket);
     newSocket.emit('join_game', gameId);
 
+    // ЛОВИМ СОСТОЯНИЕ И ВЫЧИСЛЯЕМ СМЕЩЕНИЕ ВРЕМЕНИ
     newSocket.on('timer_state', (state) => {
-        setTimerSeconds(state.seconds);
+        if (!state) return; 
+        
+        const offset = state.serverTime ? (state.serverTime - Date.now()) : 0;
+
+        setTimerData({
+          accumulatedSeconds: state.accumulatedSeconds !== undefined ? state.accumulatedSeconds : (state.seconds || 0),
+          startedAt: state.startedAt || null,
+          isRunning: state.isRunning || false,
+          serverTimeOffset: offset
+        });
+
+        setIsTimerRunning(!!state.isRunning);
         if (state.period) setCurrentPeriod(state.period);
-        setIsTimerRunning(state.isRunning);
-        setActivePenalties(state.penalties || []);
-        if (state.periodLength) setPeriodLength(state.periodLength);
-        if (state.otLength) setOtLength(state.otLength);
+        if (state.periodLength !== undefined) setPeriodLength(state.periodLength);
+        if (state.otLength !== undefined) setOtLength(state.otLength);
     });
 
-    newSocket.on('timer_tick', (state) => {
-      setTimerSeconds(state.seconds);
-      if (state.penalties) setActivePenalties(state.penalties);
-    });
+    // СОБЫТИЕ timer_tick БОЛЬШЕ НЕ НУЖНО СЛУШАТЬ
 
     newSocket.on('score_updated', () => loadGameData());
     newSocket.on('game_updated', () => loadGameData());
@@ -82,15 +95,21 @@ export function useWebGraphicsPanel(gameId) {
   }, [gameId, loadGameData]);
 
   useEffect(() => {
-    let interval = null;
-    if (isTimerRunning) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-        setActivePenalties(prev => prev.map(p => ({ ...p, remaining: p.remaining > 0 ? p.remaining - 1 : 0 })));
-      }, 1000);
-    }
+    const interval = setInterval(() => {
+      if (timerData.isRunning && timerData.startedAt) {
+        // Считаем дельту с учетом отставания часов сервера
+        const nowWithOffset = Date.now() + timerData.serverTimeOffset;
+        const elapsedSinceStart = Math.floor((nowWithOffset - timerData.startedAt) / 1000);
+        
+        setTimerSeconds(timerData.accumulatedSeconds + elapsedSinceStart);
+      } else {
+        setTimerSeconds(timerData.accumulatedSeconds);
+      }
+    }, 100); // Обновляем 10 раз в секунду для идеальной плавности
+
     return () => clearInterval(interval);
-  }, [isTimerRunning]);
+  }, [timerData]);
+
 
   const triggerOverlay = useCallback((type, data, signature) => {
     socket?.emit('trigger_obs_overlay', { type, gameId, data });

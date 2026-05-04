@@ -6,10 +6,19 @@ import { calculatePenaltyTimelines } from '../GameLiveDesk/GameDeskShared';
 export function useWebGraphics(gameId) {
   const [game, setGame] = useState(null);
   const [events, setEvents] = useState([]); 
+  
+  // === НОВАЯ ЛОГИКА ТАЙМЕРА (DELTA TIME) ===
+  const [timerData, setTimerData] = useState({
+    accumulatedSeconds: 0,
+    startedAt: null,
+    isRunning: false,
+    serverTimeOffset: 0
+  });
   const [timerSeconds, setTimerSeconds] = useState(0); 
   const [currentPeriod, setCurrentPeriod] = useState('1');
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  
+  // ==========================================
+
   const [periodLength, setPeriodLength] = useState(20);
   const [otLength, setOtLength] = useState(5);
   const [soLength, setSoLength] = useState(3);
@@ -48,7 +57,6 @@ export function useWebGraphics(gameId) {
 
   const loadGameData = async () => {
     try {
-      // Грузим саму игру через публичный роут
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/public/games/${gameId}`);
       const data = await res.json();
       
@@ -57,12 +65,10 @@ export function useWebGraphics(gameId) {
         if (data.data.period_length) setPeriodLength(data.data.period_length);
         if (data.data.ot_length) setOtLength(data.data.ot_length);
         
-        // Бэкенд теперь сам отдает массив всех событий внутри data.data.events
         if (data.data.events) {
             setEvents(data.data.events);
         }
       }
-      
     } catch (err) { 
         console.error('Ошибка загрузки игры:', err); 
     }
@@ -74,23 +80,28 @@ export function useWebGraphics(gameId) {
     const socket = io(import.meta.env.VITE_API_URL);
     socket.emit('join_game', gameId);
 
+    // ЛОВИМ НОВЫЙ СОКЕТ И СЧИТАЕМ ОФСЕТ СЕРВЕРА
     socket.on('timer_state', (state) => {
         if (!state) return; 
-        setTimerSeconds(state.seconds || 0);
-        if (state.period) setCurrentPeriod(state.period);
+        
+        const offset = state.serverTime ? (state.serverTime - Date.now()) : 0;
+
+        setTimerData({
+          accumulatedSeconds: state.accumulatedSeconds !== undefined ? state.accumulatedSeconds : (state.seconds || 0),
+          startedAt: state.startedAt || null,
+          isRunning: state.isRunning || false,
+          serverTimeOffset: offset
+        });
+
         setIsTimerRunning(!!state.isRunning);
-        if (state.periodLength) setPeriodLength(state.periodLength);
-        if (state.otLength) setOtLength(state.otLength);
-        if (state.soLength) setSoLength(state.soLength);
+        if (state.period) setCurrentPeriod(state.period);
+        if (state.periodLength !== undefined) setPeriodLength(state.periodLength);
+        if (state.otLength !== undefined) setOtLength(state.otLength);
+        if (state.soLength !== undefined) setSoLength(state.soLength);
     });
 
-    socket.on('timer_tick', (state) => {
-      if (state && state.seconds !== undefined) {
-          setTimerSeconds(state.seconds);
-      }
-    });
+    // Обработчик timer_tick больше не нужен, мы его удаляем!
 
-    // Перезапрашиваем события при обновлении счета
     socket.on('score_updated', () => loadGameData());
     socket.on('game_updated', () => loadGameData());
 
@@ -148,15 +159,21 @@ export function useWebGraphics(gameId) {
     };
   }, [gameId]);
 
+  // === ВЫСОКОЧАСТОТНЫЙ ЦИКЛ РАСЧЕТА ВРЕМЕНИ ДЛЯ OBS ===
   useEffect(() => {
-    let interval = null;
-    if (isTimerRunning) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-      }, 1000);
-    }
+    const interval = setInterval(() => {
+      if (timerData.isRunning && timerData.startedAt) {
+        const nowWithOffset = Date.now() + timerData.serverTimeOffset;
+        const elapsedSinceStart = Math.floor((nowWithOffset - timerData.startedAt) / 1000);
+        setTimerSeconds(timerData.accumulatedSeconds + elapsedSinceStart);
+      } else {
+        setTimerSeconds(timerData.accumulatedSeconds);
+      }
+    }, 100);
+
     return () => clearInterval(interval);
-  }, [isTimerRunning]);
+  }, [timerData]);
+  // ====================================================
 
   const activePenalties = useMemo(() => {
     if (!game || !game.penalties) return [];

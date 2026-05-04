@@ -74,7 +74,7 @@ const fetchUserProfile = async (userId) => {
     avatarUrl: user.avatar_url,
     birthDate: user.birth_date, 
     globalRole: user.global_role, 
-    hasSignPin: !!user.sign_pin_hash, // Флаг для фронтенда: установлен ли PIN-код ЭЦП
+    hasSignPin: !!user.sign_pin_hash,
     leagues: leaguesResult.rows
   };
 };
@@ -118,7 +118,6 @@ export const getMe = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    // Добавили прием signPin из фронтенда
     const { email, phone, password, avatarUrl, signPin } = req.body;
 
     await pool.query(
@@ -126,13 +125,11 @@ export const updateProfile = async (req, res) => {
       [email, phone, avatarUrl, userId]
     );
 
-    // Обновление пароля
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
       await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, userId]);
     }
 
-    // Обновление PIN-кода для ЭЦП
     if (signPin) {
       const hashedPin = await bcrypt.hash(signPin, 10);
       await pool.query('UPDATE users SET sign_pin_hash = $1 WHERE id = $2', [hashedPin, userId]);
@@ -191,23 +188,16 @@ export const resetPassword = async (req, res) => {
 // БЛОК ОХРАННИКОВ (СИСТЕМА ПРАВ RBAC)
 // ==========================================
 
-/**
- * Вспомогательная функция для извлечения ID лиги из различных параметров маршрута
- * Эта функция является "определителем контекста" для запроса.
- */
 const getLeagueIdFromContext = async (req) => {
-  // Прямая передача leagueId в параметрах или теле
   if (req.params.leagueId) return req.params.leagueId;
   if (req.body.leagueId) return req.body.leagueId;
 
-  // Извлечение через seasonId
   if (req.params.seasonId || req.body.seasonId) {
     const id = req.params.seasonId || req.body.seasonId;
     const res = await pool.query('SELECT league_id FROM seasons WHERE id = $1', [id]);
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  // Извлечение через divisionId (или просто id, если это маршрут дивизиона)
   if (req.params.divisionId || req.body.divisionId || (req.baseUrl.includes('/divisions') && req.params.id)) {
     const id = req.params.divisionId || req.body.divisionId || req.params.id;
     const res = await pool.query(`
@@ -218,7 +208,6 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  // Извлечение через gameId
   if (req.params.gameId || req.body.gameId) {
     const id = req.params.gameId || req.body.gameId;
     const res = await pool.query(`
@@ -230,7 +219,6 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  // Извлечение через transfer_id (заявка на трансфер)
   if (req.baseUrl.includes('/transfers') && req.params.id) {
     const res = await pool.query(`
       SELECT s.league_id FROM roster_requests rr
@@ -241,7 +229,6 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
   
-  // Извлечение через ID заявки игрока на турнир (tournament_rosters)
   if (req.body.tournament_roster_id || (req.baseUrl.includes('/tournament-rosters') && req.params.id)) {
     const id = req.body.tournament_roster_id || req.params.id;
     const res = await pool.query(`
@@ -254,7 +241,6 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
   
-  // Извлечение через id дисквалификации
   if (req.baseUrl.includes('/disqualifications') && req.params.id) {
      const res = await pool.query(`
       SELECT s.league_id FROM disqualifications d
@@ -267,7 +253,6 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  // Извлечение через команду турнира (tournament_teams)
   if (req.baseUrl.includes('/tournament-teams') && req.params.id) {
     const res = await pool.query(`
       SELECT s.league_id FROM tournament_teams tt
@@ -281,29 +266,21 @@ const getLeagueIdFromContext = async (req) => {
   return null;
 };
 
-/**
- * Универсальный Middleware для проверки прав (RBAC)
- * @param {string} permissionKey Ключ из PERMISSIONS (например, 'DIVISIONS_DELETE')
- */
 export const requirePermission = (permissionKey) => async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // 1. Проверка на Глобального Администратора (Абсолютный доступ ко всему)
     const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
     if (userRes.rows[0]?.global_role === ROLES.GLOBAL_ADMIN) {
       return next();
     }
 
-    // 2. Получаем список разрешенных ролей для данного действия
     const allowedRoles = PERMISSIONS[permissionKey];
 
-    // Если массив allowedRoles пустой, значит доступ разрешен ТОЛЬКО глобальному админу
     if (!allowedRoles || allowedRoles.length === 0) {
       return res.status(403).json({ success: false, error: 'Доступ разрешен только глобальному администратору' });
     }
 
-    // 3. Определяем контекст лиги для текущего запроса
     const leagueId = await getLeagueIdFromContext(req);
     
     if (!leagueId) {
@@ -311,50 +288,66 @@ export const requirePermission = (permissionKey) => async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Невозможно определить контекст лиги для проверки прав' });
     }
 
-    // 4. Собираем все роли пользователя в текущей лиге
     let userRoles = [];
 
-    // 4a. Роли из штата лиги (league_staff)
     const staffRes = await pool.query(
       'SELECT role FROM league_staff WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL',
       [userId, leagueId]
     );
     userRoles = staffRes.rows.map(row => row.role);
 
-    // 4b. Роли из конкретного матча (game_referee, game_media), если в контексте есть gameId
+    // =========================================================================================
+    // НАЧАЛО ОБНОВЛЕННОГО БЛОКА: 4b. Роли из конкретного матча (единая таблица game_staff)
+    // =========================================================================================
+    
+    // Извлекаем gameId из параметров запроса или из тела запроса (зависит от типа эндпоинта)
     const gameId = req.params.gameId || req.body.gameId;
+    
+    // Если запрос привязан к конкретному матчу (есть gameId)
     if (gameId) {
-      // Ищем роли в game_referee
-      const refRes = await pool.query(
-        'SELECT role FROM game_referee WHERE game_id = $1 AND user_id = $2',
+      
+      // Делаем ЕДИНСТВЕННЫЙ SQL-запрос к новой таблице game_staff
+      // Ищем все роли, назначенные текущему пользователю в рамках этого матча
+      const matchStaffRes = await pool.query(
+        'SELECT role FROM game_staff WHERE game_id = $1 AND user_id = $2',
         [gameId, userId]
       );
       
-      // ИСПРАВЛЕННЫЙ МАППИНГ: Переводим роли из БД в системные константы
-      refRes.rows.forEach(r => {
-        if (['head_1', 'head_2'].includes(r.role)) userRoles.push(ROLES.GAME_HEAD);
-        if (['linesman_1', 'linesman_2'].includes(r.role)) userRoles.push(ROLES.GAME_LINESMAN);
-        if (r.role === 'scorekeeper') userRoles.push(ROLES.GAME_SECRETARY);
+      // Перебираем полученные из БД строки (сырые названия ролей из базы)
+      matchStaffRes.rows.forEach(r => {
+        
+        // 1. Главные судьи на льду (main-1, main-2) маппим в константу ROLES.GAME_MAIN
+        if (['main-1', 'main-2'].includes(r.role)) userRoles.push(ROLES.GAME_MAIN);
+        
+        // 2. Линейные судьи (linesman-1, linesman-2) маппим в константу ROLES.GAME_LINESMAN
+        if (['linesman-1', 'linesman-2'].includes(r.role)) userRoles.push(ROLES.GAME_LINESMAN);
+        
+        // 3. Главный секретарь матча маппится в ROLES.GAME_SECRETARY
+        if (r.role === 'secretary') userRoles.push(ROLES.GAME_SECRETARY);
+        
+        // 4. Судья времени (хронометрист) маппится в новую константу ROLES.GAME_TIMEKEEPER
+        if (r.role === 'timekeeper') userRoles.push(ROLES.GAME_TIMEKEEPER);
+        
+        // 5. Диктор-информатор на арене маппится в новую константу ROLES.GAME_INFORMANT
+        if (r.role === 'informant') userRoles.push(ROLES.GAME_INFORMANT);
+        
+        // 6. Транслятор/режиссер (broadcaster) маппится в ROLES.GAME_BROADCASTER (ранее GAME_MEDIA)
+        if (r.role === 'broadcaster') userRoles.push(ROLES.GAME_BROADCASTER);
+        
+        // 7. Комментаторы (commentator-1, commentator-2) маппим в новую константу ROLES.GAME_COMMENTATOR
+        if (['commentator-1', 'commentator-2'].includes(r.role)) userRoles.push(ROLES.GAME_COMMENTATOR);
       });
-
-      // Ищем роли в game_media
-      const mediaRes = await pool.query(
-        'SELECT id FROM game_media WHERE game_id = $1 AND user_id = $2',
-        [gameId, userId]
-      );
-      if (mediaRes.rows.length > 0) {
-        userRoles.push(ROLES.GAME_MEDIA);
-      }
     }
+    // =========================================================================================
+    // КОНЕЦ ОБНОВЛЕННОГО БЛОКА
+    // =========================================================================================
 
-    // 5. Проверка пересечения имеющихся ролей с разрешенными
     const hasAccess = userRoles.some(role => allowedRoles.includes(role));
 
     if (!hasAccess) {
       return res.status(403).json({ success: false, error: 'Отказано в доступе: недостаточно прав' });
     }
 
-    // Доступ разрешен
     next();
   } catch (err) {
     console.error('[RBAC Error]:', err);

@@ -1,20 +1,23 @@
+// DateTimePicker.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import dayjs from 'dayjs'; // Используем настроенный dayjs
 
-export function DateTimePicker({ value, onChange, placeholder = "Дата и время" }) {
+export function DateTimePicker({ value, onChange, placeholder = "Дата и время", timezone = 'UTC' }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
   const [coords, setCoords] = useState({ left: 0, top: 0 });
   
-  // Состояния для даты и времени
-  const initialDate = value ? new Date(value) : new Date();
+  // Переводим пришедший UTC value в таймзону арены для отображения в календаре
+  const initialDate = value ? dayjs.utc(value).tz(timezone).toDate() : new Date();
+  
   const [viewDate, setViewDate] = useState(initialDate);
   const [selectedDate, setSelectedDate] = useState(value ? initialDate : null);
   
   const [time, setTime] = useState(() => {
     if (!value) return '12:00';
-    const d = new Date(value);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    // Достаем часы и минуты с учетом таймзоны арены
+    return dayjs.utc(value).tz(timezone).format('HH:mm');
   });
 
   const updatePosition = () => {
@@ -62,11 +65,14 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
   let firstDayIndex = new Date(year, month, 1).getDay() - 1;
   if (firstDayIndex === -1) firstDayIndex = 6;
 
-  // Отправка итогового значения наверх
+  // Главная логика отправки: говорим dayjs, что выбранные цифры — это время в таймзоне арены, и переводим в UTC
   const emitChange = (d, t) => {
     if (!d) return onChange(null);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    onChange(`${dateStr} ${t}:00`); // Формат для БД
+    
+    // Формируем ISO строку в UTC для БД (например: 2026-10-15T13:00:00Z)
+    const utcISOString = dayjs.tz(`${dateStr} ${t}:00`, timezone).utc().format();
+    onChange(utcISOString); 
   };
 
   const handleSelectDate = (dayNum) => {
@@ -89,8 +95,13 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
     setIsOpen(false);
   };
 
-  // Красивое отображение в инпуте
-  const displayValue = selectedDate ? `${selectedDate.toLocaleDateString('ru-RU')} в ${time}` : '';
+  // Красивое отображение в инпуте: показываем локальное время арены
+  let displayValue = '';
+  if (value) {
+     displayValue = dayjs.utc(value).tz(timezone).format('DD.MM.YYYY в HH:mm');
+  } else if (selectedDate) {
+     displayValue = `${selectedDate.toLocaleDateString('ru-RU')} в ${time}`;
+  }
 
   return (
     <div className="relative font-sans w-full" ref={containerRef}>
@@ -98,10 +109,10 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full px-4 py-[10px] rounded-md bg-white border cursor-pointer flex justify-between items-center transition-all duration-300 hover:border-orange ${isOpen ? 'border-orange shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' : 'border-graphite/40'}`}
       >
-        <span className={`text-[13px] font-semibold truncate ${value ? 'text-graphite' : 'text-graphite/40'}`}>
+        <span className={`text-[13px] font-semibold truncate ${value || selectedDate ? 'text-graphite' : 'text-graphite/40'}`}>
           {displayValue || placeholder}
         </span>
-        <svg className={`w-4 h-4 shrink-0 transition-colors duration-300 ${value ? 'text-graphite-light' : 'text-graphite/40'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className={`w-4 h-4 shrink-0 transition-colors duration-300 ${value || selectedDate ? 'text-graphite-light' : 'text-graphite/40'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>
         </svg>
       </div>
@@ -138,7 +149,6 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
             })}
           </div>
 
-          {/* Блок выбора времени */}
           <div className="border-t border-graphite/10 pt-3 mb-2 flex items-center justify-between">
             <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Время матча</span>
             <input 

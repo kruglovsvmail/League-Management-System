@@ -315,13 +315,13 @@ export const SummaryTablesAccordion = ({
                             </thead>
                             <tbody className="bg-white text-graphite relative z-10">
                                 {teams.map((team, index) => {
-                                    const isEditing = editShotTeamId === team.id;
-                                    const currentSum = isEditing ? periods.reduce((sum, p) => sum + (parseInt(editShotData[p], 10) || 0), 0) : 0;
-                                    
-                                    if (isEditing && !isReadOnly) {
-                                        return (
-                                            <tr key={`edit-team-${team.id}`} className="h-[36px] bg-orange/5 transition-colors">
-                                                <td className="border-r border-graphite/30 text-left px-3">
+    const isEditing = editShotTeamId === team.id;
+    const currentSum = isEditing ? periods.reduce((sum, p) => sum + (parseInt(editShotData[p], 10) || 0), 0) : 0;
+    
+    if (isEditing && !isReadOnly) {
+        return (
+            <tr key={team.id ? `edit-team-${team.id}` : `edit-team-empty-${index}`} className="h-[36px] bg-orange/5 transition-colors">
+                <td className="border-r border-graphite/30 text-left px-3">
                                                     <div className="flex items-center gap-2">
                                                         <span className="border-[1.5px] border-graphite/60 w-5 h-5 flex items-center justify-center font-black rounded-[2px] text-[10px] shrink-0 text-graphite/60">{team.letter}</span>
                                                         {team.logo && <img src={team.logo} alt={team.name} className="w-5 h-5 object-contain drop-shadow-sm opacity-60 shrink-0" />}
@@ -349,8 +349,8 @@ export const SummaryTablesAccordion = ({
                                     }
 
                                     return (
-                                        <tr key={team.id} className="even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
-                                            <td className="border-r border-graphite/30 text-left px-3">
+            <tr key={team.id ? `view-team-${team.id}` : `view-team-empty-${index}`} className="even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
+                <td className="border-r border-graphite/30 text-left px-3">
                                                 <div className="flex items-center gap-2">
                                                     {team.logo && <img src={team.logo} alt={team.name} className="w-5 h-5 object-contain drop-shadow-sm shrink-0" />}
                                                     <span className="font-bold text-[13px] text-graphite uppercase truncate" title={team.name}>{team.name}</span>

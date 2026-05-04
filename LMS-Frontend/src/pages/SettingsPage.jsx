@@ -9,6 +9,7 @@ import { AccessFallback } from '../ui/AccessFallback';
 import { DivisionsTab } from '../components/Settings/DivisionsTab';
 import { StaffTab } from '../components/Settings/StaffTab';
 import { QualificationsTab } from '../components/Settings/QualificationsTab';
+import { ArenasTab } from '../components/Settings/ArenasTab'; // ДОБАВЛЕН ИМПОРТ
 
 export function SettingsPage() {
   const { selectedLeague } = useOutletContext();
@@ -18,6 +19,7 @@ export function SettingsPage() {
   const canViewDivisions = checkAccess('SETTINGS_DIVISIONS_VIEW');
   const canViewStaff = checkAccess('SETTINGS_STAFF_VIEW');
   const canViewQuals = checkAccess('SETTINGS_QUAL_VIEW');
+  const canViewArenas = checkAccess('SETTINGS_ARENAS_VIEW');
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTabParam = searchParams.get('tab');
@@ -27,6 +29,7 @@ export function SettingsPage() {
   if (canViewDivisions) availableTabs.push({ index: 0, label: 'Дивизионы' });
   if (canViewStaff) availableTabs.push({ index: 1, label: 'Персонал' });
   if (canViewQuals) availableTabs.push({ index: 2, label: 'Квалификации' });
+  if (canViewArenas) availableTabs.push({ index: 3, label: 'Арены' });
 
   // Определяем активную вкладку (по умолчанию - первая из доступных)
   const defaultTabIndex = availableTabs.length > 0 ? availableTabs[0].index : 0;
@@ -95,6 +98,7 @@ export function SettingsPage() {
       case 0: return <DivisionsTab setToast={setToast} setHeaderActions={setHeaderActions} />;
       case 1: return <StaffTab setToast={setToast} />;
       case 2: return <QualificationsTab setToast={setToast} />;
+      case 3: return <ArenasTab setToast={setToast} />;
       default: return null;
     }
   };

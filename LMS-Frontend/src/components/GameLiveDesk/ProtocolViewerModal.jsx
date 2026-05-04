@@ -250,10 +250,13 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
 
   const renderOfficialsSection = () => {
     const officials = protocolData?.prefilledOfficials || {};
+    // ============================================================================
+    // ОБНОВЛЕНО: Используем новые системные ключи ролей из таблицы game_staff
+    // ============================================================================
     const roles = [
-      { key: 'head_1', label: 'Главный судья 1', user: officials['head_1'] },
-      { key: 'head_2', label: 'Главный судья 2', user: officials['head_2'] },
-      { key: 'scorekeeper', label: 'Секретарь', user: officials['scorekeeper'] },
+      { key: 'main-1', label: 'Главный судья 1', user: officials['main-1'] },
+      { key: 'main-2', label: 'Главный судья 2', user: officials['main-2'] },
+      { key: 'secretary', label: 'Секретарь', user: officials['secretary'] },
     ];
 
     return (
@@ -268,7 +271,8 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
            
            <div className="flex flex-col w-full divide-y divide-graphite/10">
               {roles.map(r => {
-                 if (r.key === 'head_2' && !r.user) return null; 
+                 // Скрываем второго главного судью, если он не назначен на этот матч
+                 if (r.key === 'main-2' && !r.user) return null; 
                  
                  const sig = signatures[r.key];
                  const isFullySigned = !!sig && !!sig.hash; 

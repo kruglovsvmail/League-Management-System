@@ -4,6 +4,12 @@ import bcrypt from 'bcrypt';
 import puppeteer from 'puppeteer';
 // Импортируем бэкенд-фабрику для выбора шаблона
 import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // ============================================================================
 // ВНУТРЕННЯЯ ФУНКЦИЯ: Сбор всех данных из БД (используется для JSON, HTML и PDF)
@@ -11,10 +17,11 @@ import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
 const fetchRawProtocolData = async (gameId) => {
     const gameQuery = `
         SELECT 
-            g.id, g.game_date, g.game_number,
-            d.name as division_name, s.name as season_name,
-            s.league_id,
-            COALESCE(a.name, g.location_text) as arena_name,
+        g.id, g.game_date, g.game_number,
+        d.name as division_name, s.name as season_name,
+        s.league_id,
+        a.name as arena_name,
+        a.timezone, 
             ht.name as home_team_name, at.name as away_team_name,
             g.division_id, g.home_team_id, g.away_team_id,
             g.home_score, g.away_score,
@@ -114,10 +121,10 @@ const fetchRawProtocolData = async (gameId) => {
     });
 
     const refsQuery = `
-        SELECT gr.role, gr.user_id as id, u.last_name, u.first_name, u.middle_name
-        FROM game_referee gr
-        JOIN users u ON u.id = gr.user_id
-        WHERE gr.game_id = $1
+        SELECT gs.role, gs.user_id as id, u.last_name, u.first_name, u.middle_name
+        FROM game_staff gs
+        JOIN users u ON u.id = gs.user_id
+        WHERE gs.game_id = $1
     `;
     const refsResult = await pool.query(refsQuery, [gameId]);
     const prefilledOfficials = {};
@@ -131,10 +138,14 @@ const fetchRawProtocolData = async (gameId) => {
 
     let formattedDate = '';
     let formattedTime = '';
+    
     if (game.game_date) {
-        const d = new Date(game.game_date);
-        formattedDate = d.toLocaleDateString('ru-RU');
-        formattedTime = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const arenaTz = game.timezone || 'UTC';
+        // Интерпретируем дату из БД как UTC и переводим в часовой пояс арены
+        const dateObj = dayjs.utc(game.game_date).tz(arenaTz);
+        
+        formattedDate = dateObj.format('DD.MM.YYYY');
+        formattedTime = dateObj.format('HH:mm');
     }
 
     return {
@@ -286,11 +297,19 @@ const prepareProtocolData = (apiData) => {
     }));
   
     return {
-      info: apiData.info, home: processTeam(apiData.teams.home, 'home'), away: processTeam(apiData.teams.away, 'away'),
+      info: apiData.info, 
+      home: processTeam(apiData.teams.home, 'home'), 
+      away: processTeam(apiData.teams.away, 'away'),
+      
       officials: {
-        hasHead2: !!(apiData.prefilledOfficials && apiData.prefilledOfficials['head_2']),
-        head1: getSigOrPrefilled('head_1'), head2: getSigOrPrefilled('head_2'),
-        scorekeeper: getSigOrPrefilled('scorekeeper'), linesman1: getSigOrPrefilled('linesman_1'), linesman2: getSigOrPrefilled('linesman_2'),
+        hasMain2: !!(apiData.prefilledOfficials && apiData.prefilledOfficials['main-2']),
+        'main-1': getSigOrPrefilled('main-1'),
+        'main-2': getSigOrPrefilled('main-2'),
+        'secretary': getSigOrPrefilled('secretary'),
+        'linesman-1': getSigOrPrefilled('linesman-1'),
+        'linesman-2': getSigOrPrefilled('linesman-2'),
+        'timekeeper': getSigOrPrefilled('timekeeper'),
+        'informant': getSigOrPrefilled('informant'),
       },
       eligibleSigners: apiData.eligibleSigners || { home: { coaches: [], staff: [] }, away: { coaches: [], staff: [] } },
       prefilledOfficials: apiData.prefilledOfficials || {},

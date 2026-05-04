@@ -134,3 +134,56 @@ export const deleteQualification = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// --- АРЕНЫ ЛИГИ ---
+
+// Получить все арены платформы
+export const getAllSettingsArenas = async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT id, name, city, address FROM arenas WHERE status = 'active' ORDER BY city, name`);
+    res.json({ success: true, arenas: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Получить арены, привязанные к конкретной лиге
+export const getLeagueSettingsArenas = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const result = await pool.query(`
+      SELECT a.id, a.name, a.city, a.address
+      FROM arenas a
+      JOIN league_arenas la ON a.id = la.arena_id
+      WHERE la.league_id = $1 AND a.status = 'active'
+      ORDER BY a.city, a.name
+    `, [leagueId]);
+    res.json({ success: true, arenas: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Добавить или удалить арену из лиги
+export const toggleLeagueArena = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const { arenaId, action } = req.body; // action может быть 'add' или 'remove'
+
+    if (action === 'add') {
+      await pool.query(
+        `INSERT INTO league_arenas (league_id, arena_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [leagueId, arenaId]
+      );
+    } else if (action === 'remove') {
+      await pool.query(
+        `DELETE FROM league_arenas WHERE league_id = $1 AND arena_id = $2`,
+        [leagueId, arenaId]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};

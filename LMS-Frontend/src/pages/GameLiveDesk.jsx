@@ -136,7 +136,6 @@ export function GameLiveDesk() {
   const { gameId } = useParams();
   const navigate = useNavigate(); 
 
-// Устанавливаем заголовок вкладки
   useEffect(() => {
     document.title = 'Панель секретаря | LMS';
   }, []);
@@ -154,7 +153,6 @@ export function GameLiveDesk() {
   const activeLeague = authUser?.leagues?.find(l => l.id === game?.league_id) || null;
   const { checkAccess, checkMatchEditAccess } = useAccess(authUser, activeLeague);
 
-  // --- ЛОГИКА АВТОРИЗАЦИИ И ПРАВ ДОСТУПА (ПЕРЕНЕСЕНО НАВЕРХ) ---
   const gameStaffArray = useMemo(() => {
     if (!game?.officials) return [];
     return Object.entries(game.officials)
@@ -165,9 +163,8 @@ export function GameLiveDesk() {
   const matchEditAccess = checkMatchEditAccess(game, gameStaffArray);
   const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
   
-  const canAccessPanel = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
+  const canAccessPanel = hasProtocolAccess;
   const isReadOnly = !matchEditAccess.hasAccess;
-  // -------------------------------------------------------------
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -185,10 +182,19 @@ export function GameLiveDesk() {
   }, []);
 
   const [socket, setSocket] = useState(null);
+
+  // === НОВЫЙ ДВИЖОК ТАЙМЕРА (DELTA TIME) ===
+  const [timerData, setTimerData] = useState({
+      accumulatedSeconds: 0,
+      startedAt: null,
+      isRunning: false,
+      serverTimeOffset: 0
+  });
   const [timerSeconds, setTimerSeconds] = useState(0); 
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState('1'); 
-  
+  // ==========================================
+
   const [periodsCount, setPeriodsCount] = useState(3);
   const [periodLength, setPeriodLength] = useState(20);
   const [otLength, setOtLength] = useState(5);
@@ -264,19 +270,24 @@ export function GameLiveDesk() {
     
     newSocket.on('timer_state', (state) => {
       if (ignoreSocketRef.current) return; 
-      setTimerSeconds(state.seconds);
-      setIsTimerRunning(state.isRunning);
+      
+      // Считаем разницу во времени
+      const offset = state.serverTime ? (state.serverTime - Date.now()) : 0;
+      
+      setTimerData({
+        accumulatedSeconds: state.accumulatedSeconds !== undefined ? state.accumulatedSeconds : (state.seconds || 0),
+        startedAt: state.startedAt || null,
+        isRunning: state.isRunning || false,
+        serverTimeOffset: offset
+      });
+      setIsTimerRunning(state.isRunning || false);
+
       if (state.period) setCurrentPeriod(state.period);
       if (state.periodsCount !== undefined) setPeriodsCount(state.periodsCount ?? 3);
       if (state.periodLength !== undefined) setPeriodLength(state.periodLength ?? 20);
       if (state.otLength !== undefined) setOtLength(state.otLength ?? 5);
       if (state.soLength !== undefined) setSoLength(state.soLength ?? 3);
       if (state.trackPlusMinus !== undefined) setTrackPlusMinus(state.trackPlusMinus ?? false);
-    });
-    
-    newSocket.on('timer_tick', (state) => {
-      if (ignoreSocketRef.current) return;
-      setTimerSeconds(state.seconds);
     });
 
     newSocket.on('score_updated', () => loadInitialData());
@@ -286,64 +297,72 @@ export function GameLiveDesk() {
   }, [gameId]);
 
   // ======================================================================
-  // ИЗМЕНЕНИЯ ТАЙМЕРА (Локальное тикание + Оптимизированная отправка sync)
+  // ВЫСОКОЧАСТОТНЫЙ ЦИКЛ РАСЧЕТА ВРЕМЕНИ (Замена старого setInterval)
   // ======================================================================
   useEffect(() => {
-    let interval = null;
-    if (isTimerRunning && !isReadOnly) {
-      interval = setInterval(() => {
-          setTimerSeconds(prev => {
-              const next = prev + 1;
-              if (socket?.connected && !ignoreSocketRef.current) {
-                  socket.emit('timer_action', { 
-                      gameId, 
-                      action: 'sync', 
-                      timerData: { seconds: next } 
-                  });
-              }
-              return next;
-          });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, socket, gameId, isReadOnly]);
+    const interval = setInterval(() => {
+      if (timerData.isRunning && timerData.startedAt) {
+        const nowWithOffset = Date.now() + timerData.serverTimeOffset;
+        const elapsedSinceStart = Math.floor((nowWithOffset - timerData.startedAt) / 1000);
+        setTimerSeconds(timerData.accumulatedSeconds + elapsedSinceStart);
+      } else {
+        setTimerSeconds(timerData.accumulatedSeconds);
+      }
+    }, 100);
 
+    return () => clearInterval(interval);
+  }, [timerData]);
+
+  // Автоматическая остановка таймера по истечению периода
   useEffect(() => {
     const limits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
-    if (isTimerRunning && limits.end > 0 && timerSeconds >= limits.end) {
-      handleTimerAction('stop');
-      socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: limits.end } });
+    if (timerData.isRunning && limits.end > 0 && timerSeconds >= limits.end) {
+      if (isReadOnly) return;
+      lockSocketUpdates();
+      
+      setTimerData(prev => ({ ...prev, isRunning: false, accumulatedSeconds: limits.end, startedAt: null }));
+      setIsTimerRunning(false);
       setTimerSeconds(limits.end);
+
+      socket?.emit('timer_action', { gameId, action: 'stop' });
+      socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: limits.end } });
     }
-  }, [timerSeconds, isTimerRunning, currentPeriod, periodLength, otLength, periodsCount]);
+  }, [timerSeconds, timerData.isRunning, currentPeriod, periodLength, otLength, periodsCount, isReadOnly, gameId, socket]);
 
   const handleTimerAction = (action) => {
+    if (isReadOnly) return;
     lockSocketUpdates();
-    let newRunning = isTimerRunning;
-    if (action === 'start') newRunning = true;
-    if (action === 'stop') newRunning = false;
     
-    setIsTimerRunning(newRunning);
-    socket?.emit('timer_action', { 
-        gameId, 
-        action, 
-        timerData: { isRunning: newRunning, seconds: timerSeconds, period: currentPeriod }
+    // Оптимистичное обновление интерфейса для мгновенного отклика
+    setTimerData(prev => {
+        if (action === 'start') return { ...prev, isRunning: true, startedAt: Date.now() + prev.serverTimeOffset };
+        if (action === 'stop') return { ...prev, isRunning: false, startedAt: null, accumulatedSeconds: timerSeconds };
+        return prev;
     });
+    setIsTimerRunning(action === 'start');
+
+    // Больше никакого спама секунд. Отправляем только сам экшен!
+    socket?.emit('timer_action', { gameId, action });
   };
 
   const changePeriod = (period) => {
+    if (isReadOnly) return;
     lockSocketUpdates();
     setCurrentPeriod(period);
     const limits = getPeriodLimits(period, periodLength, otLength, periodsCount);
-    setTimerSeconds(limits.start);
+    
+    // Сбрасываем время локально
+    setTimerData(prev => ({ ...prev, accumulatedSeconds: limits.start, isRunning: false, startedAt: null }));
+    setIsTimerRunning(false);
     
     socket?.emit('timer_action', { 
         gameId, 
-        action: 'change_period', 
-        timerData: { period, seconds: limits.start, isRunning: false } 
+        action: 'change_period', // ИСПРАВЛЕНА ОШИБКА: теперь это change_period, а не set_time!
+        timerData: { seconds: limits.start, period, isRunning: false } 
     });
     socket?.emit('game_updated', { gameId });
   };
+  // ======================================================================
 
   const saveTimerSettings = async () => {
     lockSocketUpdates();
@@ -361,7 +380,6 @@ export function GameLiveDesk() {
       });
     } catch(e) { console.error(e); }
   };
-  // ======================================================================
 
   const toggleLineup = async (rosterId, teamId, currentState) => {
     const updateState = (prev) => prev.map(p => p.id === rosterId ? { ...p, is_in_lineup: !currentState } : p);
@@ -610,7 +628,7 @@ export function GameLiveDesk() {
                   </button>
                   {isReadOnly && (
                       <span className="ml-4 bg-status-rejected/10 text-status-rejected px-3 py-1 rounded-md text-[11px] font-black uppercase tracking-widest border border-status-rejected/20 shadow-sm">
-                          Режим чтения (Протокол подписан)
+                          Режим чтения
                       </span>
                   )}
               </div>
@@ -725,8 +743,10 @@ export function GameLiveDesk() {
         isFinishing={isFinishingGame}
         isRecalculating={isRecalculatingStats}
         onSetTime={(secs) => {
+          if (isReadOnly) return;
           lockSocketUpdates();
-          setTimerSeconds(secs);
+          // Оптимистично выставляем время
+          setTimerData(prev => ({ ...prev, accumulatedSeconds: secs, startedAt: prev.isRunning ? (Date.now() + prev.serverTimeOffset) : null }));
           socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: secs } });
         }}
         isReadOnly={isReadOnly}

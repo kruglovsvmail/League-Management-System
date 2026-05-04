@@ -139,10 +139,15 @@ export function Select({
         {isOpen && !disabled && createPortal(
           <div 
             className={`portal-dropdown absolute bg-white/50 backdrop-blur-[14px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-zoom-in overflow-y-auto max-h-[320px] ${scrollbarStyles}`}
-            style={{ top: `${coords.top}px`, left: `${coords.left}px`, width: `${Math.max(coords.width, 100)}px` }}
+            style={{ 
+              top: `${coords.top}px`, 
+              left: `${coords.left}px`, 
+              minWidth: `${Math.max(coords.width, 100)}px`,
+              maxWidth: 'calc(100vw - 40px)' // Защита от вылетания за правый край экрана
+            }}
           >
             {effectiveIsSearchable && (
-              <div className="px-3 py-2 hover:bg-graphite/5 cursor-pointer text-graphite/40 text-xs text-left transition-colors" onClick={() => handleSelect('', { value: '', label: '—' })}>—</div>
+              <div className="px-3 py-2 hover:bg-graphite/5 cursor-pointer text-graphite/40 text-xs text-left transition-colors whitespace-nowrap" onClick={() => handleSelect('', { value: '', label: '—' })}>—</div>
             )}
             
             {filteredOptions.length > 0 ? (
@@ -150,7 +155,7 @@ export function Select({
                 <div 
                   key={idx}
                   onClick={() => handleSelect(opt.value, opt)}
-                  className={`px-4 py-2.5 text-[13px] font-semibold cursor-pointer border-b border-graphite/5 last:border-0 transition-colors text-left ${
+                  className={`px-4 py-2.5 text-[13px] font-semibold cursor-pointer border-b border-graphite/5 last:border-0 transition-colors text-left whitespace-nowrap overflow-hidden text-ellipsis ${
                     opt.disabled 
                       ? 'line-through text-graphite/40 bg-graphite/[0.02] hover:bg-graphite/5' 
                       : String(value) === String(opt.value) 

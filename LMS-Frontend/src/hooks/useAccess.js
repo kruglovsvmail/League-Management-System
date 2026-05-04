@@ -24,13 +24,19 @@ export function useAccess(customUser = null, customLeague = null) {
 
     const gameStaff = Array.isArray(options) ? options : (options.gameStaff || []);
     
+    // ============================================================================
+    // Маппинг новых ролей из единой таблицы game_staff
+    // ============================================================================
     if (gameStaff.length > 0) {
       const myGameStaffRoles = gameStaff.filter(staff => staff.user_id === user.id);
       myGameStaffRoles.forEach(staff => {
-        if (['head_1', 'head_2'].includes(staff.role)) currentUserRoles.push(ROLES.GAME_HEAD);
-        if (['linesman_1', 'linesman_2'].includes(staff.role)) currentUserRoles.push(ROLES.GAME_LINESMAN);
-        if (staff.role === 'scorekeeper') currentUserRoles.push(ROLES.GAME_SECRETARY);
-        if (staff.role === 'media' || staff.type === 'media') currentUserRoles.push(ROLES.GAME_MEDIA);
+        if (['main-1', 'main-2'].includes(staff.role)) currentUserRoles.push(ROLES.GAME_MAIN);
+        if (['linesman-1', 'linesman-2'].includes(staff.role)) currentUserRoles.push(ROLES.GAME_LINESMAN);
+        if (staff.role === 'secretary') currentUserRoles.push(ROLES.GAME_SECRETARY);
+        if (staff.role === 'timekeeper') currentUserRoles.push(ROLES.GAME_TIMEKEEPER);
+        if (staff.role === 'informant') currentUserRoles.push(ROLES.GAME_INFORMANT);
+        if (staff.role === 'broadcaster') currentUserRoles.push(ROLES.GAME_BROADCASTER);
+        if (['commentator-1', 'commentator-2'].includes(staff.role)) currentUserRoles.push(ROLES.GAME_COMMENTATOR);
       });
     }
 
@@ -38,7 +44,8 @@ export function useAccess(customUser = null, customLeague = null) {
   };
 
   // ============================================================================
-  // СПЕЦИАЛЬНАЯ ПРОВЕРКА ДЛЯ ПАНЕЛИ СЕКРЕТАРЯ (С УЧЕТОМ ВРЕМЕНИ И ПОДПИСИ)
+  // СПЕЦИАЛЬНАЯ ПРОВЕРКА ДЛЯ ПАНЕЛИ СЕКРЕТАРЯ 
+  // (Ограничения по времени и подписи сняты)
   // ============================================================================
   const checkMatchEditAccess = (game, gameStaff = []) => {
     if (!user || !game) return { hasAccess: false, reason: 'Нет данных' };
@@ -51,30 +58,17 @@ export function useAccess(customUser = null, customLeague = null) {
         return { hasAccess: true };
     }
 
-    // Проверяем, является ли пользователь персоналом матча
-    const isStaff = gameStaff.some(staff => staff.user_id === user.id && ['scorekeeper', 'head_1', 'head_2', 'linesman_1', 'linesman_2'].includes(staff.role));
+    // Проверяем, является ли пользователь спортивным персоналом матча
+    const isStaff = gameStaff.some(staff => staff.user_id === user.id && 
+        ['secretary', 'timekeeper', 'informant', 'main-1', 'main-2', 'linesman-1', 'linesman-2'].includes(staff.role)
+    );
     
     if (isStaff) {
-        // Проверка 1: Дата матча
+        // Оставляем только базовую техническую проверку на наличие даты матча,
+        // так как без даты система таймеров и статистики не сможет функционировать.
+        // Все остальные логические ограничения (18 часов, ЭЦП) полностью удалены.
         if (!game.game_date) {
             return { hasAccess: false, reason: 'Дата и время матча не назначены' };
-        }
-
-        // Проверка 2: Окно 18 часов
-        const gameTime = dayjs(game.game_date);
-        const now = dayjs();
-        const hoursDiff = gameTime.diff(now, 'hour', true);
-
-        if (hoursDiff > 18) {
-            return { 
-                hasAccess: false, 
-                reason: `Панель откроется за 18 часов (осталось: ${Math.floor(hoursDiff - 18)} ч.)` 
-            };
-        }
-
-        // Проверка 3: Подпись протокола
-        if (game.is_protocol_signed) {
-            return { hasAccess: false, reason: 'Протокол подписан. Режим чтения.' };
         }
 
         return { hasAccess: true };

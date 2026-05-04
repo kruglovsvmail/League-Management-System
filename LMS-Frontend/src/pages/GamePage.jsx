@@ -119,10 +119,20 @@ export function GamePage() {
   const canEnterLiveDesk = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
 
   const isScheduled = game?.status === 'scheduled';
-  const canEditRosters = isScheduled || game?.status === 'live'; 
+const canEditRosters = isScheduled || game?.status === 'live'; 
 
-  const gameDate = game ? dayjs(game.game_date) : dayjs();
-  const officials = game?.officials || {}; 
+// 1. Находим часовой пояс арены матча
+const arenaTz = useMemo(() => {
+  return arenas.find(a => a.id === game?.arena_id)?.timezone || 'UTC';
+}, [arenas, game?.arena_id]);
+
+// 2. Форматируем дату с использованием UTC и переходом в пояс арены
+const gameDate = useMemo(() => {
+  if (!game?.game_date) return null;
+  return dayjs.utc(game.game_date).tz(arenaTz);
+}, [game?.game_date, arenaTz]);
+
+const officials = game?.officials || {};
   const hasOfficials = Object.values(officials).some(val => val && (typeof val === 'object' ? val.name : val.trim() !== ''));
 
   const handleCopyOBSLink = () => {
@@ -458,7 +468,7 @@ export function GamePage() {
 
               <div className="flex items-center justify-between border-t border-graphite/5 pt-4 mt-auto shrink-0">
                 <div className="flex items-center gap-4">
-                  <Tabs tabs={['Составы команд', 'Судьи и медиа ', 'Ход матча']} activeTab={tabIndex} onChange={setTabIndex} />
+                  <Tabs tabs={['Составы команд', 'Судьи и медиа', 'Ход матча']} activeTab={tabIndex} onChange={setTabIndex} />
                 </div>
                 {getStatusBadge()}
               </div>
@@ -481,30 +491,35 @@ export function GamePage() {
                   
                   {hasOfficials ? (
                     <div className="flex flex-col gap-8">
+                      {/* Судьи на льду */}
                       <div>
-                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Главные судьи</h4>
+                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Судьи на льду</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                           <OfficialCard label="Главный судья" official={officials.head_1} />
-                           <OfficialCard label="Главный судья" official={officials.head_2} />
+                           <OfficialCard label="Главный судья" official={officials['main-1']} />
+                           <OfficialCard label="Главный судья" official={officials['main-2']} />
+                           <OfficialCard label="Линейный судья" official={officials['linesman-1']} />
+                           <OfficialCard label="Линейный судья" official={officials['linesman-2']} />
                          </div>
                       </div>
+
+                      {/* Судейский столик */}
                       <div>
-                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Линейные судьи</h4>
+                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Судейский столик (Оф. лица)</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                           <OfficialCard label="Линейный судья" official={officials.linesman_1} />
-                           <OfficialCard label="Линейный судья" official={officials.linesman_2} />
+                           <OfficialCard label="Секретарь матча" official={officials['secretary']} />
+                           <OfficialCard label="Хронометрист" official={officials['timekeeper']} />
+                           <OfficialCard label="Диктор-информатор" official={officials['informant']} />
                          </div>
                       </div>
+
+                      {/* Медиа */}
                       <div>
-                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Секретариат</h4>
+                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Медиа и Трансляция</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                           <OfficialCard label="Секретарь матча" official={officials.scorekeeper} />
-                         </div>
-                      </div>
-                      <div>
-                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Медиа</h4>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                           <OfficialCard label="Фото / Видео" official={officials.media} />
+                           <OfficialCard label="Режиссер / Фото" official={officials['broadcaster']} />
+                           <div className="hidden md:block"></div>
+                           <OfficialCard label="Комментатор 1" official={officials['commentator-1']} />
+                           <OfficialCard label="Комментатор 2" official={officials['commentator-2']} />
                          </div>
                       </div>
                     </div>
@@ -590,13 +605,17 @@ export function GamePage() {
             
             <div className="flex flex-col gap-4 bg-white/0 py-5 px-3 border-b border-graphite/10">
               <div>
-                <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
-                <div className="text-[13px] font-bold text-graphite">{gameDate.isValid() ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-graphite-light mb-0.5">Арена</div>
-                <div className="text-[13px] font-bold text-graphite leading-tight">{game.location_text || 'Не назначена'}</div>
-              </div>
+  <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
+  <div className="text-[13px] font-bold text-graphite">
+    {gameDate ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}
+  </div>
+  {/* Дополнительно можно вывести аббревиатуру пояса для ясности */}
+  {gameDate && (
+    <div className="text-[9px] font-bold text-graphite/40 uppercase">
+      Время арены ({arenaTz})
+    </div>
+  )}
+</div>
               <div>
                 <div className="text-[10px] text-graphite-light mb-0.5">Этап</div>
                 <div className="text-[12px] font-bold text-graphite leading-tight mb-0.5">{game.stage_label || (game.stage_type === 'regular' ? 'Регулярный чемпионат' : 'Плей-офф')}</div>
@@ -634,15 +653,15 @@ export function GamePage() {
               )}
             </div>
 
-            {(hasProtocolAccess || (canManageOfficials && isScheduled)) && (
+            {(hasProtocolAccess || canManageOfficials) && (
               <div className="flex flex-col gap-3 bg-white/0 py-6 px-2  border-b border-graphite/10">
                 {hasProtocolAccess && (
                    canEnterLiveDesk ? (
                      <Link
                        to={`/games/${game.id}/live-desk`}
-                       className="block text-center w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/80 text-white hover:bg-graphite"
+                       className="block text-center bg-graphite/70 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite/80 transition-colors shadow-sm"
                      >
-                       {game?.is_protocol_signed ? 'Панель секретаря' : 'Панель секретаря'}
+                       Панель секретаря
                      </Link>
                    ) : (
                      <button
@@ -654,10 +673,11 @@ export function GamePage() {
                      </button>
                    )
                 )}
-                {canManageOfficials && isScheduled && (
+                {/* ОБНОВЛЕНО: Убрано ограничение по статусу 'scheduled' для кнопки назначения бригады */}
+                {canManageOfficials && (
                    <button 
                      onClick={() => setIsOfficialsModalOpen(true)} 
-                     className="bg-graphite/80 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite transition-colors shadow-sm"
+                     className="bg-graphite/70 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite/80 transition-colors shadow-sm"
                    >
                      {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
                    </button>
@@ -669,13 +689,13 @@ export function GamePage() {
               <div className="flex flex-col gap-3 bg-white/0 p-2 py-6">
                 <Link 
                   to={`/games/${gameId}/graphics-panel`}
-                  className="block text-center bg-green-500 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
+                  className="block text-center bg-green-600 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-green-700 transition-colors shadow-sm"
                 >
                   Панель трансляции
                 </Link>
                 <button 
                   onClick={handleCopyOBSLink}
-                  className="bg-green-500 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-green-600 transition-colors shadow-sm"
+                  className="bg-green-600 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-green-700 transition-colors shadow-sm"
                 >
                   {obsCopied ? 'Ссылка скопирована!' : 'Ссылка для OBS'}
                 </button>

@@ -48,22 +48,20 @@ export function GamesPage() {
     const canDelete = checkAccess('SCHEDULE_DELETE');
 
     useEffect(() => {
-        if (selectedLeague?.id) fetchSeasons(selectedLeague.id);
+        if (selectedLeague?.id) {
+            fetchSeasons(selectedLeague.id);
+            fetchArenas(selectedLeague.id); // <-- Теперь грузим арены только когда знаем лигу
+        }
     }, [selectedLeague]);
 
-    useEffect(() => {
-        fetchArenas();
-    }, []);
+    // Убрали пустой useEffect, который грузил арены без привязки к лиге
 
-    useEffect(() => {
-        if (!isEditMode) {
-            setEditingRowIds([]);
-        }
-    }, [isEditMode]);
-
-    const fetchArenas = async () => {
+    const fetchArenas = async (leagueId) => { // <-- Добавили параметр
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/arenas`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+            // Передаем leagueId в строку запроса
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/arenas?leagueId=${leagueId}`, { 
+                headers: { 'Authorization': `Bearer ${getToken()}` } 
+            });
             const data = await res.json();
             if (data.success) setArenas(data.data);
         } catch (err) { console.error('Ошибка загрузки арен', err); }
@@ -180,8 +178,9 @@ export function GamesPage() {
         let extraUpdates = {};
 
         if ('game_date' in updatesObj && updatesObj.game_date) {
-            payloads.game_date = dayjs(updatesObj.game_date).format('YYYY-MM-DDTHH:mm:ss');
-        }
+    //DateTimePicker уже присылает UTC ISO строку, просто сохраняем её
+    payloads.game_date = updatesObj.game_date;
+}
         
         if ('home_team_id' in updatesObj) {
             const t = approvedTeams.find(t => t.team_id === updatesObj.home_team_id);

@@ -12,12 +12,12 @@ const REGULAR_ROUNDS = ['1-й круг', '2-й круг', '3-й круг', '4-й
 
 const colClasses = {
     number: "w-[4%] min-w-[20px]",       
-    date: "w-[13%] min-w-[100px]",       
-    stage: "w-[15%] min-w-[140px]",      
+    date: "w-[12%] min-w-[180px]",       
+    stage: "w-[12%] min-w-[180px]",      
     home: "flex-1 min-w-[190px]",        
     score: "w-[8%] min-w-[60px]",        
     away: "flex-1 min-w-[190px]",        
-    actions: "w-[8%] min-w-[120px]"       
+    actions: "w-[6%] min-w-[80px]"       
 };
 
 export function GameCard({
@@ -42,7 +42,6 @@ export function GameCard({
 
     const isFinishedOrLive = ['live', 'finished', 'cancelled'].includes(game.status);
     
-    // Универсальные проверки на буллиты или овертайм (Б или ОТ)
     const homeExtra = game.status === 'finished' && game.home_score > game.away_score 
         ? (game.end_type === 'so' ? 'Б' : game.end_type === 'ot' ? 'ОТ' : null) 
         : null;
@@ -52,8 +51,6 @@ export function GameCard({
         : null;
 
     const isRowEditing = isEditMode || editingRowIds.includes(game.id) || game.isTemp;
-
-    const arenaOptions = ['Не назначена', ...arenas.map(a => a.name)];
 
     const handleFieldChange = (fieldOrObj, value) => {
         const updates = typeof fieldOrObj === 'object' ? fieldOrObj : { [fieldOrObj]: value };
@@ -140,7 +137,10 @@ export function GameCard({
             }
         }
 
-        onUpdate(game.id, updates);
+        if ('arena_id' in updates) {
+    updates.game_date = null;
+}
+onUpdate(game.id, updates);
     };
 
     if (isRowEditing) {
@@ -154,6 +154,17 @@ export function GameCard({
             homeOptions = ['Хозяева', ...approvedTeams.filter(t => t.team_id !== game.away_team_id).map(t => t.name)];
             awayOptions = ['Гости', ...approvedTeams.filter(t => t.team_id !== game.home_team_id).map(t => t.name)];
         }
+
+        const currentArenaIdStr = game.arena_id ? String(game.arena_id) : 'none';
+        const arenaOptions = [
+            { value: 'none', label: 'Не назначена' },
+            ...arenas.map(a => ({ 
+                value: String(a.id), 
+                label: a.city ? `${a.name} (${a.city})` : a.name 
+            }))
+        ];
+
+        const isDateDisabled = isFinishedOrLive || !game.arena_id;
 
         const currentBracket = game.stage_type === 'playoff'
             ? brackets.find(b => b.rounds?.some(r => r.name === game.stage_label)) || brackets[0]
@@ -216,25 +227,41 @@ export function GameCard({
 
                 <div className={`${colClasses.date} shrink-0 flex flex-col gap-2 relative`}>
                     <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
-                        <DateTimePicker 
-                            value={game.game_date} 
-                            onChange={(val) => handleFieldChange('game_date', val)} 
-                            placeholder="Дата не назначена"
-                        />
-                    </div>
-                    <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
                         <Select 
                             options={arenaOptions}
-                            value={game.location_text || 'Не назначена'}
+                            value={currentArenaIdStr}
                             onChange={(val) => {
-                                if (val === 'Не назначена') handleFieldChange('arena_id', null);
-                                else {
-                                    const a = arenas.find(ar => ar.name === val);
-                                    handleFieldChange('arena_id', a ? a.id : null);
+                                if (val === 'none') {
+                                    handleFieldChange({ arena_id: null, game_date: null });
+                                } else {
+                                    handleFieldChange({ arena_id: parseInt(val, 10), game_date: null });
                                 }
                             }}
                             disabled={isFinishedOrLive}
                         />
+                    </div>
+                    
+                    <div className={`w-full ${isDateDisabled ? 'opacity-50' : ''}`}>
+                        {!game.arena_id && !isFinishedOrLive ? (
+                            <Tooltip title="Выберите арену" noUnderline={true}>
+                                <div className="pointer-events-none w-full min-w-[170px]">
+                                    <DateTimePicker 
+    value={game.game_date} 
+    onChange={(val) => handleFieldChange('game_date', val)} 
+    placeholder="Дата не назначена"
+    timezone={arenas.find(a => a.id === game.arena_id)?.timezone || 'UTC'}
+/>
+                                </div>
+                            </Tooltip>
+                        ) : (
+                            <div className={isDateDisabled ? 'pointer-events-none' : ''}>
+                                <DateTimePicker 
+                                    value={game.game_date} 
+                                    onChange={(val) => handleFieldChange('game_date', val)} 
+                                    placeholder="Дата не назначена"
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -399,8 +426,13 @@ export function GameCard({
         );
     }
 
-    const gameDate = dayjs(game.game_date);
-    const dateStr = gameDate.isValid() ? `${gameDate.format('D MMMM YYYY')}  |  ${gameDate.format('HH:mm')}` : 'Время не назначено';
+    const arenaTz = arenas.find(a => a.id === game.arena_id)?.timezone || 'UTC';
+const gameDate = game.game_date ? dayjs.utc(game.game_date).tz(arenaTz) : null;
+const dateStr = gameDate ? `${gameDate.format('D MMMM YYYY')}  |  ${gameDate.format('HH:mm')}` : 'Время не назначено';
+
+    const currentArena = arenas.find(a => a.id === game.arena_id);
+    const arenaName = currentArena ? currentArena.name : (game.location_text || 'Арена не назначена');
+    const arenaCity = currentArena ? currentArena.city : null;
 
     let viewStageDisplay = 'Не указано';
     if (game.stage_type === 'playoff') {
@@ -434,9 +466,18 @@ export function GameCard({
             <div className="w-px h-16 bg-graphite/10 shrink-0 rounded-full"></div>
 
             <div className={`${colClasses.date} shrink-0 flex flex-col justify-center gap-1`}>
-                <span className="text-[12px] font-bold text-graphite">{dateStr}</span>
-                <span className="text-[11px] font-medium text-graphite/50 truncate pr-2" title={game.location_text}>
-                    {game.location_text || 'Арена не назначена'}
+                <div className="flex flex-col">
+                    <span className="text-[12px] font-bold text-graphite truncate pr-2" title={arenaName}>
+                        {arenaName}
+                    </span>
+                    {arenaCity && (
+                        <span className="text-[10px] font-medium text-graphite/50 truncate pr-2 leading-tight" title={arenaCity}>
+                            {arenaCity}
+                        </span>
+                    )}
+                </div>
+                <span className={`text-[11px] font-medium ${game.game_date ? 'text-graphite/80' : 'text-graphite/40'} mt-0.5`}>
+                    {dateStr}
                 </span>
             </div>
 

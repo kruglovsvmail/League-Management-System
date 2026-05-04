@@ -289,22 +289,23 @@ export const getHtml = (data) => {
              <div class="thickBorder" style="top: 84pt; left: 0; width: 100%; height: 24pt; border-left-width: 0; border-top-width: 0;"></div>
              <div class="thickBorder" style="top: 108pt; left: 0; width: 100%; height: 24pt; border-left-width: 0; border-top-width: 0;"></div>
           </div>
-          <div class="footerColumnRight">
+          
+         <div class="footerColumnRight">
             <div class="rowShort">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Судья времени</span></div>
-              <div class="cellCenter" style="width: 60%;"></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['timekeeper']) || ''}</span></div>
             </div>
             <div class="rowShort">
-              <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Информ., статист</span></div>
-              <div class="cellCenter" style="width: 60%;"></div>
-            </div>
-            <div class="rowShort">
-              <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Линейный судья</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials.linesman1) || ''}</span></div>
+              <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Информатор</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['informant']) || ''}</span></div>
             </div>
             <div class="rowShort">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Линейный судья</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials.linesman2) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['linesman-1']) || ''}</span></div>
+            </div>
+            <div class="rowShort">
+              <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Линейный судья</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['linesman-2']) || ''}</span></div>
             </div>
             <div class="rowShort">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Замечание</span></div>
@@ -314,15 +315,15 @@ export const getHtml = (data) => {
             </div>
             <div class="rowTall">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Секретарь игры</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials.scorekeeper) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['secretary']) || ''}</span></div>
             </div>
             <div class="rowTall">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Главный судья</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials.head1) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['main-1']) || ''}</span></div>
             </div>
             <div class="rowTall">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Главный судья</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials.head2) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['main-2']) || ''}</span></div>
             </div>
             <div class="thickBorder" style="top: 0; left: 0; width: 100%; height: 24pt; border-left-width: 0;"></div>
             <div class="thickBorder" style="top: 24pt; left: 0; width: 100%; height: 24pt; border-left-width: 0; border-top-width: 0;"></div>
