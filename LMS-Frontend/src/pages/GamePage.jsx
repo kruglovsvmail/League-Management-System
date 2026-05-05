@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate, useOutletContext, Link } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext, Link, useLocation } from 'react-router-dom';
 import { getToken, getImageUrl } from '../utils/helpers';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
@@ -9,6 +9,8 @@ import { Button } from '../ui/Button';
 import { Table } from '../ui/Table2';
 import { Tabs } from '../ui/Tabs';
 import { Icon } from '../ui/Icon';
+import { Tooltip } from '../ui/Tooltip'; // ДОБАВЛЕН ИМПОРТ TOOLTIP
+import { Toast } from '../modals/Toast'; // ДОБАВЛЕН ИМПОРТ TOAST
 import { GameStatusModal } from '../modals/GameStatusModal';
 import { GameRosterModal } from '../modals/GameRosterModal';
 import { ManageOfficialsModal } from '../modals/ManageOfficialsModal';
@@ -33,6 +35,7 @@ const POS_ORDER = { 'G': 1, 'LD': 2, 'RD': 2, 'LW': 3, 'C': 3, 'RW': 3 };
 export function GamePage() {
   const { gameId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation(); // ДОБАВЛЕН ХУК
   const { user, selectedLeague } = useOutletContext();
   const { checkAccess, checkMatchEditAccess } = useAccess();
   
@@ -56,6 +59,16 @@ export function GamePage() {
   
   const [obsCopied, setObsCopied] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
+
+  const [toast, setToast] = useState(null); // ДОБАВЛЕН СТЕЙТ TOAST
+
+  // Ловим Toast из редиректа
+  useEffect(() => {
+    if (location.state?.toastNotification) {
+      setToast(location.state.toastNotification);
+      navigate(location.pathname, { replace: true, state: {} }); 
+    }
+  }, [location, navigate]);
 
   const loadAllData = async () => {
     try {
@@ -101,7 +114,7 @@ export function GamePage() {
       .map(([role, off]) => ({ user_id: off.id, role }));
   }, [game]);
 
-  const matchEditAccess = game ? checkMatchEditAccess(game, gameStaffArray) : { hasAccess: false };
+  const matchEditAccess = game ? checkMatchEditAccess(game, gameStaffArray) : { hasAccess: false, reason: '' };
 
   const canView = checkAccess('MATCH_PAGE_VIEW', { gameStaff: gameStaffArray });
   const canEditGameInfo = checkAccess('MATCH_EDIT_INFO');
@@ -119,20 +132,18 @@ export function GamePage() {
   const canEnterLiveDesk = hasProtocolAccess && (matchEditAccess.hasAccess || game?.is_protocol_signed);
 
   const isScheduled = game?.status === 'scheduled';
-const canEditRosters = isScheduled || game?.status === 'live'; 
+  const canEditRosters = isScheduled || game?.status === 'live'; 
 
-// 1. Находим часовой пояс арены матча
-const arenaTz = useMemo(() => {
-  return arenas.find(a => a.id === game?.arena_id)?.timezone || 'UTC';
-}, [arenas, game?.arena_id]);
+  const arenaTz = useMemo(() => {
+    return arenas.find(a => a.id === game?.arena_id)?.timezone || 'UTC';
+  }, [arenas, game?.arena_id]);
 
-// 2. Форматируем дату с использованием UTC и переходом в пояс арены
-const gameDate = useMemo(() => {
-  if (!game?.game_date) return null;
-  return dayjs.utc(game.game_date).tz(arenaTz);
-}, [game?.game_date, arenaTz]);
+  const gameDate = useMemo(() => {
+    if (!game?.game_date) return null;
+    return dayjs.utc(game.game_date).tz(arenaTz);
+  }, [game?.game_date, arenaTz]);
 
-const officials = game?.officials || {};
+  const officials = game?.officials || {};
   const hasOfficials = Object.values(officials).some(val => val && (typeof val === 'object' ? val.name : val.trim() !== ''));
 
   const handleCopyOBSLink = () => {
@@ -162,19 +173,28 @@ const officials = game?.officials || {};
     switch (game.status) {
       case 'live': 
         content = "Идет сейчас"; 
-        if (canManageStatus) {
-          badgeClass += "bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white cursor-pointer group shadow-sm";
-        } else {
-          badgeClass += "bg-blue-500/5 text-blue-500/70 cursor-default";
-        }
+        if (baseCanManageStatus) badgeClass += "bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white cursor-pointer group shadow-sm";
+        else badgeClass += "bg-blue-500/5 text-blue-500/70 cursor-default";
         break;
       case 'finished': 
-        if (game.needs_recalc && canManageStatus) {
+        if (game.needs_recalc && baseCanManageStatus) {
             content = isRecalculating ? "Пересчет..." : "Пересчет"; 
             badgeClass += isRecalculating 
               ? "bg-status-accepted/10 text-status-accepted/50 cursor-wait w-[180px]" 
               : "bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white cursor-pointer group shadow-sm w-[180px]"; 
             
+            // Если нет прав по времени, оборачиваем в тултип
+            if (!matchEditAccess.hasAccess) {
+              return (
+                <Tooltip title="Действие недоступно" subtitle={matchEditAccess.reason} position="bottom" noUnderline>
+                   <div className={`${badgeClass.replace('hover:bg-status-accepted hover:text-white', '').replace('cursor-pointer group', 'cursor-not-allowed text-status-accepted/50')}`}>
+                      <span>{content}</span>
+                      <Icon name="lock" className="w-4 h-4 ml-2 shrink-0 opacity-50" />
+                   </div>
+                </Tooltip>
+              );
+            }
+
             return (
                 <button className={badgeClass} onClick={handleRecalculate} disabled={isRecalculating} title="Пересчитать статистику">
                     <span>{content}</span>
@@ -187,32 +207,33 @@ const officials = game?.officials || {};
             );
         } else {
             content = "Завершен"; 
-            if (canManageStatus) {
-              badgeClass += "bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white cursor-pointer group shadow-sm"; 
-            } else {
-              badgeClass += "bg-status-accepted/5 text-status-accepted/70 cursor-default"; 
-            }
+            if (baseCanManageStatus) badgeClass += "bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white cursor-pointer group shadow-sm"; 
+            else badgeClass += "bg-status-accepted/5 text-status-accepted/70 cursor-default"; 
         }
         break;
       case 'cancelled': 
         content = "Матч отменен"; 
-        if (canManageStatus) {
-          badgeClass += "bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white cursor-pointer group shadow-sm"; 
-        } else {
-          badgeClass += "bg-status-rejected/5 text-status-rejected/70 cursor-default"; 
-        }
+        if (baseCanManageStatus) badgeClass += "bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white cursor-pointer group shadow-sm"; 
+        else badgeClass += "bg-status-rejected/5 text-status-rejected/70 cursor-default"; 
         break;
       default: 
         content = "Предстоящий"; 
-        if (canManageStatus) {
-          badgeClass += "bg-orange/10 text-orange hover:bg-orange hover:text-white cursor-pointer group shadow-sm"; 
-        } else {
-          badgeClass += "bg-orange/5 text-orange/70 cursor-default"; 
-        }
+        if (baseCanManageStatus) badgeClass += "bg-orange/10 text-orange hover:bg-orange hover:text-white cursor-pointer group shadow-sm"; 
+        else badgeClass += "bg-orange/5 text-orange/70 cursor-default"; 
         break;
     }
 
-    if (canManageStatus) {
+    if (baseCanManageStatus) {
+      if (!matchEditAccess.hasAccess) {
+         return (
+             <Tooltip title="Действие недоступно" subtitle={matchEditAccess.reason} position="bottom" noUnderline>
+                 <div className={`${badgeClass.replace(/hover:bg-[^\s]+ hover:text-white/g, '').replace('cursor-pointer group shadow-sm', 'cursor-not-allowed opacity-50')}`}>
+                     <span>{content}</span>
+                     <Icon name="lock" className="w-4 h-4 ml-2 shrink-0 opacity-50" />
+                 </div>
+             </Tooltip>
+         );
+      }
       return (
         <button className={badgeClass} onClick={() => setIsStatusModalOpen(true)} title="Изменить статус матча">
           <span>{content}</span>
@@ -309,11 +330,21 @@ const officials = game?.officials || {};
             </div>
           )}
         </div>
-        {canManageRoster && canEditRosters && (
+        
+        {/* ИЗМЕНЕНИЕ КНОПКИ ЗАПОЛНЕНИЯ СОСТАВА */}
+        {baseCanManageRoster && canEditRosters && (
           <div className="pt-4 border-t border-graphite/10 shrink-0 mt-auto">
-            <Button onClick={() => setRosterModalState({ isOpen: true, teamId, teamName })} className="w-full">
-              {roster.length > 0 ? 'Изменить состав' : 'Заполнить состав'}
-            </Button>
+            {matchEditAccess.hasAccess ? (
+               <Button onClick={() => setRosterModalState({ isOpen: true, teamId, teamName })} className="w-full">
+                 {roster.length > 0 ? 'Изменить состав' : 'Заполнить состав'}
+               </Button>
+            ) : (
+               <Tooltip title="Действие недоступно" subtitle={matchEditAccess.reason} position="top" noUnderline>
+                 <div className="w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/10 text-graphite/50 cursor-not-allowed flex items-center justify-center gap-2">
+                    <Icon name="lock" className="w-4 h-4" /> {roster.length > 0 ? 'Изменить состав' : 'Заполнить состав'}
+                 </div>
+               </Tooltip>
+            )}
           </div>
         )}
       </div>
@@ -402,6 +433,13 @@ const officials = game?.officials || {};
           </Link>
         } 
       />
+
+      {/* ВЫВОДИМ TOAST ЕСЛИ ЕСТЬ */}
+      {toast && (
+        <div className="fixed top-[110px] right-10 z-[9999]">
+          <Toast {...toast} onClose={() => setToast(null)} />
+        </div>
+      )}
 
       {isLoading || !game ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] animate-zoom-in">
@@ -605,17 +643,16 @@ const officials = game?.officials || {};
             
             <div className="flex flex-col gap-4 bg-white/0 py-5 px-3 border-b border-graphite/10">
               <div>
-  <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
-  <div className="text-[13px] font-bold text-graphite">
-    {gameDate ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}
-  </div>
-  {/* Дополнительно можно вывести аббревиатуру пояса для ясности */}
-  {gameDate && (
-    <div className="text-[9px] font-bold text-graphite/40 uppercase">
-      Время арены ({arenaTz})
-    </div>
-  )}
-</div>
+                <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
+                <div className="text-[13px] font-bold text-graphite">
+                  {gameDate ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}
+                </div>
+                {gameDate && (
+                  <div className="text-[9px] font-bold text-graphite/40 uppercase">
+                    Время арены ({arenaTz})
+                  </div>
+                )}
+              </div>
               <div>
                 <div className="text-[10px] text-graphite-light mb-0.5">Этап</div>
                 <div className="text-[12px] font-bold text-graphite leading-tight mb-0.5">{game.stage_label || (game.stage_type === 'regular' ? 'Регулярный чемпионат' : 'Плей-офф')}</div>
@@ -653,34 +690,40 @@ const officials = game?.officials || {};
               )}
             </div>
 
+            {/* ИЗМЕНЕН БЛОК КНОПОК УПРАВЛЕНИЯ МАТЧЕМ */}
             {(hasProtocolAccess || canManageOfficials) && (
               <div className="flex flex-col gap-3 bg-white/0 py-6 px-2  border-b border-graphite/10">
                 {hasProtocolAccess && (
                    canEnterLiveDesk ? (
                      <Link
                        to={`/games/${game.id}/live-desk`}
-                       className="block text-center bg-graphite/70 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite/80 transition-colors shadow-sm"
+                       className="flex items-center justify-center gap-2 bg-graphite/70 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite/80 transition-colors shadow-sm"
                      >
                        Панель секретаря
                      </Link>
                    ) : (
-                     <button
-                       disabled
-                       title={matchEditAccess.reason}
-                       className="w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/20 text-graphite/50 cursor-not-allowed"
-                     >
-                       Панель секретаря
-                     </button>
+                     <Tooltip title="Доступ ограничен" subtitle={matchEditAccess.reason} position="top" noUnderline>
+                         <button disabled className="w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/10 text-graphite/50 cursor-not-allowed flex items-center justify-center gap-2">
+                           <Icon name="lock" className="w-4 h-4" /> Панель секретаря
+                         </button>
+                     </Tooltip>
                    )
                 )}
-                {/* ОБНОВЛЕНО: Убрано ограничение по статусу 'scheduled' для кнопки назначения бригады */}
                 {canManageOfficials && (
-                   <button 
-                     onClick={() => setIsOfficialsModalOpen(true)} 
-                     className="bg-graphite/70 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite/80 transition-colors shadow-sm"
-                   >
-                     {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
-                   </button>
+                   matchEditAccess.hasAccess ? (
+                     <button 
+                       onClick={() => setIsOfficialsModalOpen(true)} 
+                       className="bg-graphite/70 text-white w-full py-2.5 rounded-md text-[12px] font-bold hover:bg-graphite/80 transition-colors shadow-sm"
+                     >
+                       {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
+                     </button>
+                   ) : (
+                     <Tooltip title="Доступ ограничен" subtitle={matchEditAccess.reason} position="top" noUnderline>
+                         <button disabled className="w-full py-2.5 rounded-md text-[12px] font-bold transition-all shadow-sm bg-graphite/10 text-graphite/50 cursor-not-allowed flex items-center justify-center gap-2">
+                           <Icon name="lock" className="w-4 h-4" /> {hasOfficials ? 'Изменить бригаду' : 'Назначить судей'}
+                         </button>
+                     </Tooltip>
+                   )
                 )}
               </div>
             )}

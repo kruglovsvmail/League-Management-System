@@ -12,6 +12,8 @@ const ROLE_NAMES = {
   [ROLES.REFEREE]: 'Судья',
   [ROLES.MEDIA]: 'Медиа',
   [ROLES.GLOBAL_ADMIN]: 'Глобальный Админ',
+  [ROLES.SERVICE_SECRETARY]: 'Сервисный Секретарь',
+  [ROLES.SERVICE_BROADCASTER]: 'Сервисный Бродкастер',
 };
 
 const translateRoles = (roleString) => {
@@ -28,9 +30,6 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     setLogoError(false);
   }, [selectedLeague]);
 
-  // ==========================================
-  // ЛОКАЛЬНАЯ ПРОВЕРКА ПРАВ ДЛЯ САЙДБАРА
-  // ==========================================
   const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN;
   const userRolesStr = selectedLeague?.role || '';
   const userRolesArr = userRolesStr.split(',').map(r => r.trim()).filter(Boolean);
@@ -42,15 +41,12 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     return userRolesArr.some(role => allowedRoles.includes(role));
   };
 
-  // ==========================================
-  // ФОРМИРОВАНИЕ МЕНЮ
-  // ==========================================
   const baseMenuItems = [
     hasAccess('SCHEDULE_VIEW') ? { name: "Расписание", path: "/games", icon: "matches" } : null,
     hasAccess('DIVISIONS_VIEW') ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
     hasAccess('TRANSFERS_VIEW') ? { name: "Трансферы", path: "/transfers", icon: "transfers" } : null,
     hasAccess('DISQUALIFICATIONS_VIEW') ? { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" } : null,
-    { name: "Справочник", path: "/handbook", icon: "handbook" }, // Справочник доступен всем
+    { name: "Справочник", path: "/handbook", icon: "handbook" },
     hasAccess('SETTINGS_STAFF_VIEW') ? { name: "Управление лигой", path: "/settings", icon: "settings" } : null
   ].filter(Boolean);
 
@@ -84,11 +80,16 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     </NavLink>
   );
 
+  const handleProfileClick = () => {
+    // Если залогинен сервисный аккаунт — шторка профиля не открывается
+    if (user?.isServiceAccount) return;
+    setIsProfileDrawerOpen(true);
+  };
+
   return (
     <>
       <aside className="fixed left-0 top-0 h-screen w-[230px] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white flex flex-col z-40 border-r border-white/5 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
         
-        {/* Логотип и выбор лиги */}
         <div className="p-7 pb-2">
           {user?.leagues && user.leagues.length > 0 && (
             <div 
@@ -116,13 +117,11 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
           )}
         </div>
 
-        {/* Навигация */}
         <nav className="flex-1 overflow-y-auto px-0 mt-0 custom-scrollbar">
           <div className="space-y-0.5">
             {baseMenuItems.map(renderNavLink)}
           </div>
 
-          {/* Глобальные разделы - только для admin */}
           {hasAccess('GLOBAL_REGISTRY_ACCESS') && (
             <div className="mt-6 pt-4 border-t border-white/10 space-y-1">
               {renderNavLink({ name: "Глобальный Реестр", path: "/registry", icon: "registry" })}
@@ -131,12 +130,11 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
           )}
         </nav>
 
-        {/* Нижний блок: профиль и выход */}
         <div className="mt-auto p-4 bg-black/10 border-t border-white/5">
           <div 
-            onClick={() => setIsProfileDrawerOpen(true)}
-            className="flex gap-3 px-2 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
-            title="Открыть настройки профиля"
+            onClick={handleProfileClick}
+            className={`flex gap-3 px-2 mb-4 transition-opacity ${user?.isServiceAccount ? 'cursor-default' : 'cursor-pointer hover:opacity-80'}`}
+            title={user?.isServiceAccount ? "Сервисный аккаунт" : "Открыть настройки профиля"}
           >
             <div className="w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-graphite border border-white/10 mt-0.5">
               <img 
@@ -176,6 +174,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
         onSelect={onLeagueChange}
       />
 
+      {/* Шторка профиля будет отрендерена, но вызовется только если не сервисный аккаунт */}
       <ProfileDrawer 
         isOpen={isProfileDrawerOpen}
         onClose={() => setIsProfileDrawerOpen(false)}

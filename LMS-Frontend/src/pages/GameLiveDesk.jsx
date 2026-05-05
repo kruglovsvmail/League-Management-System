@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getToken } from '../utils/helpers';
+import dayjs from 'dayjs';
 import { io } from 'socket.io-client';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { GamePlusMinusModal } from '../modals/GamePlusMinusModal';
@@ -166,6 +167,38 @@ export function GameLiveDesk() {
   const canAccessPanel = hasProtocolAccess;
   const isReadOnly = !matchEditAccess.hasAccess;
 
+  // ======================================================================
+  // ФОНОВЫЙ ТАЙМЕР ЗАЩИТЫ ОТ ЗАВИСАНИЯ СЕКРЕТАРЕЙ
+  // ======================================================================
+  
+  // 1. Принудительно рендерим компонент каждые 10 секунд, 
+  // чтобы хук useAccess.js пересчитал текущее время без действий пользователя.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+      const interval = setInterval(() => setTick(t => t + 1), 10000);
+      return () => clearInterval(interval);
+  }, []);
+
+  // 2. Если в результате автоматического пересчета мы видим, 
+  // что прав на редактирование больше нет (isReadOnly === true), сразу выкидываем.
+  useEffect(() => {
+      if (!game || !activeLeague) return;
+
+      if (isReadOnly) {
+          navigate(`/games/${gameId}`, {
+              replace: true,
+              state: {
+                  toastNotification: {
+                      title: 'Доступ закрыт',
+                      message: matchEditAccess.reason || 'Время управления матчем истекло. Панель закрыта.',
+                      type: 'error'
+                  }
+              }
+          });
+      }
+  }, [isReadOnly, game, activeLeague, gameId, navigate, matchEditAccess.reason]);
+  // ======================================================================
+
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -183,7 +216,6 @@ export function GameLiveDesk() {
 
   const [socket, setSocket] = useState(null);
 
-  // === НОВЫЙ ДВИЖОК ТАЙМЕРА (DELTA TIME) ===
   const [timerData, setTimerData] = useState({
       accumulatedSeconds: 0,
       startedAt: null,
@@ -193,7 +225,6 @@ export function GameLiveDesk() {
   const [timerSeconds, setTimerSeconds] = useState(0); 
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState('1'); 
-  // ==========================================
 
   const [periodsCount, setPeriodsCount] = useState(3);
   const [periodLength, setPeriodLength] = useState(20);
@@ -271,7 +302,6 @@ export function GameLiveDesk() {
     newSocket.on('timer_state', (state) => {
       if (ignoreSocketRef.current) return; 
       
-      // Считаем разницу во времени
       const offset = state.serverTime ? (state.serverTime - Date.now()) : 0;
       
       setTimerData({
@@ -296,9 +326,6 @@ export function GameLiveDesk() {
     return () => newSocket.disconnect();
   }, [gameId]);
 
-  // ======================================================================
-  // ВЫСОКОЧАСТОТНЫЙ ЦИКЛ РАСЧЕТА ВРЕМЕНИ (Замена старого setInterval)
-  // ======================================================================
   useEffect(() => {
     const interval = setInterval(() => {
       if (timerData.isRunning && timerData.startedAt) {
@@ -313,7 +340,6 @@ export function GameLiveDesk() {
     return () => clearInterval(interval);
   }, [timerData]);
 
-  // Автоматическая остановка таймера по истечению периода
   useEffect(() => {
     const limits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
     if (timerData.isRunning && limits.end > 0 && timerSeconds >= limits.end) {
@@ -333,7 +359,6 @@ export function GameLiveDesk() {
     if (isReadOnly) return;
     lockSocketUpdates();
     
-    // Оптимистичное обновление интерфейса для мгновенного отклика
     setTimerData(prev => {
         if (action === 'start') return { ...prev, isRunning: true, startedAt: Date.now() + prev.serverTimeOffset };
         if (action === 'stop') return { ...prev, isRunning: false, startedAt: null, accumulatedSeconds: timerSeconds };
@@ -341,7 +366,6 @@ export function GameLiveDesk() {
     });
     setIsTimerRunning(action === 'start');
 
-    // Больше никакого спама секунд. Отправляем только сам экшен!
     socket?.emit('timer_action', { gameId, action });
   };
 
@@ -351,18 +375,16 @@ export function GameLiveDesk() {
     setCurrentPeriod(period);
     const limits = getPeriodLimits(period, periodLength, otLength, periodsCount);
     
-    // Сбрасываем время локально
     setTimerData(prev => ({ ...prev, accumulatedSeconds: limits.start, isRunning: false, startedAt: null }));
     setIsTimerRunning(false);
     
     socket?.emit('timer_action', { 
         gameId, 
-        action: 'change_period', // ИСПРАВЛЕНА ОШИБКА: теперь это change_period, а не set_time!
+        action: 'change_period', 
         timerData: { seconds: limits.start, period, isRunning: false } 
     });
     socket?.emit('game_updated', { gameId });
   };
-  // ======================================================================
 
   const saveTimerSettings = async () => {
     lockSocketUpdates();
@@ -626,11 +648,6 @@ export function GameLiveDesk() {
                     <Icon name="chevron_left" className="w-3.5 h-3.5" />
                     Страница матча
                   </button>
-                  {isReadOnly && (
-                      <span className="ml-4 bg-status-rejected/10 text-status-rejected px-3 py-1 rounded-md text-[11px] font-black uppercase tracking-widest border border-status-rejected/20 shadow-sm">
-                          Режим чтения
-                      </span>
-                  )}
               </div>
             </div>
 

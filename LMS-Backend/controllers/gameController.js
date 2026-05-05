@@ -13,21 +13,20 @@ const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
 
     const userRes = await clientOrPool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
     if (!userRes.rows.length) return null;
-    // Глобальным админам можно всё
     if (userRes.rows[0].global_role === 'GLOBAL_ADMIN') return null;
 
     const gameRes = await clientOrPool.query(`
-        SELECT g.game_date, s.league_id 
+        SELECT g.game_date, s.league_id, l.sec_access_before_hours, l.sec_access_after_hours
         FROM games g
         LEFT JOIN divisions d ON g.division_id = d.id
         LEFT JOIN seasons s ON d.season_id = s.id
+        LEFT JOIN leagues l ON s.league_id = l.id
         WHERE g.id = $1
     `, [gameId]);
     
     if (gameRes.rows.length === 0) return 'Матч не найден';
     const game = gameRes.rows[0];
 
-    // Пропускаем топ-менеджмент и стафф лиги
     if (game.league_id) {
         const staffRes = await clientOrPool.query(`
             SELECT 1 FROM league_staff 
@@ -36,26 +35,33 @@ const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
         if (staffRes.rows.length > 0) return null; 
     }
 
-    // ============================================================================
-    // ОБНОВЛЕНО: Проверка прав линейного персонала (работа с game_staff)
-    // ============================================================================
-    // Ищем пользователя в единой таблице game_staff, проверяя, что он назначен на этот матч
-    // Ограничиваем список ролей только теми, кто физически работает на матче и вносит данные (исключая broadcaster и commentator)
-    const staffRes = await clientOrPool.query(`
+    const matchStaffRes = await clientOrPool.query(`
         SELECT 1 FROM game_staff 
         WHERE game_id = $1 AND user_id = $2
         AND role IN ('main-1', 'main-2', 'linesman-1', 'linesman-2', 'secretary', 'timekeeper', 'informant')
     `, [gameId, userId]);
 
-    // Если пользователь найден среди спортивного персонала матча
-    if (staffRes.rows.length > 0) {
-        // Правило 1: Дата и время должны быть назначены
+    const serviceRes = await clientOrPool.query(`
+        SELECT account_type FROM league_service_accounts WHERE user_id = $1 AND is_active = true
+    `, [userId]);
+    const isServiceSec = serviceRes.rows.some(r => r.account_type === 'secretary');
+
+    if (matchStaffRes.rows.length > 0 || isServiceSec) {
         if (!game.game_date) return 'Доступ закрыт: дата и время матча не назначены.';
+
+        const beforeLimitHours = game.sec_access_before_hours ?? 12;
+        const afterLimitHours = game.sec_access_after_hours ?? 3;
         
-        // ВНИМАНИЕ: Правила окна в 18 часов и блокировки после подписания протокола удалены
+        const now = new Date();
+        const gameDate = new Date(game.game_date);
+        const beforeLimit = new Date(gameDate.getTime() - (beforeLimitHours * 60 * 60 * 1000));
+        const afterLimit = new Date(gameDate.getTime() + (afterLimitHours * 60 * 60 * 1000));
+        
+        if (now < beforeLimit) return `Управление матчем откроется за ${beforeLimitHours} ч. до начала.`;
+        if (now > afterLimit) return `Время управления матчем истекло (${afterLimitHours} ч. после начала).`;
     }
     
-    return null; // Проверки пройдены
+    return null;
 };
 
 export const getPublicGameById = async (req, res) => {
@@ -86,7 +92,7 @@ export const getPublicGameById = async (req, res) => {
                    a.name as arena_name,
                    a.city as arena_city,
                    a.address as arena_address,
-                   a.timezone as arena_timezone, -- ДОБАВЛЕНО
+                   a.timezone as arena_timezone,
                    gt.periods_count, gt.track_plus_minus, gt.shootout_status,
                    
                    (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
@@ -158,7 +164,7 @@ export const getPublicGameById = async (req, res) => {
                        COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
                        COALESCE(ps.games_played, 0) as games_played,
                        COALESCE(ps.goals, 0) as goals,
-                       COALESCE(ps.assists, 0) as assists,
+                       COALESCE(ps.assists, 0) as points,
                        COALESCE(ps.points, 0) as points,
                        COALESCE(ps.plus_minus, 0) as plus_minus,
                        COALESCE(ps.penalty_minutes, 0) as penalty_minutes
@@ -220,13 +226,12 @@ export const getPublicGameById = async (req, res) => {
             const shotsSummaryRes = await pool.query('SELECT * FROM game_shots_summary WHERE game_id = $1', [game.id]);
             game.shots_summary = shotsSummaryRes.rows;
 
-            // ============================================================================
-            // ОБНОВЛЕНО: Извлечение бригады матча из game_staff
-            // ============================================================================
             const staffRes = await pool.query(`
-                SELECT gs.role, u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+                SELECT gs.role, u.id, u.first_name, u.last_name, u.middle_name, 
+                       COALESCE(lsa.photo_url, u.avatar_url) as avatar_url
                 FROM game_staff gs
                 JOIN users u ON gs.user_id = u.id
+                LEFT JOIN league_service_accounts lsa ON lsa.user_id = u.id
                 WHERE gs.game_id = $1
             `, [game.id]);
 
@@ -271,7 +276,7 @@ export const getGames = async (req, res) => {
                 g.stage_type, g.stage_label, g.series_number, g.game_number,
                 g.home_team_id, g.away_team_id, g.arena_id,
                 a.name as location_text,
-                a.timezone as arena_timezone, -- ДОБАВЛЕНО
+                a.timezone as arena_timezone,
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 d.name as division_name,
@@ -337,7 +342,7 @@ export const getGameById = async (req, res) => {
                 g.*,
                 gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.track_plus_minus, gt.shootout_status,
                 a.name as location_text,
-                a.timezone as arena_timezone, -- ДОБАВЛЕНО
+                a.timezone as arena_timezone,
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
                 COALESCE(htt.custom_jersey_dark_url, ht.jersey_dark_url) as home_jersey_dark,
                 COALESCE(htt.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light,
@@ -394,9 +399,11 @@ export const getGameById = async (req, res) => {
         game.shots_summary = shotsSummaryRes.rows;
 
         const staffRes = await pool.query(`
-            SELECT gs.role, u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+            SELECT gs.role, u.id, u.first_name, u.last_name, u.middle_name, 
+                   COALESCE(lsa.photo_url, u.avatar_url) as avatar_url
             FROM game_staff gs
             JOIN users u ON gs.user_id = u.id
+            LEFT JOIN league_service_accounts lsa ON lsa.user_id = u.id
             WHERE gs.game_id = $1
         `, [gameId]);
 
@@ -409,7 +416,7 @@ export const getGameById = async (req, res) => {
         
         const formatName = (u) => ({ 
             id: u.id, 
-            name: `${u.last_name} ${u.first_name} ${u.middle_name || ''}`.trim(),
+            name: `${u.last_name || ''} ${u.first_name || ''} ${u.middle_name || ''}`.trim().replace(/\s+/g, ' '),
             avatar_url: u.avatar_url
         });
 
@@ -429,13 +436,11 @@ export const getGameById = async (req, res) => {
 export const getArenas = async (req, res) => {
     try {
         const { leagueId } = req.query;
-        // ДОБАВЛЕНО timezone в базовый запрос
         let query = `SELECT id, name, city, timezone FROM arenas WHERE status = 'active'`;
         const params = [];
 
         if (leagueId) {
             query = `
-                -- ДОБАВЛЕНО a.timezone в запрос с фильтром по лиге
                 SELECT a.id, a.name, a.city, a.timezone 
                 FROM arenas a
                 JOIN league_arenas la ON a.id = la.arena_id
@@ -906,13 +911,24 @@ export const getGameStaff = async (req, res) => {
         const leagueId = leagueRes.rows[0].league_id;
 
         const staffRes = await pool.query(`
-            SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
-                   string_agg(ls.role, ', ') as roles
-            FROM league_staff ls
-            JOIN users u ON ls.user_id = u.id
-            WHERE ls.league_id = $1 AND ls.end_date IS NULL
-            GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
-            ORDER BY u.last_name
+            SELECT user_id, first_name, last_name, middle_name, avatar_url, roles
+            FROM (
+                SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                       string_agg(ls.role, ', ') as roles
+                FROM league_staff ls
+                JOIN users u ON ls.user_id = u.id
+                WHERE ls.league_id = $1 AND ls.end_date IS NULL
+                GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+                
+                UNION ALL
+                
+                SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, lsa.photo_url as avatar_url,
+                       'service_' || lsa.account_type as roles
+                FROM league_service_accounts lsa
+                JOIN users u ON lsa.user_id = u.id
+                WHERE lsa.league_id = $1 AND lsa.is_active = true
+            ) combined_staff
+            ORDER BY last_name ASC NULLS FIRST, first_name ASC
         `, [leagueId]);
 
         res.json({ success: true, data: staffRes.rows });

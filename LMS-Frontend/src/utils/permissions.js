@@ -16,6 +16,8 @@ export const ROLES = {                                                          
   GAME_INFORMANT: 'game_informant',                                             // Диктор-информатор на арене (маппится с informant)
   GAME_BROADCASTER: 'game_broadcaster',                                         // Режиссер трансляции или оператор (заменил старую роль GAME_MEDIA, маппится с broadcaster)
   GAME_COMMENTATOR: 'game_commentator',                                         // Комментатор матча (маппится с commentator-1, commentator-2)
+  SERVICE_SECRETARY: 'service_secretary',                                       // Сервисный аккаунт: Секретарь (неограниченный доступ к матчам лиги)
+  SERVICE_BROADCASTER: 'service_broadcaster',                                   // Сервисный аккаунт: Транслятор (просмотр расписания, доступ в OBS по назначению)
 };                                                                             
 
 // Справочник доступов: Ключ = Действие/Раздел, Значение = Массив разрешенных ролей // Комментарий, описывающий структуру матрицы PERMISSIONS
@@ -23,7 +25,7 @@ export const PERMISSIONS = {                                                    
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: ДИВИЗИОНЫ                                                          
   // -------------------------------------------------------------------------- 
-  DIVISIONS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA],  // Доступ к разделу дивизионов (согласно уточнениям, судьи и медиа сюда доступа НЕ имеют)
+  DIVISIONS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA, ROLES.SERVICE_SECRETARY, ROLES.SERVICE_BROADCASTER], // Доступ к разделу дивизионов
   DIVISIONS_PUBLISH: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                           // Право переключать видимость (публикацию) дивизиона на сайте
   DIVISIONS_DELETE: [ROLES.TOP_MANAGER],                                                // Право на полное удаление дивизиона (доступно исключительно руководителю лиги)
   DIVISIONS_TEAM_STATUS: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                       // Право изменять статус заявки команды (например, одобрить для участия)
@@ -39,7 +41,7 @@ export const PERMISSIONS = {                                                    
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: РАСПИСАНИЕ                                                         
   // -------------------------------------------------------------------------- 
-  SCHEDULE_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA],   // Доступ к просмотру общего расписания матчей лиги
+  SCHEDULE_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA, ROLES.SERVICE_SECRETARY, ROLES.SERVICE_BROADCASTER], // Доступ к просмотру общего расписания матчей лиги
   SCHEDULE_EDIT: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                               // Право на редактирование даты, времени и арены у существующих матчей
   SCHEDULE_CREATE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                             // Право на ручное создание новых карточек матчей в расписании
   SCHEDULE_DELETE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                             // Право на удаление матча из расписания (если он еще не начался)
@@ -47,13 +49,13 @@ export const PERMISSIONS = {                                                    
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: СТРАНИЦА МАТЧА                                                     
   // -------------------------------------------------------------------------- 
-  MATCH_PAGE_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA],       // Доступ к странице конкретного матча (интерфейс просмотра)
-  MATCH_STATUS_CHANGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY],         // Право менять статус матча (перевод в Live, Завершен и т.д.)
-  MATCH_EDIT_INFO: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                                   // Право редактировать метаданные (ссылки YouTube/VK, выбор цветов формы)
-  MATCH_WEB_GRAPHICS_PANEL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_BROADCASTER],  // Право на открытие панели управления титрами (расширено на новых комментаторов)
-  MATCH_ASSIGN_STAFF: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                                // Право назначать на матч судейскую бригаду и медиа-персонал
-  MATCH_ROSTER_FILL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY],           // Право заполнять пятерки и утверждать составы перед игрой
-  MATCH_SECRETARY_PANEL_ENTER: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY], // Доступ в live-панель (расширено на время и информатора для помощи секретарю)
+  MATCH_PAGE_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA, ROLES.SERVICE_SECRETARY, ROLES.SERVICE_BROADCASTER], // Доступ к странице конкретного матча
+  MATCH_STATUS_CHANGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY, ROLES.SERVICE_SECRETARY],                              // Право менять статус матча
+  MATCH_EDIT_INFO: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                                                                                 // Право редактировать метаданные
+  MATCH_WEB_GRAPHICS_PANEL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_BROADCASTER],                                                // Право на открытие панели управления титрами (сервисный бродкастер попадает сюда только если назначен как GAME_BROADCASTER)
+  MATCH_ASSIGN_STAFF: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.SERVICE_SECRETARY],                                                     // Право назначать на матч бригаду
+  MATCH_ROSTER_FILL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY, ROLES.SERVICE_SECRETARY],                                // Право заполнять пятерки
+  MATCH_SECRETARY_PANEL_ENTER: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY, ROLES.SERVICE_SECRETARY],                      // Доступ в live-панель
 
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: УПРАВЛЕНИЕ ЛИГОЙ (НАСТРОЙКИ)                                       
@@ -71,6 +73,8 @@ export const PERMISSIONS = {                                                    
   PLAYOFF_RESET: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                       // Право на сброс текущей сетки плей-офф
   SETTINGS_ARENAS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                // Право на просмотр списка арен лиги
   SETTINGS_ARENAS_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],              // Право на добавление и удаление арен из лиги
+  SETTINGS_SERVICE_ACCOUNTS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],      // Право на просмотр списка сервисных аккаунтов лиги
+  SETTINGS_SERVICE_ACCOUNTS_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],    // Право на создание, редактирование и удаление сервисных аккаунтов
 
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: ТРАНСФЕРЫ                                                          

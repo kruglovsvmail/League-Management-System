@@ -56,7 +56,7 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
               <>
                 <svg className="w-6 h-6 text-graphite-light opacity-50 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 <div className="text-[11px] text-graphite-light font-medium text-center leading-tight">
-                  {isDisabled ? 'Файл не загружен' : <>Перетащите файл или<br/><span className="text-orange underline cursor-pointer">выберите</span></>}
+                  {isDisabled ? 'Файл не загружен' : <><span className="text-orange underline cursor-pointer">выберите файл</span></>}
                 </div>
               </>
             )

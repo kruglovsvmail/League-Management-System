@@ -117,12 +117,12 @@ export function QualificationsTab({ setToast }) {
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         {/* Левая колонка (Форма) */}
         {canAddQuals && (
-          <div className="w-full lg:w-[420px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
+          <div className="w-full lg:w-[380px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
             <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Новая квалификация</span>
             
             <div className="flex flex-col gap-4">
               <Input label="Полное Название" placeholder="Например: Любитель" value={newQual.name} onChange={(e) => setNewQual({...newQual, name: e.target.value})} />
-              <Input label="Короткое название (Метка)" placeholder="Например: ЛЮБ" value={newQual.shortName} onChange={(e) => setNewQual({...newQual, shortName: e.target.value.substring(0, 5)})} />
+              <Input label="Короткое название (5 символов)" placeholder="Например: ЛЮБ" value={newQual.shortName} onChange={(e) => setNewQual({...newQual, shortName: e.target.value.substring(0, 5)})} />
               
               <div className="flex flex-col w-full mt-1">
                 <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Описание критериев</label>
@@ -148,7 +148,7 @@ export function QualificationsTab({ setToast }) {
           )}
           <div className={`transition-opacity duration-300 ease-in-out ${isLoadingQuals ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
             {qualifications.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-5">
                 {qualifications.map(qual => (
                   <div key={qual.id} className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 flex flex-col gap-3 relative group transition-all hover:shadow-lg hover:border-orange/30 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
                     <div className="flex justify-between items-start">

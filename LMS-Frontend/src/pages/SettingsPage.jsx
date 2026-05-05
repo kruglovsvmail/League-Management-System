@@ -9,7 +9,9 @@ import { AccessFallback } from '../ui/AccessFallback';
 import { DivisionsTab } from '../components/Settings/DivisionsTab';
 import { StaffTab } from '../components/Settings/StaffTab';
 import { QualificationsTab } from '../components/Settings/QualificationsTab';
-import { ArenasTab } from '../components/Settings/ArenasTab'; // ДОБАВЛЕН ИМПОРТ
+import { ArenasTab } from '../components/Settings/ArenasTab';
+import { ServiceAccountsTab } from '../components/Settings/ServiceAccountsTab';
+import { PreferencesTab } from '../components/Settings/PreferencesTab';
 
 export function SettingsPage() {
   const { selectedLeague } = useOutletContext();
@@ -20,18 +22,21 @@ export function SettingsPage() {
   const canViewStaff = checkAccess('SETTINGS_STAFF_VIEW');
   const canViewQuals = checkAccess('SETTINGS_QUAL_VIEW');
   const canViewArenas = checkAccess('SETTINGS_ARENAS_VIEW');
+  const canViewServiceAccounts = checkAccess('SETTINGS_SERVICE_ACCOUNTS_VIEW'); 
+  const canViewPreferences = checkAccess('SETTINGS_DIVISIONS_VIEW'); // Используем то же право, что и для дивизионов
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTabParam = searchParams.get('tab');
 
-  // Формируем массив доступных вкладок
+  // Формируем массив доступных вкладок в новом порядке
   const availableTabs = [];
   if (canViewDivisions) availableTabs.push({ index: 0, label: 'Дивизионы' });
   if (canViewStaff) availableTabs.push({ index: 1, label: 'Персонал' });
-  if (canViewQuals) availableTabs.push({ index: 2, label: 'Квалификации' });
+  if (canViewServiceAccounts) availableTabs.push({ index: 2, label: 'Общий доступ' });
   if (canViewArenas) availableTabs.push({ index: 3, label: 'Арены' });
+  if (canViewQuals) availableTabs.push({ index: 4, label: 'Квалификации' });
+  if (canViewPreferences) availableTabs.push({ index: 5, label: 'Параметры' });
 
-  // Определяем активную вкладку (по умолчанию - первая из доступных)
   const defaultTabIndex = availableTabs.length > 0 ? availableTabs[0].index : 0;
   const activeTab = activeTabParam ? parseInt(activeTabParam, 10) : defaultTabIndex;
 
@@ -42,7 +47,6 @@ export function SettingsPage() {
     }, { replace: true });
   };
 
-  // Если текущая вкладка (из URL) недоступна пользователю, переключаем на первую разрешенную
   useEffect(() => {
     const isCurrentTabAvailable = availableTabs.some(t => t.index === activeTab);
     if (!isCurrentTabAvailable && availableTabs.length > 0) {
@@ -66,7 +70,6 @@ export function SettingsPage() {
     );
   }
 
-  // Если у пользователя нет доступа ни к одной из вкладок настроек
   if (availableTabs.length === 0) {
     return (
       <div className="flex flex-col flex-1 animate-zoom-in">
@@ -81,7 +84,6 @@ export function SettingsPage() {
     );
   }
 
-  // Вычисляем индекс для UI-компонента Tabs (ему нужен порядковый номер в массиве, а не наш ID)
   const currentTabIndexInAvailable = availableTabs.findIndex(t => t.index === activeTab);
   const displayTabIndex = currentTabIndexInAvailable !== -1 ? currentTabIndexInAvailable : 0;
 
@@ -91,14 +93,15 @@ export function SettingsPage() {
   };
 
   const renderActiveTab = () => {
-    // Двойная защита: рендерим только если есть доступ к текущей активной вкладке
     const tabToRender = availableTabs.some(t => t.index === activeTab) ? activeTab : availableTabs[0].index;
     
     switch (tabToRender) {
       case 0: return <DivisionsTab setToast={setToast} setHeaderActions={setHeaderActions} />;
       case 1: return <StaffTab setToast={setToast} />;
-      case 2: return <QualificationsTab setToast={setToast} />;
+      case 2: return <ServiceAccountsTab setToast={setToast} />; 
       case 3: return <ArenasTab setToast={setToast} />;
+      case 4: return <QualificationsTab setToast={setToast} />; 
+      case 5: return <PreferencesTab setToast={setToast} />;
       default: return null;
     }
   };

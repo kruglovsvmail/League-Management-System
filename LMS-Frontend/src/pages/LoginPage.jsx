@@ -3,7 +3,9 @@ import { Button } from '../ui/Button';
 import { Checkbox } from '../ui/Checkbox';
 
 export function LoginPage({ onLoginSuccess }) {
+  const [loginMode, setLoginMode] = useState('phone'); // 'phone' или 'service'
   const [phoneRaw, setPhoneRaw] = useState('');
+  const [serviceLogin, setServiceLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isRemembered, setIsRemembered] = useState(false);
@@ -88,6 +90,14 @@ export function LoginPage({ onLoginSuccess }) {
     }
   };
 
+  const toggleLoginMode = () => {
+    setLoginMode(prev => prev === 'phone' ? 'service' : 'phone');
+    setPhoneRaw('');
+    setServiceLogin('');
+    setUserName('');
+    setErrorMsg('');
+  };
+
   const handlePhoneChange = async (e) => {
     const val = e.target.value.replace(/\D/g, ''); 
     const truncated = val.slice(0, 10);
@@ -110,6 +120,25 @@ export function LoginPage({ onLoginSuccess }) {
     } else { setUserName(''); }
   };
 
+  const handleServiceLoginChange = async (e) => {
+    const val = e.target.value;
+    setServiceLogin(val);
+    setErrorMsg('');
+
+    if (val.length >= 3) {
+      try {
+        const response = await fetch(`${SERVER_URL}/api/lookup-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login: val })
+        });
+        const data = await response.json();
+        if (data.success && data.firstName) setUserName(data.firstName);
+        else setUserName('');
+      } catch (err) { console.error(err); }
+    } else { setUserName(''); }
+  };
+
   const formatPhone = (raw) => {
     if (!raw) return '';
     let res = '';
@@ -121,17 +150,26 @@ export function LoginPage({ onLoginSuccess }) {
   };
 
   const handleLogin = async () => {
-    if (phoneRaw.length !== 10 || !password) {
+    const isPhoneMode = loginMode === 'phone';
+    if (isPhoneMode && (phoneRaw.length !== 10 || !password)) {
       setErrorMsg('Заполните телефон и пароль');
       return;
     }
+    if (!isPhoneMode && (!serviceLogin || !password)) {
+      setErrorMsg('Заполните логин и пароль');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const fullPhone = `+7${phoneRaw}`;
+      const payload = isPhoneMode 
+        ? { phone: `+7${phoneRaw}`, password }
+        : { login: serviceLogin, password };
+
       const response = await fetch(`${SERVER_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: fullPhone, password })
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
       if (data.success) {
@@ -150,6 +188,10 @@ export function LoginPage({ onLoginSuccess }) {
   };
 
   const handleForgotPassword = async () => {
+    if (loginMode !== 'phone') {
+      setEmailMsg('Сброс пароля доступен только для личных аккаунтов');
+      return;
+    }
     if (phoneRaw.length !== 10) {
       setEmailMsg('Сначала введите ваш номер телефона выше');
       return;
@@ -184,17 +226,14 @@ export function LoginPage({ onLoginSuccess }) {
   return (
     <div className="min-h-[100dvh] flex items-start sm:items-center justify-center relative p-4 pt-10 pb-28 sm:pt-4 sm:pb-4 font-sans overflow-x-hidden overflow-y-auto">
       
-      {/* Фоновые градиенты */}
       <div className="fixed inset-0 z-[-1] bg-[#e0e0e0ff]">
         <div className="absolute top-[-15%] right-[-5%] w-[600px] h-[600px] rounded-full bg-graphite-light/30 blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-[-10%] left-[-10%] w-[700px] h-[700px] rounded-full bg-graphite-dark/20 blur-[150px] pointer-events-none"></div>
       </div>
 
-      {/* Единый контейнер карточки */}
       <div className={`relative flex flex-col mt-[-3rem] sm:flex-row items-stretch bg-white/60 backdrop-blur-xl border border-white/80 sm:rounded-[1rem] shadow-2xl shadow-black/5 z-20 ${isReady ? 'transition-all duration-500 ease-in-out' : ''}`}>
         
-{/* ЛЕВАЯ ЧАСТЬ: Основная форма авторизации */}
-        <div className="w-[calc(100vw-0px)] sm:w-[400px] p-10 sm:p-8 shrink-0 relative  z-20 sm:bg-transparent rounded-[2rem] sm:rounded-none">
+        <div className="w-[calc(100vw-0px)] sm:w-[400px] p-10 sm:p-8 shrink-0 relative z-20 sm:bg-transparent rounded-[2rem] sm:rounded-none">
           <div className="text-left mb-3">
             <h1 className="text-4xl font-bold text-graphite tracking-tight">HockeyEco <span className="text-orange">LMS</span></h1>
           </div>
@@ -210,15 +249,41 @@ export function LoginPage({ onLoginSuccess }) {
           <div className="space-y-4">
             <div className="relative">
               <div className="relative flex items-center w-full border border-graphite/20 rounded-md bg-white/80 focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-colors duration-300">
-                <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/10 py-3">+7</div>
-                <input 
-                  type="tel"
-                  placeholder="(000) 000-00-00"
-                  value={formatPhone(phoneRaw)}
-                  onChange={handlePhoneChange}
-                  onKeyDown={(e) => handleKeyDown(e, handleLogin)}
-                  className="w-full px-3 py-3 bg-transparent text-graphite text-base outline-none placeholder:text-graphite/30 font-medium"
-                />
+                {loginMode === 'phone' ? (
+                  <>
+                    <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/10 py-3">+7</div>
+                    <input 
+                      type="tel"
+                      placeholder="(000) 000-00-00"
+                      value={formatPhone(phoneRaw)}
+                      onChange={handlePhoneChange}
+                      onKeyDown={(e) => handleKeyDown(e, handleLogin)}
+                      className="w-full px-3 py-3 bg-transparent text-graphite text-base outline-none placeholder:text-graphite/30 font-medium"
+                    />
+                  </>
+                ) : (
+                  <input 
+                    type="text"
+                    placeholder="Введите логин аккаунта"
+                    value={serviceLogin}
+                    onChange={handleServiceLoginChange}
+                    onKeyDown={(e) => handleKeyDown(e, handleLogin)}
+                    className="w-full px-4 py-3 bg-transparent text-graphite text-base outline-none placeholder:text-graphite/30 font-medium"
+                  />
+                )}
+                
+                <button 
+                  type="button"
+                  onClick={toggleLoginMode}
+                  className="absolute right-4 text-graphite-light hover:text-orange transition-colors"
+                  title={loginMode === 'phone' ? "Войти через логин" : "Войти через телефон"}
+                >
+                  {loginMode === 'phone' ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -259,15 +324,17 @@ export function LoginPage({ onLoginSuccess }) {
                 checked={isRemembered} 
                 onChange={(e) => setIsRemembered(e.target.checked)} 
               />
-              <button 
-                onClick={() => setIsForgotMode(!isForgotMode)}
-                className="text-[12px] text-graphite-light font-semibold underline underline-offset-4 hover:text-orange transition-colors mb-4"
-              >
-                Забыли пароль?
-              </button>
+              {loginMode === 'phone' && (
+                <button 
+                  onClick={() => setIsForgotMode(!isForgotMode)}
+                  className="text-[12px] text-graphite-light font-semibold underline underline-offset-4 hover:text-orange transition-colors mb-4"
+                >
+                  Забыли пароль?
+                </button>
+              )}
             </div>
 
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isForgotMode ? 'max-h-[170px] opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isForgotMode && loginMode === 'phone' ? 'max-h-[170px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="border-t border-graphite/10 pt-4 pb-2 space-y-3">
                 <input 
                   type="email" 
@@ -300,7 +367,6 @@ export function LoginPage({ onLoginSuccess }) {
           </div>
         </div>
 
-        {/* ПРАВАЯ ЧАСТЬ: Выезжающее меню PWA */}
         <div 
           className={`overflow-hidden relative z-10 ${isReady ? 'transition-all duration-500 ease-in-out' : ''} ${
             isMenuOpen 
@@ -309,9 +375,7 @@ export function LoginPage({ onLoginSuccess }) {
           }`}
         >
           <div className="w-[calc(100vw-0px)] sm:w-[320px] p-8 sm:p-8 sm:pl-0 h-full flex flex-col">
-            
             <div className="h-full pt-6 sm:pt-0 sm:pl-8 flex flex-col text-graphite/50">
-              
               <h3 className="text-[11px] font-black uppercase tracking-widest mb-6 text-graphite/40">
                 Приложение LMS
               </h3>
@@ -323,9 +387,6 @@ export function LoginPage({ onLoginSuccess }) {
                    </svg>
                    <p className="text-[11px] font-semibold leading-relaxed text-graphite/60">
                      Установка PWA-приложения доступна только в браузерах <br/><b className="text-graphite">Google Chrome</b> и <b className="text-graphite">Safari</b>.
-                   </p>
-                   <p className="text-[10px] mt-4 text-graphite/40">
-                     Пожалуйста, откройте этот сайт в одном из них.
                    </p>
                 </div>
               ) : (
@@ -343,10 +404,6 @@ export function LoginPage({ onLoginSuccess }) {
                             <div className="flex items-center gap-3 bg-white/60 p-2.5 rounded-md border border-graphite/10">
                               <svg className="w-4 h-4 text-graphite/50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4m0 0L8 6m4-4v13"/></svg>
                               <span className="text-[11px] font-medium leading-tight text-graphite/70">1. Нажмите «Поделиться» (внизу)</span>
-                            </div>
-                            <div className="flex items-center gap-3 bg-white/60 p-2.5 rounded-md border border-graphite/10">
-                              <div className="w-4 h-4 rounded flex items-center justify-center shrink-0 text-[14px] font-bold text-graphite/50 border border-graphite/20">+</div>
-                              <span className="text-[11px] font-medium leading-tight text-graphite/70">2. Нажмите «На экран "Домой"»</span>
                             </div>
                           </div>
                         ) : isChrome ? (
@@ -368,43 +425,12 @@ export function LoginPage({ onLoginSuccess }) {
                       </>
                     )}
                   </section>
-
-                  <section className="pt-5 border-t border-graphite/10 mt-auto">
-                    <h4 className="text-[9px] font-black uppercase tracking-widest text-graphite/30 mb-3 flex items-center gap-1.5">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      Очистка кэша
-                    </h4>
-                    <div className="space-y-3">
-                      {isSafari && (
-                        <div className="text-[10px] leading-relaxed text-graphite/50 bg-white/30 p-2.5 rounded-lg border border-graphite/5">
-                          <span className="font-bold text-graphite/70 block mb-1">В браузере Safari:</span>
-                          1. Откройте «Настройки» iPhone.<br/>
-                          2. Выберите раздел «Safari».<br/>
-                          3. Нажмите «Очистить историю и данные» и подтвердите.
-                        </div>
-                      )}
-                      
-                      {isChrome && (
-                        <div className="text-[10px] leading-relaxed text-graphite/50 bg-white/30 p-2.5 rounded-lg border border-graphite/5">
-                          <span className="font-bold text-graphite/70 block mb-1">В браузере Chrome:</span>
-                          1. Нажмите меню (три точки).<br/>
-                          2. Выберите «История» → «Очистить историю».<br/>
-                          3. Выберите диапазон «Все время».<br/>
-                          4. Отметьте «Файлы cookie» и «Изображения», затем нажмите «Удалить данные».
-                        </div>
-                      )}
-                      <div className="hidden sm:block text-[10px] leading-relaxed text-graphite/50 bg-white/30 p-2.5 rounded-lg border border-graphite/5">
-                        Для ПК: Нажмите  —  <span className="bg-graphite/70 text-white px-1.5 py-0.5 rounded-md">Ctrl + F5</span> / <span className="bg-graphite/70 text-white px-1.5 py-0.5 rounded-md">⌥ + ⌘ + R</span>
-                      </div>
-                    </div>
-                  </section>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* ЯРЛЫК (Шеврон) - Адаптивное позиционирование */}
         <div 
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className={`absolute z-[40] cursor-pointer group hover:bg-graphite/10 transition-colors bg-white/20 border border-white/50 flex items-center justify-center
@@ -417,13 +443,11 @@ export function LoginPage({ onLoginSuccess }) {
               className={`text-white/80 w-5 h-5 ${isReady ? 'transition-transform duration-500' : ''}`} 
               fill="none" viewBox="0 0 24 24" stroke="currentColor"
             >
-              {/* ПК: Открыть -> вправо, Закрыть -> влево */}
               <path 
                 strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" 
                 d={isMenuOpen ? "M15 19l-7-7 7-7" : "M9 5l7 7-7 7"} 
                 className="hidden sm:block" 
               />
-              {/* Мобильный: Открыть -> вниз, Закрыть -> вверх */}
               <path 
                 strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" 
                 d={isMenuOpen ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} 
