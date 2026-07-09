@@ -1,0 +1,108 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [
+    react(),
+    VitePWA({
+      // СТАЛО: Меняем стратегию на 'prompt', чтобы предотвратить принудительный релоад
+      registerType: 'prompt',
+      
+      // Включаем поддержку PWA в режиме разработки (npm run dev)
+      devOptions: {
+        enabled: true,
+        type: 'module',
+        navigateFallback: 'index.html',
+      },
+
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      
+      manifest: {
+        name: 'HockeyEco LMS',
+        short_name: 'HockeyEco',
+        description: 'Система управления лигой HockeyEco',
+        theme_color: '#303030ff',
+        background_color: '#303030ff',
+        display: 'fullscreen', // Это убирает навигацию браузера
+        orientation: 'any',    // Разрешаем поворот экрана
+        icons: [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ]
+      },
+
+      workbox: {
+        // Отключаем дебаг-логи Workbox в консоли
+        mode: 'production', 
+        
+        // Очищаем старые кэши при обновлении
+        cleanupOutdatedCaches: true,
+        
+        runtimeCaching: [
+          {
+            // API запросы (данные): Network First
+            urlPattern: /^https?:\/\/.*\/api\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 24 * 60 * 60 // Храним данные 1 день
+              },
+              networkTimeoutSeconds: 5 // Ждем ответа от сервера 5 секунд
+            }
+          },
+          {
+            // Картинки только с нашего S3-бакета (аватарки, логотипы, джерси): Stale-While-Revalidate.
+            // Регулярка сужена под s3.twcstorage.ru, чтобы не кэшировать любые сторонние картинки.
+            urlPattern: /^https:\/\/s3\.twcstorage\.ru\/.*\.(?:png|jpg|jpeg|svg|webp)/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'image-cache',
+              expiration: {
+                maxEntries: 150,                 // ограничиваем количество (раньше 500)
+                maxAgeSeconds: 7 * 24 * 60 * 60, // храним 7 дней (раньше 30)
+                purgeOnQuotaError: true          // даём Workbox чистить кэш при нехватке места на устройстве
+              }
+            }
+          }
+        ]
+      }
+    })
+  ],
+  server: {
+    // Позволяет заходить на сайт по IP в локальной сети
+    host: true, 
+    port: 5173,
+  },
+  
+  build: {
+    rollupOptions: {
+      output: {
+        // Используем объектный синтаксис для безопасного разделения без циклических зависимостей
+        manualChunks: {
+          'vendor-pdf': ['@react-pdf/renderer'],
+          'vendor-dnd': [
+            '@dnd-kit/core', 
+            '@dnd-kit/modifiers', 
+            '@dnd-kit/sortable', 
+            '@dnd-kit/utilities'
+          ]
+        }
+      }
+    },
+    // Немного увеличиваем лимит предупреждения для оставшегося бандла
+    chunkSizeWarningLimit: 800,
+  }
+})

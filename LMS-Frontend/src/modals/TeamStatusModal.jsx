@@ -1,0 +1,109 @@
+import React, { useState, useEffect } from 'react';
+import { Modal } from './Modal';
+import { Button } from '../ui/Button';
+
+// Импортируем заглушку
+import { AccessFallback } from '../ui/AccessFallback';
+
+const STATUS_OPTIONS = [
+  { 
+    value: 'approved', 
+    label: 'Допущена', 
+    styles: {
+      bg: 'bg-status-accepted/10', border: 'border-status-accepted', 
+      text: 'text-status-accepted', hover: 'hover:border-status-accepted/40', 
+      dot: 'bg-status-accepted'
+    },
+    desc: 'Команда допущена к участию в турнире' 
+  },
+  { 
+    value: 'pending', 
+    label: 'На проверке', 
+    styles: {
+      bg: 'bg-orange/10', border: 'border-orange', 
+      text: 'text-orange', hover: 'hover:border-orange/40', 
+      dot: 'bg-orange'
+    },
+    desc: 'Заявка ожидает решения' 
+  },
+  { 
+    value: 'revision', 
+    label: 'К доработке', 
+    styles: {
+      bg: 'bg-blue-500/10', border: 'border-blue-500', 
+      text: 'text-blue-600', hover: 'hover:border-blue-500/40', 
+      dot: 'bg-blue-500'
+    },
+    desc: 'Команда исправляет недочеты или дополняет заявку' 
+  },
+  { 
+    value: 'rejected', 
+    label: 'Отклонена', 
+    styles: {
+      bg: 'bg-status-rejected/10', border: 'border-status-rejected', 
+      text: 'text-status-rejected', hover: 'hover:border-status-rejected/40', 
+      dot: 'bg-status-rejected'
+    },
+    desc: 'Команда не допущена к турниру' 
+  }
+];
+
+export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSave, isSaving = false, readOnly = false }) {
+  const [selectedStatus, setSelectedStatus] = useState(currentStatus || 'pending');
+
+  useEffect(() => {
+    if (isOpen) setSelectedStatus(currentStatus || 'pending');
+  }, [isOpen, currentStatus]);
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Статус команды" size="medium">
+      
+      {readOnly && (
+        <AccessFallback variant="readonly" message="Режим просмотра. Изменение статуса команды недоступно." />
+      )}
+
+      <div className="mb-4 text-center mt-2">
+        <span className="text-[20px] font-black text-graphite">{teamName}</span>
+      </div>
+
+      <div className="flex flex-col gap-2 mb-6 font-sans">
+        {STATUS_OPTIONS.map(opt => (
+          <div 
+            key={opt.value}
+            onClick={() => !readOnly && setSelectedStatus(opt.value)}
+            className={`flex items-center gap-4 p-3.5 rounded-md transition-all border ${
+              selectedStatus === opt.value 
+                ? `${opt.styles.border} ${opt.styles.bg}` 
+                : `border-graphite/10 ${opt.styles.hover} hover:bg-black/5`
+            } ${readOnly ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <div className="flex flex-col flex-1">
+              <span className={`font-bold text-[14px] ${selectedStatus === opt.value ? opt.styles.text : 'text-graphite'}`}>
+                {opt.label}
+              </span>
+              <span className="text-[12px] text-graphite-light mt-0.5">{opt.desc}</span>
+            </div>
+            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+              selectedStatus === opt.value ? opt.styles.border : 'border-graphite-light'
+            }`}>
+              <div className={`w-2.5 h-2.5 rounded-full ${opt.styles.dot} transition-transform ${selectedStatus === opt.value ? 'scale-100' : 'scale-0'}`} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!readOnly && (
+        <div className="flex justify-end pt-5 border-t border-graphite/10">
+          <Button 
+            onClick={() => onSave(selectedStatus)} 
+            isLoading={isSaving} 
+            disabled={isSaving} 
+            className="w-full sm:w-auto bg-orange text-white border-none transition-all duration-300 hover:bg-orange-hover"
+          >
+            Сохранить
+          </Button>
+        </div>
+      )}
+    </Modal>
+  );
+}
