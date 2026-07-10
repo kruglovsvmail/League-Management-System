@@ -125,6 +125,19 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
 
   const getPlayerId = (jersey, rst) => rst.find(r => r.jersey_number == jersey)?.player_id || null;
   const getJersey = (id, rst) => rst.find(r => r.player_id == id)?.jersey_number || '';
+  // against_goalie_id для буллита либо реальный вратарь, либо NULL — отдельного
+  // «пустые ворота» тут не бывает (буллит всегда пробивается против кого-то),
+  // поэтому NULL однозначно значит «не указан», без доп. булевого флага.
+  //
+  // ВНИМАНИЕ: это ПРОТИВОПОЛОЖНО конвенции game_goalie_log (см. goalieLogModel.js
+  // в Team-Room, TR-Frontend/src/components/EventDetails/Match/) и
+  // game_shots_by_goalie, где NULL = буквально пустые ворота, а «не указан»
+  // кодируется отдельным булевым столбцом (home/away_goalie_unspecified) —
+  // там NULL уже занят под другой смысл. Не копировать проверки `=== null`
+  // между этим файлом и той моделью не подумав, к какой таблице они относятся.
+  const renderGoalieCell = (id, rst) => (id == null
+    ? <span className="text-graphite/30 italic text-[11px] font-bold">НЕ УКАЗАН</span>
+    : (getJersey(id, rst) || <span className="text-graphite/30 italic text-[11px] font-bold">НЕ УКАЗАН</span>));
 
   const goalies = oppRoster.filter(p => p.position_in_line === 'G' || p.position === 'Вр.' || String(p.position).toLowerCase() === 'goalie');
 
@@ -197,7 +210,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                 </td>
                                 <td className="p-1 border-r border-graphite/30 text-center">
                                     <div className="flex items-center justify-center gap-1">
-                                        {goalies.length > 0 ? goalies.map(g => (
+                                        {goalies.map(g => (
                                             <button
                                                 key={`edit-g-${g.player_id}`}
                                                 type="button"
@@ -207,7 +220,16 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                             >
                                                 {g.jersey_number}
                                             </button>
-                                        )) : <span className="text-[10px] text-graphite/40">Нет Вр.</span>}
+                                        ))}
+                                        {/* «Не указан» — доступна всегда, вне зависимости от заявки. */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditData({...editData, goalie: ''})}
+                                            className={`px-1.5 h-7 rounded flex items-center justify-center font-black text-[10px] uppercase border border-dashed transition-colors ${!editData.goalie ? 'bg-graphite text-white border-graphite shadow-sm' : 'border-graphite/30 text-graphite/40 hover:bg-graphite/10'}`}
+                                            title="Вратарь не указан"
+                                        >
+                                            НЕТ
+                                        </button>
                                     </div>
                                 </td>
                                 <td className="p-1 border-r border-graphite/30">
@@ -243,7 +265,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                             {shot ? (
                                 <>
                                     <td className="text-center font-bold border-r border-graphite/30 text-sm text-graphite">{getJersey(shot.primary_player_id, roster)}</td>
-                                    <td className="text-center font-semibold text-graphite border-r border-graphite/30 text-sm">{getJersey(shot.against_goalie_id, oppRoster)}</td>
+                                    <td className="text-center font-semibold text-graphite border-r border-graphite/30 text-sm">{renderGoalieCell(shot.against_goalie_id, oppRoster)}</td>
                                     <td className="flex justify-center items-center h-[36px] border-r border-graphite/30">
                                         {shot.event_type === 'shootout_goal' ? (
                                             <Icon name="shootout_goal" className="w-5 h-5 text-status-accepted" />
@@ -267,7 +289,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                     </td>
                                     <td className="p-1 border-r border-graphite/30 text-center">
                                         <div className="flex items-center justify-center gap-1">
-                                            {goalies.length > 0 ? goalies.map(g => (
+                                            {goalies.map(g => (
                                                 <button
                                                     key={g.player_id}
                                                     type="button"
@@ -277,7 +299,16 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
                                                 >
                                                     {g.jersey_number}
                                                 </button>
-                                            )) : <span className="text-[10px] text-graphite/40">Нет Вр.</span>}
+                                            ))}
+                                            {/* «Не указан» — доступна всегда, вне зависимости от заявки. */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setNewShot({...newShot, goalie: ''})}
+                                                className={`px-1.5 h-7 rounded flex items-center justify-center font-black text-[10px] uppercase border border-dashed transition-colors ${!newShot.goalie ? 'bg-graphite text-white border-graphite shadow-sm' : 'border-graphite/30 text-graphite/40 hover:bg-graphite/10'}`}
+                                                title="Вратарь не указан"
+                                            >
+                                                НЕТ
+                                            </button>
                                         </div>
                                     </td>
                                     <td className="p-1 border-r border-graphite/30">

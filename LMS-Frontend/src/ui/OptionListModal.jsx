@@ -4,7 +4,7 @@ import { Modal } from '../modals/Modal';
 
 // Общий список опций (причина штрафа, игровая ситуация, штрафные минуты, вратарь и т.п.):
 // клик по строке сразу выбирает значение и закрывает окно.
-export function OptionListModal({ isOpen, onClose, title = 'Выбор', options = [], value, onSelect, hideEmpty = false }) {
+export function OptionListModal({ isOpen, onClose, title = 'Выбор', options = [], value, onSelect, hideEmpty = false, emptyLabel }) {
   const handlePick = (optValue, opt) => {
     onSelect(optValue, opt);
     onClose();
@@ -21,7 +21,7 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
               !value ? 'border-orange bg-orange/10 text-orange' : 'border-transparent text-graphite/50 hover:bg-graphite/5'
             }`}
           >
-            — не выбрано —
+            {emptyLabel || '— не выбрано —'}
           </button>
         )}
         {options.map((opt) => (

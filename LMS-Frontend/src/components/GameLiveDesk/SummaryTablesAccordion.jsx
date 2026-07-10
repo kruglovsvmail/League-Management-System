@@ -7,6 +7,11 @@ import {
 } from './GameDeskShared';
 import { Icon } from '../../ui/Icon';
 
+// Псевдо-id вратаря «не указан» — отличается от пустых ворот (goalie_id=null,
+// unspecified=false). Используется и в журнале смен, и в бросках (там team_id
+// вратаря сохраняется, а goalie_id тоже null — различаем по team_id+period).
+const UNSPECIFIED_GOALIE = '__unspecified__';
+
 export const SummaryTablesAccordion = ({
   game, goalieLog,
   goaliesShotsSummary = [],
@@ -25,8 +30,8 @@ export const SummaryTablesAccordion = ({
     const lastLog = goalieLog.length > 0 ? goalieLog[goalieLog.length - 1] : null;
     setNewLogData(prev => ({
       ...prev,
-      home_goalie: lastLog ? (lastLog.home_goalie_id || '') : '',
-      away_goalie: lastLog ? (lastLog.away_goalie_id || '') : ''
+      home_goalie: lastLog ? (lastLog.home_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastLog.home_goalie_id || '')) : '',
+      away_goalie: lastLog ? (lastLog.away_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastLog.away_goalie_id || '')) : ''
     }));
   }, [goalieLog]);
 
@@ -48,21 +53,36 @@ export const SummaryTablesAccordion = ({
   const homeGoalieOptions = getGoalieOptions(homeRoster);
   const awayGoalieOptions = getGoalieOptions(awayRoster);
 
-  const renderGoalieLabel = (goalieId, options) => {
+  // «Не указан» доступна всегда, вне зависимости от того, подана ли заявка и
+  // сколько в ней вратарей: заявка может отсутствовать, может быть заявлен
+  // только один из двух вратарей, а может — оба, но кто именно на льду прямо
+  // сейчас, секретарь просто не успел зафиксировать.
+  const withUnspecifiedOption = (opts) => [...opts, { value: UNSPECIFIED_GOALIE, label: 'Не указан' }];
+  const homeGoalieSelectOptions = withUnspecifiedOption(homeGoalieOptions);
+  const awayGoalieSelectOptions = withUnspecifiedOption(awayGoalieOptions);
+
+  const renderGoalieLabel = (goalieId, options, isUnspecified) => {
+    if (isUnspecified) return <span className="text-graphite/40 italic text-[11px] font-bold">НЕ УКАЗАН</span>;
     const g = options.find(o => String(o.value) === String(goalieId || ''));
     if (g && g.value !== '') return g.label;
     return <span className="text-graphite/40 italic text-[11px] font-bold">ПУСТЫЕ ВОРОТА</span>;
   };
 
-  // Уникальные вратари команды из журнала (в порядке появления)
+  // Уникальные вратари команды из журнала (в порядке появления). Если в
+  // журнале встречалась запись «не указан» — добавляем псевдо-вратаря в конец,
+  // чтобы по нему тоже можно было ввести броски.
   const getGoaliesFromLog = (teamId) => {
     const isHome = teamId === game?.home_team_id;
     const seen = new Set();
     const result = [];
+    let hasUnspecified = false;
     goalieLog.forEach(log => {
       const id = isHome ? log.home_goalie_id : log.away_goalie_id;
-      if (id && !seen.has(id)) { seen.add(id); result.push(id); }
+      const unspecified = isHome ? log.home_goalie_unspecified : log.away_goalie_unspecified;
+      if (unspecified) hasUnspecified = true;
+      else if (id && !seen.has(id)) { seen.add(id); result.push(id); }
     });
+    if (hasUnspecified) result.push(UNSPECIFIED_GOALIE);
     return result;
   };
 
@@ -71,28 +91,32 @@ export const SummaryTablesAccordion = ({
   if (parseInt(game?.ot_length, 10) > 0) periods.push('OT');
 
   // ── Броски по вратарю ────────────────────────────────────────────────────
-  const getGoalieShotsForPeriod = (goalieId, period) => {
-    const record = goaliesShotsSummary.find(
-      s => String(s.goalie_id) === String(goalieId) && s.period === period
-    );
+  // Для «не указан» goalie_id в БД тоже NULL — отличаем строки друг от друга
+  // по team_id (реальные вратари уникальны по user id, team_id не нужен).
+  const getGoalieShotsForPeriod = (goalieId, period, teamId) => {
+    const record = goaliesShotsSummary.find(s => (
+      goalieId === UNSPECIFIED_GOALIE
+        ? (s.goalie_id == null && String(s.team_id) === String(teamId) && s.period === period)
+        : (String(s.goalie_id) === String(goalieId) && s.period === period)
+    ));
     return record ? parseInt(record.shots_count, 10) : 0;
   };
 
-  const getGoalieShotsTotal = (goalieId) =>
-    periods.reduce((sum, p) => sum + getGoalieShotsForPeriod(goalieId, p), 0);
+  const getGoalieShotsTotal = (goalieId, teamId) =>
+    periods.reduce((sum, p) => sum + getGoalieShotsForPeriod(goalieId, p, teamId), 0);
 
   const startEditGoalieShots = (goalieId, teamId) => {
     const key = `${goalieId}_${teamId}`;
     setEditGoalieShotKey(key);
     const data = {};
-    periods.forEach(p => { data[p] = getGoalieShotsForPeriod(goalieId, p) || ''; });
+    periods.forEach(p => { data[p] = getGoalieShotsForPeriod(goalieId, p, teamId) || ''; });
     setEditGoalieShotData(data);
   };
 
   const saveEditGoalieShots = (goalieId, teamId) => {
     periods.forEach(p => {
       onSaveGoalieShotsSummary({
-        goalie_id: goalieId,
+        goalie_id: goalieId === UNSPECIFIED_GOALIE ? null : goalieId,
         team_id: teamId,
         period: p,
         shots_count: parseInt(editGoalieShotData[p], 10) || 0
@@ -110,8 +134,8 @@ export const SummaryTablesAccordion = ({
     setEditLogId(log.id);
     setEditLogData({
       time: formatTime(log.time_seconds),
-      home_goalie: log.home_goalie_id || '',
-      away_goalie: log.away_goalie_id || ''
+      home_goalie: log.home_goalie_unspecified ? UNSPECIFIED_GOALIE : (log.home_goalie_id || ''),
+      away_goalie: log.away_goalie_unspecified ? UNSPECIFIED_GOALIE : (log.away_goalie_id || '')
     });
   };
 
@@ -119,8 +143,10 @@ export const SummaryTablesAccordion = ({
     onSaveGoalieLog({
       id: editLogId,
       time_seconds: parseTime(editLogData.time) || 0,
-      home_goalie_id: editLogData.home_goalie || null,
-      away_goalie_id: editLogData.away_goalie || null
+      home_goalie_id: editLogData.home_goalie === UNSPECIFIED_GOALIE ? null : (editLogData.home_goalie || null),
+      away_goalie_id: editLogData.away_goalie === UNSPECIFIED_GOALIE ? null : (editLogData.away_goalie || null),
+      home_goalie_unspecified: editLogData.home_goalie === UNSPECIFIED_GOALIE,
+      away_goalie_unspecified: editLogData.away_goalie === UNSPECIFIED_GOALIE
     });
     setEditLogId(null);
   };
@@ -129,16 +155,20 @@ export const SummaryTablesAccordion = ({
     const timeSecs = newLogData.time ? parseTime(newLogData.time) : (timerSeconds || 0);
     onSaveGoalieLog({
       time_seconds: timeSecs,
-      home_goalie_id: newLogData.home_goalie || null,
-      away_goalie_id: newLogData.away_goalie || null
+      home_goalie_id: newLogData.home_goalie === UNSPECIFIED_GOALIE ? null : (newLogData.home_goalie || null),
+      away_goalie_id: newLogData.away_goalie === UNSPECIFIED_GOALIE ? null : (newLogData.away_goalie || null),
+      home_goalie_unspecified: newLogData.home_goalie === UNSPECIFIED_GOALIE,
+      away_goalie_unspecified: newLogData.away_goalie === UNSPECIFIED_GOALIE
     });
     setNewLogData(prev => ({ ...prev, time: '' }));
   };
 
   const lastGoalieLog = goalieLog.length > 0 ? goalieLog[goalieLog.length - 1] : null;
+  const lastHomeValue = lastGoalieLog ? (lastGoalieLog.home_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastGoalieLog.home_goalie_id || '')) : '';
+  const lastAwayValue = lastGoalieLog ? (lastGoalieLog.away_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastGoalieLog.away_goalie_id || '')) : '';
   const isGoaliesMatch = lastGoalieLog &&
-    String(lastGoalieLog.home_goalie_id || '') === String(newLogData.home_goalie) &&
-    String(lastGoalieLog.away_goalie_id || '') === String(newLogData.away_goalie);
+    String(lastHomeValue) === String(newLogData.home_goalie) &&
+    String(lastAwayValue) === String(newLogData.away_goalie);
 
   const goalieRowsCount = isReadOnly ? Math.max(1, goalieLog.length) : Math.max(1, goalieLog.length + 1);
   const goalieRows = Array.from({ length: goalieRowsCount });
@@ -217,10 +247,10 @@ export const SummaryTablesAccordion = ({
                               <StylishInput isEditing isTimeField title="Время смены вратаря" value={editLogData.time} onChange={e => setEditLogData({ ...editLogData, time: formatTimeMask(e.target.value) })} className="text-center font-bold px-1" />
                             </td>
                             <td className="p-1 border-r border-graphite/30 text-center">
-                              <CustomSelect isEditing title="Вратарь хозяев" options={homeGoalieOptions} value={editLogData.home_goalie} onChange={e => setEditLogData({ ...editLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
+                              <CustomSelect isEditing title="Вратарь хозяев" options={homeGoalieSelectOptions} value={editLogData.home_goalie} onChange={e => setEditLogData({ ...editLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                             </td>
                             <td className="p-1 border-r border-graphite/30 text-center">
-                              <CustomSelect isEditing title="Вратарь гостей" options={awayGoalieOptions} value={editLogData.away_goalie} onChange={e => setEditLogData({ ...editLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
+                              <CustomSelect isEditing title="Вратарь гостей" options={awayGoalieSelectOptions} value={editLogData.away_goalie} onChange={e => setEditLogData({ ...editLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                             </td>
                             <td className="p-0 text-center">
                               <button onClick={saveEditLog} className="bg-status-accepted text-white w-full h-full min-h-[36px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner">
@@ -235,8 +265,8 @@ export const SummaryTablesAccordion = ({
                         return (
                           <tr key={log.id} className="even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
                             <td className="font-mono font-semibold text-[13px] text-graphite border-r border-graphite/30">{formatTime(log.time_seconds)}</td>
-                            <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.home_goalie_id, homeGoalieOptions)}</td>
-                            <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.away_goalie_id, awayGoalieOptions)}</td>
+                            <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.home_goalie_id, homeGoalieOptions, log.home_goalie_unspecified)}</td>
+                            <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.away_goalie_id, awayGoalieOptions, log.away_goalie_unspecified)}</td>
                             <td className="p-0 text-center">
                               {!isReadOnly && (
                                 <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
@@ -265,10 +295,10 @@ export const SummaryTablesAccordion = ({
                               />
                             </td>
                             <td className="p-1 border-r border-graphite/30 text-center">
-                              <CustomSelect title="Вратарь хозяев" options={homeGoalieOptions} value={newLogData.home_goalie} onChange={e => setNewLogData({ ...newLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
+                              <CustomSelect title="Вратарь хозяев" options={homeGoalieSelectOptions} value={newLogData.home_goalie} onChange={e => setNewLogData({ ...newLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                             </td>
                             <td className="p-1 border-r border-graphite/30 text-center">
-                              <CustomSelect title="Вратарь гостей" options={awayGoalieOptions} value={newLogData.away_goalie} onChange={e => setNewLogData({ ...newLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
+                              <CustomSelect title="Вратарь гостей" options={awayGoalieSelectOptions} value={newLogData.away_goalie} onChange={e => setNewLogData({ ...newLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                             </td>
                             <td className="p-0 text-center">
                               <button
@@ -343,7 +373,9 @@ export const SummaryTablesAccordion = ({
                             const goalieKey = `${goalieId}_${team.id}`;
                             const isEditingGoalie = editGoalieShotKey === goalieKey;
                             const goalieLabel = team.goalieOptions.find(o => String(o.value) === String(goalieId));
-                            const goalieName = goalieLabel ? goalieLabel.label : `#${goalieId}`;
+                            const goalieName = goalieId === UNSPECIFIED_GOALIE
+                              ? 'Не указан'
+                              : (goalieLabel ? goalieLabel.label : `#${goalieId}`);
                             const editSum = isEditingGoalie
                               ? periods.reduce((s, p) => s + (parseInt(editGoalieShotData[p], 10) || 0), 0)
                               : 0;
@@ -386,11 +418,11 @@ export const SummaryTablesAccordion = ({
                                   <>
                                     {periods.map(p => (
                                       <td key={p} className="font-mono font-semibold text-[13px] text-graphite border-r border-graphite/30">
-                                        {getGoalieShotsForPeriod(goalieId, p) || '-'}
+                                        {getGoalieShotsForPeriod(goalieId, p, team.id) || '-'}
                                       </td>
                                     ))}
                                     <td className="font-mono font-black text-[13px] text-status-accepted border-r border-graphite/30">
-                                      {getGoalieShotsTotal(goalieId) || '-'}
+                                      {getGoalieShotsTotal(goalieId, team.id) || '-'}
                                     </td>
                                     <td className="p-0 text-center">
                                       {!isReadOnly && (

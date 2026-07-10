@@ -494,21 +494,27 @@ export const reopenShootout = async (req, res) => {
 export const saveGoalieLog = async (req, res) => {
     try {
         const { gameId } = req.params;
-        const { id, time_seconds, home_goalie_id, away_goalie_id } = req.body;
-        
+        const {
+            id, time_seconds, home_goalie_id, away_goalie_id,
+            home_goalie_unspecified, away_goalie_unspecified,
+        } = req.body;
+
         if (id) {
             await pool.query(`
-                UPDATE game_goalie_log 
-                SET time_seconds = $1, home_goalie_id = $2, away_goalie_id = $3
-                WHERE id = $4 AND game_id = $5
-            `, [time_seconds, home_goalie_id || null, away_goalie_id || null, id, gameId]);
+                UPDATE game_goalie_log
+                SET time_seconds = $1, home_goalie_id = $2, away_goalie_id = $3,
+                    home_goalie_unspecified = $4, away_goalie_unspecified = $5
+                WHERE id = $6 AND game_id = $7
+            `, [time_seconds, home_goalie_id || null, away_goalie_id || null,
+                !!home_goalie_unspecified, !!away_goalie_unspecified, id, gameId]);
         } else {
             await pool.query(`
-                INSERT INTO game_goalie_log (game_id, time_seconds, home_goalie_id, away_goalie_id)
-                VALUES ($1, $2, $3, $4)
-            `, [gameId, time_seconds, home_goalie_id || null, away_goalie_id || null]);
+                INSERT INTO game_goalie_log (game_id, time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [gameId, time_seconds, home_goalie_id || null, away_goalie_id || null,
+                !!home_goalie_unspecified, !!away_goalie_unspecified]);
         }
-        
+
         await triggerRecalcFlag(pool, gameId);
         res.json({ success: true });
     } catch (err) {
@@ -565,17 +571,36 @@ export const saveGoalieShotsSummary = async (req, res) => {
     const { gameId } = req.params;
     const { goalie_id, team_id, period, shots_count } = req.body;
 
-    if (!goalie_id || !team_id || !period) {
-        return res.status(400).json({ success: false, error: 'goalie_id, team_id и period обязательны' });
+    if (!team_id || !period) {
+        return res.status(400).json({ success: false, error: 'team_id и period обязательны' });
     }
 
     try {
-        await pool.query(`
-            INSERT INTO game_shots_by_goalie (game_id, goalie_id, team_id, period, shots_count)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (game_id, goalie_id, period)
-            DO UPDATE SET shots_count = EXCLUDED.shots_count
-        `, [gameId, goalie_id, team_id, period, shots_count ?? 0]);
+        if (goalie_id) {
+            await pool.query(`
+                INSERT INTO game_shots_by_goalie (game_id, goalie_id, team_id, period, shots_count)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (game_id, goalie_id, period)
+                DO UPDATE SET shots_count = EXCLUDED.shots_count
+            `, [gameId, goalie_id, team_id, period, shots_count ?? 0]);
+        } else {
+            // goalie_id = NULL (пустые ворота либо «не указан» — секретарь различает
+            // их через team_id/сторону на фронте, здесь это просто «броски без
+            // привязки к конкретному вратарю»). UNIQUE(game_id, goalie_id, period) не
+            // ловит повторные NULL — Postgres считает каждый NULL уникальным — поэтому
+            // апдейтим вручную по team_id, а не полагаемся на ON CONFLICT.
+            const upd = await pool.query(`
+                UPDATE game_shots_by_goalie
+                SET shots_count = $1
+                WHERE game_id = $2 AND goalie_id IS NULL AND team_id = $3 AND period = $4
+            `, [shots_count ?? 0, gameId, team_id, period]);
+            if (upd.rowCount === 0) {
+                await pool.query(`
+                    INSERT INTO game_shots_by_goalie (game_id, goalie_id, team_id, period, shots_count)
+                    VALUES ($1, NULL, $2, $3, $4)
+                `, [gameId, team_id, period, shots_count ?? 0]);
+            }
+        }
 
         await triggerRecalcFlag(pool, gameId);
         res.json({ success: true });

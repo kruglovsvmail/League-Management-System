@@ -10,19 +10,27 @@ const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
 
     const userRes = await clientOrPool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
     if (!userRes.rows.length) return null;
-    if (userRes.rows[0].global_role === 'GLOBAL_ADMIN') return null;
+    // Было 'GLOBAL_ADMIN' — реальное значение в БД 'admin' (см. ROLES.GLOBAL_ADMIN
+    // в utils/permissions.js), сравнение никогда не срабатывало.
+    if (userRes.rows[0].global_role === 'admin') return null;
 
     const gameRes = await clientOrPool.query(`
-        SELECT g.game_date, s.league_id, l.sec_access_before_hours, l.sec_access_after_hours
+        SELECT g.game_date, g.division_id, s.league_id, l.sec_access_before_hours, l.sec_access_after_hours
         FROM games g
         LEFT JOIN divisions d ON g.division_id = d.id
         LEFT JOIN seasons s ON d.season_id = s.id
         LEFT JOIN leagues l ON s.league_id = l.id
         WHERE g.id = $1
     `, [gameId]);
-    
+
     if (gameRes.rows.length === 0) return 'Матч не найден';
     const game = gameRes.rows[0];
+
+    // Матчи вне лиг (division_id IS NULL — товарищеские/внешние турниры, которые
+    // команды создают сами в Team-Room) — доступ и правки только у глобального
+    // админа (см. проверку выше). Игровой/лиговый персонал сюда не допускается
+    // вообще, даже если каким-то образом попал в game_staff.
+    if (!game.division_id) return 'Доступ разрешён только глобальному администратору';
 
     if (game.league_id) {
         const staffRes = await clientOrPool.query(`
@@ -429,7 +437,7 @@ export const getGameById = async (req, res) => {
             LEFT JOIN game_timers gt ON g.id = gt.game_id
             LEFT JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN teams at ON g.away_team_id = at.id
-            JOIN divisions d ON g.division_id = d.id
+            LEFT JOIN divisions d ON g.division_id = d.id
             LEFT JOIN seasons s ON d.season_id = s.id
             LEFT JOIN arenas a ON g.arena_id = a.id
             LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
@@ -1013,11 +1021,13 @@ export const getGameStaff = async (req, res) => {
     try {
         const { gameId } = req.params;
         
+        // LEFT JOIN — у матчей вне лиг (division_id IS NULL, товарищеские/внешние
+        // турниры) league_id закономерно отсутствует, но сам матч должен находиться.
         const leagueRes = await pool.query(`
-            SELECT s.league_id 
+            SELECT g.id, s.league_id
             FROM games g
-            JOIN divisions d ON g.division_id = d.id
-            JOIN seasons s ON d.season_id = s.id
+            LEFT JOIN divisions d ON g.division_id = d.id
+            LEFT JOIN seasons s ON d.season_id = s.id
             WHERE g.id = $1
         `, [gameId]);
 
@@ -1234,7 +1244,13 @@ export const recalculateGameStats = async (req, res) => {
             }
         }
 
-        await pool.query('UPDATE games SET needs_recalc = false WHERE division_id = $1', [game.division_id]);
+        // Матч, по которому реально жали "Пересчёт", сбрасываем всегда явно по id —
+        // WHERE division_id = $1 с NULL (матч вне лиги) никогда ничего не находит,
+        // и needs_recalc оставался бы true навсегда, а кнопка — вечно "недожатой".
+        await pool.query('UPDATE games SET needs_recalc = false WHERE id = $1', [gameId]);
+        if (game.division_id) {
+            await pool.query('UPDATE games SET needs_recalc = false WHERE division_id = $1', [game.division_id]);
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка ручного пересчета:', err);

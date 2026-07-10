@@ -9,7 +9,7 @@ import {
     getTeams, createTeam, updateTeam,
     getUsers, createUser, updateUser,
     uploadRegistryFile, deleteRegistryFile,
-    importUsers
+    checkUserNameDuplicates, previewUserImport, confirmUserImport
 } from '../controllers/registryController.js';
 
 const router = express.Router();
@@ -40,7 +40,9 @@ router.put('/registry/teams/:id', updateTeam);
 // --- ПОЛЬЗОВАТЕЛИ ---
 router.get('/registry/users', getUsers);
 router.post('/registry/users', createUser);
-router.post('/registry/users/import', upload.single('file'), importUsers);
+router.post('/registry/users/check-duplicates', checkUserNameDuplicates);
+router.post('/registry/users/import/preview', upload.single('file'), previewUserImport);
+router.post('/registry/users/import/confirm', confirmUserImport);
 router.put('/registry/users/:id', updateUser);
 
 // --- ФАЙЛЫ (Универсальные маршруты для всех сущностей) ---

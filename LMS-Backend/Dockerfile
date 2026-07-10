@@ -41,7 +41,15 @@ WORKDIR /app
 
 # Сначала копируем только файлы зависимостей
 COPY package*.json ./
-RUN npm install
+
+# Ретраи на сетевые обрывы + жёсткая проверка после установки (см. TR-Backend/Dockerfile —
+# npm иногда падает с "Exit handler never called!" при обрыве сети, но возвращает успешный
+# код выхода, и битый node_modules молча уезжает в прод).
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm install && \
+    node -e "require.resolve('express')"
 
 # Копируем весь остальной код бэкенда
 COPY . .

@@ -19,6 +19,7 @@ import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { AccessFallback } from '../ui/AccessFallback';
+import { ROLES } from '../utils/permissions';
 
 dayjs.locale('ru');
 
@@ -116,7 +117,14 @@ export function GamePage() {
 
   const matchEditAccess = game ? checkMatchEditAccess(game, gameStaffArray) : { hasAccess: false, reason: '' };
 
-  const canView = checkAccess('MATCH_PAGE_VIEW', { gameStaff: gameStaffArray });
+  // Матчи вне лиг (division_id отсутствует — товарищеские/внешние турниры, которые
+  // команды создают сами в Team-Room) — доступ только у глобального админа,
+  // даже на просмотр. Судьи/секретари/медиа лиги сюда вообще не должны попадать.
+  const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN;
+  const isLeaguelessGame = !!game && !game.division_id;
+  const canView = isLeaguelessGame
+    ? isGlobalAdmin
+    : checkAccess('MATCH_PAGE_VIEW', { gameStaff: gameStaffArray });
   const canEditGameInfo = checkAccess('MATCH_EDIT_INFO');
   
   const baseCanManageStatus = checkAccess('MATCH_STATUS_CHANGE', { gameStaff: gameStaffArray });
@@ -430,7 +438,7 @@ export function GamePage() {
       <Header 
         title="Матч" 
         subtitle={
-          <Link to="/games" className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
+          <Link to={isLeaguelessGame ? "/leagueless-matches" : "/games"} className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
             <Icon name="chevron_left" className="w-4 h-4" /> К списку матчей
           </Link>
         } 

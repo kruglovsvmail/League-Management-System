@@ -14,6 +14,68 @@ const generateVirtualCode = () => {
     return result;
 };
 
+// Поиск существующих пользователей с совпадающей Фамилией+Именем (без учёта
+// регистра, без учёта Отчества — намеренно, чтобы не пропустить тёзку без
+// заполненного отчества в базе). НЕ блокирует создание — база как позволяла,
+// так и позволяет полных тёзок; это только предупреждение для админа.
+// candidates: [{ first_name, last_name }] — возвращает плоский список найденных
+// совпадений с полем query_idx (0-based), указывающим на индекс в candidates,
+// т.к. одно и то же ФИО может встретиться в кандидатах несколько раз (импорт).
+const findNameDuplicates = async (clientOrPool, candidates) => {
+    if (!candidates.length) return [];
+    const firstNames = candidates.map(c => c.first_name || '');
+    const lastNames = candidates.map(c => c.last_name || '');
+
+    const { rows } = await clientOrPool.query(`
+        SELECT
+            (q.idx - 1)::int AS query_idx,
+            u.id, u.first_name, u.last_name, u.middle_name,
+            u.birth_date, u.phone, u.virtual_code,
+            COALESCE(
+                (SELECT json_agg(t.name ORDER BY t.name)
+                   FROM "public"."team_members" tm
+                   JOIN "public"."teams" t ON t.id = tm.team_id
+                  WHERE tm.user_id = u.id),
+                '[]'
+            ) AS teams
+        FROM unnest($1::text[], $2::text[]) WITH ORDINALITY AS q(first_name, last_name, idx)
+        JOIN "public"."users" u
+          ON LOWER(u.first_name) = LOWER(q.first_name)
+         AND LOWER(u.last_name)  = LOWER(q.last_name)
+        ORDER BY q.idx
+    `, [firstNames, lastNames]);
+
+    return rows;
+};
+
+// Проверка дублей по ФИ для формы ручного добавления одного пользователя.
+// body: { candidates: [{ first_name, last_name }] }
+export const checkUserNameDuplicates = async (req, res) => {
+    try {
+        const candidates = Array.isArray(req.body?.candidates) ? req.body.candidates : [];
+        if (!candidates.length) return res.json({ success: true, matches: {} });
+
+        const rows = await findNameDuplicates(pool, candidates.map(c => ({
+            first_name: c.first_name || '', last_name: c.last_name || '',
+        })));
+
+        const matches = {};
+        rows.forEach(r => {
+            const key = String(r.query_idx);
+            if (!matches[key]) matches[key] = [];
+            matches[key].push({
+                id: r.id, first_name: r.first_name, last_name: r.last_name, middle_name: r.middle_name,
+                birth_date: r.birth_date, phone: r.phone, virtual_code: r.virtual_code, teams: r.teams,
+            });
+        });
+
+        res.json({ success: true, matches });
+    } catch (err) {
+        console.error('Ошибка проверки дублей по ФИ:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+
 // --- ВСПОМОГАТЕЛЬНАЯ КАРТА ФАЙЛОВ ---
 const FILE_MAP = {
     'arenas:logo': ['arenas', 'logo_url'],
@@ -465,13 +527,15 @@ export const deleteRegistryFile = async (req, res) => {
 // ==========================================
 //               ИМПОРТ ИЗ EXCEL
 // ==========================================
-export const importUsers = async (req, res) => {
-    const client = await pool.connect();
+// Шаг 1/2 импорта: парсит Excel и подбирает совпадения по ФИ для каждой строки,
+// НИЧЕГО не пишет в базу. Фронт показывает ревью (тёзки — на explicit решение
+// Добавить/Пропустить по каждой), затем шлёт финальный список в confirmUserImport.
+export const previewUserImport = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
 
         const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
-        
+
         let rawRows = [];
         for (const sheetName of workbook.SheetNames) {
             const sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
@@ -482,21 +546,21 @@ export const importUsers = async (req, res) => {
         }
 
         if (!rawRows || rawRows.length === 0) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Excel файл пуст (нет строк с данными).' 
+            return res.status(400).json({
+                success: false,
+                error: 'Excel файл пуст (нет строк с данными).'
             });
         }
 
         const firstRowKeys = Object.keys(rawRows[0]).map(k => k.toLowerCase().trim());
-        const hasValidHeaders = firstRowKeys.some(k => 
+        const hasValidHeaders = firstRowKeys.some(k =>
             k === 'имя' || k === 'first_name' || k === 'фамилия' || k === 'last_name'
         );
 
         if (!hasValidHeaders) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'В первой строке файла не найдены правильные заголовки.' 
+            return res.status(400).json({
+                success: false,
+                error: 'В первой строке файла не найдены правильные заголовки.'
             });
         }
 
@@ -508,11 +572,7 @@ export const importUsers = async (req, res) => {
             return cleanRow;
         });
 
-        let importedCount = 0;
-        await client.query('BEGIN');
-
-        for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-            const row = rows[rowIdx];
+        const parsedRows = rows.map(row => {
             const firstName = row['Имя'] || row['first_name'] || 'БезИмени';
             const lastName = row['Фамилия'] || row['last_name'] || 'БезФамилии';
             const middleName = row['Отчество'] || row['middle_name'] || null;
@@ -522,7 +582,7 @@ export const importUsers = async (req, res) => {
 
             const rawBirthDate = row['Дата рождения'] || row['birth_date'] || null;
             let parsedBirthDate = null;
-            
+
             if (rawBirthDate) {
                 if (typeof rawBirthDate === 'number') {
                     const d = new Date(Math.round((rawBirthDate - 25569) * 86400 * 1000));
@@ -547,38 +607,95 @@ export const importUsers = async (req, res) => {
             const rawWeight = row['Вес'] || row['weight'] || null;
             const parsedWeight = rawWeight ? parseInt(String(rawWeight).replace(/\D/g, ''), 10) : null;
 
-            let virtual_code = isVirtual ? generateVirtualCode() : null;
+            return {
+                first_name: firstName,
+                last_name: lastName,
+                middle_name: middleName,
+                email: email || null,
+                phone: phone ? String(phone) : null,
+                is_virtual: isVirtual,
+                birth_date: parsedBirthDate,
+                height: parsedHeight || null,
+                weight: parsedWeight || null,
+            };
+        });
+
+        const dupRows = await findNameDuplicates(pool, parsedRows.map(r => ({
+            first_name: r.first_name, last_name: r.last_name,
+        })));
+        const matchesByIdx = {};
+        dupRows.forEach(r => {
+            const key = String(r.query_idx);
+            if (!matchesByIdx[key]) matchesByIdx[key] = [];
+            matchesByIdx[key].push({
+                id: r.id, first_name: r.first_name, last_name: r.last_name, middle_name: r.middle_name,
+                birth_date: r.birth_date, phone: r.phone, virtual_code: r.virtual_code, teams: r.teams,
+            });
+        });
+
+        const resultRows = parsedRows.map((row, idx) => ({
+            ...row,
+            matches: matchesByIdx[String(idx)] || [],
+        }));
+
+        res.json({ success: true, rows: resultRows });
+    } catch (err) {
+        console.error('Ошибка предпросмотра импорта:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера при разборе файла' });
+    }
+};
+
+// Шаг 2/2 импорта: принимает уже разобранный и отревьюженный на фронте список
+// строк (только те, что реально нужно создать — новые + подтверждённые тёзки)
+// и вставляет их одной транзакцией, как раньше делал одношаговый importUsers.
+export const confirmUserImport = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (!rows.length) {
+            client.release();
+            return res.status(400).json({ success: false, error: 'Нет строк для импорта' });
+        }
+
+        let importedCount = 0;
+        await client.query('BEGIN');
+
+        for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+            const row = rows[rowIdx];
+            let email = row.email;
             let needsEmailUpdate = false;
 
-            if (!email || email.trim() === '') {
+            if (!email || String(email).trim() === '') {
                 email = `temp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@users.lms`;
-                needsEmailUpdate = true; 
+                needsEmailUpdate = true;
             }
+
+            const virtual_code = row.is_virtual ? generateVirtualCode() : null;
 
             let result;
             try {
                 result = await client.query(
                     `INSERT INTO users (first_name, last_name, middle_name, email, phone, virtual_code, birth_date, height, weight)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-                    [firstName, lastName, middleName, email, phone ? String(phone) : null, virtual_code, parsedBirthDate, parsedHeight || null, parsedWeight || null]
+                    [row.first_name, row.last_name, row.middle_name || null, email, row.phone || null, virtual_code, row.birth_date || null, row.height || null, row.weight || null]
                 );
             } catch (insertErr) {
                 insertErr._rowNum = rowIdx;
-                insertErr._phone = phone ? String(phone) : '';
+                insertErr._phone = row.phone || '';
                 throw insertErr;
             }
-            
+
             const newId = result.rows[0].id;
 
             if (needsEmailUpdate) {
                 const now = new Date();
                 const pad = (n) => String(n).padStart(2, '0');
                 const dateStr = `${pad(now.getDate())}${pad(now.getMonth() + 1)}${now.getFullYear()}${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-                
+
                 const finalEmail = `${dateStr}_${newId}@users.lms`;
                 await client.query('UPDATE users SET email = $1 WHERE id = $2', [finalEmail, newId]);
             }
-            
+
             importedCount++;
         }
 
@@ -588,10 +705,10 @@ export const importUsers = async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         if (err.constraint === 'users_phone_unique') {
-            return res.status(400).json({ success: false, error: `Строка ${(err._rowNum || 0) + 2}: номер телефона ${err._phone || ''} уже зарегистрирован в системе. Импорт отменён.` });
+            return res.status(400).json({ success: false, error: `Строка ${(err._rowNum || 0) + 1}: номер телефона ${err._phone || ''} уже зарегистрирован в системе. Импорт отменён.` });
         }
         if (err.constraint === 'users_email_key') {
-            return res.status(400).json({ success: false, error: `Строка ${(err._rowNum || 0) + 2}: email уже зарегистрирован в системе. Импорт отменён.` });
+            return res.status(400).json({ success: false, error: `Строка ${(err._rowNum || 0) + 1}: email уже зарегистрирован в системе. Импорт отменён.` });
         }
         res.status(500).json({ success: false, error: err.message });
     } finally {

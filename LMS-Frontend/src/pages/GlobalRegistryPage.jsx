@@ -12,6 +12,8 @@ import { Switch } from '../ui/Switch';
 import { Badge } from '../ui/Badge';
 import { Loader } from '../ui/Loader';
 import { getImageUrl, getToken } from '../utils/helpers';
+import { UserDuplicateWarningModal } from '../modals/UserDuplicateWarningModal';
+import { UserImportReviewModal } from '../modals/UserImportReviewModal';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -83,6 +85,12 @@ export function GlobalRegistryPage() {
 
   const fileImportRef = useRef(null);
   const [isImporting, setIsImporting] = useState(false);
+
+  // Предупреждение о тёзке при ручном добавлении: { payload, matches } | null
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
+  // Ревью перед подтверждением импорта: массив строк из /import/preview | null
+  const [importPreviewRows, setImportPreviewRows] = useState(null);
+  const [isConfirmingImport, setIsConfirmingImport] = useState(false);
 
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -285,30 +293,32 @@ export function GlobalRegistryPage() {
     } catch (err) { console.error('Ошибка очистки:', err); }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const buildPayload = () => {
     let payload = { ...formData };
 
     if (activeTab === 1 && formData.uiLeague) {
       payload.league_id = parseInt(formData.uiLeague.split(' - ')[0]);
     }
 
-    if (activeTab === 3) { 
+    if (activeTab === 3) {
       payload.height = formData.height ? parseInt(formData.height, 10) : null;
       payload.weight = formData.weight ? parseInt(formData.weight, 10) : null;
       payload.phone = formData.phone ? '+7' + formData.phone : null;
-      
+
       if (formData.birth_date && formData.birth_date.length === 10) {
         payload.birth_date = formData.birth_date.split('-').reverse().join('-');
       } else {
         payload.birth_date = null;
       }
     }
+    return payload;
+  };
 
+  const performSave = async (payload) => {
     setIsLoading(true);
     const endpoints = ['leagues', 'seasons', 'teams', 'users', 'arenas'];
-    const url = selectedItem 
-      ? `${API_BASE}/api/registry/${endpoints[activeTab]}/${selectedItem.id}` 
+    const url = selectedItem
+      ? `${API_BASE}/api/registry/${endpoints[activeTab]}/${selectedItem.id}`
       : `${API_BASE}/api/registry/${endpoints[activeTab]}`;
 
     try {
@@ -318,10 +328,10 @@ export function GlobalRegistryPage() {
         body: JSON.stringify(payload)
       });
       const json = await res.json();
-      
+
       if (json.success) {
         const entityId = selectedItem ? selectedItem.id : json.id;
-        const fileTasks = []; 
+        const fileTasks = [];
 
         if (logoFile) fileTasks.push(uploadFileS3(entityId, 'logo', logoFile));
         else if (clearedFiles.has('logo') && selectedItem?.logo_url) fileTasks.push(clearFileS3(entityId, 'logo'));
@@ -337,8 +347,9 @@ export function GlobalRegistryPage() {
 
         await Promise.all(fileTasks);
 
-        fetchData(1, true); 
+        fetchData(1, true);
         resetForm();
+        setDuplicateWarning(null);
       } else {
         alert(`Ошибка сервера: ${json.error}`);
       }
@@ -346,6 +357,38 @@ export function GlobalRegistryPage() {
     setIsLoading(false);
   };
 
+  // Перед СОЗДАНИЕМ нового пользователя (не при редактировании) проверяем
+  // совпадение по Фамилии+Имени — не блокирует, только предупреждает: если
+  // нашли тёзку, тормозим сохранение и показываем сравнение вместо прямого
+  // сабмита. При редактировании и при добавлении в остальные разделы (лиги,
+  // сезоны, команды, арены) проверка не нужна.
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const payload = buildPayload();
+
+    if (activeTab === 3 && !selectedItem && formData.last_name?.trim() && formData.first_name?.trim()) {
+      try {
+        const dupRes = await fetch(`${API_BASE}/api/registry/users/check-duplicates`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ candidates: [{ first_name: formData.first_name, last_name: formData.last_name }] })
+        });
+        const dupJson = await dupRes.json();
+        const matches = dupJson?.success ? (dupJson.matches?.['0'] || []) : [];
+        if (matches.length > 0) {
+          setDuplicateWarning({ payload, matches });
+          return;
+        }
+      } catch (err) {
+        // Проверка не удалась — не блокируем создание пользователя из-за сетевой ошибки.
+      }
+    }
+
+    await performSave(payload);
+  };
+
+  // Шаг 1/2: только разбор файла + подбор тёзок по ФИ, в базу ничего не пишем.
+  // Дальше — ревью в UserImportReviewModal, коммит происходит в handleConfirmImport.
   const handleImportExcel = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -355,16 +398,15 @@ export function GlobalRegistryPage() {
     fd.append('file', file);
 
     try {
-      const res = await fetch(`${API_BASE}/api/registry/users/import`, {
+      const res = await fetch(`${API_BASE}/api/registry/users/import/preview`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${getToken()}` },
         body: fd
       });
       const json = await res.json();
-      
+
       if (json.success) {
-        alert(json.message);
-        fetchData(1, true); 
+        setImportPreviewRows(json.rows);
       } else {
         alert(`Ошибка импорта: ${json.error}`);
       }
@@ -373,6 +415,32 @@ export function GlobalRegistryPage() {
     } finally {
       setIsImporting(false);
       if (fileImportRef.current) fileImportRef.current.value = '';
+    }
+  };
+
+  // Шаг 2/2: отправляем только финальный список строк, отревьюженный в модалке
+  // (новые без совпадений + тёзки, явно подтверждённые админом).
+  const handleConfirmImport = async (finalRows) => {
+    setIsConfirmingImport(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/registry/users/import/confirm`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ rows: finalRows })
+      });
+      const json = await res.json();
+
+      if (json.success) {
+        alert(json.message);
+        setImportPreviewRows(null);
+        fetchData(1, true);
+      } else {
+        alert(`Ошибка импорта: ${json.error}`);
+      }
+    } catch (err) {
+      alert('Ошибка сети при импорте файла');
+    } finally {
+      setIsConfirmingImport(false);
     }
   };
 
@@ -749,6 +817,23 @@ export function GlobalRegistryPage() {
           </div>
         </div>
       </div>
+
+      <UserDuplicateWarningModal
+        isOpen={!!duplicateWarning}
+        onClose={() => setDuplicateWarning(null)}
+        newUser={formData}
+        matches={duplicateWarning?.matches || []}
+        isSaving={isLoading}
+        onConfirm={() => performSave(duplicateWarning.payload)}
+      />
+
+      <UserImportReviewModal
+        isOpen={!!importPreviewRows}
+        rows={importPreviewRows || []}
+        onClose={() => setImportPreviewRows(null)}
+        onConfirm={handleConfirmImport}
+        isSaving={isConfirmingImport}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { DisqualificationsPage } from './pages/DisqualificationsPage';
 import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
 import { TeamManagementPage } from './pages/TeamManagementPage';
 import { MetricsPage } from './pages/MetricsPage';
+import { LeaguelessMatchesPage } from './pages/LeaguelessMatchesPage';
 import { GamesPage } from './pages/GamesPage';
 import { GamePage } from './pages/GamePage';
 import { GameLiveDesk } from './pages/GameLiveDesk';
@@ -183,6 +184,7 @@ export default function App() {
             <Route path="registry" element={hasAccess(currentUser, selectedLeague, 'GLOBAL_REGISTRY_ACCESS') ? <GlobalRegistryPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="teams" element={hasAccess(currentUser, selectedLeague, 'TEAM_MANAGEMENT_ACCESS') ? <TeamManagementPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="metrics" element={hasAccess(currentUser, selectedLeague, 'METRICS_ACCESS') ? <MetricsPage /> : <Navigate to={defaultRoute} replace />} />
+            <Route path="leagueless-matches" element={hasAccess(currentUser, selectedLeague, 'LEAGUELESS_MATCHES_ACCESS') ? <LeaguelessMatchesPage /> : <Navigate to={defaultRoute} replace />} />
             <Route path="divisions" element={canViewDivisions ? <DivisionsPage /> : <Navigate to="/games" replace />} />
             <Route path="games" element={<GamesPage />} />
             <Route path="handbook" element={<HandbookPage />} />

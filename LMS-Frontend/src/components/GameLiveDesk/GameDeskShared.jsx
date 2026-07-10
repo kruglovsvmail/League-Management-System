@@ -281,6 +281,7 @@ export const CustomSelect = ({ value, onChange, options, className, placeholder 
         value={value}
         onSelect={(val) => onChange({ target: { value: val } })}
         hideEmpty={hideEmpty}
+        emptyLabel={placeholder || undefined}
       />
     </>
   );

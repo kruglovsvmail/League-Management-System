@@ -127,6 +127,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
               {renderNavLink({ name: "Глобальный Реестр", path: "/registry", icon: "registry" })}
               {renderNavLink({ name: "Упр. командой", path: "/teams", icon: "team" })}
               {renderNavLink({ name: "Метрика", path: "/metrics", icon: "metrics" })}
+              {renderNavLink({ name: "Матчи вне лиг", path: "/leagueless-matches", icon: "matches" })}
             </div>
           )}
         </nav>
