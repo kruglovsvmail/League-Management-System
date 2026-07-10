@@ -152,7 +152,7 @@ export function LeaguelessMatchesPage() {
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
       <Header
-        title="Матчи вне лиг"
+        title="Внешние матчи"
         subtitle={<span className="text-[13px] text-graphite-light font-medium">Всего найдено: {total}</span>}
         actions={
           <div className="flex items-center gap-4">
