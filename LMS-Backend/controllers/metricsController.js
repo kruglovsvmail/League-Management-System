@@ -54,10 +54,28 @@ export const getSummary = async (req, res) => {
   }
 };
 
-// ── GET /api/metrics/top-users?limit=20 ──────────────────────────────────
+// ── GET /api/metrics/top-users?page=1&search=иванов ──────────────────────
+// Постраничный список активных пользователей (15 на страницу) с поиском по имени/фамилии.
 export const getTopUsers = async (req, res) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const PAGE_SIZE = 15;
+    const pageNum = Math.max(1, Number(req.query.page) || 1);
+    const search = (req.query.search || '').trim();
+
+    // Один и тот же фильтр для подсчёта страниц и для выборки данных
+    const searchWhere = `($1 = '' OR u.first_name ILIKE '%' || $1 || '%' OR u.last_name ILIKE '%' || $1 || '%'
+                          OR (u.first_name || ' ' || u.last_name) ILIKE '%' || $1 || '%'
+                          OR (u.last_name || ' ' || u.first_name) ILIKE '%' || $1 || '%')`;
+
+    const countRes = await pool.query(
+      `SELECT COUNT(DISTINCT u.id) AS total
+       FROM page_visits pv
+       JOIN users u ON u.id = pv.user_id
+       WHERE ${searchWhere}`,
+      [search]
+    );
+    const total = Number(countRes.rows[0].total);
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
     const { rows } = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.avatar_url,
@@ -65,15 +83,19 @@ export const getTopUsers = async (req, res) => {
               MAX(pv.last_visited_at) AS last_visited_at
        FROM page_visits pv
        JOIN users u ON u.id = pv.user_id
+       WHERE ${searchWhere}
        GROUP BY u.id, u.first_name, u.last_name, u.avatar_url
        ORDER BY total_visits DESC
-       LIMIT $1`,
-      [limit]
+       LIMIT $2 OFFSET $3`,
+      [search, PAGE_SIZE, (pageNum - 1) * PAGE_SIZE]
     );
 
     res.json({
       success: true,
       users: rows.map((r) => ({ ...r, total_visits: Number(r.total_visits) })),
+      total,
+      totalPages,
+      page: pageNum,
     });
   } catch (err) {
     console.error('Ошибка в metricsController.getTopUsers:', err);
@@ -173,31 +195,136 @@ export const getDaily = async (req, res) => {
       };
     });
 
-    // Суммарные линии по дате (для счётчика пика), отдельно для визитов и уникальных
-    const sumByDate = (field) => dates.map((d) =>
-      rows.filter((r) => toDateStr(r.visit_date) === d).reduce((sum, r) => sum + Number(r[field]), 0)
-    );
-    const totalsVisits = sumByDate('visit_count');
-    const totalsUnique = sumByDate('unique_count');
+    // Итоги за отображаемый период. Визиты — простая сумма.
+    // Уникальные считаем по сырой таблице page_visits_daily_seen (user_id + дата + раздел):
+    // суммировать unique_count из page_visits_daily нельзя — один человек, зашедший в несколько
+    // разделов (или в несколько дней), задвоился бы, и итог превышал бы реальное число людей.
+    const totalVisits = rows.reduce((sum, r) => sum + Number(r.visit_count), 0);
 
-    const peakOf = (totals) => {
-      let peak = { date: null, count: 0 };
-      totals.forEach((count, idx) => {
-        if (count > peak.count) peak = { date: dates[idx], count };
-      });
-      return peak;
-    };
+    const uniqueRes = await pool.query(
+      `SELECT COUNT(DISTINCT user_id) AS unique_users
+       FROM page_visits_daily_seen
+       WHERE visit_date >= $1 AND visit_date <= $2
+         AND ($3::text = 'all' OR page = $3)`,
+      [startStr, endStr, page]
+    );
 
     res.json({
       success: true,
       dates,
       series,
-      totals: { visits: totalsVisits, unique: totalsUnique },
-      peak: { visits: peakOf(totalsVisits), unique: peakOf(totalsUnique) },
+      range_totals: {
+        visits: totalVisits,
+        unique_users: Number(uniqueRes.rows[0].unique_users),
+      },
     });
   } catch (err) {
     console.error('Ошибка в metricsController.getDaily:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке графика посещений' });
+  }
+};
+
+// ── GET /api/metrics/audience ────────────────────────────────────────────
+// Сводка по аудитории из трёх частей:
+// 1) Аккаунты — сколько всего в базе (только status='active'), из них активированных
+//    (password_hash задан: сам зарегистрировался или заклеймил профиль) и виртуальных
+//    (создан менеджером, человек ещё не пришёл).
+// 2) DAU/WAU/MAU — уникальные посетители за сегодня / 7 дней / 30 дней + прилипчивость.
+// 3) Охват — сколько игроков команд реально пользуются Team-Room.
+export const getAudience = async (req, res) => {
+  try {
+    const pct = (part, total) => (total > 0 ? Math.round((part / total) * 1000) / 10 : 0);
+
+    const accountsRes = await pool.query(
+      `SELECT
+         COUNT(*) AS total,
+         COUNT(*) FILTER (WHERE password_hash IS NOT NULL) AS activated,
+         COUNT(*) FILTER (WHERE password_hash IS NULL) AS virtual
+       FROM users
+       WHERE status = 'active'`
+    );
+    const acc = accountsRes.rows[0];
+    const accounts = {
+      total: Number(acc.total),
+      activated: Number(acc.activated),
+      virtual: Number(acc.virtual),
+      activated_pct: pct(Number(acc.activated), Number(acc.total)),
+      virtual_pct: pct(Number(acc.virtual), Number(acc.total)),
+    };
+
+    const activityRes = await pool.query(
+      `SELECT
+         COUNT(DISTINCT user_id) FILTER (WHERE visit_date = CURRENT_DATE) AS dau,
+         COUNT(DISTINCT user_id) FILTER (WHERE visit_date >= CURRENT_DATE - 6) AS wau,
+         COUNT(DISTINCT user_id) AS mau
+       FROM page_visits_daily_seen
+       WHERE visit_date >= CURRENT_DATE - 29`
+    );
+    const act = activityRes.rows[0];
+    const activity = {
+      dau: Number(act.dau),
+      wau: Number(act.wau),
+      mau: Number(act.mau),
+      stickiness_pct: pct(Number(act.dau), Number(act.mau)),
+    };
+
+    const coverageRes = await pool.query(
+      `SELECT
+         COUNT(DISTINCT tm.user_id) AS total_players,
+         COUNT(DISTINCT tm.user_id) FILTER (WHERE pv.user_id IS NOT NULL) AS ever_visited,
+         COUNT(DISTINCT tm.user_id) FILTER (WHERE pv.last_visit >= NOW() - INTERVAL '30 days') AS active_30d
+       FROM team_members tm
+       LEFT JOIN (
+         SELECT user_id, MAX(last_visited_at) AS last_visit
+         FROM page_visits
+         GROUP BY user_id
+       ) pv ON pv.user_id = tm.user_id
+       WHERE tm.left_at IS NULL`
+    );
+    const cov = coverageRes.rows[0];
+    const coverage = {
+      total_players: Number(cov.total_players),
+      ever_visited: Number(cov.ever_visited),
+      ever_pct: pct(Number(cov.ever_visited), Number(cov.total_players)),
+      active_30d: Number(cov.active_30d),
+      active_30d_pct: pct(Number(cov.active_30d), Number(cov.total_players)),
+    };
+
+    res.json({ success: true, accounts, activity, coverage });
+  } catch (err) {
+    console.error('Ошибка в metricsController.getAudience:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке сводки аудитории' });
+  }
+};
+
+// ── GET /api/metrics/engagement ──────────────────────────────────────────
+// Глубина использования: сколько пользователей задействуют 1, 2, 3 или все 4 раздела приложения.
+export const getEngagement = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sections_count, COUNT(*) AS user_count
+       FROM (
+         SELECT user_id, COUNT(DISTINCT page) AS sections_count
+         FROM page_visits
+         GROUP BY user_id
+       ) t
+       GROUP BY sections_count
+       ORDER BY sections_count`
+    );
+
+    const plural = (n) => (n === 1 ? 'раздел' : n >= 2 && n <= 4 ? 'раздела' : 'разделов');
+
+    res.json({
+      success: true,
+      distribution: rows.map((r) => ({
+        sections: Number(r.sections_count),
+        label: `${r.sections_count} ${plural(Number(r.sections_count))}`,
+        user_count: Number(r.user_count),
+      })),
+    });
+  } catch (err) {
+    console.error('Ошибка в metricsController.getEngagement:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке глубины использования' });
   }
 };
 

@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
-import { getSummary, getTopUsers, getUserDetail, getDaily, getPushStats } from '../controllers/metricsController.js';
+import { getSummary, getTopUsers, getUserDetail, getDaily, getPushStats, getEngagement, getAudience } from '../controllers/metricsController.js';
 
 const router = express.Router();
 
@@ -12,5 +12,7 @@ router.get('/metrics/top-users', getTopUsers);
 router.get('/metrics/user/:userId', getUserDetail);
 router.get('/metrics/daily', getDaily);
 router.get('/metrics/push', getPushStats);
+router.get('/metrics/engagement', getEngagement);
+router.get('/metrics/audience', getAudience);
 
 export default router;

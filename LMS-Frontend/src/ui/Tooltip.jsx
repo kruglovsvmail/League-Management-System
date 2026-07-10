@@ -1,27 +1,49 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-export function Tooltip({ children, logo, title, subtitle, position = 'top', noUnderline = false }) {
+export function Tooltip({ children, logo, title, subtitle, position = 'top', noUnderline = false, trigger = 'hover' }) {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: -9999, left: -9999 });
-  
+
   const triggerRef = useRef(null);
   const tooltipRef = useRef(null);
   const timerRef = useRef(null); // Реф для таймера задержки
 
+  const isClickMode = trigger === 'click';
+
   // --- НАСТРОЙКА 1: ЗАДЕРЖКА ПОЯВЛЕНИЯ ---
   // 300 мс — оптимальное время, чтобы отсечь случайные проведения мышкой
   const handleMouseEnter = () => {
+    if (isClickMode) return;
     timerRef.current = setTimeout(() => {
       setIsVisible(true);
-    }, 500); 
+    }, 500);
   };
 
   // Если мышка ушла с элемента до истечения 300мс — отменяем появление
   const handleMouseLeave = () => {
+    if (isClickMode) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     setIsVisible(false);
   };
+
+  // Режим клика: тултип открывается/закрывается по клику на триггер,
+  // закрывается по клику в любом другом месте страницы
+  const handleClick = () => {
+    if (!isClickMode) return;
+    setIsVisible((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!isClickMode || !isVisible) return;
+    const handleOutside = (e) => {
+      if (triggerRef.current && !triggerRef.current.contains(e.target)) {
+        setIsVisible(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isClickMode, isVisible]);
 
   // Очистка таймера при удалении компонента из DOM
   useEffect(() => {
@@ -78,6 +100,7 @@ export function Tooltip({ children, logo, title, subtitle, position = 'top', noU
       ref={triggerRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onClick={handleClick}
       className="inline-block relative cursor-pointer"
     >
       {/* Если передали noUnderline - выводим без span с пунктиром */}
