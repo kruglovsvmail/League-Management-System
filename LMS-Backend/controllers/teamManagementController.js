@@ -5,15 +5,32 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 export const searchTeams = async (req, res) => {
     try {
         const { q } = req.query;
-        let query = 'SELECT id, name, short_name, city, logo_url FROM teams';
+        // Помимо базовых полей отдаём счётчики для карточек выбора команды:
+        // размер базы/ростера, активные заявки в лиги и последняя активность
+        // участников в Team-Room (максимум page_visits.last_visited_at).
+        let query = `
+            SELECT t.id, t.name, t.short_name, t.city, t.logo_url,
+                (SELECT COUNT(*)::int FROM team_members tm
+                 WHERE tm.team_id = t.id AND tm.left_at IS NULL) AS base_count,
+                (SELECT COUNT(*)::int FROM team_rosters tr
+                 JOIN team_members tm ON tr.member_id = tm.id
+                 WHERE tr.team_id = t.id AND tr.left_at IS NULL AND tm.left_at IS NULL) AS roster_count,
+                (SELECT COUNT(*)::int FROM tournament_teams tt
+                 JOIN divisions d ON tt.division_id = d.id
+                 WHERE tt.team_id = t.id AND tt.status = 'approved'
+                   AND (d.end_date IS NULL OR d.end_date >= NOW())) AS active_apps_count,
+                (SELECT MAX(pv.last_visited_at) FROM page_visits pv
+                 JOIN team_members tm ON tm.user_id = pv.user_id
+                 WHERE tm.team_id = t.id AND tm.left_at IS NULL) AS last_activity
+            FROM teams t`;
         let values = [];
-        
+
         if (q && q !== 'undefined' && q !== 'null') {
-            query += ' WHERE name ILIKE $1 OR city ILIKE $1';
+            query += ' WHERE t.name ILIKE $1 OR t.city ILIKE $1';
             values.push(`%${q}%`);
         }
-        query += ' ORDER BY name ASC LIMIT 20';
-        
+        query += ' ORDER BY t.name ASC LIMIT 20';
+
         const result = await pool.query(query, values);
         res.json({ success: true, data: result.rows });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
@@ -38,8 +55,11 @@ export const getTeamMembers = async (req, res) => {
     try {
         const { teamId } = req.params;
 
+        // is_virtual = у пользователя нет пароля: аккаунт заведён менеджером,
+        // человек ни разу не входил в систему сам (та же логика, что в Метрике)
         const baseRes = await pool.query(`
             SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone, u.birth_date, u.virtual_code,
+                   (u.password_hash IS NULL) as is_virtual,
                    tm.photo_url, tm.joined_at, tm.id as member_id
             FROM team_members tm
             JOIN users u ON tm.user_id = u.id
@@ -49,6 +69,7 @@ export const getTeamMembers = async (req, res) => {
 
         const rosterRes = await pool.query(`
             SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                   (u.password_hash IS NULL) as is_virtual,
                    tm.photo_url, tr.id as roster_id, tr.jersey_number, tr.position, tr.is_captain, tr.is_assistant, tr.joined_at
             FROM team_rosters tr
             JOIN team_members tm ON tr.member_id = tm.id
@@ -58,13 +79,14 @@ export const getTeamMembers = async (req, res) => {
 
         const staffRes = await pool.query(`
             SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone,
+                   (u.password_hash IS NULL) as is_virtual,
                    tm.photo_url, tm.id as member_id, MIN(tr.joined_at) as joined_at,
                    STRING_AGG(tr.role, ', ' ORDER BY tr.role) as roles
             FROM team_roles tr
             JOIN team_members tm ON tr.member_id = tm.id
             JOIN users u ON tm.user_id = u.id
             WHERE tm.team_id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
-            GROUP BY u.id, tm.id, tm.photo_url, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone
+            GROUP BY u.id, tm.id, tm.photo_url, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone, u.password_hash
         `, [teamId]);
 
         res.json({ success: true, base: baseRes.rows, roster: rosterRes.rows, staff: staffRes.rows });

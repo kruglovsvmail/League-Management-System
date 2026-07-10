@@ -160,6 +160,23 @@ export function TeamManagementPage() {
     return new Set(Object.keys(counts).filter(num => counts[num] > 1).map(Number));
   }, [roster, jerseyEdits]);
 
+  // Сводка «здоровья» игрового состава: разбивка по амплуа + предупреждения
+  // о типовых проблемах комплектования (нет капитана/вратаря, дубли номеров)
+  const rosterHealth = useMemo(() => {
+    const goalies = roster.filter(r => r.position === 'goalie').length;
+    const defense = roster.filter(r => r.position === 'defense').length;
+    const forwards = roster.filter(r => r.position === 'forward').length;
+    const noNumber = roster.filter(r => r.jersey_number === null || r.jersey_number === '').length;
+    const warnings = [];
+    if (roster.length > 0) {
+      if (!roster.some(r => r.is_captain)) warnings.push('Нет капитана');
+      if (goalies === 0) warnings.push('Нет вратаря');
+      if (duplicateJerseys.size > 0) warnings.push('Дубли номеров');
+      if (noNumber > 0) warnings.push(`Без номера: ${noNumber}`);
+    }
+    return { goalies, defense, forwards, warnings };
+  }, [roster, duplicateJerseys]);
+
   const autoSavePlayer = async (userId, overrides) => {
     const player = roster.find(r => r.user_id === userId);
     if (!player) return;
@@ -372,7 +389,7 @@ export function TeamManagementPage() {
   const baseColumns = [
     { label: '№', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
     { label: 'Фото', width: 'w-[60px]', render: (r) => ( <div onClick={() => setAvatarModalUser(r)} className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10 cursor-pointer"><img src={getRenderPhoto(r)} className="w-full h-full object-cover" /></div> )},
-    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => setProfileModalUserId(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight block truncate group-hover:text-orange">{r.last_name} {r.first_name}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
+    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => setProfileModalUserId(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight truncate group-hover:text-orange flex items-center gap-1.5">{r.last_name} {r.first_name}{r.is_virtual && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-graphite/10 text-graphite-light shrink-0" title="Аккаунт создан менеджером — человек ни разу не входил в систему">вирт.</span>}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
     { label: 'ID', sortKey: 'member_id', width: 'w-[70px]', render: (r) => <span className="text-[12px] text-graphite/50 font-mono" title="ID в базе данных">{r.member_id}</span> },
     { label: 'Телефон', sortKey: 'phone', width: 'w-[160px]', render: (r) => <span className="text-[13px]">{formatPhone(r.phone)}</span> },
     { label: '', width: 'w-[50px] text-right', render: (r) => ( <button onClick={() => requestRemove(r.user_id, 'base')} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> )}
@@ -381,7 +398,7 @@ export function TeamManagementPage() {
   const rosterColumns = [
     { label: '№', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
     { label: 'Фото', width: 'w-[60px]', render: (r) => ( <div onClick={() => setAvatarModalUser(r)} className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10 cursor-pointer"><img src={getRenderPhoto(r)} className="w-full h-full object-cover" /></div> )},
-    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => setProfileModalUserId(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight block truncate group-hover:text-orange">{r.last_name} {r.first_name}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
+    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => setProfileModalUserId(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight truncate group-hover:text-orange flex items-center gap-1.5">{r.last_name} {r.first_name}{r.is_virtual && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-graphite/10 text-graphite-light shrink-0" title="Аккаунт создан менеджером — человек ни разу не входил в систему">вирт.</span>}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
     { label: 'ID', sortKey: 'roster_id', width: 'w-[70px]', render: (r) => <span className="text-[12px] text-graphite/50 font-mono" title="ID в базе данных">{r.roster_id}</span> },
     { label: 'Амплуа', sortKey: 'position', width: 'w-[140px]', render: (r) => ( <Select options={['Вратарь', 'Защитник', 'Нападающий']} value={POSITION_MAP[r.position]} onChange={(val) => { const newPos = Object.keys(POSITION_MAP).find(k => POSITION_MAP[k] === val); if (newPos && newPos !== r.position) autoSavePlayer(r.user_id, { position: newPos }); }} className="h-8 pl-3 pr-2 bg-white border border-graphite/20" /> )},
     { label: 'Номер', sortKey: 'jersey_number', width: 'w-[80px]', render: (r) => {
@@ -396,7 +413,7 @@ export function TeamManagementPage() {
   const staffColumns = [
     { label: '№', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
     { label: 'Фото', width: 'w-[60px]', render: (r) => ( <div onClick={() => setAvatarModalUser(r)} className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10 cursor-pointer"><img src={getRenderPhoto(r)} className="w-full h-full object-cover" /></div> )},
-    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => setProfileModalUserId(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight block truncate group-hover:text-orange">{r.last_name} {r.first_name}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
+    { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => setProfileModalUserId(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight truncate group-hover:text-orange flex items-center gap-1.5">{r.last_name} {r.first_name}{r.is_virtual && <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-graphite/10 text-graphite-light shrink-0" title="Аккаунт создан менеджером — человек ни разу не входил в систему">вирт.</span>}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
     { label: 'ID', sortKey: 'member_id', width: 'w-[70px]', render: (r) => <span className="text-[12px] text-graphite/50 font-mono" title="ID в базе данных">{r.member_id}</span> },
     { label: 'Роли', sortKey: 'roles', render: (r) => { const activeRoles = r.roles ? r.roles.split(', ') : []; return ( <div className="flex flex-wrap gap-1.5 min-w-[250px]">{ROLES.map(role => ( <span key={role.id} onClick={() => toggleStaffRole(r.user_id, role.id)} className={`cursor-pointer px-2 py-1 text-[11px] font-bold uppercase rounded border ${activeRoles.includes(role.id) ? 'bg-orange/10 border-orange text-orange' : 'text-graphite/50 border-graphite/20'}`}>{role.label}</span> ))}</div> ); }},
     { label: '', width: 'w-[50px] text-right', render: (r) => ( <button onClick={() => requestRemove(r.user_id, 'staff')} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> )}
@@ -414,9 +431,17 @@ export function TeamManagementPage() {
               <span className="font-black text-[16px] leading-tight">{selectedTeam.name}</span>
               {selectedTeam.city && <span className="text-[12px] font-bold text-graphite-light mt-1">{selectedTeam.city}</span>}
             </div>
-            {['base', 'roster', 'staff', 'tournaments'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`text-left px-4 py-3 rounded-md font-bold transition-all ${activeTab === tab ? 'bg-white text-orange shadow-sm' : 'text-graphite-light hover:bg-white/40'}`}>
-                {tab === 'base' ? 'База команды' : tab === 'roster' ? 'Игровой состав' : tab === 'staff' ? 'Персонал (Штаб)' : 'Заявки в лигу'}
+            {[
+              { id: 'base', label: 'База команды', count: base.length },
+              { id: 'roster', label: 'Игровой состав', count: roster.length },
+              { id: 'staff', label: 'Персонал (Штаб)', count: staff.length },
+              { id: 'tournaments', label: 'Заявки в лигу', count: applications.length },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`text-left px-4 py-3 rounded-md font-bold transition-all flex items-center justify-between gap-2 ${activeTab === tab.id ? 'bg-white text-orange shadow-sm' : 'text-graphite-light hover:bg-white/40'}`}>
+                <span>{tab.label}</span>
+                <span className={`text-[12px] font-black px-2 py-0.5 rounded-full shrink-0 ${activeTab === tab.id ? 'bg-orange/10 text-orange' : 'bg-graphite/10 text-graphite-light'}`}>
+                  {tab.count}
+                </span>
               </button>
             ))}
           </div>
@@ -429,11 +454,29 @@ export function TeamManagementPage() {
               {isSearchingTeams ? <Loader text="Поиск..." /> : (
                 <div className="grid grid-cols-2 xl:grid-cols-3 gap-5 mt-6">
                   {teamsList.map(t => (
-                    <div key={t.id} onClick={() => setSelectedTeam(t)} className="flex items-center gap-4 p-5 bg-white rounded-md border cursor-pointer hover:border-orange shadow-sm group">
-                      <img src={getImageUrl(t.logo_url) || '/default/Logo_team_default.webp'} className="w-12 h-12 object-contain" />
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-bold group-hover:text-orange truncate">{t.name}</span>
-                        <span className="text-[12px] text-graphite-light mt-1 truncate">{t.city || 'Город не указан'}</span>
+                    <div key={t.id} onClick={() => setSelectedTeam(t)} className="flex flex-col gap-3 p-5 bg-white rounded-md border cursor-pointer hover:border-orange shadow-sm group">
+                      <div className="flex items-center gap-4">
+                        <img src={getImageUrl(t.logo_url) || '/default/Logo_team_default.webp'} className="w-12 h-12 object-contain shrink-0" />
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold group-hover:text-orange truncate">{t.name}</span>
+                          <span className="text-[12px] text-graphite-light mt-1 truncate">{t.city || 'Город не указан'}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-graphite/10">
+                        <span className="text-[11px] font-bold px-2 py-1 rounded bg-graphite/5 text-graphite-light" title="Игроков в составе / всего в базе">
+                          Состав: {t.roster_count ?? 0} / {t.base_count ?? 0}
+                        </span>
+                        {Number(t.active_apps_count) > 0 && (
+                          <span className="text-[11px] font-bold px-2 py-1 rounded bg-orange/10 text-orange" title="Активные заявки в лиги">
+                            Лиги: {t.active_apps_count}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[11px] font-bold px-2 py-1 rounded ${t.last_activity && dayjs(t.last_activity).isAfter(dayjs().subtract(7, 'day')) ? 'bg-status-accepted/10 text-status-accepted' : 'bg-graphite/5 text-graphite-light'}`}
+                          title="Последний визит участника команды в Team-Room"
+                        >
+                          {t.last_activity ? `Актив: ${dayjs(t.last_activity).format('D MMM')}` : 'Не заходили'}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -465,6 +508,29 @@ export function TeamManagementPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Сводка комплектования состава: амплуа + предупреждения */}
+                {activeTab === 'roster' && roster.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap mb-5 -mt-2">
+                    <span className="text-[12px] font-bold px-2.5 py-1.5 rounded bg-graphite/5 text-graphite">
+                      {roster.length} игроков
+                    </span>
+                    <span className="text-[12px] font-bold px-2.5 py-1.5 rounded bg-graphite/5 text-graphite-light">
+                      Вратари: <b className="text-graphite">{rosterHealth.goalies}</b>
+                    </span>
+                    <span className="text-[12px] font-bold px-2.5 py-1.5 rounded bg-graphite/5 text-graphite-light">
+                      Защитники: <b className="text-graphite">{rosterHealth.defense}</b>
+                    </span>
+                    <span className="text-[12px] font-bold px-2.5 py-1.5 rounded bg-graphite/5 text-graphite-light">
+                      Нападающие: <b className="text-graphite">{rosterHealth.forwards}</b>
+                    </span>
+                    {rosterHealth.warnings.map(w => (
+                      <span key={w} className="text-[12px] font-bold px-2.5 py-1.5 rounded bg-status-rejected/10 text-status-rejected">
+                        ⚠ {w}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {activeTab === 'base' && <Table columns={baseColumns} data={base} />}
                 {activeTab === 'roster' && <Table columns={rosterColumns} data={roster} />}

@@ -162,15 +162,18 @@ export function HandbookPage() {
       </div>
     )},
     { label: 'Дата рождения', sortKey: 'birth_date', width: 'w-[200px] text-center', render: (row) => <span className="text-graphite-light">{row.birth_date ? new Date(row.birth_date).toLocaleDateString('ru-RU') : '-'}</span> },
-    { label: 'Последняя команда', sortKey: 'last_team_name', width: 'w-[260px] text-center', render: (row) => {
-      if (!row.last_team_logo && !row.last_team_name) return <span className="text-graphite-light">-</span>;
+    { label: 'Команды', width: 'w-[260px] text-center', render: (row) => {
+      const teams = row.current_teams || [];
+      if (teams.length === 0) return <span className="text-graphite-light">-</span>;
       return (
-        <div className="flex justify-center">
-          <Tooltip title={row.last_team_name || 'Неизвестная команда'} subtitle={row.last_team_city || ''}>
-            <div className="w-[50px] h-[50px] flex items-center justify-center p-1 rounded-md cursor-help">
-              <img src={getImageUrl(row.last_team_logo || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="logo" />
-            </div>
-          </Tooltip>
+        <div className="flex justify-center items-center gap-1.5 flex-wrap">
+          {teams.map((t) => (
+            <Tooltip key={t.id} title={t.name} subtitle={t.city || ''} noUnderline>
+              <div className="w-[50px] h-[50px] flex items-center justify-center p-1 rounded-md cursor-help">
+                <img src={getImageUrl(t.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="logo" />
+              </div>
+            </Tooltip>
+          ))}
         </div>
       );
     }},
@@ -199,6 +202,25 @@ export function HandbookPage() {
     { label: 'Название', sortKey: 'name', width: 'w-[400px]', render: (row) => <span className="font-semibold text-graphite">{row.name}</span> },
     { label: 'Город', sortKey: 'city', width: 'w-[200px]', render: (row) => <span className="text-graphite">{row.city}</span> },
     { label: 'Адрес', sortKey: 'address', width: 'w-[300px]', render: (row) => <span className="text-graphite-light">{row.address || '-'}</span> },
+    { label: 'Карта', width: 'w-[80px] text-center', render: (row) => {
+      if (!row.address && !row.city) return <span className="text-graphite-light">-</span>;
+      const query = encodeURIComponent([row.city, row.address].filter(Boolean).join(', '));
+      return (
+        <a
+          href={`https://yandex.ru/maps/?text=${query}`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-graphite/40 hover:text-orange hover:bg-orange/10 transition-colors"
+          title="Открыть на Яндекс.Картах"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
+        </a>
+      );
+    }},
   ];
 
   const getColumns = () => {

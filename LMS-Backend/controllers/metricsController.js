@@ -132,10 +132,15 @@ export const getUserDetail = async (req, res) => {
   }
 };
 
-// ── GET /api/metrics/daily?page=all&range=week|month|custom&from=&to= ────
+// ── GET /api/metrics/daily?page=all|total|<раздел>&range=week|month|custom&from=&to= ────
+// page='all' — четыре линии разделов + пятая суммарная «Общие»;
+// page='total' — только суммарная линия «Общие»;
+// page=<раздел> — одна линия конкретного раздела.
 export const getDaily = async (req, res) => {
   try {
     const page = req.query.page || 'all';
+    // Для SQL-фильтров «Общие» эквивалентны «все разделы» — отличается только сборка серий
+    const pageFilter = page === 'total' ? 'all' : page;
     const { from, to } = req.query;
 
     let startDate, endDate;
@@ -170,7 +175,7 @@ export const getDaily = async (req, res) => {
        WHERE visit_date >= $1 AND visit_date <= $2
          AND ($3::text = 'all' OR page = $3)
        ORDER BY visit_date ASC`,
-      [startStr, endStr, page]
+      [startStr, endStr, pageFilter]
     );
 
     // Строим полный список дат (включая нулевые дни без визитов)
@@ -181,7 +186,8 @@ export const getDaily = async (req, res) => {
       dates.push(toDateStr(d));
     }
 
-    const pagesInvolved = page === 'all' ? Object.keys(PAGE_LABELS) : [page];
+    // 'total' — только суммарная линия, разделы не строим
+    const pagesInvolved = page === 'all' ? Object.keys(PAGE_LABELS) : page === 'total' ? [] : [page];
 
     const series = pagesInvolved.map((p) => {
       const pageRows = rows.filter((r) => r.page === p);
@@ -195,6 +201,34 @@ export const getDaily = async (req, res) => {
       };
     });
 
+    // Суммарная линия «Общие»: при «Все разделы» — пятой к разделам, при 'total' — единственной.
+    // Визиты — сумма по разделам за день. Уникальные — честный COUNT(DISTINCT user_id) за день по
+    // сырой таблице page_visits_daily_seen: складывать unique_count разделов нельзя,
+    // один человек в нескольких разделах за день задвоился бы (та же ловушка, что была с «пиком»).
+    if (page === 'all' || page === 'total') {
+      const visitsByDate = new Map();
+      rows.forEach((r) => {
+        const key = toDateStr(r.visit_date);
+        visitsByDate.set(key, (visitsByDate.get(key) || 0) + Number(r.visit_count));
+      });
+
+      const dailyUniqueRes = await pool.query(
+        `SELECT visit_date, COUNT(DISTINCT user_id) AS uniq
+         FROM page_visits_daily_seen
+         WHERE visit_date >= $1 AND visit_date <= $2
+         GROUP BY visit_date`,
+        [startStr, endStr]
+      );
+      const uniqueByDate = new Map(dailyUniqueRes.rows.map((r) => [toDateStr(r.visit_date), Number(r.uniq)]));
+
+      series.push({
+        page: 'total',
+        label: 'Общие',
+        visits: dates.map((d) => visitsByDate.get(d) || 0),
+        unique: dates.map((d) => uniqueByDate.get(d) || 0),
+      });
+    }
+
     // Итоги за отображаемый период. Визиты — простая сумма.
     // Уникальные считаем по сырой таблице page_visits_daily_seen (user_id + дата + раздел):
     // суммировать unique_count из page_visits_daily нельзя — один человек, зашедший в несколько
@@ -206,7 +240,7 @@ export const getDaily = async (req, res) => {
        FROM page_visits_daily_seen
        WHERE visit_date >= $1 AND visit_date <= $2
          AND ($3::text = 'all' OR page = $3)`,
-      [startStr, endStr, page]
+      [startStr, endStr, pageFilter]
     );
 
     res.json({

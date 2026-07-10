@@ -13,6 +13,8 @@ export const getLeaguelessGames = async (req, res) => {
     const offset = (page - 1) * limit;
     const { gameType, status, search } = req.query;
 
+    const { from, to } = req.query;
+
     const conditions = ['g.division_id IS NULL'];
     const params = [];
 
@@ -28,6 +30,15 @@ export const getLeaguelessGames = async (req, res) => {
       params.push(`%${search}%`);
       const idx = params.length;
       conditions.push(`(ht.name ILIKE $${idx} OR at.name ILIKE $${idx} OR eo.name ILIKE $${idx})`);
+    }
+    // Фильтр по периоду дат матча (границы включительно, "to" — до конца дня)
+    if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) {
+      params.push(from);
+      conditions.push(`g.game_date >= $${params.length}::date`);
+    }
+    if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      params.push(to);
+      conditions.push(`g.game_date < ($${params.length}::date + INTERVAL '1 day')`);
     }
 
     params.push(limit);
@@ -71,6 +82,34 @@ export const getLeaguelessGames = async (req, res) => {
     });
   } catch (err) {
     console.error('Ошибка получения списка матчей вне лиг:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// ── GET /api/leagueless-games/stats ──────────────────────────────────────
+// Сводные счётчики для KPI-полоски раздела: считаются по всем матчам вне лиг,
+// без учёта фильтров таблицы. "Запланировано" включает и ожидающие подтверждения
+// товарищеские (pending). "Сыграно за 30 дней" — по дате матча, включая матчи
+// без внесённого результата.
+export const getLeaguelessStats = async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status = 'finished')::int AS finished,
+        COUNT(*) FILTER (WHERE status = 'finished_no_result')::int AS finished_no_result,
+        COUNT(*) FILTER (WHERE status IN ('scheduled', 'pending'))::int AS scheduled,
+        COUNT(*) FILTER (
+          WHERE status IN ('finished', 'finished_no_result')
+            AND game_date >= NOW() - INTERVAL '30 days'
+        )::int AS played_30d
+      FROM "public"."games"
+      WHERE division_id IS NULL
+    `);
+
+    res.json({ success: true, stats: rows[0] });
+  } catch (err) {
+    console.error('Ошибка получения статистики матчей вне лиг:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 };

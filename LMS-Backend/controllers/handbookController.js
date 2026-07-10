@@ -17,29 +17,26 @@ export const getUsers = async (req, res) => {
       params.push(`%${search}%`);
     }
 
+    // current_teams — команды, в которых пользователь числится прямо сейчас
+    // (team_members без left_at), может быть несколько — для колонки логотипов
     const result = await pool.query(`
-      SELECT 
-          u.id, 
-          u.first_name, 
-          u.last_name, 
-          u.middle_name, 
-          u.birth_date, 
+      SELECT
+          u.id,
+          u.first_name,
+          u.last_name,
+          u.middle_name,
+          u.birth_date,
           u.avatar_url as user_avatar,
           tm_latest.photo_url as tm_photo_url,
-          last_game_team.logo_url as last_team_logo,
-          last_game_team.name as last_team_name,
-          last_game_team.city as last_team_city
+          (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'city', t.city, 'logo_url', t.logo_url) ORDER BY t.name)
+           FROM team_members tm
+           JOIN teams t ON t.id = tm.team_id
+           WHERE tm.user_id = u.id AND tm.left_at IS NULL) as current_teams
       FROM users u
       LEFT JOIN (
           SELECT DISTINCT ON (user_id) user_id, photo_url
           FROM team_members WHERE photo_url IS NOT NULL ORDER BY user_id, id DESC
       ) tm_latest ON tm_latest.user_id = u.id
-      LEFT JOIN (
-          SELECT DISTINCT ON (gr.player_id) gr.player_id, t.logo_url, t.name, t.city
-          FROM game_rosters gr
-          JOIN games g ON g.id = gr.game_id JOIN teams t ON t.id = gr.team_id
-          WHERE g.status = 'finished' ORDER BY gr.player_id, g.game_date DESC NULLS LAST
-      ) last_game_team ON last_game_team.player_id = u.id
       ${searchCondition}
       ORDER BY u.last_name, u.first_name
       LIMIT $1 OFFSET $2

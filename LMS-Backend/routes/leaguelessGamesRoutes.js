@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
-import { getLeaguelessGames } from '../controllers/leaguelessGamesController.js';
+import { getLeaguelessGames, getLeaguelessStats } from '../controllers/leaguelessGamesController.js';
 
 const router = express.Router();
 
@@ -8,5 +8,6 @@ const router = express.Router();
 router.use('/leagueless-games', verifyToken, requirePermission('LEAGUELESS_MATCHES_ACCESS'));
 
 router.get('/leagueless-games', getLeaguelessGames);
+router.get('/leagueless-games/stats', getLeaguelessStats);
 
 export default router;

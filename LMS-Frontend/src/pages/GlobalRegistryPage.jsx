@@ -11,6 +11,7 @@ import { DatePicker } from '../ui/DatePicker';
 import { Switch } from '../ui/Switch';
 import { Badge } from '../ui/Badge';
 import { Loader } from '../ui/Loader';
+import { Tooltip } from '../ui/Tooltip';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { UserDuplicateWarningModal } from '../modals/UserDuplicateWarningModal';
 import { UserImportReviewModal } from '../modals/UserImportReviewModal';
@@ -483,7 +484,33 @@ export function GlobalRegistryPage() {
     [ // 3: Users
       { label: 'ID', key: 'id', width: 'w-14' },
       { label: 'Аватар', width: 'w-16', render: (r) => <img src={getCachedImageUrl(r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 bg-black/10 rounded-md object-cover shadow-sm" /> },
-      { label: 'ФИО', render: (r) => <span className="font-bold">{r.last_name} {r.first_name} {r.middle_name || ''}</span> },
+      { label: 'ФИО', render: (r) => (
+        <div className="flex flex-col">
+          <span className="font-bold leading-tight">{r.last_name} {r.first_name}</span>
+          {r.middle_name && <span className="text-[12px] font-medium text-graphite-light leading-tight mt-0.5">{r.middle_name}</span>}
+        </div>
+      )},
+      { label: 'Телефон', width: 'w-36', render: (r) => {
+        if (!r.phone) return <span className="text-graphite/40">—</span>;
+        const cleaned = ('' + r.phone).replace(/\D/g, '');
+        const m = cleaned.match(/^(7|8)?(\d{3})(\d{3})(\d{2})(\d{2})$/);
+        return <span className="text-[13px] whitespace-nowrap">{m ? `+7 (${m[2]}) ${m[3]}-${m[4]}-${m[5]}` : r.phone}</span>;
+      }},
+      { label: 'Команды', width: 'w-44', render: (r) => {
+        const teams = r.current_teams || [];
+        if (teams.length === 0) return <span className="text-graphite/40">—</span>;
+        return (
+          <div className="flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+            {teams.map((t) => (
+              <Tooltip key={t.id} title={t.name} subtitle={t.city || ''} noUnderline>
+                <div className="w-8 h-8 flex items-center justify-center p-0.5 rounded cursor-help">
+                  <img src={getImageUrl(t.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="" />
+                </div>
+              </Tooltip>
+            ))}
+          </div>
+        );
+      }},
       { label: 'Код', width: 'w-24', render: (r) => r.virtual_code ? <code className="bg-orange/10 text-orange px-2 py-0.5 rounded font-bold">{r.virtual_code}</code> : '-' },
       { label: 'Статус', width: 'w-24', render: (r) => <Badge type={r.virtual_code ? 'empty' : 'filled'} label={r.virtual_code ? 'ВИРТ' : 'РЕАЛ'} /> }
     ],

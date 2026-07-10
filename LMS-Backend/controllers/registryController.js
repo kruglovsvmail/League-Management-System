@@ -317,7 +317,14 @@ export const getUsers = async (req, res) => {
         const search = req.query.search || '';
         const type = parseInt(req.query.type) || 0; // 0=Все, 1=Реальные, 2=Виртуальные
 
-        let query = 'SELECT id, first_name, last_name, middle_name, email, phone, virtual_code, avatar_url, birth_date, gender, height, weight, grip, pronunciation FROM users WHERE 1=1';
+        // current_teams — команды, где пользователь состоит сейчас (left_at IS NULL),
+        // с лого/городом для колонки логотипов в таблице реестра
+        let query = `SELECT id, first_name, last_name, middle_name, email, phone, virtual_code, avatar_url, birth_date, gender, height, weight, grip, pronunciation,
+            (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'city', t.city, 'logo_url', t.logo_url) ORDER BY t.name)
+             FROM team_members tm
+             JOIN teams t ON t.id = tm.team_id
+             WHERE tm.user_id = users.id AND tm.left_at IS NULL) AS current_teams
+            FROM users WHERE 1=1`;
         const params = [];
         let paramIdx = 1;
 

@@ -6,6 +6,7 @@ import { Select } from '../ui/Select';
 import { Input } from '../ui/Input';
 import { Table } from '../ui/Table';
 import { Loader } from '../ui/Loader';
+import { DatePicker } from '../ui/DatePicker';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 
@@ -29,6 +30,13 @@ const STATUS_OPTIONS = [
 ];
 
 const GAME_TYPE_LABELS = GAME_TYPE_OPTIONS.reduce((acc, o) => (o.value ? { ...acc, [o.value]: o.label } : acc), {});
+
+// Цветные бейджи типа матча — чтобы таблица читалась на беглый взгляд
+const GAME_TYPE_BADGE = {
+  friendly_pwa:   { label: 'Товарищеский',      cls: 'bg-[#3B82F6]/10 text-[#3B82F6]' },
+  friendly_ext:   { label: 'Внешний соперник',  cls: 'bg-[#10B981]/10 text-[#10B981]' },
+  tournament_ext: { label: 'Внешний турнир',    cls: 'bg-[#A855F7]/10 text-[#A855F7]' },
+};
 
 const STATUS_BADGE = {
   draft:              { label: 'Черновик',       cls: 'bg-graphite/10 text-graphite-light' },
@@ -56,6 +64,26 @@ export function LeaguelessMatchesPage() {
   const [status, setStatus] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Сводные KPI-счётчики раздела (не зависят от фильтров таблицы)
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/leagueless-games/stats`, {
+          headers: { 'Authorization': `Bearer ${getToken()}` },
+        });
+        const data = await res.json();
+        if (data.success) setStats(data.stats);
+      } catch (err) {
+        console.error('Ошибка загрузки статистики матчей вне лиг:', err);
+      }
+    };
+    fetchStats();
+  }, []);
 
   // Debounce поиска по названию команды — не дёргаем бэкенд на каждое нажатие клавиши.
   useEffect(() => {
@@ -64,7 +92,7 @@ export function LeaguelessMatchesPage() {
   }, [searchInput]);
 
   // Смена любого фильтра — всегда возвращаемся на первую страницу.
-  useEffect(() => { setPage(1); }, [gameType, status, search]);
+  useEffect(() => { setPage(1); }, [gameType, status, search, dateFrom, dateTo]);
 
   const fetchGames = useCallback(async () => {
     setIsLoading(true);
@@ -73,6 +101,8 @@ export function LeaguelessMatchesPage() {
       if (gameType) params.set('gameType', gameType);
       if (status) params.set('status', status);
       if (search) params.set('search', search);
+      if (dateFrom) params.set('from', dateFrom);
+      if (dateTo) params.set('to', dateTo);
 
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/leagueless-games?${params}`, {
         headers: { 'Authorization': `Bearer ${getToken()}` },
@@ -88,7 +118,7 @@ export function LeaguelessMatchesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, gameType, status, search]);
+  }, [page, gameType, status, search, dateFrom, dateTo]);
 
   useEffect(() => { fetchGames(); }, [fetchGames]);
 
@@ -103,26 +133,36 @@ export function LeaguelessMatchesPage() {
       ) : '—',
     },
     {
-      label: 'Тип', key: 'game_type', width: 'w-[200px]',
-      render: (row) => GAME_TYPE_LABELS[row.game_type] || row.game_type || '—',
+      label: 'Тип', key: 'game_type', width: 'w-[180px]',
+      render: (row) => {
+        const badge = GAME_TYPE_BADGE[row.game_type];
+        if (!badge) return row.game_type || '—';
+        return <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${badge.cls}`}>{badge.label}</span>;
+      },
     },
     {
       label: 'Хозяева',
-      render: (row) => (
-        <div className="flex items-center gap-2 min-w-0">
-          {row.home_team_logo && <img src={getImageUrl(row.home_team_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />}
-          <span className="truncate">{row.home_team_name || 'Не указано'}</span>
-        </div>
-      ),
+      render: (row) => {
+        const isWinner = row.status === 'finished' && Number(row.home_score) > Number(row.away_score);
+        return (
+          <div className="flex items-center gap-2 min-w-0">
+            {row.home_team_logo && <img src={getImageUrl(row.home_team_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />}
+            <span className={`truncate ${isWinner ? 'font-black text-graphite' : ''}`}>{row.home_team_name || 'Не указано'}</span>
+          </div>
+        );
+      },
     },
     {
       label: 'Гости',
-      render: (row) => (
-        <div className="flex items-center gap-2 min-w-0">
-          {row.away_team_logo && <img src={getImageUrl(row.away_team_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />}
-          <span className="truncate">{row.away_team_name || 'Не указано'}</span>
-        </div>
-      ),
+      render: (row) => {
+        const isWinner = row.status === 'finished' && Number(row.away_score) > Number(row.home_score);
+        return (
+          <div className="flex items-center gap-2 min-w-0">
+            {row.away_team_logo && <img src={getImageUrl(row.away_team_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />}
+            <span className={`truncate ${isWinner ? 'font-black text-graphite' : ''}`}>{row.away_team_name || 'Не указано'}</span>
+          </div>
+        );
+      },
     },
     {
       label: 'Арена', width: 'w-[160px]',
@@ -136,8 +176,9 @@ export function LeaguelessMatchesPage() {
     },
     {
       label: 'Счёт', width: 'w-[90px]', align: 'center',
-      render: (row) => (row.status === 'finished' || row.status === 'finished_no_result')
-        ? `${row.home_score ?? 0} : ${row.away_score ?? 0}`
+      // finished_no_result — результат не внесён, показывать "0 : 0" было бы враньём
+      render: (row) => row.status === 'finished'
+        ? <span className="font-black text-[14px]">{row.home_score ?? 0} : {row.away_score ?? 0}</span>
         : '—',
     },
     {
@@ -177,11 +218,38 @@ export function LeaguelessMatchesPage() {
                 onChange={(val) => setStatus(val)}
               />
             </div>
+            <div className="flex items-center gap-2">
+              <div className="w-[140px]">
+                <DatePicker value={dateFrom} onChange={(v) => setDateFrom(v || '')} placeholder="От" />
+              </div>
+              <span className="text-graphite-light text-[13px]">—</span>
+              <div className="w-[140px]">
+                <DatePicker value={dateTo} onChange={(v) => setDateTo(v || '')} placeholder="До" />
+              </div>
+            </div>
           </div>
         }
       />
 
       <main className="flex-1 px-10 pt-8 relative">
+        {/* KPI-полоска: сводные счётчики по всем матчам вне лиг, без учёта фильтров */}
+        {stats && (
+          <div className="grid grid-cols-5 gap-4 mb-6">
+            {[
+              { label: 'Всего матчей', value: stats.total, cls: 'text-graphite' },
+              { label: 'Завершено', value: stats.finished, cls: 'text-status-accepted' },
+              { label: 'Без результата', value: stats.finished_no_result, cls: 'text-status-rejected' },
+              { label: 'Запланировано', value: stats.scheduled, cls: 'text-orange' },
+              { label: 'Сыграно за 30 дней', value: stats.played_30d, cls: 'text-graphite' },
+            ].map((kpi) => (
+              <div key={kpi.label} className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] px-5 py-4">
+                <div className={`text-[24px] font-bold leading-tight ${kpi.cls}`}>{kpi.value.toLocaleString('ru')}</div>
+                <div className="text-[11px] font-bold uppercase tracking-wide text-graphite-light mt-0.5">{kpi.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="absolute inset-0 flex items-start pt-20 justify-center">
             <Loader />
