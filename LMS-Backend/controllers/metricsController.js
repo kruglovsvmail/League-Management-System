@@ -118,10 +118,14 @@ export const getTopUsers = async (req, res) => {
     const total = Number(countRes.rows[0].total);
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+    // last_visited_at — MAX по page_visits (4 инструментированных раздела Team-Room) и
+    // u.last_seen_at (обновляется middleware verifyToken на КАЖДЫЙ авторизованный запрос,
+    // в любом бэкенде) — берём более позднее из двух: так одиночный сбой fire-and-forget
+    // запроса usePageVisit (протухший токен, сетевой сбой) не занижает дату последнего визита.
     const { rows } = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.avatar_url,
               SUM(pv.visit_count) AS total_visits,
-              MAX(pv.last_visited_at) AS last_visited_at,
+              GREATEST(MAX(pv.last_visited_at), u.last_seen_at) AS last_visited_at,
               COALESCE(ps.device_count, 0) AS push_device_count
        FROM page_visits pv
        JOIN users u ON u.id = pv.user_id
@@ -131,7 +135,7 @@ export const getTopUsers = async (req, res) => {
          GROUP BY user_id
        ) ps ON ps.user_id = u.id
        WHERE ${searchWhere}
-       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, ps.device_count
+       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, u.last_seen_at, ps.device_count
        ORDER BY ${orderByExpr}, u.id ASC
        LIMIT $2 OFFSET $3`,
       [search, PAGE_SIZE, (pageNum - 1) * PAGE_SIZE]
