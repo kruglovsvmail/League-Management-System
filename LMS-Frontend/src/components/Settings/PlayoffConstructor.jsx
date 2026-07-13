@@ -705,7 +705,7 @@ export function PlayoffConstructor({ divisionId: propDivisionId }) {
                 .connections-layer { pointer-events: none; }
             `}</style>
 
-            <div className="absolute top-5 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center bg-white/30 backdrop-blur-[8px] border border-white/50 rounded-full p-1.5 shadow-[0_4px_25px_rgba(0,0,0,0.06)] z-[60]">
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center bg-white/70 backdrop-blur-[8px] border border-white/50 rounded-full p-1.5 shadow-[0_4px_25px_rgba(0,0,0,0.06)] z-[60]">
                 {data.brackets.map(b => (
                     <div key={b.id} 
                          className={`group relative flex items-center gap-2 px-5 py-2 rounded-full cursor-pointer transition-all duration-300 ${activeBracketId === String(b.id) ? 'bg-white text-graphite shadow-[0_2px_10px_rgba(0,0,0,0.06)] font-bold' : 'text-graphite/60 hover:bg-white/50 hover:text-graphite font-semibold'}`}

@@ -240,7 +240,7 @@ export function ServiceAccountsTab({ setToast }) {
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         
         {/* ТАБЛИЦА (СЛЕВА) */}
-        <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[400px] relative order-2 lg:order-1">
+        <div className="flex-1 w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[400px] relative order-2 lg:order-1">
           {isLoading && <div className="absolute inset-0 z-30 flex pt-20 justify-center"><Loader /></div>}
           <div className={`${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'} transition-opacity`}>
             <span className="text-[16px] font-black text-graphite uppercase tracking-wide block mb-6">Список аккаунтов</span>
@@ -250,7 +250,7 @@ export function ServiceAccountsTab({ setToast }) {
 
         {/* ФОРМА СОЗДАНИЯ (СПРАВА) */}
         {canManageAccounts && (
-          <div className="w-full lg:w-[380px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-5 sticky top-[100px] order-1 lg:order-2">
+          <div className="w-full lg:w-[380px] shrink-0 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-5 sticky top-[100px] order-1 lg:order-2">
             <span className="text-[14px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-4">Новый аккаунт</span>
             
             <div className="flex flex-col gap-5">
@@ -290,7 +290,7 @@ export function ServiceAccountsTab({ setToast }) {
                   rows={2}
                   value={formData.description} 
                   onChange={e => setFormData({...formData, description: e.target.value})} 
-                  className="w-full px-3 py-2.5 bg-white/30 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[14px]" 
+                  className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[14px]" 
                 />
               </div>
 
@@ -357,7 +357,7 @@ export function ServiceAccountsTab({ setToast }) {
                       rows={4}
                       value={editFormData?.description || ''} 
                       onChange={e => setEditFormData({...editFormData, description: e.target.value})} 
-                      className="w-full px-3 py-2.5 bg-white/30 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[14px]" 
+                      className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[14px]" 
                     />
                   </div>
                </div>

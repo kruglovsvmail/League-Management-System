@@ -9,7 +9,8 @@ import {
     getTeams, createTeam, updateTeam,
     getUsers, createUser, updateUser,
     uploadRegistryFile, deleteRegistryFile,
-    checkUserNameDuplicates, previewUserImport, confirmUserImport
+    checkUserNameDuplicates, previewUserImport, confirmUserImport,
+    getNextVirtualPhone
 } from '../controllers/registryController.js';
 
 const router = express.Router();
@@ -39,6 +40,7 @@ router.put('/registry/teams/:id', updateTeam);
 
 // --- ПОЛЬЗОВАТЕЛИ ---
 router.get('/registry/users', getUsers);
+router.get('/registry/users/next-virtual-phone', getNextVirtualPhone);
 router.post('/registry/users', createUser);
 router.post('/registry/users/check-duplicates', checkUserNameDuplicates);
 router.post('/registry/users/import/preview', upload.single('file'), previewUserImport);

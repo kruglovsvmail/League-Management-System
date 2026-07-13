@@ -457,7 +457,7 @@ const dateStr = gameDate ? `${gameDate.format('D MMMM YYYY')}  |  ${gameDate.for
                     navigate(`/games/${game.id}`);
                 }
             }}
-            className="flex items-center gap-4 px-6 h-[110px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg hover:shadow-lg transition-all duration-200 group relative cursor-pointer animate-zoom-in block"
+            className="flex items-center gap-4 px-6 h-[110px] bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg hover:shadow-lg transition-all duration-200 group relative cursor-pointer animate-zoom-in block"
         >
             <div className={`${colClasses.number} shrink-0 flex flex-col items-center justify-center`}>
                 <span className="text-[15px] font-black text-graphite/40">{game.game_number || '-'}</span>

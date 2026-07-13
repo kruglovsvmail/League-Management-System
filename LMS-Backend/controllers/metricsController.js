@@ -84,10 +84,15 @@ const TOP_USERS_SORT_COLUMNS = {
   push: { expr: 'push_device_count', defaultDir: 'DESC' },
 };
 
-// ── GET /api/metrics/top-users?page=1&search=иванов&sort=last_visited&dir=desc ───
-// Постраничный список пользователей (15 на страницу) с поиском по имени/фамилии.
-// Сортировка серверная — применяется до пагинации, поэтому корректно упорядочивает
-// вообще всех пользователей, а не только тех, что видны на текущей странице.
+// Фильтр по периоду последнего визита — те же окна, что и DAU/WAU/MAU в getAudience
+// (0/6/29 дней от «сегодня» по часовому поясу клуба).
+const PERIOD_DAYS = { today: 0, week: 6, month: 29 };
+
+// ── GET /api/metrics/top-users?page=1&search=иванов&sort=last_visited&dir=desc&period=week ───
+// Постраничный список пользователей (15 на страницу) с поиском по имени/фамилии и
+// фильтром по периоду последнего визита. Сортировка и фильтр — серверные, применяются
+// до пагинации, поэтому корректно работают по вообще всем пользователям, а не только
+// по тем, что видны на текущей странице.
 export const getTopUsers = async (req, res) => {
   try {
     const PAGE_SIZE = 15;
@@ -103,25 +108,48 @@ export const getTopUsers = async (req, res) => {
       .map((part) => `${part.trim()} ${direction}${sortCol.nulls ? ` NULLS ${sortCol.nulls}` : ''}`)
       .join(', ');
 
-    // Один и тот же фильтр для подсчёта страниц и для выборки данных
+    const period = PERIOD_DAYS[req.query.period] !== undefined ? req.query.period : 'all';
+    const periodDays = PERIOD_DAYS[period] ?? 0;
+    const today = todayInClubTimezone();
+    const todayStr = `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`;
+
+    // Один и тот же фильтр для подсчёта страниц и для выборки данных — по имени/фамилии
+    // ИЛИ по названию команды (активное членство, left_at IS NULL)
     const searchWhere = `($1 = '' OR u.first_name ILIKE '%' || $1 || '%' OR u.last_name ILIKE '%' || $1 || '%'
                           OR (u.first_name || ' ' || u.last_name) ILIKE '%' || $1 || '%'
-                          OR (u.last_name || ' ' || u.first_name) ILIKE '%' || $1 || '%')`;
+                          OR (u.last_name || ' ' || u.first_name) ILIKE '%' || $1 || '%'
+                          OR EXISTS (
+                            SELECT 1 FROM team_members tm2
+                            JOIN teams t2 ON t2.id = tm2.team_id
+                            WHERE tm2.user_id = u.id AND tm2.left_at IS NULL
+                              AND (t2.name ILIKE '%' || $1 || '%' OR t2.short_name ILIKE '%' || $1 || '%')
+                          ))`;
+
+    // Фильтр периода сравнивается уже с агрегатом (GREATEST по MAX(...) и last_seen_at),
+    // поэтому идёт в HAVING, а не WHERE. $3::date - $4::int, приведённое к таймзоне клуба —
+    // граница суток "период дней назад" по Europe/Moscow, а не по таймзоне сервера БД.
+    const periodHaving = `($2::text = 'all' OR GREATEST(MAX(pv.last_visited_at), u.last_seen_at) >= ($3::date - $4::int) AT TIME ZONE 'Europe/Moscow')`;
 
     const countRes = await pool.query(
-      `SELECT COUNT(DISTINCT u.id) AS total
-       FROM page_visits pv
-       JOIN users u ON u.id = pv.user_id
-       WHERE ${searchWhere}`,
-      [search]
+      `SELECT COUNT(*) AS total FROM (
+         SELECT u.id
+         FROM page_visits pv
+         JOIN users u ON u.id = pv.user_id
+         WHERE ${searchWhere}
+         GROUP BY u.id, u.last_seen_at
+         HAVING ${periodHaving}
+       ) t`,
+      [search, period, todayStr, periodDays]
     );
     const total = Number(countRes.rows[0].total);
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
     // last_visited_at — MAX по page_visits (4 инструментированных раздела Team-Room) и
-    // u.last_seen_at (обновляется middleware verifyToken на КАЖДЫЙ авторизованный запрос,
-    // в любом бэкенде) — берём более позднее из двух: так одиночный сбой fire-and-forget
-    // запроса usePageVisit (протухший токен, сетевой сбой) не занижает дату последнего визита.
+    // u.last_seen_at (обновляется ТОЛЬКО middleware verifyToken в Team-Room\TR-Backend,
+    // на каждый авторизованный запрос) — берём более позднее из двух: так одиночный сбой
+    // fire-and-forget запроса usePageVisit (протухший токен, сетевой сбой) не занижает дату
+    // последнего визита. Активность в LMS-админке сюда намеренно не подмешивается — эта
+    // таблица про вовлечённость в Team-Room, а не про заходы в саму LMS.
     const { rows } = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.avatar_url,
               SUM(pv.visit_count) AS total_visits,
@@ -136,9 +164,10 @@ export const getTopUsers = async (req, res) => {
        ) ps ON ps.user_id = u.id
        WHERE ${searchWhere}
        GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, u.last_seen_at, ps.device_count
+       HAVING ${periodHaving}
        ORDER BY ${orderByExpr}, u.id ASC
-       LIMIT $2 OFFSET $3`,
-      [search, PAGE_SIZE, (pageNum - 1) * PAGE_SIZE]
+       LIMIT $5 OFFSET $6`,
+      [search, period, todayStr, periodDays, PAGE_SIZE, (pageNum - 1) * PAGE_SIZE]
     );
 
     // Команды (активное членство, left_at IS NULL) для пользователей этой страницы — с логотипом

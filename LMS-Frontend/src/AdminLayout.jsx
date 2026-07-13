@@ -5,7 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange }) {
   // Наш супер-сложный фон
 const complexMeshGradient = {
-  backgroundColor: '#c6c6c6ff'
+  backgroundColor: '#e2e4e7'
 };
 
   return (
@@ -18,7 +18,7 @@ const complexMeshGradient = {
         onLeagueChange={onLeagueChange}
       />
       
-      <div className="flex-1 ml-[230px] flex flex-col min-h-screen relative z-10">
+      <div className="flex-1 ml-[200px] flex flex-col min-h-screen relative z-10">
         <Outlet context={{ user, selectedLeague }} /> 
       </div>
     </div>

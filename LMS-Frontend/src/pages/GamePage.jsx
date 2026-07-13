@@ -309,7 +309,7 @@ export function GamePage() {
     ];
 
     return (
-      <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 pt-5 shadow-sm flex flex-col h-full animate-zoom-in">
+      <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 pt-5 shadow-sm flex flex-col h-full animate-zoom-in">
         <div className="flex items-center justify-between border-b border-graphite/10 pb-3 mb-4 shrink-0">
           <div className="flex flex-wrap items-center gap-3 w-full justify-between">
              <span className="text-[12px] font-black uppercase text-graphite/40 tracking-widest">{side === 'home' ? 'Хозяева' : 'Гости'}</span>
@@ -464,7 +464,7 @@ export function GamePage() {
           
           <div className="flex-1 relative z-10 flex flex-col min-w-0 gap-6">
             
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 md:p-6 animate-zoom-in">
+            <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 md:p-6 animate-zoom-in">
               <div className="flex items-center justify-between mb-8 flex-1">
                 {/* Хозяева */}
                 <div className="flex-1 flex items-center justify-end gap-5">
@@ -532,7 +532,7 @@ export function GamePage() {
               )}
 
               {tabIndex === 1 && (
-                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
+                <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Обслуживающие матч</h3>
                   </div>
@@ -580,7 +580,7 @@ export function GamePage() {
               )}
 
               {tabIndex === 2 && (
-                <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
+                <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Ход Матча</h3>
                   </div>
@@ -652,7 +652,7 @@ export function GamePage() {
             </div>
           </div>
 
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-5 flex flex-col gap-1 shadow-sm z-20 animate-zoom-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-5 flex flex-col gap-1 shadow-sm z-20 animate-zoom-in">
             
             <div className="flex flex-col gap-4 bg-white/0 py-5 px-3 border-b border-graphite/10">
               <div>

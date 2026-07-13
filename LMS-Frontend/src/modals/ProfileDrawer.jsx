@@ -110,7 +110,7 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
     <div className={`fixed inset-0 z-[35] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className={`absolute top-0 left-[230px] h-full w-[400px] max-w-[calc(100vw-230px)] bg-white/85 transform transition-transform duration-300 flex flex-col shadow-[24px_0_24px_rgba(0,0,0,0.1)] ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`absolute top-0 left-[200px] h-full w-[400px] max-w-[calc(100vw-230px)] bg-white/85 transform transition-transform duration-300 flex flex-col shadow-[24px_0_24px_rgba(0,0,0,0.1)] ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         
         <div onClick={onClose} className="flex items-center p-5 border-b border-graphite/10 cursor-pointer hover:bg-gray-50 transition-colors group">
           <div className="p-2 -ml-2 text-graphite group-hover:text-orange transition-colors">

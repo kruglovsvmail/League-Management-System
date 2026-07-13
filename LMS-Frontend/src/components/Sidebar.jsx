@@ -88,7 +88,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
   return (
     <>
-      <aside className="fixed left-0 top-0 h-screen w-[230px] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white flex flex-col z-40 border-r border-white/5 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
+      <aside className="fixed left-0 top-0 h-screen w-[200px] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white flex flex-col z-40 border-r border-white/5 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
         
         <div className="p-7 pb-2">
           {user?.leagues && user.leagues.length > 0 && (
@@ -159,11 +159,11 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
             </div>
           </div>
 
-          <button onClick={onLogout} className="w-full flex items-center gap-3 px-2 py-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors group mb-8">
+          <button onClick={onLogout} className="w-full flex items-center gap-2 px-2 py-2.5 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors group mb-4">
             <svg className="w-5 h-5 opacity-70 group-hover:text-status-rejected group-hover:opacity-100 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>
             </svg>
-            <span className="text-[13px] font-medium group-hover:text-white/50 transition-colors tracking-wide">Выйти из системы</span>
+            <span className="text-[12px] font-normal group-hover:text-white/50 transition-colors tracking-wide">Выйти из системы</span>
           </button>
         </div>
       </aside>

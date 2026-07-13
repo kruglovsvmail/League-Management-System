@@ -17,7 +17,7 @@ html {
 
 :root {
   /* Базовые цвета в формате RGB (для поддержки opacity в Tailwind) */
-  --orange: 200 100 50;
+  --orange: 255 100 50;
   --orange-hover: 180 80 30;
   --graphite: 20 20 20;
   --graphite-light: 72 72 74;
@@ -27,8 +27,8 @@ html {
   --gray-bg-light: 248 249 250;
 
   /* Градиенты фона (можно оставить HEX) */
-  --bg-grad-1: #e0e0e0;
-  --bg-grad-2: #b3b3b3;
+  --bg-grad-1: #e2e4e7;
+  --bg-grad-2: #e2e4e7;
 
   /* Яркие цвета для Статусов (RGB) */
   --status-pending: 0 122 255; 

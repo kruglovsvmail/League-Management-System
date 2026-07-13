@@ -366,6 +366,40 @@ export const getUsers = async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
+// Диапазон виртуальных номеров для карточек без реального телефона: +70000000001–+70000000999.
+// Префикс "000" намеренно не пересекается ни с одним реальным операторским кодом
+// (900/990 и т.п. — настоящие префиксы сотовых операторов, 000 — нет).
+const VIRTUAL_PHONE_PREFIX = '+70000000';
+const VIRTUAL_PHONE_MAX = 999;
+
+// ── GET /api/registry/users/next-virtual-phone ───────────────────────────
+// Возвращает следующий свободный номер в виртуальном диапазоне (для кнопки
+// "Подставить номер" в форме создания виртуального пользователя).
+export const getNextVirtualPhone = async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT MAX(phone) AS last_phone FROM users WHERE phone LIKE $1`,
+            [`${VIRTUAL_PHONE_PREFIX}%`]
+        );
+        const lastSuffix = rows[0].last_phone
+            ? parseInt(rows[0].last_phone.slice(VIRTUAL_PHONE_PREFIX.length), 10)
+            : 0;
+        const nextSuffix = lastSuffix + 1;
+
+        if (nextSuffix > VIRTUAL_PHONE_MAX) {
+            return res.status(409).json({
+                success: false,
+                error: `Виртуальные номера в диапазоне ${VIRTUAL_PHONE_PREFIX}001–${VIRTUAL_PHONE_PREFIX}${VIRTUAL_PHONE_MAX} закончились`,
+            });
+        }
+
+        const phone = `${VIRTUAL_PHONE_PREFIX}${String(nextSuffix).padStart(3, '0')}`;
+        res.json({ success: true, phone });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 export const createUser = async (req, res) => {
     try {
         let { first_name, last_name, middle_name, email, phone, is_virtual, birth_date, gender, height, weight, grip, pronunciation } = req.body;

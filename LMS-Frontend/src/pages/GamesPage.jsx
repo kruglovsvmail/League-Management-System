@@ -291,7 +291,7 @@ export function GamesPage() {
                 title="Расписание матчей" 
                 actions={
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
+                        <div className="flex items-center gap-3 bg-white/70 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
                             <span className={`text-[12px] font-bold uppercase tracking-wider ${showFinished ? 'text-orange' : 'text-graphite-light'}`}>
                                 Завершенные
                             </span>
@@ -299,7 +299,7 @@ export function GamesPage() {
                         </div>
 
                         {canEdit && (
-                            <div className="flex items-center gap-3 bg-white/30 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
+                            <div className="flex items-center gap-3 bg-white/70 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
                                 <span className={`text-[12px] font-bold uppercase tracking-wider ${isEditMode ? 'text-orange' : 'text-graphite-light'}`}>
                                     Редакт.
                                 </span>

@@ -242,7 +242,7 @@ export function LeaguelessMatchesPage() {
               { label: 'Запланировано', value: stats.scheduled, cls: 'text-orange' },
               { label: 'Сыграно за 30 дней', value: stats.played_30d, cls: 'text-graphite' },
             ].map((kpi) => (
-              <div key={kpi.label} className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] px-5 py-4">
+              <div key={kpi.label} className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] px-5 py-4">
                 <div className={`text-[24px] font-bold leading-tight ${kpi.cls}`}>{kpi.value.toLocaleString('ru')}</div>
                 <div className="text-[11px] font-bold uppercase tracking-wide text-graphite-light mt-0.5">{kpi.label}</div>
               </div>
@@ -267,7 +267,7 @@ export function LeaguelessMatchesPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/30 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/70 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
                   ← Назад
                 </button>
@@ -277,7 +277,7 @@ export function LeaguelessMatchesPage() {
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/30 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/70 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
                   Вперёд →
                 </button>

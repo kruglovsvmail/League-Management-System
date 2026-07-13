@@ -425,7 +425,7 @@ export function TeamManagementPage() {
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         {selectedTeam && (
-          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/30 backdrop-blur-md rounded-lg p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-zoom-in">
+          <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/70 backdrop-blur-md rounded-lg p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-zoom-in">
             <div className="flex flex-col items-center mb-4 text-center">
               <img src={getImageUrl(selectedTeam.logo_url) || '/default/Logo_team_default.webp'} className="w-16 h-16 object-contain mb-3" />
               <span className="font-black text-[16px] leading-tight">{selectedTeam.name}</span>

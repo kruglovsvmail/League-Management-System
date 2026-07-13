@@ -105,8 +105,8 @@ export function Select({
                 className={`${sizeClass} w-full rounded-md border flex items-center transition-all duration-300 outline-none text-[13px] font-semibold text-graphite placeholder:font-medium placeholder-graphite/40 ${
                   disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70' 
                   : hasError ? 'border-status-rejected bg-status-rejected/5' 
-                  : isOpen ? 'border-orange bg-white/30 shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' 
-                  : 'border-graphite/40 bg-white/30 hover:border-orange'
+                  : isOpen ? 'border-orange bg-white/70 shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' 
+                  : 'border-graphite/40 bg-white/70 hover:border-orange'
                 }`}
                 placeholder={displayValue || placeholder}
                 value={isOpen ? searchTerm : displayValue}
@@ -121,8 +121,8 @@ export function Select({
             className={`${sizeClass} rounded-md border flex justify-between items-center transition-all duration-300 ${
               disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70'
                 : hasError ? 'border-status-rejected bg-status-rejected/5 cursor-pointer' 
-                : isOpen ? 'border-orange bg-white/30 shadow-[0_0_0_3px_rgba(255,122,0,0.2)] cursor-pointer' 
-                : 'border-graphite/40 bg-white/30 hover:border-orange cursor-pointer'
+                : isOpen ? 'border-orange bg-white/70 shadow-[0_0_0_3px_rgba(255,122,0,0.2)] cursor-pointer' 
+                : 'border-graphite/40 bg-white/70 hover:border-orange cursor-pointer'
             }`}
           >
             <span className={`text-[13px] font-semibold truncate pr-2 ${value ? 'text-graphite' : 'text-graphite/50'}`}>

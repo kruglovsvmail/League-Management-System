@@ -86,6 +86,7 @@ export function GlobalRegistryPage() {
 
   const fileImportRef = useRef(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isFetchingVirtualPhone, setIsFetchingVirtualPhone] = useState(false);
 
   // Предупреждение о тёзке при ручном добавлении: { payload, matches } | null
   const [duplicateWarning, setDuplicateWarning] = useState(null);
@@ -230,8 +231,25 @@ export function GlobalRegistryPage() {
   };
 
   const handlePhoneChange = (e) => {
-    const val = e.target.value.replace(/\D/g, ''); 
+    const val = e.target.value.replace(/\D/g, '');
     handleChange('phone', val.slice(0, 10));
+  };
+
+  const handleFillVirtualPhone = async () => {
+    setIsFetchingVirtualPhone(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/registry/users/next-virtual-phone`, { headers: getHeaders() });
+      const json = await res.json();
+      if (json.success) {
+        handleChange('phone', json.phone.replace(/^\+?7/, ''));
+      } else {
+        alert(json.error || 'Не удалось получить свободный виртуальный номер');
+      }
+    } catch (err) {
+      alert('Ошибка сети при получении виртуального номера');
+    } finally {
+      setIsFetchingVirtualPhone(false);
+    }
   };
 
   const handleRowClick = (item) => {
@@ -556,7 +574,7 @@ export function GlobalRegistryPage() {
       />
 
       <div className="flex items-start px-6 pt-8 gap-6 relative">
-        <div className="w-[480px] shrink-0 sticky top-[128px] max-h-[calc(100vh-145px)] overflow-y-auto bg-white/30 backdrop-blur-md rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-7 flex flex-col gap-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full z-20 pb-4">
+        <div className="w-[480px] shrink-0 sticky top-[128px] max-h-[calc(100vh-145px)] overflow-y-auto bg-white/70 backdrop-blur-md rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-7 flex flex-col gap-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full z-20 pb-4">
           
           <div className="shrink-0">
             <SegmentButton options={['Лиги', 'Сезоны', 'Команды', 'Пользов.', 'Арены']} defaultIndex={activeTab} onChange={setActiveTab} />
@@ -775,6 +793,16 @@ export function GlobalRegistryPage() {
                       </div>
                       <Input placeholder="Email (необязательно)" value={formData.email || ''} onChange={e => handleChange('email', e.target.value)} />
                     </div>
+                    {formData.is_virtual && (
+                      <button
+                        type="button"
+                        onClick={handleFillVirtualPhone}
+                        disabled={isFetchingVirtualPhone}
+                        className="text-[12px] font-semibold text-orange hover:underline mt-1.5 disabled:opacity-50"
+                      >
+                        {isFetchingVirtualPhone ? 'Ищу свободный номер...' : 'Подставить свободный виртуальный номер'}
+                      </button>
+                    )}
                   </div>
 
                   <div className="pb-3">

@@ -4,19 +4,10 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PERMISSIONS, ROLES } from '../utils/permissions.js';
 
-// Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
-// на пользователя, чтобы не писать в БД на каждый авторизованный запрос подряд.
-const lastSeenCache = new Map();
-const LAST_SEEN_THROTTLE_MS = 2 * 60 * 1000;
-
-const touchLastSeen = (userId) => {
-  const now = Date.now();
-  const prev = lastSeenCache.get(userId);
-  if (prev && now - prev < LAST_SEEN_THROTTLE_MS) return;
-  lastSeenCache.set(userId, now);
-  pool.query('UPDATE users SET last_seen_at = now() WHERE id = $1', [userId]).catch(() => {});
-};
-
+// last_seen_at намеренно НЕ обновляется отсюда: эта колонка используется в метриках
+// как "последний визит в Team-Room", и активность в LMS-админке не должна туда попадать
+// (иначе админ, просто открывший эту страницу метрик, всплывал бы наверх списка).
+// Обновляет last_seen_at только Team-Room\TR-Backend\middleware\auth.js.
 export const verifyToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -32,8 +23,6 @@ export const verifyToken = (req, res, next) => {
       return res.status(403).json({ success: false, error: 'Недействительный или просроченный токен' });
     }
     req.user = decoded;
-    // Fire-and-forget — не блокирует и не может провалить основной запрос
-    touchLastSeen(decoded.id);
     next();
   });
 };

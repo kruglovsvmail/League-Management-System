@@ -9,7 +9,7 @@ export function Header({ title = "Раздел", breadcrumbs = [], actions, subt
   }, [title]);
 
   return (
-    <header className="h-24 bg-white/30 backdrop-blur-[12px] border-b-[1px] border-white/40 flex items-center justify-between px-10 sticky top-0 z-30 w-full shrink-0">
+    <header className="h-24 bg-white/70 backdrop-blur-[8px] border-b-[1px] border-white/40 flex items-center justify-between px-10 sticky top-0 z-30 w-full shrink-0">
       <div className="flex flex-col justify-center">
         <h2 className="text-[28px] font-bold text-graphite tracking-tight leading-none">{title}</h2>
         

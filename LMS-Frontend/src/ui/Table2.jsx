@@ -77,7 +77,7 @@ export function Table({ columns, data, rowClassName, hideHeader = false }) {
           {sortedData.map((row, rowIndex) => (
             <tr 
               key={row.id || rowIndex} 
-              className={`transition-all duration-200 hover:bg-white/30 group ${rowClassName ? rowClassName(row) : ''}`}
+              className={`transition-all duration-200 hover:bg-white/70 group ${rowClassName ? rowClassName(row) : ''}`}
             >
               {columns.map((col, colIndex) => {
                 let alignClass = 'text-left';

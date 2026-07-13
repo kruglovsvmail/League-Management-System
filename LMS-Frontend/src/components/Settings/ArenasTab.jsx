@@ -133,7 +133,7 @@ export function ArenasTab({ setToast }) {
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         
         {/* ЛЕВАЯ КОЛОНКА: АРЕНЫ ЛИГИ */}
-        <div className="flex-1 w-full bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[500px] relative">
+        <div className="flex-1 w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[500px] relative">
           {isLoading && (
             <div className="absolute inset-0 z-30 flex pt-20 justify-center backdrop-blur-sm rounded-lg">
               <Loader text="" />
@@ -164,7 +164,7 @@ export function ArenasTab({ setToast }) {
 
         {/* ПРАВАЯ КОЛОНКА: ПОИСК И ДОБАВЛЕНИЕ */}
         {canManage && (
-          <div className="w-full lg:w-[400px] shrink-0 bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-5 sticky top-[100px]">
+          <div className="w-full lg:w-[400px] shrink-0 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-5 sticky top-[100px]">
             <div className="border-b border-graphite/10 pb-4">
               <span className="text-[14px] font-black text-graphite uppercase tracking-wide">Добавить арену</span>
               <p className="text-[11px] text-graphite-light mt-1 uppercase font-bold">Поиск в глобальной базе</p>

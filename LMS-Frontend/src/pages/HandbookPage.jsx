@@ -236,7 +236,7 @@ export function HandbookPage() {
       {toast && <div className="fixed top-[110px] right-10 z-[9999]"><Toast {...toast} onClose={() => setToast(null)} /></div>}
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
-        <div className="w-[340px] shrink-0 sticky top-[128px] h-[320px] overflow-y-auto bg-white/30 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6 custom-scrollbar z-20">
+        <div className="w-[340px] shrink-0 sticky top-[128px] h-[320px] overflow-y-auto bg-white/70 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6 custom-scrollbar z-20">
           <div className="shrink-0 mb-2">
             <SegmentButton options={['Пользов.', 'Команды', 'Арены']} defaultIndex={activeTab} onChange={setActiveTab} />
           </div>

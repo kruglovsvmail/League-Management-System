@@ -270,6 +270,7 @@ export function MetricsPage() {
   const [usersSearchInput, setUsersSearchInput] = useState('');
   const [usersSearch, setUsersSearch] = useState('');
   const [usersSort, setUsersSort] = useState({ key: 'last_visited', dir: 'desc' });
+  const [usersPeriod, setUsersPeriod] = useState('all'); // 'all' | 'today' | 'week' | 'month'
   const [isUsersLoading, setIsUsersLoading] = useState(false);
 
   const handleUsersSort = (key) => {
@@ -315,14 +316,19 @@ export function MetricsPage() {
     return () => clearTimeout(t);
   }, [usersSearchInput]);
 
-  // Новый поисковый запрос или смена сортировки — всегда возвращаемся на первую страницу
-  useEffect(() => { setUsersPage(1); }, [usersSearch, usersSort]);
+  // Новый поисковый запрос, смена сортировки или периода — всегда возвращаемся на первую страницу
+  useEffect(() => { setUsersPage(1); }, [usersSearch, usersSort, usersPeriod]);
 
   useEffect(() => {
     const fetchUsers = async () => {
       setIsUsersLoading(true);
       try {
-        const params = new URLSearchParams({ page: String(usersPage), sort: usersSort.key, dir: usersSort.dir });
+        const params = new URLSearchParams({
+          page: String(usersPage),
+          sort: usersSort.key,
+          dir: usersSort.dir,
+          period: usersPeriod,
+        });
         if (usersSearch) params.set('search', usersSearch);
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/metrics/top-users?${params}`, { headers: getAuthHeaders() });
         const data = await res.json();
@@ -338,7 +344,7 @@ export function MetricsPage() {
       }
     };
     fetchUsers();
-  }, [usersPage, usersSearch, usersSort]);
+  }, [usersPage, usersSearch, usersSort, usersPeriod]);
 
   useEffect(() => {
     // В режиме "Период" ждём, пока обе даты будут заданы и диапазон валиден
@@ -408,7 +414,7 @@ export function MetricsPage() {
       <div className="flex-1 overflow-y-auto p-10 flex flex-col gap-8 custom-scrollbar">
 
         {/* ГРАФИК ПО ДНЯМ */}
-        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+        <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
             <h3 className="text-[16px] font-bold text-graphite">Динамика по дням</h3>
             <div className="flex items-center gap-3 flex-wrap">
@@ -514,7 +520,7 @@ export function MetricsPage() {
           <div className="grid grid-cols-3 gap-6">
 
             {/* АККАУНТЫ */}
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+            <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
               <h3 className="text-[16px] font-bold text-graphite mb-1">Аккаунты</h3>
               <p className="text-[12px] text-graphite-light mb-4">Все пользователи в базе системы</p>
               <DonutChart
@@ -528,7 +534,7 @@ export function MetricsPage() {
             </div>
 
             {/* АКТИВНОСТЬ АУДИТОРИИ */}
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+            <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
               <h3 className="text-[16px] font-bold text-graphite mb-1">Активность аудитории</h3>
               <p className="text-[12px] text-graphite-light mb-4">Уникальные пользователи за периоды</p>
               <div className="grid grid-cols-3 gap-2 mb-4">
@@ -552,7 +558,7 @@ export function MetricsPage() {
             </div>
 
             {/* ОХВАТ TEAM-ROOM */}
-            <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+            <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
               <h3 className="text-[16px] font-bold text-graphite mb-1">Охват Team-Room</h3>
               <p className="text-[12px] text-graphite-light mb-4">Игроки команд, реально пользующиеся приложением</p>
               <div className="text-[28px] font-bold text-graphite leading-none mb-4">{audience.coverage.total_players.toLocaleString('ru')}<span className="text-[13px] font-medium text-graphite-light ml-2">игроков в командах</span></div>
@@ -585,7 +591,7 @@ export function MetricsPage() {
         <div className="grid grid-cols-2 gap-6">
 
           {/* PUSH-УВЕДОМЛЕНИЯ */}
-          <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+          <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
             <h3 className="text-[16px] font-bold text-graphite mb-1">Push-уведомления</h3>
             <p className="text-[12px] text-graphite-light mb-4">
               Доля от игроков, состоящих хотя бы в одной команде (не всех пользователей системы)
@@ -616,7 +622,7 @@ export function MetricsPage() {
           </div>
 
           {/* ГЛУБИНА ИСПОЛЬЗОВАНИЯ */}
-          <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+          <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
             <h3 className="text-[16px] font-bold text-graphite mb-1">Глубина использования</h3>
             <p className="text-[12px] text-graphite-light mb-4">
               Сколько разделов приложения использует каждый пользователь
@@ -654,18 +660,26 @@ export function MetricsPage() {
         </div>
 
         {/* ПОЛЬЗОВАТЕЛИ: ПОИСК + ПАГИНАЦИЯ ПО 15, СВЕЖИЕ ВИЗИТЫ СВЕРХУ */}
-        <div className="bg-white/30 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+        <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
           <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
             <h3 className="text-[16px] font-bold text-graphite">
               Пользователи
               <span className="text-[13px] font-medium text-graphite-light ml-2">Всего: {usersTotal}</span>
             </h3>
-            <div className="w-72">
-              <Input
-                placeholder="Поиск по имени или фамилии"
-                value={usersSearchInput}
-                onChange={(e) => setUsersSearchInput(e.target.value)}
+            <div className="flex items-center gap-3 flex-wrap">
+              <SegmentButton
+                options={['Все', 'Сегодня', 'Неделя', 'Месяц']}
+                defaultIndex={0}
+                onChange={(idx) => setUsersPeriod(['all', 'today', 'week', 'month'][idx])}
+                className="w-[340px]"
               />
+              <div className="w-72">
+                <Input
+                  placeholder="Поиск по имени, фамилии или команде"
+                  value={usersSearchInput}
+                  onChange={(e) => setUsersSearchInput(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -786,7 +800,7 @@ export function MetricsPage() {
               <button
                 onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
                 disabled={usersPage <= 1}
-                className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/30 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/70 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 ← Назад
               </button>
@@ -796,7 +810,7 @@ export function MetricsPage() {
               <button
                 onClick={() => setUsersPage((p) => Math.min(usersTotalPages, p + 1))}
                 disabled={usersPage >= usersTotalPages}
-                className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/30 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 rounded-md text-[13px] font-bold uppercase tracking-wide border border-graphite/20 text-graphite bg-white/70 hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 Вперёд →
               </button>
