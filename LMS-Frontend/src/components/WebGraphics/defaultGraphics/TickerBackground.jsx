@@ -1,11 +1,11 @@
 import React from 'react';
 
 const TICKER_ROWS = [
-  { speed: 95, direction: 'left', size: 'text-[80px]', opacity: 'opacity-[0.03]', top: '5%' },
-  { speed: 90, direction: 'right', size: 'text-[50px]', opacity: 'opacity-[0.04]', top: '20%' },
-  { speed: 98, direction: 'left', size: 'text-[100px]', opacity: 'opacity-[0.02]', top: '38%' },
-  { speed: 65, direction: 'right', size: 'text-[40px]', opacity: 'opacity-[0.05]', top: '55%' },
-  { speed: 60, direction: 'left', size: 'text-[70px]', opacity: 'opacity-[0.02]', top: '70%' },
+  { speed: 80, direction: 'left', size: 'text-[80px]', opacity: 'opacity-[0.03]', top: '1%' },
+  { speed: 90, direction: 'right', size: 'text-[50px]', opacity: 'opacity-[0.02]', top: '20%' },
+  { speed: 120, direction: 'left', size: 'text-[100px]', opacity: 'opacity-[0.04]', top: '30%' },
+  { speed: 65, direction: 'right', size: 'text-[40px]', opacity: 'opacity-[0.02]', top: '55%' },
+  { speed: 150, direction: 'left', size: 'text-[70px]', opacity: 'opacity-[0.05]', top: '70%' },
   { speed: 65, direction: 'right', size: 'text-[60px]', opacity: 'opacity-[0.03]', top: '85%' },
 ];
 

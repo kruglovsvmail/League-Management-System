@@ -124,10 +124,10 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
           {hasAccess('GLOBAL_REGISTRY_ACCESS') && (
             <div className="mt-6 pt-4 border-t border-white/10 space-y-1">
-              {renderNavLink({ name: "Глобальный Реестр", path: "/registry", icon: "registry" })}
-              {renderNavLink({ name: "Команды", path: "/teams", icon: "team" })}
+              {renderNavLink({ name: "Реестр", path: "/registry", icon: "registry" })}
+              {renderNavLink({ name: "Команды", path: "/teams", icon: "users" })}
               {renderNavLink({ name: "Метрика", path: "/metrics", icon: "metrics" })}
-              {renderNavLink({ name: "Внешние матчи", path: "/leagueless-matches", icon: "matches" })}
+              {renderNavLink({ name: "Товарки", path: "/leagueless-matches", icon: "handshake" })}
             </div>
           )}
         </nav>

@@ -65,7 +65,7 @@ export default function PreMatchOverlay({ game, overlay }) {
 
         {/* Верхняя лента: Турнирная информация (Фон как у подвала) */}
         <div className="flex justify-center items-center bg-black text-zinc-300 px-8 py-3 w-full relative z-10">
-          <span className="font-black uppercase tracking-[0.15em] text-[26px] text-white/70">
+          <span className="font-bold uppercase tracking-[0.15em] text-[26px] text-white/90">
             {stageLabel} • {matchNumberText}
           </span>
         </div>
@@ -75,7 +75,7 @@ export default function PreMatchOverlay({ game, overlay }) {
           <TickerBackground texts={[game.league_name, game.home_short_name, game.away_short_name, game.division_name, game.home_team_name, game.away_team_name]} />
 
           {/* Блок Хозяев */}
-          <div className="w-[40%] flex items-center justify-center relative group">
+          <div className="w-[37%] flex items-center justify-center relative group">
              {/* Крупный логотип на фоне (с сильным затемнением) */}
              {homeLogo && (
                <img src={homeLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-[150%] z-0 pointer-events-none" />
@@ -99,13 +99,11 @@ export default function PreMatchOverlay({ game, overlay }) {
           </div>
 
           {/* Центральный блок: Время (Чистый единый фон bg-zinc-950) */}
-          <div className="w-[20%] flex items-center justify-center relative">
+          <div className="w-[26%] flex items-center justify-center relative">
              <div className="flex flex-col items-center justify-center bg-zinc-900 w-full h-full p-6 z-10 overflow-hidden relative">
                 {/* Индивидуальный блик на таймере убран для использования глобального блика */}
+                
 
-                <span className="text-white/20 font-bold text-center uppercase tracking-[0.2em] text-[20px] mb-3 z-10">
-                  До начала примерно
-                </span>
                 <span className={`font-mono text-[80px] font-black tabular-nums tracking-tighter leading-none transition-colors z-10 ${timeLeft <= 60 && !overlay.data?.isPaused ? 'text-red-500 animate-pulse' : 'text-white'}`}>
                   {formatCountdown(timeLeft)}
                 </span>
@@ -115,7 +113,7 @@ export default function PreMatchOverlay({ game, overlay }) {
           </div>
 
           {/* Блок Гостей */}
-          <div className="w-[40%] flex items-center justify-center relative">
+          <div className="w-[37%] flex items-center justify-center relative">
              {/* Крупный логотип на фоне (с сильным затемнением) */}
              {awayLogo && (
                <img src={awayLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-[150%] z-0 pointer-events-none" />

@@ -9,15 +9,36 @@ const PAGE_LABELS = {
 
 const labelFor = (page) => PAGE_LABELS[page] || page;
 
+// Часовой пояс клуба, по которому считаются календарные сутки в метриках
+// (совпадает с дефолтом push_subscriptions.timezone и pushService.js).
+const CLUB_TIMEZONE = 'Europe/Moscow';
+
 // Извлекает "YYYY-MM-DD" из локальных компонентов даты (getFullYear/getMonth/getDate),
 // а НЕ через toISOString() — тот конвертирует в UTC и сдвигает календарный день назад
 // на любом сервере, где локальный часовой пояс опережает UTC (что и было причиной бага
-// "сегодняшние визиты не попадают в график").
+// "сегодняшние визиты не попадают в график"). Работает корректно для дат, уже
+// извлечённых из Postgres (pg парсит DATE через локальные компоненты, поэтому
+// getFullYear/getMonth/getDate всегда воспроизводят исходный Y-M-D один в один).
 const toDateStr = (d) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+};
+
+// Возвращает {year, month, day} текущей календарной даты по часовому поясу клуба
+// (Europe/Moscow) — независимо от таймзоны окружения, в котором фактически запущен
+// процесс Node (TZ сервера явно не задан). Используется только чтобы правильно
+// определить "сегодня" при выборе диапазона по умолчанию (неделя/месяц).
+const todayInClubTimezone = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLUB_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  return { year: get('year'), month: get('month'), day: get('day') };
 };
 
 // ── GET /api/metrics/summary ─────────────────────────────────────────────
@@ -54,13 +75,33 @@ export const getSummary = async (req, res) => {
   }
 };
 
-// ── GET /api/metrics/top-users?page=1&search=иванов ──────────────────────
-// Постраничный список активных пользователей (15 на страницу) с поиском по имени/фамилии.
+// Разрешённые колонки сортировки для /top-users — белый список, чтобы нельзя было
+// подставить произвольный SQL через query-параметр.
+const TOP_USERS_SORT_COLUMNS = {
+  last_visited: { expr: 'last_visited_at', nulls: 'LAST', defaultDir: 'DESC' },
+  name: { expr: 'u.last_name, u.first_name', defaultDir: 'ASC' },
+  visits: { expr: 'total_visits', defaultDir: 'DESC' },
+  push: { expr: 'push_device_count', defaultDir: 'DESC' },
+};
+
+// ── GET /api/metrics/top-users?page=1&search=иванов&sort=last_visited&dir=desc ───
+// Постраничный список пользователей (15 на страницу) с поиском по имени/фамилии.
+// Сортировка серверная — применяется до пагинации, поэтому корректно упорядочивает
+// вообще всех пользователей, а не только тех, что видны на текущей странице.
 export const getTopUsers = async (req, res) => {
   try {
     const PAGE_SIZE = 15;
     const pageNum = Math.max(1, Number(req.query.page) || 1);
     const search = (req.query.search || '').trim();
+
+    const sortKey = TOP_USERS_SORT_COLUMNS[req.query.sort] ? req.query.sort : 'last_visited';
+    const sortCol = TOP_USERS_SORT_COLUMNS[sortKey];
+    const direction = req.query.dir === 'asc' ? 'ASC' : req.query.dir === 'desc' ? 'DESC' : sortCol.defaultDir;
+    // Для составной сортировки "name" (last_name, first_name) направление применяется к обеим частям
+    const orderByExpr = sortCol.expr
+      .split(',')
+      .map((part) => `${part.trim()} ${direction}${sortCol.nulls ? ` NULLS ${sortCol.nulls}` : ''}`)
+      .join(', ');
 
     // Один и тот же фильтр для подсчёта страниц и для выборки данных
     const searchWhere = `($1 = '' OR u.first_name ILIKE '%' || $1 || '%' OR u.last_name ILIKE '%' || $1 || '%'
@@ -80,22 +121,55 @@ export const getTopUsers = async (req, res) => {
     const { rows } = await pool.query(
       `SELECT u.id, u.first_name, u.last_name, u.avatar_url,
               SUM(pv.visit_count) AS total_visits,
-              MAX(pv.last_visited_at) AS last_visited_at
+              MAX(pv.last_visited_at) AS last_visited_at,
+              COALESCE(ps.device_count, 0) AS push_device_count
        FROM page_visits pv
        JOIN users u ON u.id = pv.user_id
+       LEFT JOIN (
+         SELECT user_id, COUNT(*) AS device_count
+         FROM push_subscriptions
+         GROUP BY user_id
+       ) ps ON ps.user_id = u.id
        WHERE ${searchWhere}
-       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url
-       ORDER BY total_visits DESC
+       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, ps.device_count
+       ORDER BY ${orderByExpr}, u.id ASC
        LIMIT $2 OFFSET $3`,
       [search, PAGE_SIZE, (pageNum - 1) * PAGE_SIZE]
     );
 
+    // Команды (активное членство, left_at IS NULL) для пользователей этой страницы — с логотипом
+    const userIds = rows.map((r) => r.id);
+    let teamsByUser = new Map();
+    if (userIds.length > 0) {
+      const teamsRes = await pool.query(
+        `SELECT tm.user_id, t.id AS team_id, t.name, t.short_name, t.logo_url
+         FROM team_members tm
+         JOIN teams t ON t.id = tm.team_id
+         WHERE tm.user_id = ANY($1) AND tm.left_at IS NULL
+         ORDER BY t.name`,
+        [userIds]
+      );
+      teamsByUser = teamsRes.rows.reduce((map, r) => {
+        const list = map.get(r.user_id) || [];
+        list.push({ id: r.team_id, name: r.name, short_name: r.short_name, logo_url: r.logo_url });
+        map.set(r.user_id, list);
+        return map;
+      }, new Map());
+    }
+
     res.json({
       success: true,
-      users: rows.map((r) => ({ ...r, total_visits: Number(r.total_visits) })),
+      users: rows.map((r) => ({
+        ...r,
+        total_visits: Number(r.total_visits),
+        push_device_count: Number(r.push_device_count),
+        teams: teamsByUser.get(r.id) || [],
+      })),
       total,
       totalPages,
       page: pageNum,
+      sort: sortKey,
+      dir: direction.toLowerCase(),
     });
   } catch (err) {
     console.error('Ошибка в metricsController.getTopUsers:', err);
@@ -150,8 +224,10 @@ export const getDaily = async (req, res) => {
       endDate = new Date(`${to}T00:00:00`);
     } else {
       const rangeDays = req.query.range === 'month' ? 30 : 7;
-      endDate = new Date();
-      endDate.setHours(0, 0, 0, 0);
+      // «Сегодня» — по часовому поясу клуба (Europe/Moscow), а не по таймзоне сервера,
+      // на котором фактически запущен процесс (TZ там не задан явно).
+      const today = todayInClubTimezone();
+      endDate = new Date(today.year, today.month - 1, today.day);
       startDate = new Date(endDate);
       startDate.setDate(startDate.getDate() - (rangeDays - 1));
     }
@@ -286,13 +362,15 @@ export const getAudience = async (req, res) => {
       virtual_pct: pct(Number(acc.virtual), Number(acc.total)),
     };
 
+    // Границы суток — по часовому поясу клуба (Europe/Moscow), а не по таймзоне
+    // сессии Postgres (CURRENT_DATE там обычно UTC).
     const activityRes = await pool.query(
       `SELECT
-         COUNT(DISTINCT user_id) FILTER (WHERE visit_date = CURRENT_DATE) AS dau,
-         COUNT(DISTINCT user_id) FILTER (WHERE visit_date >= CURRENT_DATE - 6) AS wau,
+         COUNT(DISTINCT user_id) FILTER (WHERE visit_date = (now() AT TIME ZONE 'Europe/Moscow')::date) AS dau,
+         COUNT(DISTINCT user_id) FILTER (WHERE visit_date >= (now() AT TIME ZONE 'Europe/Moscow')::date - 6) AS wau,
          COUNT(DISTINCT user_id) AS mau
        FROM page_visits_daily_seen
-       WHERE visit_date >= CURRENT_DATE - 29`
+       WHERE visit_date >= (now() AT TIME ZONE 'Europe/Moscow')::date - 29`
     );
     const act = activityRes.rows[0];
     const activity = {
@@ -377,31 +455,13 @@ export const getPushStats = async (req, res) => {
     );
     const subscribedUsers = Number(subscribedRes.rows[0].subscribed);
 
-    const distributionRes = await pool.query(
-      `SELECT
-         CASE WHEN device_count >= 3 THEN '3+' ELSE device_count::text END AS bucket,
-         COUNT(*) AS user_count
-       FROM (
-         SELECT user_id, COUNT(*) AS device_count
-         FROM push_subscriptions
-         GROUP BY user_id
-       ) sub
-       GROUP BY bucket
-       ORDER BY bucket`
-    );
-
-    const distribution = distributionRes.rows.map((r) => ({
-      bucket: r.bucket,
-      label: r.bucket === '3+' ? '3+ устройства' : r.bucket === '1' ? '1 устройство' : `${r.bucket} устройства`,
-      user_count: Number(r.user_count),
-    }));
-
+    // Кто именно подписан — смотри колонку "Push" в /metrics/top-users
+    // (там же можно отсортировать пользователей по наличию подписки).
     res.json({
       success: true,
       total_audience: totalAudience,
       subscribed_users: subscribedUsers,
       coverage_pct: totalAudience > 0 ? Math.round((subscribedUsers / totalAudience) * 1000) / 10 : 0,
-      distribution,
     });
   } catch (err) {
     console.error('Ошибка в metricsController.getPushStats:', err);
