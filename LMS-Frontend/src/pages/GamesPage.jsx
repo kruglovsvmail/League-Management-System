@@ -278,8 +278,8 @@ export function GamesPage() {
     const seasonOptions = seasons.map(s => s.name);
     const currentSeasonName = seasons.find(s => s.id === selectedSeasonId)?.name || '';
 
-    const divisionOptions = divisions.map(d => d.name);
-    const currentDivisionName = divisions.find(d => d.id === selectedDivisionId)?.name || '';
+    const divisionOptions = divisions.map(d => d.short_name || d.name);
+    const currentDivisionLabel = activeDivision ? (activeDivision.short_name || activeDivision.name) : '';
     
     const displayedGames = !showFinished 
         ? games.filter(g => g.status !== 'finished' && g.status !== 'cancelled') 
@@ -307,21 +307,21 @@ export function GamesPage() {
                             </div>
                         )}
 
-                        <div className="w-56 animate-zoom-in">
-                            <Select 
-                                options={divisionOptions} 
-                                value={currentDivisionName || 'Загрузка...'} 
+                        <div className="w-64 animate-zoom-in">
+                            <Select
+                                options={divisionOptions}
+                                value={currentDivisionLabel || 'Загрузка...'}
                                 onChange={(selectedName) => {
-                                    const d = divisions.find(d => d.name === selectedName);
+                                    const d = divisions.find(d => (d.short_name || d.name) === selectedName);
                                     if (d) setSelectedDivisionId(d.id);
-                                }} 
+                                }}
                                 disabled={divisions.length === 0}
                             />
                         </div>
 
-                        <div className="w-32 animate-zoom-in">
-                            <Select 
-                                options={seasonOptions} 
+                        <div className="w-28 animate-zoom-in">
+                            <Select
+                                options={seasonOptions}
                                 value={currentSeasonName || 'Загрузка...'} 
                                 onChange={(selectedName) => {
                                     const s = seasons.find(s => s.name === selectedName);

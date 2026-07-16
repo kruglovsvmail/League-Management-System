@@ -35,7 +35,9 @@ export const getPlayerProfile = async (req, res) => {
         l.city as league_city,
         
         d.name as division_name,
-        
+        d.short_name as division_short_name,
+        d.logo_url as division_logo,
+
         t.name as team_name,
         t.name as team_full_name,
         t.logo_url as team_logo,
@@ -82,7 +84,9 @@ export const getPlayerProfile = async (req, res) => {
         l.city as league_city,
         
         d.name as division_name,
-        g.stage_type, 
+        d.short_name as division_short_name,
+        d.logo_url as division_logo,
+        g.stage_type,
         g.home_score, 
         g.away_score,
         g.home_team_id,

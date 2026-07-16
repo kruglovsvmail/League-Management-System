@@ -100,7 +100,11 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
          <span className="font-semibold text-graphite hover:text-orange">{r.league_name}</span>
        </Tooltip>
     )},
-    { label: 'Дивизион', width: 'w-[220px]', render: r => r.division_name },
+    { label: 'Дивизион', width: 'w-[220px]', render: r => (
+       <Tooltip logo={getImageUrl(r.division_logo || '/default/Logo_division_default.webp')} title={r.division_name}>
+         <span className="text-graphite hover:text-orange transition-colors cursor-default">{r.division_short_name || r.division_name}</span>
+       </Tooltip>
+    )},
     { label: 'Команда', render: r => (
        <Tooltip 
          logo={getImageUrl(r.team_logo || r.logo || '/default/Logo_team_default.webp')} 
@@ -130,7 +134,11 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
          <span className="font-semibold text-graphite hover:text-orange">{r.league_name}</span>
        </Tooltip>
     )},
-    { label: 'Дивизион', width: 'w-[220px]', render: r => r.division_name },
+    { label: 'Дивизион', width: 'w-[220px]', render: r => (
+       <Tooltip logo={getImageUrl(r.division_logo || '/default/Logo_division_default.webp')} title={r.division_name}>
+         <span className="text-graphite hover:text-orange transition-colors cursor-default">{r.division_short_name || r.division_name}</span>
+       </Tooltip>
+    )},
     { label: 'Команда', render: r => (
        <Tooltip 
          logo={getImageUrl(r.team_logo || r.logo || '/default/Logo_team_default.webp')} 
@@ -162,7 +170,9 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
              <span className="text-[13px] text-graphite hover:text-orange">{r.league_name || '-'}</span>
            </Tooltip>
            <span className="text-graphite/40">/</span>
-           <span className="text-graphite-light text-[13px]">{r.division_name || '-'}</span>
+           <Tooltip logo={getImageUrl(r.division_logo || '/default/Logo_division_default.webp')} title={r.division_name || '-'}>
+             <span className="text-graphite-light text-[13px] hover:text-orange transition-colors">{r.division_short_name || r.division_name || '-'}</span>
+           </Tooltip>
         </div>
     )},
     { label: 'Тип', width: 'w-[40px] text-center', render: r => <span className="text-[13px] text-graphite">{r.stage_type === 'playoff' ? 'ПО' : 'Рег.'}</span> },

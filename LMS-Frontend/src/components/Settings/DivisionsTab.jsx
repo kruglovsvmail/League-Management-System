@@ -74,18 +74,20 @@ const getInitialFormData = (div = null) => {
       playoff_auto_stop_on_event: div.playoff_auto_stop_on_event ?? false,
 
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
+      hide_stats_unpaid: div.hide_stats_unpaid ?? false, individual_fee: div.individual_fee ?? '',
       points_win_reg: div.points_win_reg ?? 2, points_win_ot: div.points_win_ot ?? 2, points_draw: div.points_draw ?? 1, points_loss_ot: div.points_loss_ot ?? 1, points_loss_reg: div.points_loss_reg ?? 0,
       points_tech_win: div.points_tech_win ?? 3, points_tech_loss: div.points_tech_loss ?? 0, points_tech_draw: div.points_tech_draw ?? 0,
     };
   }
   return {
-    name: '', short_name: '', tournament_type: 'Регулярный чемпионат', description: '',
+    name: '', short_name: '', classification: '', tournament_type: 'Регулярный чемпионат', description: '',
     start_date: null, end_date: null, application_start: null, application_end: null, transfer_start: null, transfer_end: null,
     
     reg_periods_count: 3, reg_period_length: 20, reg_has_overtime: true, reg_ot_length: 5, reg_has_shootouts: true, reg_so_length: 3, reg_track_plus_minus: false, reg_auto_stop_on_event: false,
     playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false, playoff_auto_stop_on_event: false,
     
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
+    hide_stats_unpaid: false, individual_fee: '',
     points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
     points_tech_win: 3, points_tech_loss: 0, points_tech_draw: 0,
     ranking_criteria: [...CRITERIA_OPTIONS],
@@ -559,7 +561,10 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                     <div className="flex flex-col gap-8 animate-zoom-in max-w-4xl">
                         <div className="bg-white/70 p-6 rounded-md border border-graphite/10 flex flex-col gap-5">
                             <span className="text-[14px] font-bold text-graphite uppercase tracking-wider mb-1">Основные данные</span>
-                            <Input label="Полное название*" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} disabled={isLocked} />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <Input label="Полное название*" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} disabled={isLocked} />
+                                <Input label="Классификация дивизиона" placeholder="Например: Любитель, Мастер, Юноши" value={formData.classification || ''} onChange={(e) => handleChange('classification', e.target.value)} disabled={isLocked} />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <Input label="Короткое название*" value={formData.short_name} onChange={(e) => handleChange('short_name', e.target.value)} disabled={isLocked} />
                                 <Select label="Тип турнира*" options={TYPE_OPTIONS} value={formData.tournament_type} onChange={(val) => handleChange('tournament_type', val)} disabled={isLocked} />
@@ -627,6 +632,25 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
                                 <div><div className="font-bold text-graphite uppercase text-[12px]">Согласие игрока</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать согласие на обработку ПДн.</div></div>
                                 <Switch checked={formData.req_consent} onChange={(e) => handleChange('req_consent', e.target.checked)} disabled={isLocked} />
+                            </div>
+                            <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
+                                <div><div className="font-bold text-graphite uppercase text-[12px]">Скрывать статистику</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Скрывать статистику игрока без отметки об оплате взноса (в TR).</div></div>
+                                <Switch checked={formData.hide_stats_unpaid} onChange={(e) => handleChange('hide_stats_unpaid', e.target.checked)} disabled={isLocked} />
+                            </div>
+                            <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
+                                <div><div className="font-bold text-graphite uppercase text-[12px]">Индивидуальный взнос</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Сумма взноса для игрока, ₽.</div></div>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="0"
+                                        value={formData.individual_fee}
+                                        onChange={(e) => handleChange('individual_fee', e.target.value.replace(/\D/g, ''))}
+                                        disabled={isLocked}
+                                        className="w-full pl-3 pr-7 py-2 rounded-md border border-graphite/40 bg-white/70 text-graphite text-[13px] font-bold outline-none transition-all duration-300 focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] disabled:opacity-60 disabled:cursor-not-allowed"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-bold text-graphite-light pointer-events-none">₽</span>
+                                </div>
                             </div>
                         </div>
                     </div>

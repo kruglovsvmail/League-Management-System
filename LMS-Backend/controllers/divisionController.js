@@ -110,19 +110,22 @@ export const createDivision = async (req, res) => {
     try {
         const { seasonId } = req.params;
         const {
-            name, short_name, tournament_type, start_date, end_date,
+            name, short_name, classification, tournament_type, start_date, end_date,
             application_start, application_end, transfer_start, transfer_end,
             description, points_win_reg, points_win_ot, points_draw,
-            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
-            ranking_criteria, 
+            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
+            ranking_criteria,
             reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus, reg_auto_stop_on_event,
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
-            req_med_cert, req_insurance, req_consent, digital_applications_only
+            req_med_cert, req_insurance, req_consent, digital_applications_only,
+            hide_stats_unpaid, individual_fee
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
             return res.status(400).json({ success: false, error: 'Периоды заявочной кампании и трансферного окна не могут пересекаться' });
         }
+
+        const individualFeeValue = (individual_fee !== undefined && individual_fee !== null && individual_fee !== '') ? Number(individual_fee) : null;
 
         const result = await pool.query(`
             INSERT INTO divisions (
@@ -131,16 +134,18 @@ export const createDivision = async (req, res) => {
                 transfer_start, transfer_end, description,
                 points_win_reg, points_win_ot, points_draw,
                 points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
-                ranking_criteria, is_published, 
+                ranking_criteria, is_published,
                 reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus, reg_auto_stop_on_event,
                 playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
-                req_med_cert, req_insurance, req_consent, digital_applications_only
+                req_med_cert, req_insurance, req_consent, digital_applications_only, classification,
+                hide_stats_unpaid, individual_fee
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 false,
                 $21, $22, $23, $24, $25, $26, $27, $28,
                 $29, $30, $31, $32, $33, $34, $35, $36,
-                $37, $38, $39, $40
+                $37, $38, $39, $40, $41,
+                $42, $43
             )
             RETURNING id
         `, [
@@ -154,7 +159,9 @@ export const createDivision = async (req, res) => {
             ranking_criteria ? JSON.stringify(ranking_criteria) : null,
             reg_periods_count ?? 3, reg_period_length ?? 20, reg_has_overtime ?? true, reg_ot_length ?? 5, reg_has_shootouts ?? true, reg_so_length ?? 3, reg_track_plus_minus ?? false, reg_auto_stop_on_event ?? false,
             playoff_periods_count ?? 3, playoff_period_length ?? 20, playoff_has_overtime ?? true, playoff_ot_length ?? 20, playoff_has_shootouts ?? false, playoff_so_length ?? 0, playoff_track_plus_minus ?? false, playoff_auto_stop_on_event ?? false,
-            req_med_cert ?? true, req_insurance ?? true, req_consent ?? true, digital_applications_only !== undefined ? digital_applications_only : true
+            req_med_cert ?? true, req_insurance ?? true, req_consent ?? true, digital_applications_only !== undefined ? digital_applications_only : true,
+            classification || null,
+            hide_stats_unpaid ?? false, individualFeeValue
         ]);
 
         res.json({ success: true, id: result.rows[0].id });
@@ -168,20 +175,23 @@ export const updateDivision = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            name, short_name, tournament_type, start_date, end_date, application_start, application_end,
+            name, short_name, classification, tournament_type, start_date, end_date, application_start, application_end,
             transfer_start, transfer_end, description, points_win_reg, points_win_ot, points_draw, points_loss_ot,
-            points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria, 
+            points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, ranking_criteria,
             reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus, reg_auto_stop_on_event,
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
-            req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations
+            req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations,
+            hide_stats_unpaid, individual_fee
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
             return res.status(400).json({ success: false, error: 'Периоды заявочной кампании и трансферного окна не могут пересекаться' });
         }
 
+        const individualFeeValue = (individual_fee !== undefined && individual_fee !== null && individual_fee !== '') ? Number(individual_fee) : null;
+
         await pool.query(`
-            UPDATE divisions SET 
+            UPDATE divisions SET
                 name = $1, short_name = $2, tournament_type = $3, start_date = $4, end_date = $5,
                 application_start = $6, application_end = $7, transfer_start = $8, transfer_end = $9,
                 description = $10, points_win_reg = $11, points_win_ot = $12, points_draw = $13,
@@ -189,16 +199,19 @@ export const updateDivision = async (req, res) => {
                 ranking_criteria = $19,
                 reg_periods_count = $21, reg_period_length = $22, reg_has_overtime = $23, reg_ot_length = $24, reg_has_shootouts = $25, reg_so_length = $26, reg_track_plus_minus = $27, reg_auto_stop_on_event = $28,
                 playoff_periods_count = $29, playoff_period_length = $30, playoff_has_overtime = $31, playoff_ot_length = $32, playoff_has_shootouts = $33, playoff_so_length = $34, playoff_track_plus_minus = $35, playoff_auto_stop_on_event = $36,
-                req_med_cert = $37, req_insurance = $38, req_consent = $39, digital_applications_only = $40
+                req_med_cert = $37, req_insurance = $38, req_consent = $39, digital_applications_only = $40, classification = $41,
+                hide_stats_unpaid = $42, individual_fee = $43
             WHERE id = $20
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
             transfer_start || null, transfer_end || null, description, points_win_reg, points_win_ot, points_draw,
-            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw, 
+            points_loss_ot, points_loss_reg, points_tech_win, points_tech_loss, points_tech_draw,
             ranking_criteria ? JSON.stringify(ranking_criteria) : null, id,
             reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus, reg_auto_stop_on_event,
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
-            req_med_cert, req_insurance, req_consent, digital_applications_only
+            req_med_cert, req_insurance, req_consent, digital_applications_only,
+            classification || null,
+            hide_stats_unpaid ?? false, individualFeeValue
         ]);
 
         if (clear_logo) {

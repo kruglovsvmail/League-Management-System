@@ -22,11 +22,13 @@ export function QualificationsTab({ setToast }) {
   const [qualifications, setQualifications] = useState([]);
   const [isLoadingQuals, setIsLoadingQuals] = useState(false);
   
-  const [newQual, setNewQual] = useState({ name: '', shortName: '', description: '' });
+  const [newQual, setNewQual] = useState({ name: '', shortName: '', description: '', fullDescription: '' });
   const [isAddingQual, setIsAddingQual] = useState(false);
-  
+
   const [confirmDeleteQual, setConfirmDeleteQual] = useState(null);
   const [isDeletingQual, setIsDeletingQual] = useState(false);
+
+  const [expandedQualId, setExpandedQualId] = useState(null);
 
   useEffect(() => {
     if (selectedLeague?.id && canViewQuals) {
@@ -68,7 +70,7 @@ export function QualificationsTab({ setToast }) {
       const data = await res.json();
       if (data.success) {
         setToast({ title: 'Успешно', message: 'Квалификация добавлена', type: 'success' });
-        setNewQual({ name: '', shortName: '', description: '' });
+        setNewQual({ name: '', shortName: '', description: '', fullDescription: '' });
         fetchQualifications();
       } else {
         setToast({ title: 'Ошибка', message: data.error, type: 'error' });
@@ -126,14 +128,24 @@ export function QualificationsTab({ setToast }) {
               
               <div className="flex flex-col w-full mt-1">
                 <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Описание критериев</label>
-                <textarea 
-                  placeholder="Опишите, кто подходит под эту квалификацию..." 
-                  value={newQual.description} 
-                  onChange={(e) => setNewQual({...newQual, description: e.target.value})} 
-                  className="w-full h-[120px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none" 
+                <textarea
+                  placeholder="Опишите, кто подходит под эту квалификацию..."
+                  value={newQual.description}
+                  onChange={(e) => setNewQual({...newQual, description: e.target.value})}
+                  className="w-full h-[110px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none"
                 />
               </div>
-              
+
+              <div className="flex flex-col w-full mt-1">
+                <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Полное описание</label>
+                <textarea
+                  placeholder="Развернутые правила и критерии допуска (необязательно)..."
+                  value={newQual.fullDescription}
+                  onChange={(e) => setNewQual({...newQual, fullDescription: e.target.value})}
+                  className="w-full h-[110px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none"
+                />
+              </div>
+
               <Button onClick={handleAddQual} isLoading={isAddingQual} className="w-full mt-2">Добавить в справочник</Button>
             </div>
           </div>
@@ -149,7 +161,9 @@ export function QualificationsTab({ setToast }) {
           <div className={`transition-opacity duration-300 ease-in-out ${isLoadingQuals ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
             {qualifications.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-5">
-                {qualifications.map(qual => (
+                {qualifications.map(qual => {
+                  const isExpanded = expandedQualId === qual.id;
+                  return (
                   <div key={qual.id} className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 flex flex-col gap-3 relative group transition-all hover:shadow-lg hover:border-orange/30 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
                     <div className="flex justify-between items-start">
                       <div className="flex flex-col gap-2 pr-8">
@@ -162,11 +176,29 @@ export function QualificationsTab({ setToast }) {
                         </button>
                       )}
                     </div>
-                    <p className="text-[13px] text-graphite-light leading-relaxed mt-3 border-t border-graphite/10 pt-4">
+                    <p className="text-[13px] text-graphite-light leading-relaxed mt-3 border-t border-graphite/10 pt-4 whitespace-pre-line">
                       {qual.description || 'Нет описания.'}
                     </p>
+
+                    {qual.full_description && (
+                      <>
+                        {isExpanded && (
+                          <p className="text-[13px] text-graphite-light leading-relaxed border-t border-graphite/10 pt-4 whitespace-pre-line">
+                            {qual.full_description}
+                          </p>
+                        )}
+                        <button
+                          onClick={() => setExpandedQualId(isExpanded ? null : qual.id)}
+                          className="self-start flex items-center gap-1 text-[12px] font-bold text-orange hover:text-orange/70 transition-colors mt-1"
+                        >
+                          {isExpanded ? 'Свернуть' : 'Показать полное описание'}
+                          <Icon name="chevron" className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-20 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] text-graphite-light font-medium">Нет созданных квалификаций</div>

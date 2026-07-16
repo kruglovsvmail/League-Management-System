@@ -90,7 +90,7 @@ export const getPublicGameById = async (req, res) => {
                    COALESCE(tt_away.custom_jersey_dark_url,  t2.jersey_dark_url)  as away_jersey_dark_url,
                    COALESCE(tt_away.custom_jersey_light_url, t2.jersey_light_url) as away_jersey_light_url,
                    l.id as league_id, l.logo_url as league_logo, l.name as league_name,
-                   d.logo_url as division_logo, d.name as division_name,
+                   d.logo_url as division_logo, d.name as division_name, d.short_name as division_short_name,
                    a.name as arena_name, a.city as arena_city,
                    gt.periods_count, gt.track_plus_minus, gt.auto_stop_on_event, gt.shootout_status,
                    (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,

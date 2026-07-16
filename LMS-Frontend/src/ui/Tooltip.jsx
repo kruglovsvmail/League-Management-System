@@ -118,11 +118,11 @@ export function Tooltip({ children, logo, title, subtitle, position = 'top', noU
           // --- НАСТРОЙКА 2: СКОРОСТЬ АНИМАЦИИ ---
           // duration-200 (200мс) — это скорость изменения прозрачности. 
           // Можете заменить на duration-300 или duration-500, если хотите медленнее.
-          className="absolute z-[100010] bg-white/90 backdrop-blur-[10px] border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] rounded-md p-3 flex items-start gap-3.5 pointer-events-none animate-zoom-in transition-opacity duration-200"
+          className={`absolute z-[100010] bg-white/90 backdrop-blur-[10px] border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] rounded-md p-3 flex ${subtitle ? 'items-start' : 'items-center'} gap-3.5 pointer-events-none animate-zoom-in transition-opacity duration-200`}
           style={{ left: coords.left, top: coords.top }}
         >
           {logo && (
-            <div className="w-[46px] h-[46px] shrink-0 rounded-lg p-1 flex justify-center items-center overflow-hidden bg-white/50 border border-graphite/5 mt-0.5">
+            <div className={`w-[46px] h-[46px] shrink-0 rounded-lg p-1 flex justify-center items-center overflow-hidden bg-white/50 border border-graphite/5 ${subtitle ? 'mt-0.5' : ''}`}>
               <img src={logo} alt="Логотип" className="w-full h-full object-contain" />
             </div>
           )}
@@ -131,7 +131,7 @@ export function Tooltip({ children, logo, title, subtitle, position = 'top', noU
               {title || 'Нет данных'}
             </span>
             {subtitle && (
-              <span className="text-[11px] text-graphite-light font-medium mt-1 leading-relaxed">
+              <span className="text-[11px] text-graphite-light font-medium mt-1 leading-relaxed whitespace-pre-line">
                 {subtitle}
               </span>
             )}

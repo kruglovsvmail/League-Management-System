@@ -79,7 +79,7 @@ export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQ
                   )}
                 </div>
                 {qual.description && (
-                  <span className="text-[12px] text-graphite-light mt-0.5">{qual.description}</span>
+                  <span className="text-[12px] text-graphite-light mt-0.5 whitespace-pre-line">{qual.description}</span>
                 )}
               </div>
 

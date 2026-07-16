@@ -346,6 +346,9 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
             <img src={division.logo_url ? getImageUrl(division.logo_url) : '/img/Logo_division_default.webp'} alt="Logo" className="w-full h-full object-contain drop-shadow-sm" />
           </div>
           <div className="flex flex-col min-w-0">
+            {division.classification && (
+              <span className="text-[11px] font-bold text-orange uppercase tracking-widest truncate">{division.classification}</span>
+            )}
             <h3 className="text-[22px] font-black text-graphite leading-tight tracking-tight truncate">{division.name}</h3>
             <span className="text-[11px] font-bold text-graphite-light/60 uppercase tracking-widest mt-1.5">{TOURNAMENT_TYPES[division.tournament_type] || 'Турнир'}</span>
           </div>

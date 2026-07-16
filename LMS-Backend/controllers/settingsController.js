@@ -137,13 +137,13 @@ export const getSettingsQualifications = async (req, res) => {
 export const createQualification = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { name, shortName, description } = req.body;
+    const { name, shortName, description, fullDescription } = req.body;
 
     const query = `
-      INSERT INTO league_qualifications (league_id, name, short_name, description, status) 
-      VALUES ($1, $2, $3, $4, 'active') RETURNING id
+      INSERT INTO league_qualifications (league_id, name, short_name, description, full_description, status)
+      VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id
     `;
-    const result = await pool.query(query, [leagueId, name, shortName, description]);
+    const result = await pool.query(query, [leagueId, name, shortName, description, fullDescription || null]);
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

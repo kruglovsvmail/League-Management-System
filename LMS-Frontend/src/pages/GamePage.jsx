@@ -474,7 +474,7 @@ export function GamePage() {
 
                 {/* Центральный блок Счета */}
                 <div className="w-[160px] md:w-[220px] shrink-0 flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-graphite-light uppercase tracking-widest mb-2 text-center truncate w-full">{game.division_name}</span>
+                  <span className="text-[10px] font-bold text-graphite-light uppercase tracking-widest mb-2 text-center truncate w-full">{game.division_short_name || game.division_name}</span>
                   
                   {game.is_technical ? (
                     <>
