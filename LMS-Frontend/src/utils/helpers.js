@@ -81,3 +81,83 @@ export const getAuthHeaders = () => {
     'Authorization': `Bearer ${getToken()}`
   };
 };
+
+// =============================================================================
+// СЕТЕВОЙ ГЛОБАЛЬНЫЙ ИНТЕРЦЕПТОР ПРОТУХШЕЙ СЕССИИ (401/403)
+// =============================================================================
+
+// Полная очистка сессии на устройстве (токен + кэш профиля + выбранная лига)
+export const removeToken = () => {
+  localStorage.removeItem('hockeyeco_token');
+  sessionStorage.removeItem('hockeyeco_token');
+  localStorage.removeItem('hockeyeco_user');
+  sessionStorage.removeItem('hockeyeco_user');
+  localStorage.removeItem('hockeyeco_selected_league');
+};
+
+let isRevalidating = false;
+let revalidatePromise = null;
+
+// Эндпоинты аутентификации: их 401/403 — это ошибки самого процесса входа
+// (неверный пароль и т.п.), а не протухшая сессия — их не перехватываем.
+const isAuthUrl = (urlStr) =>
+  urlStr.includes('/api/login') ||
+  urlStr.includes('/api/lookup-') ||
+  urlStr.includes('/api/reset-password') ||
+  urlStr.includes('/api/me');
+
+// Публичный оверлей веб-графики (/games/:id/graphics) работает без сессии
+// и крутится в OBS на трансляции — его нельзя уводить на страницу логина.
+const isPublicOverlay = () =>
+  typeof window !== 'undefined' && window.location?.pathname?.endsWith('/graphics');
+
+const forceLogout = () => {
+  removeToken();
+  // replace, а не pushState — чтобы кнопка "назад" не возвращала на мёртвую сессию
+  if (typeof window !== 'undefined' && window.location?.pathname !== '/login' && !isPublicOverlay()) {
+    window.location.replace('/login');
+  }
+};
+
+if (typeof window !== 'undefined' && !window.__fetchInterceptorInitialized) {
+  window.__fetchInterceptorInitialized = true;
+  const originalFetch = window.fetch;
+
+  window.fetch = async function (...args) {
+    const response = await originalFetch(...args);
+
+    const url = args[0];
+    const urlStr = typeof url === 'string' ? url : (url?.url || '');
+
+    // 401 — бэкенд не увидел заголовок Authorization вовсе: сессии фактически нет
+    if (response.status === 401 && !isAuthUrl(urlStr) && getToken()) {
+      forceLogout();
+    }
+
+    // 403 — либо протух токен, либо просто нет прав на конкретное действие.
+    // Различаем одной контрольной проверкой /api/me: если сессия жива —
+    // это обычный отказ в правах, ничего не делаем.
+    if (response.status === 403 && !isAuthUrl(urlStr) && getToken()) {
+      if (!isRevalidating) {
+        isRevalidating = true;
+        revalidatePromise = originalFetch(`${import.meta.env.VITE_API_URL}/api/me`, {
+          headers: getAuthHeaders()
+        })
+          .then(res => {
+            if (res.status === 401 || res.status === 403) {
+              forceLogout();
+            }
+          })
+          .catch(() => {}) // сетевой сбой — не повод разлогинивать
+          .finally(() => {
+            isRevalidating = false;
+            revalidatePromise = null;
+          });
+      }
+      // Лавина параллельных 403 ждёт выполнения одной этой микро-проверки
+      await revalidatePromise;
+    }
+
+    return response;
+  };
+}

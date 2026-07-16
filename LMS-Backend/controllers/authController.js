@@ -174,7 +174,7 @@ export const login = async (req, res) => {
          return res.status(403).json({ success: false, error: 'Аккаунт недоступен или заблокирован' });
       }
       const secret = process.env.JWT_SECRET || 'dev_secret_key';
-      const token = jwt.sign({ id: user.id }, secret, { expiresIn: '7d' });
+      const token = jwt.sign({ id: user.id }, secret, { expiresIn: '30d' });
       res.json({ success: true, user: userData, token });
     } else {
       res.status(401).json({ success: false, error: 'Неверные учетные данные' });
@@ -274,7 +274,7 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  if (req.params.divisionId || req.body.divisionId || (req.baseUrl.includes('/divisions') && req.params.id)) {
+  if (req.params.divisionId || req.body.divisionId || (req.originalUrl.includes('/divisions') && req.params.id)) {
     const id = req.params.divisionId || req.body.divisionId || req.params.id;
     const res = await pool.query(`
       SELECT s.league_id FROM divisions d
@@ -295,7 +295,7 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  if (req.baseUrl.includes('/transfers') && req.params.id) {
+  if (req.originalUrl.includes('/transfers') && req.params.id) {
     const res = await pool.query(`
       SELECT s.league_id FROM roster_requests rr
       JOIN divisions d ON rr.division_id = d.id
@@ -305,7 +305,7 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
   
-  if (req.body.tournament_roster_id || (req.baseUrl.includes('/tournament-rosters') && req.params.id)) {
+  if (req.body.tournament_roster_id || (req.originalUrl.includes('/tournament-rosters') && req.params.id)) {
     const id = req.body.tournament_roster_id || req.params.id;
     const res = await pool.query(`
       SELECT s.league_id FROM tournament_rosters tr
@@ -317,7 +317,7 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
   
-  if (req.baseUrl.includes('/disqualifications') && req.params.id) {
+  if (req.originalUrl.includes('/disqualifications') && req.params.id) {
      const res = await pool.query(`
       SELECT s.league_id FROM disqualifications d
       JOIN tournament_rosters tr ON d.tournament_roster_id = tr.id
@@ -329,7 +329,7 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
-  if (req.baseUrl.includes('/tournament-teams') && req.params.id) {
+  if (req.originalUrl.includes('/tournament-teams') && req.params.id) {
     const res = await pool.query(`
       SELECT s.league_id FROM tournament_teams tt
       JOIN divisions d ON tt.division_id = d.id
