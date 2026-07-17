@@ -9,30 +9,34 @@ const PAGE_LABELS = {
 
 const labelFor = (page) => PAGE_LABELS[page] || page;
 
-// Часовой пояс клуба, по которому считаются календарные сутки в метриках
-// (совпадает с дефолтом push_subscriptions.timezone и pushService.js).
-const CLUB_TIMEZONE = 'Europe/Moscow';
+// Часовой пояс, по которому считаются календарные сутки в метриках.
+// ВАЖНО: должен совпадать с таймзоной ЗАПИСИ визитов в TR-Backend
+// (Team-Room/TR-Backend/controllers/AnalyticsController.js) — иначе границы суток
+// на записи и чтении разъедутся, и "сегодня" в графиках будет считаться неверно.
+const METRICS_TIMEZONE = 'Asia/Yekaterinburg';
 
 // Извлекает "YYYY-MM-DD" из локальных компонентов даты (getFullYear/getMonth/getDate),
 // а НЕ через toISOString() — тот конвертирует в UTC и сдвигает календарный день назад
 // на любом сервере, где локальный часовой пояс опережает UTC (что и было причиной бага
-// "сегодняшние визиты не попадают в график"). Работает корректно для дат, уже
-// извлечённых из Postgres (pg парсит DATE через локальные компоненты, поэтому
-// getFullYear/getMonth/getDate всегда воспроизводят исходный Y-M-D один в один).
+// "сегодняшние визиты не попадают в график").
+// DATE-колонки из Postgres теперь приходят готовой строкой 'YYYY-MM-DD' (см. переопределение
+// парсера OID 1082 в config/db.js) — их возвращаем как есть; ветка с getFullYear осталась
+// для JS Date-объектов, создаваемых в коде (startDate/endDate и т.п.).
 const toDateStr = (d) => {
+  if (typeof d === 'string') return d.slice(0, 10);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 };
 
-// Возвращает {year, month, day} текущей календарной даты по часовому поясу клуба
-// (Europe/Moscow) — независимо от таймзоны окружения, в котором фактически запущен
+// Возвращает {year, month, day} текущей календарной даты по METRICS_TIMEZONE —
+// независимо от таймзоны окружения, в котором фактически запущен
 // процесс Node (TZ сервера явно не задан). Используется только чтобы правильно
 // определить "сегодня" при выборе диапазона по умолчанию (неделя/месяц).
 const todayInClubTimezone = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: CLUB_TIMEZONE,
+    timeZone: METRICS_TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -126,9 +130,9 @@ export const getTopUsers = async (req, res) => {
                           ))`;
 
     // Фильтр периода сравнивается уже с агрегатом (GREATEST по MAX(...) и last_seen_at),
-    // поэтому идёт в HAVING, а не WHERE. $3::date - $4::int, приведённое к таймзоне клуба —
-    // граница суток "период дней назад" по Europe/Moscow, а не по таймзоне сервера БД.
-    const periodHaving = `($2::text = 'all' OR GREATEST(MAX(pv.last_visited_at), u.last_seen_at) >= ($3::date - $4::int) AT TIME ZONE 'Europe/Moscow')`;
+    // поэтому идёт в HAVING, а не WHERE. $3::date - $4::int, приведённое к METRICS_TIMEZONE —
+    // граница суток "период дней назад", а не по таймзоне сервера БД.
+    const periodHaving = `($2::text = 'all' OR GREATEST(MAX(pv.last_visited_at), u.last_seen_at) >= ($3::date - $4::int) AT TIME ZONE '${METRICS_TIMEZONE}')`;
 
     const countRes = await pool.query(
       `SELECT COUNT(*) AS total FROM (
@@ -257,7 +261,7 @@ export const getDaily = async (req, res) => {
       endDate = new Date(`${to}T00:00:00`);
     } else {
       const rangeDays = req.query.range === 'month' ? 30 : 7;
-      // «Сегодня» — по часовому поясу клуба (Europe/Moscow), а не по таймзоне сервера,
+      // «Сегодня» — по METRICS_TIMEZONE, а не по таймзоне сервера,
       // на котором фактически запущен процесс (TZ там не задан явно).
       const today = todayInClubTimezone();
       endDate = new Date(today.year, today.month - 1, today.day);
@@ -395,15 +399,15 @@ export const getAudience = async (req, res) => {
       virtual_pct: pct(Number(acc.virtual), Number(acc.total)),
     };
 
-    // Границы суток — по часовому поясу клуба (Europe/Moscow), а не по таймзоне
+    // Границы суток — по METRICS_TIMEZONE, а не по таймзоне
     // сессии Postgres (CURRENT_DATE там обычно UTC).
     const activityRes = await pool.query(
       `SELECT
-         COUNT(DISTINCT user_id) FILTER (WHERE visit_date = (now() AT TIME ZONE 'Europe/Moscow')::date) AS dau,
-         COUNT(DISTINCT user_id) FILTER (WHERE visit_date >= (now() AT TIME ZONE 'Europe/Moscow')::date - 6) AS wau,
+         COUNT(DISTINCT user_id) FILTER (WHERE visit_date = (now() AT TIME ZONE '${METRICS_TIMEZONE}')::date) AS dau,
+         COUNT(DISTINCT user_id) FILTER (WHERE visit_date >= (now() AT TIME ZONE '${METRICS_TIMEZONE}')::date - 6) AS wau,
          COUNT(DISTINCT user_id) AS mau
        FROM page_visits_daily_seen
-       WHERE visit_date >= (now() AT TIME ZONE 'Europe/Moscow')::date - 29`
+       WHERE visit_date >= (now() AT TIME ZONE '${METRICS_TIMEZONE}')::date - 29`
     );
     const act = activityRes.rows[0];
     const activity = {
