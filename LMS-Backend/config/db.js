@@ -1,6 +1,15 @@
 import 'dotenv/config';
 import pg from 'pg';
 
+// OID 1082 = date. По умолчанию pg-types строит из него JS Date через локальный
+// конструктор в таймзоне процесса Node, а затем res.json()/.toISOString() сдвигает
+// календарный день назад в UTC-представлении на любом сервере, где локальная TZ
+// впереди UTC — источник бага со сдвигом start_date/end_date в divisions.
+// Отдаём как есть: значение и так однозначно ('YYYY-MM-DD', без времени/зоны).
+// Эта версия pg не экспортирует types.TypeOverrides, поэтому переопределяем парсер
+// глобально на процесс (единственный доступный API в этой версии).
+pg.types.setTypeParser(1082, (val) => val);
+
 const pool = new pg.Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,

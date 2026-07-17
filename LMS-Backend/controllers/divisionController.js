@@ -3,6 +3,16 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
+import { DEFAULT_TIMEZONE } from '../utils/defaultTimezone.js';
+
+// SQL-выражения для записи "голой" даты (YYYY-MM-DD от DatePicker) в timestamptz-колонку
+// как начала/конца календарного дня по DEFAULT_TIMEZONE, а не по таймзоне сессии Postgres
+// (которая может быть настроена иначе или измениться) — источник бага со сдвигом
+// application_start/application_end/transfer_start/transfer_end. "Конец дня" сделан
+// включительным (23:59:59.999), чтобы окно заявок/трансферов не закрывалось в 00:00
+// последнего дня. NULL-safe: при $N = NULL всё выражение — NULL.
+const dayStartExpr = (n) => `($${n}::date)::timestamp AT TIME ZONE '${DEFAULT_TIMEZONE}'`;
+const dayEndExpr = (n) => `(($${n}::date + 1)::timestamp AT TIME ZONE '${DEFAULT_TIMEZONE}') - INTERVAL '1 millisecond'`;
 
 const checkOverlap = (appStart, appEnd, trStart, trEnd) => {
     if (!appStart || !appEnd || !trStart || !trEnd) return false;
@@ -140,7 +150,7 @@ export const createDivision = async (req, res) => {
                 req_med_cert, req_insurance, req_consent, digital_applications_only, classification,
                 hide_stats_unpaid, individual_fee
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $1, $2, $3, $4, $5, $6, ${dayStartExpr(7)}, ${dayEndExpr(8)}, ${dayStartExpr(9)}, ${dayEndExpr(10)}, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 false,
                 $21, $22, $23, $24, $25, $26, $27, $28,
                 $29, $30, $31, $32, $33, $34, $35, $36,
@@ -193,7 +203,7 @@ export const updateDivision = async (req, res) => {
         await pool.query(`
             UPDATE divisions SET
                 name = $1, short_name = $2, tournament_type = $3, start_date = $4, end_date = $5,
-                application_start = $6, application_end = $7, transfer_start = $8, transfer_end = $9,
+                application_start = ${dayStartExpr(6)}, application_end = ${dayEndExpr(7)}, transfer_start = ${dayStartExpr(8)}, transfer_end = ${dayEndExpr(9)},
                 description = $10, points_win_reg = $11, points_win_ot = $12, points_draw = $13,
                 points_loss_ot = $14, points_loss_reg = $15, points_tech_win = $16, points_tech_loss = $17, points_tech_draw = $18,
                 ranking_criteria = $19,

@@ -32,6 +32,19 @@ const REV_CRITERIA_MAP = Object.fromEntries(
   Object.entries(CRITERIA_MAP).map(([k, v]) => [v, k])
 );
 
+// application_start/application_end/transfer_start/transfer_end приходят с бэкенда
+// полным ISO-моментом (timestamptz). Нельзя брать .split('T')[0] — это UTC-календарный
+// день, а он на 3 часа отстаёт от московского. Конвертируем в YYYY-MM-DD явно по
+// таймзоне клуба (тот же паттерн, что todayInClubTimezone() в LMS-Backend/controllers/metricsController.js).
+const toClubDateStr = (isoValue) => {
+  if (!isoValue) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(isoValue));
+  const get = (t) => parts.find(p => p.type === t).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+};
+
 const getInitialFormData = (div = null) => {
   if (div) {
     let parsedCriteria = ['h2h', 'goals_diff', 'goals_for', 'points', 'wins_reg']; 
@@ -49,10 +62,10 @@ const getInitialFormData = (div = null) => {
       tournament_type: REV_TYPE_MAP[div.tournament_type] || 'Регулярный чемпионат',
       start_date: div.start_date ? div.start_date.split('T')[0] : null,
       end_date: div.end_date ? div.end_date.split('T')[0] : null,
-      application_start: div.application_start ? div.application_start.split('T')[0] : null,
-      application_end: div.application_end ? div.application_end.split('T')[0] : null,
-      transfer_start: div.transfer_start ? div.transfer_start.split('T')[0] : null,
-      transfer_end: div.transfer_end ? div.transfer_end.split('T')[0] : null,
+      application_start: toClubDateStr(div.application_start),
+      application_end: toClubDateStr(div.application_end),
+      transfer_start: toClubDateStr(div.transfer_start),
+      transfer_end: toClubDateStr(div.transfer_end),
       ranking_criteria: uiCriteria,
       
       reg_periods_count: div.reg_periods_count ?? 3, 
@@ -602,11 +615,13 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 <span className="text-[14px] font-bold text-graphite uppercase">Заявки*</span>
                                 <DatePicker placeholder="Старт" value={formData.application_start} onChange={(val) => handleChange('application_start', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.application_end} onChange={(val) => handleChange('application_end', val)} disabled={isLocked} />
+                                <span className="text-[11px] text-graphite-light leading-tight">Считается по МСК (00:00–23:59)</span>
                             </div>
                             <div className="bg-white/70 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
                                 <span className="text-[14px] font-bold text-graphite uppercase">Трансферы</span>
                                 <DatePicker placeholder="Старт" value={formData.transfer_start} onChange={(val) => handleChange('transfer_start', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.transfer_end} onChange={(val) => handleChange('transfer_end', val)} disabled={isLocked} />
+                                <span className="text-[11px] text-graphite-light leading-tight">Считается по МСК (00:00–23:59)</span>
                             </div>
                         </div>
 

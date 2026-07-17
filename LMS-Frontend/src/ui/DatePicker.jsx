@@ -1,12 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+// Парсит "YYYY-MM-DD" через локальный конструктор Date(y, m, d), а НЕ new Date(str) —
+// последний трактует голую дату как UTC-полночь, и getFullYear/getDate в браузере с TZ
+// западнее UTC вернут предыдущий день.
+const parseDateValue = (v) => {
+  if (!v) return null;
+  const [y, m, d] = v.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 export function DatePicker({ value, onChange, placeholder = "Выберите дату", disabled = false, readOnly = false }) {
   const isDisabled = disabled || readOnly;
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
   const [coords, setCoords] = useState({ left: 0, top: 0 });
-  const [viewDate, setViewDate] = useState(value ? new Date(value) : new Date());
+  const [viewDate, setViewDate] = useState(value ? parseDateValue(value) : new Date());
 
   const updatePosition = () => {
     if (isOpen && containerRef.current) {
@@ -79,7 +88,7 @@ export function DatePicker({ value, onChange, placeholder = "Выберите д
     setIsOpen(false);
   };
 
-  const displayValue = value ? new Date(value).toLocaleDateString('ru-RU') : '';
+  const displayValue = value ? parseDateValue(value).toLocaleDateString('ru-RU') : '';
 
   return (
     <div className="relative font-sans w-full" ref={containerRef}>
@@ -124,7 +133,7 @@ export function DatePicker({ value, onChange, placeholder = "Выберите д
               const isCurrentMonth = dayNum > 0 && dayNum <= daysInMonth;
               if (!isCurrentMonth) return <div key={i} className="h-7"></div>;
 
-              const isSelected = value && new Date(value).getDate() === dayNum && new Date(value).getMonth() === month && new Date(value).getFullYear() === year;
+              const isSelected = value === `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
 
               return (
                 <div 
