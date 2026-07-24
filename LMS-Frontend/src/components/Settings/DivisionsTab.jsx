@@ -588,10 +588,13 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                     </div>
                 )}
 
-                <div className="border-b border-graphite/10 pb-4 mb-2">
+                <div className="border-b border-graphite/10 pb-4 mb-2 flex items-center justify-between gap-4">
                     <h2 className="text-[18px] font-black text-graphite uppercase tracking-wider">
                         {menuItems.find(m => m.id === activeSection)?.label}
                     </h2>
+                    <span className={`shrink-0 text-[11px] font-normal px-2 py-1 rounded uppercase tracking-wide ${isTournamentEntity ? 'bg-blue-500/10 text-blue-600' : 'bg-orange/10 text-orange'}`}>
+                        {isTournamentEntity ? 'Турнир' : 'Дивизион'}
+                    </span>
                 </div>
 
                 {/* РАЗДЕЛ 1: ОБЩАЯ ИНФОРМАЦИЯ */}
