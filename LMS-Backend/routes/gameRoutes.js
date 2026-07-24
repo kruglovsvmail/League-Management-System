@@ -1,9 +1,10 @@
 import express from 'express';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
-import { 
+import {
     getGames, getArenas, createGame, getGameById,
     updateGameInfo, updateGameStatus, getGameRoster, saveGameRoster,
-    getGameStaff, updateGameOfficials, deleteGame, recalculateGameStats
+    getGameStaff, updateGameOfficials, deleteGame, recalculateGameStats,
+    getGameStats
 } from '../controllers/gameController.js';
 
 const router = express.Router();
@@ -40,6 +41,9 @@ router.put('/games/:gameId/status', requirePermission('MATCH_STATUS_CHANGE'), up
 
 // ПРИНУДИТЕЛЬНЫЙ ПЕРЕСЧЕТ СТАТИСТИКИ
 router.post('/games/:gameId/recalculate', requirePermission('MATCH_STATUS_CHANGE'), recalculateGameStats);
+
+// Статистика матча (командная + по игрокам)
+router.get('/games/:gameId/stats', getGameStats);
 
 // Работа с составами на матч
 router.get('/games/:gameId/roster/:teamId', getGameRoster);

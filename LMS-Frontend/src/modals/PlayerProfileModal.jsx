@@ -21,6 +21,8 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   const [filterSeason, setFilterSeason] = useState('Все сезоны');
   const [filterLeague, setFilterLeague] = useState('Все лиги');
   const [filterOpponent, setFilterOpponent] = useState('Все соперники');
+  const [matchPage, setMatchPage] = useState(1);
+  const MATCHES_PER_PAGE = 7;
 
   useEffect(() => {
     if (isOpen && playerId) {
@@ -30,7 +32,8 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
       setFilterSeason('Все сезоны');
       setFilterLeague('Все лиги');
       setFilterOpponent('Все соперники');
-      
+      setMatchPage(1);
+
       const token = getToken();
 
       fetch(`${import.meta.env.VITE_API_URL}/api/players/${playerId}/profile`, {
@@ -79,6 +82,13 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     }
   }, [isOpen, playerId]);
 
+  // Смена роли/фильтра истории матчей — всегда сбрасываем на первую страницу,
+  // иначе легко зависнуть на несуществующей странице после сужения списка.
+  const handleRoleChange = (idx) => { setActiveRole(idx); setMatchPage(1); };
+  const handleSeasonChange = (v) => { setFilterSeason(v); setMatchPage(1); };
+  const handleLeagueChange = (v) => { setFilterLeague(v); setMatchPage(1); };
+  const handleOpponentChange = (v) => { setFilterOpponent(v); setMatchPage(1); };
+
   const handlePhotoClick = () => {
     if (data?.info?.allPhotos?.length > 1) {
       setPhotoIndex((prev) => (prev + 1) % data.info.allPhotos.length);
@@ -123,7 +133,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     { label: 'Ш', width: 'text-center', render: r => r.g },
     { label: 'П', width: 'text-center', render: r => r.a },
     { label: 'О', width: 'text-center', render: r => <span className="font-bold text-orange">{r.pts}</span> },
-    { label: '+/-', width: 'text-center', render: r => <span className={r.pm > 0 ? 'text-status-accepted' : (r.pm < 0 ? 'text-status-rejected' : '')}>{r.pm > 0 ? `+${r.pm}` : r.pm}</span> },
+    { label: '+/-', width: 'text-center', render: r => r.pm == null ? <span className="text-graphite/30">—</span> : <span className={r.pm > 0 ? 'text-status-accepted' : (r.pm < 0 ? 'text-status-rejected' : '')}>{r.pm > 0 ? `+${r.pm}` : r.pm}</span> },
     { label: 'Штр', width: 'text-center', render: r => r.pim },
   ];
 
@@ -156,8 +166,9 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     { label: 'И', width: 'text-center', render: r => <span className="font-bold">{r.gp}</span> },
     { label: 'Штр', width: 'text-center', render: r => r.pim },
     { label: 'ПШ', width: 'text-center', render: r => r.ga },
-    { label: 'Об', width: 'text-center', render: r => r.sv },
-    { label: '%Об', width: 'text-center', render: r => <span className="font-bold text-orange">{r.svp}%</span> },
+    { label: 'Броски', width: 'text-center', render: r => r.sa == null ? <span className="text-graphite/30">—</span> : r.sa },
+    { label: 'Об', width: 'text-center', render: r => r.sv == null ? <span className="text-graphite/30">—</span> : r.sv },
+    { label: '%Об', width: 'text-center', render: r => r.svp == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.svp}%</span> },
   ];
 
   const matchColumns = [
@@ -306,6 +317,13 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     return true;
   });
 
+  // Пагинация на клиенте — весь список уже загружен и отфильтрован, просто
+  // рендерим кусок в 7 строк за раз (иначе история на 100+ матчей превращается
+  // в бесконечный скролл внутри и так небольшой модалки).
+  const matchTotalPages = Math.max(1, Math.ceil(filteredMatches.length / MATCHES_PER_PAGE));
+  const safeMatchPage = Math.min(matchPage, matchTotalPages);
+  const pagedMatches = filteredMatches.slice((safeMatchPage - 1) * MATCHES_PER_PAGE, safeMatchPage * MATCHES_PER_PAGE);
+
   const StatItem = ({ value }) => (
     <span className="text-[14px] font-black text-graphite/50">{value || '-'}</span>
   );
@@ -343,10 +361,11 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
               </div>
 
               <div className="flex-1 flex flex-col justify-center">
-                <h2 className="text-[24px] font-bold text-graphite/80 leading-tight mb-4 truncate">
-  {data.info.last_name} {data.info.first_name} <span className="text-graphite/80 font-bold">{data.info.middle_name}</span>
+                <h2 className="text-[24px] font-bold text-graphite/80 leading-tight mb-4 truncate flex items-baseline gap-2">
+  <span>{data.info.last_name} {data.info.first_name} <span className="text-graphite/80 font-bold">{data.info.middle_name}</span></span>
+  <span className="text-[11px] font-normal text-graphite-light/50 shrink-0">ID {data.info.id}</span>
 </h2>
-                
+
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-graphite/5 px-4 py-2.5 rounded-lg border border-graphite/0 w-fit">
                   <StatItem value={ageInt ? formatAge(ageInt) : null} />
                   <div className="w-px h-4 bg-graphite/20 block"></div>
@@ -361,7 +380,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
               </div>
 
               <div className="w-[180px] shrink-0">
-                <SegmentButton options={['Полевой', 'Вратарь']} defaultIndex={activeRole} onChange={setActiveRole} />
+                <SegmentButton options={['Полевой', 'Вратарь']} defaultIndex={activeRole} onChange={handleRoleChange} />
               </div>
             </div>
 
@@ -410,19 +429,42 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                 <div className="flex flex-col h-full min-h-0 animate-zoom-in">
                   <div className="shrink-0 flex gap-4 p-4 border-b border-graphite/10 bg-graphite/5 relative z-[20]">
                     <div className="w-[160px] shrink-0">
-                      <Select options={seasonOptions} value={filterSeason} onChange={setFilterSeason} />
+                      <Select options={seasonOptions} value={filterSeason} onChange={handleSeasonChange} />
                     </div>
                     <div className="w-[160px] shrink-0">
-                      <Select options={leagueOptions} value={filterLeague} onChange={setFilterLeague} />
+                      <Select options={leagueOptions} value={filterLeague} onChange={handleLeagueChange} />
                     </div>
                     <div className="flex-1 min-w-[200px] max-w-[350px]">
-                      <Select options={opponentOptions} value={filterOpponent} onChange={setFilterOpponent} />
+                      <Select options={opponentOptions} value={filterOpponent} onChange={handleOpponentChange} />
                     </div>
+                    {filteredMatches.length > 0 && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setMatchPage(p => Math.max(1, p - 1))}
+                          disabled={safeMatchPage <= 1}
+                          className="w-8 h-8 flex items-center justify-center rounded-md border border-graphite/10 bg-white/70 text-graphite font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:border-orange hover:enabled:text-orange transition-colors"
+                        >
+                          ‹
+                        </button>
+                        <span className="text-[12px] font-semibold text-graphite-light whitespace-nowrap px-1">
+                          {safeMatchPage} / {matchTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setMatchPage(p => Math.min(matchTotalPages, p + 1))}
+                          disabled={safeMatchPage >= matchTotalPages}
+                          className="w-8 h-8 flex items-center justify-center rounded-md border border-graphite/10 bg-white/70 text-graphite font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:border-orange hover:enabled:text-orange transition-colors"
+                        >
+                          ›
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-4 relative z-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
-                    {filteredMatches.length > 0 ? (
-                      <Table columns={matchColumns} data={filteredMatches} />
+                    {pagedMatches.length > 0 ? (
+                      <Table columns={matchColumns} data={pagedMatches} />
                     ) : (
                       <div className="text-center text-graphite-light p-10 mt-5 bg-white rounded-md border border-dashed border-graphite/20">Матчи не найдены по заданным фильтрам</div>
                     )}

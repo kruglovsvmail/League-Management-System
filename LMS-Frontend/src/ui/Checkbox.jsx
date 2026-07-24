@@ -1,8 +1,8 @@
 import React from 'react';
 
-export function Checkbox({ label, checked, onChange }) {
+export function Checkbox({ label, checked, onChange, className = 'mb-4' }) {
   return (
-    <div className="mb-4">
+    <div className={className}>
       <label className="flex items-center cursor-pointer gap-2 relative z-10 group">
         {/* Невидимый системный чекбокс */}
         <input 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useOutletContext, Link, useLocation } from 'react-router-dom';
-import { getToken, getImageUrl } from '../utils/helpers';
+import { getToken, getImageUrl, getStreamPlatformLabel, getPlayoffStageDisplayLabel } from '../utils/helpers';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 
@@ -33,6 +33,17 @@ const ROLE_MAP = {
 const POS_MAP = { 'G': 'Вр.', 'LD': 'Защ.', 'RD': 'Защ.', 'LW': 'Нап.', 'C': 'Нап.', 'RW': 'Нап.' };
 const POS_ORDER = { 'G': 1, 'LD': 2, 'RD': 2, 'LW': 3, 'C': 3, 'RW': 3 };
 
+// Командный блок вкладки «Статистика» — сравнение хозяева/гости построчно.
+const STATS_COMPARE_ROWS = [
+  { key: 'shots_on_goal', label: 'Броски в створ' },
+  { key: 'shooting_pct', label: '% реализации', isPercentage: true },
+  { key: 'pp_goals', label: 'Голы в большинстве' },
+  { key: 'sh_goals', label: 'Голы в меньшинстве' },
+  { key: 'pim', label: 'Штрафное время' },
+  { key: 'saves', label: 'Отражено бросков' },
+  { key: 'save_pct', label: '% отражённых', isPercentage: true },
+];
+
 export function GamePage() {
   const { gameId } = useParams();
   const navigate = useNavigate();
@@ -43,6 +54,7 @@ export function GamePage() {
   const [game, setGame] = useState(null);
   const [arenas, setArenas] = useState([]);
   const [events, setEvents] = useState([]);
+  const [matchStats, setMatchStats] = useState(null);
   
   const [homeRoster, setHomeRoster] = useState([]);
   const [awayRoster, setAwayRoster] = useState([]);
@@ -96,13 +108,19 @@ export function GamePage() {
         setAwayStaff(dataAway.staffRoster || []);
       }
 
-      const resEvents = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/events`, { 
-        headers: { 'Authorization': `Bearer ${getToken()}` } 
+      const resEvents = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/events`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const dataEvents = await resEvents.json();
       if (dataEvents.success) setEvents(dataEvents.data);
 
-    } catch (err) { console.error(err); } 
+      const resStats = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/stats`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      const dataStats = await resStats.json();
+      if (dataStats.success) setMatchStats(dataStats.stats);
+
+    } catch (err) { console.error(err); }
     finally { setIsLoading(false); }
   };
 
@@ -361,6 +379,71 @@ export function GamePage() {
     );
   };
 
+  // Вкладка «Статистика»: таблица вратарей + полевых одной команды матча.
+  // +/- и вратарские Об/%Об — «—» когда null (лига не ведёт эту статистику на
+  // данной стадии, см. getGameStats/track_plus_minus/track_shots). Фото — то же
+  // приоритет, что у ростера (вкладка 0): team_members.photo_url, потом avatar_url,
+  // потом заглушка.
+  const renderTeamStats = (teamName, teamLogo, teamStats) => {
+    const skaters = teamStats?.skaters || [];
+    const goalies = teamStats?.goalies || [];
+    const photoSrc = (r) => getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp');
+
+    const goalieColumns = [
+      { label: 'Фото', width: 'w-10 !pr-1', align: 'left', render: (r) => (
+        <img src={photoSrc(r)} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" />
+      )},
+      { label: 'Вратарь', width: 'w-[150px] !pl-1', align: 'left', render: (r) => (
+        <button onClick={() => setSelectedPlayerId(r.player_id)} className="block max-w-[150px] text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
+          {r.last_name} {r.first_name}
+        </button>
+      )},
+      { label: 'ПШ', width: 'w-8', align: 'center', sortKey: 'goals_against', render: (r) => r.goals_against },
+      { label: 'Об', width: 'w-8', align: 'center', sortKey: 'saves', render: (r) => r.saves == null ? <span className="text-graphite/30">—</span> : r.saves },
+      { label: '%Об', width: 'w-12', align: 'center', sortKey: 'save_percent', render: (r) => r.save_percent == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.save_percent}%</span> },
+      { label: 'И"0"', width: 'w-8', align: 'center', sortKey: 'shutouts', render: (r) => r.shutouts > 0 ? <span className="text-status-accepted font-bold">{r.shutouts}</span> : r.shutouts },
+    ];
+
+    const skaterColumns = [
+      { label: 'Фото', width: 'w-10 !pr-1', align: 'left', render: (r) => (
+        <img src={photoSrc(r)} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" />
+      )},
+      { label: 'Игрок', width: 'w-[150px] !pl-1', align: 'left', render: (r) => (
+        <button onClick={() => setSelectedPlayerId(r.player_id)} className="block max-w-[150px] text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
+          {r.last_name} {r.first_name}
+        </button>
+      )},
+      { label: 'Г', width: 'w-4', align: 'center', sortKey: 'goals', render: (r) => r.goals },
+      { label: 'П', width: 'w-4', align: 'center', sortKey: 'assists', render: (r) => r.assists },
+      { label: 'О', width: 'w-4', align: 'center', sortKey: 'points', render: (r) => <span className="font-bold text-orange">{r.points}</span> },
+      { label: '+/-', width: 'w-6', align: 'center', sortKey: 'plus_minus', render: (r) => r.plus_minus == null
+        ? <span className="text-graphite/30">—</span>
+        : <span className={r.plus_minus > 0 ? 'text-status-accepted' : (r.plus_minus < 0 ? 'text-status-rejected' : '')}>{r.plus_minus > 0 ? `+${r.plus_minus}` : r.plus_minus}</span>
+      },
+      { label: 'Штр', width: 'w-6', align: 'center', sortKey: 'penalty_minutes', render: (r) => r.penalty_minutes },
+    ];
+
+    return (
+      <div className="flex-1 min-w-[320px]">
+        <div className="flex items-center gap-3 mb-4">
+          <img src={getImageUrl(teamLogo || '/default/Logo_team_default.webp')} className="w-8 h-8 object-contain" alt="" />
+          <h4 className="text-[13px] font-black text-graphite uppercase tracking-wide">{teamName}</h4>
+        </div>
+
+        {skaters.length === 0 && goalies.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-graphite-light border border-dashed border-graphite/10 rounded-md">
+            <span className="text-[14px] font-medium text-graphite/60">Нет данных о составе</span>
+          </div>
+        ) : (
+          <>
+            {goalies.length > 0 && <div className="mb-6"><Table columns={goalieColumns} data={goalies} /></div>}
+            {skaters.length > 0 && <Table columns={skaterColumns} data={skaters} />}
+          </>
+        )}
+      </div>
+    );
+  };
+
   const formatTime = (seconds) => {
     if (!seconds && seconds !== 0) return '00:00';
     const m = Math.floor(seconds / 60);
@@ -516,7 +599,7 @@ export function GamePage() {
 
               <div className="flex items-center justify-between border-t border-graphite/5 pt-4 mt-auto shrink-0">
                 <div className="flex items-center gap-4">
-                  <Tabs tabs={['Составы команд', 'Судьи и медиа', 'Ход матча']} activeTab={tabIndex} onChange={setTabIndex} />
+                  <Tabs tabs={['Составы команд', 'Судьи и медиа', 'Ход матча', 'Статистика']} activeTab={tabIndex} onChange={setTabIndex} />
                 </div>
                 {getStatusBadge()}
               </div>
@@ -649,6 +732,36 @@ export function GamePage() {
                   )}
                 </div>
               )}
+
+              {tabIndex === 3 && (
+                <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
+                  <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
+                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Статистика Матча</h3>
+                  </div>
+
+                  {(game.status === 'live' || game.status === 'finished') && matchStats && (
+                    <div className="mb-10 bg-graphite/5 rounded-lg p-5">
+                      {STATS_COMPARE_ROWS.map(row => {
+                        const homeVal = matchStats.home[row.key];
+                        const awayVal = matchStats.away[row.key];
+                        const fmt = (v) => v == null ? '—' : (row.isPercentage ? `${v}%` : v);
+                        return (
+                          <div key={row.key} className="flex items-center justify-between py-2.5 border-b border-graphite/10 last:border-0">
+                            <span className="text-[14px] font-bold text-graphite w-20 text-left">{fmt(homeVal)}</span>
+                            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wider text-center flex-1">{row.label}</span>
+                            <span className="text-[14px] font-bold text-graphite w-20 text-right">{fmt(awayVal)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-10">
+                    {renderTeamStats(game.home_team_name, game.home_team_logo, matchStats?.home)}
+                    {renderTeamStats(game.away_team_name, game.away_team_logo, matchStats?.away)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -668,7 +781,7 @@ export function GamePage() {
               </div>
               <div>
                 <div className="text-[10px] text-graphite-light mb-0.5">Этап</div>
-                <div className="text-[12px] font-bold text-graphite leading-tight mb-0.5">{game.stage_label || (game.stage_type === 'regular' ? 'Регулярный чемпионат' : 'Плей-офф')}</div>
+                <div className="text-[12px] font-bold text-graphite leading-tight mb-0.5">{getPlayoffStageDisplayLabel(game.stage_label, game.playoff_match_type) || (game.stage_type === 'regular' ? 'Регулярный чемпионат' : 'Плей-офф')}</div>
                 <div className="text-[11px] font-bold text-graphite/50">{game.stage_type === 'regular' ? 'Тур' : 'Матч'} {game.series_number || 1}</div>
               </div>
             </div>
@@ -697,8 +810,8 @@ export function GamePage() {
 
               {(game.video_yt_url || game.video_vk_url) && (
                  <div className="flex flex-col gap-2 pt-3">
-                    {game.video_yt_url && <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold hover:underline flex items-center gap-2">Ссылка на трансляцию 1</a>}
-                    {game.video_vk_url && <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold hover:underline flex items-center gap-2">Ссылка на трансляцию 2</a>}
+                    {game.video_yt_url && <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold hover:underline flex items-center gap-2">{getStreamPlatformLabel(game.video_yt_url)}</a>}
+                    {game.video_vk_url && <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="text-[12px] font-bold hover:underline flex items-center gap-2">{getStreamPlatformLabel(game.video_vk_url)}</a>}
                  </div>
               )}
             </div>

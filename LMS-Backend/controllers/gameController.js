@@ -73,7 +73,7 @@ export const getPublicGameById = async (req, res) => {
     try {
         const query = `
             SELECT g.id, g.home_score, g.away_score, g.end_type, g.status, g.is_technical, g.needs_recalc,
-                   g.game_date, g.stage_type, g.stage_label, g.series_number, g.game_number,
+                   g.game_date, g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
                    g.home_jersey_type, g.away_jersey_type,
                    g.division_id, g.home_team_id, g.away_team_id,
                    t1.name as home_team_name, 
@@ -92,7 +92,10 @@ export const getPublicGameById = async (req, res) => {
                    l.id as league_id, l.logo_url as league_logo, l.name as league_name,
                    d.logo_url as division_logo, d.name as division_name, d.short_name as division_short_name,
                    a.name as arena_name, a.city as arena_city,
-                   gt.periods_count, gt.track_plus_minus, gt.auto_stop_on_event, gt.shootout_status,
+                   gt.periods_count, gt.auto_stop_on_event, gt.shootout_status,
+                   -- Живое значение из настроек дивизиона (не застывший снимок из game_timers,
+                   -- скопированный при создании матча) — актуально даже если лига поменяла флаг позже.
+                   CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
                    (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
                    (
                        SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
@@ -338,14 +341,15 @@ export const getGames = async (req, res) => {
         let query = `
             SELECT 
                 g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type, g.is_technical, g.needs_recalc,
-                g.stage_type, g.stage_label, g.series_number, g.game_number,
+                g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
                 g.home_team_id, g.away_team_id, g.arena_id,
                 a.name as location_text,
                 a.timezone as arena_timezone,
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 d.name as division_name,
-                gt.periods_count, gt.track_plus_minus, gt.auto_stop_on_event,
+                gt.periods_count, gt.auto_stop_on_event,
+                CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
                 (
                     EXISTS(SELECT 1 FROM game_events ge WHERE ge.game_id = g.id) OR
                     EXISTS(SELECT 1 FROM game_rosters gr WHERE gr.game_id = g.id) OR
@@ -405,7 +409,9 @@ export const getGameById = async (req, res) => {
         const query = `
             SELECT 
                 g.*,
-                gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.track_plus_minus, gt.auto_stop_on_event, gt.shootout_status, gt.arena_announcer,
+                gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.auto_stop_on_event, gt.shootout_status, gt.arena_announcer,
+                CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
+                CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots,
                 a.name as location_text,
                 a.timezone as arena_timezone,
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
@@ -575,24 +581,25 @@ export const createGame = async (req, res) => {
         const st = stage_type || 'regular';
         const isPO = st === 'playoff';
 
-        let pCount = 3, pLen = 20, oLen = 5, sLen = 3, trackPM = false, autoStop = false;
-        
+        let pCount = 3, pLen = 20, oLen = 5, sLen = 3, autoStop = false;
+
         const divSettingsRes = await pool.query(`SELECT * FROM divisions WHERE id = $1`, [division_id]);
 
         if (divSettingsRes.rows.length > 0) {
             const ds = divSettingsRes.rows[0];
-            
+
             pCount = isPO ? (ds.playoff_periods_count ?? 3) : (ds.reg_periods_count ?? 3);
             pLen = isPO ? (ds.playoff_period_length ?? 20) : (ds.reg_period_length ?? 20);
-            
+
             const hasOt = isPO ? ds.playoff_has_overtime : ds.reg_has_overtime;
             oLen = hasOt ? (isPO ? (ds.playoff_ot_length ?? 5) : (ds.reg_ot_length ?? 5)) : 0;
-            
+
             const hasSo = isPO ? ds.playoff_has_shootouts : ds.reg_has_shootouts;
             sLen = hasSo ? (isPO ? (ds.playoff_so_length ?? 3) : (ds.reg_so_length ?? 3)) : 0;
-            
-            trackPM = isPO ? (ds.playoff_track_plus_minus ?? false) : (ds.reg_track_plus_minus ?? false);
-            autoStop = isPO ? (ds.playoff_auto_stop_on_event ?? false) : (ds.reg_auto_stop_on_event ?? false);
+
+            // Автостоп таймера больше не задаётся дивизионом — это чисто удобство
+            // секретаря на конкретном матче (шторка настроек в Live Desk), по
+            // умолчанию выключен для каждого нового матча.
         }
 
         const insertRes = await pool.query(`
@@ -608,14 +615,14 @@ export const createGame = async (req, res) => {
 
         await pool.query(`
             INSERT INTO game_timers (
-                game_id, periods_count, period_length, ot_length, so_length, track_plus_minus, auto_stop_on_event, time_seconds, shootout_status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-        `, [newGameId, pCount, pLen, oLen, sLen, trackPM, autoStop, 0]);
+                game_id, periods_count, period_length, ot_length, so_length, auto_stop_on_event, time_seconds, shootout_status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+        `, [newGameId, pCount, pLen, oLen, sLen, autoStop, 0]);
 
         const fullGameRes = await pool.query(`
             SELECT 
                 g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type,
-                g.stage_type, g.stage_label, g.series_number, g.game_number,
+                g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
                 g.home_team_id, g.away_team_id, g.arena_id,
                 a.name as location_text,
                 ht.name as home_team_name, ht.logo_url as home_team_logo,
@@ -728,7 +735,7 @@ export const updateGameInfo = async (req, res) => {
         let idx = 1;
 
         const allowedFields = [
-            'game_date', 'arena_id', 'stage_type', 'stage_label', 'series_number', 
+            'game_date', 'arena_id', 'stage_type', 'stage_label', 'playoff_match_type', 'series_number',
             'video_yt_url', 'video_vk_url', 'home_jersey_type', 'away_jersey_type',
             'home_team_id', 'away_team_id', 'game_number', 'status',
             'actual_start_time', 'actual_end_time', 'spectators'
@@ -764,15 +771,14 @@ export const updateGameInfo = async (req, res) => {
                 
                 const hasSo = isPO ? ds.playoff_has_shootouts : ds.reg_has_shootouts;
                 const sLen = hasSo ? (isPO ? (ds.playoff_so_length ?? 3) : (ds.reg_so_length ?? 3)) : 0;
-                
-                const trackPM = isPO ? (ds.playoff_track_plus_minus ?? false) : (ds.reg_track_plus_minus ?? false);
-                const autoStop = isPO ? (ds.playoff_auto_stop_on_event ?? false) : (ds.reg_auto_stop_on_event ?? false);
 
+                // auto_stop_on_event сюда намеренно не входит — это личная настройка
+                // секретаря для конкретного матча, смена стадии её не должна сбрасывать.
                 await pool.query(`
                     UPDATE game_timers
-                    SET periods_count = $1, period_length = $2, ot_length = $3, so_length = $4, track_plus_minus = $5, auto_stop_on_event = $6
-                    WHERE game_id = $7
-                `, [pCount, pLen, oLen, sLen, trackPM, autoStop, gameId]);
+                    SET periods_count = $1, period_length = $2, ot_length = $3, so_length = $4
+                    WHERE game_id = $5
+                `, [pCount, pLen, oLen, sLen, gameId]);
             }
         }
         
@@ -848,7 +854,13 @@ export const updateGameStatus = async (req, res) => {
                 } else if (endType !== 'so') {
                     const goalsRes = await client.query(`SELECT period FROM game_events WHERE game_id = $1 AND event_type = 'goal'`, [gameId]);
                     const hasOTGoal = goalsRes.rows.some(e => e.period === 'OT');
-                    endType = hasOTGoal ? 'ot' : 'regular';
+
+                    const soRes = await client.query(`SELECT 1 FROM game_events WHERE game_id = $1 AND event_type IN ('shootout_goal', 'shootout_miss') LIMIT 1`, [gameId]);
+                    if (soRes.rows.length > 0) {
+                        endType = 'so';
+                    } else {
+                        endType = hasOTGoal ? 'ot' : 'regular';
+                    }
                 }
             }
         }
@@ -1255,5 +1267,334 @@ export const recalculateGameStats = async (req, res) => {
     } catch (err) {
         console.error('Ошибка ручного пересчета:', err);
         res.status(500).json({ success: false, error: 'Ошибка сервера при пересчете' });
+    }
+};
+
+// Статистика конкретного матча (командная + по каждому игроку) — та же логика,
+// что в Team-Room/TR-Backend/controllers/MatchController.js:getMatchStats (общая
+// схема БД: game_events/game_shots_by_goalie/game_goalie_log/game_plus_minus).
+// В отличие от TR здесь только официальные лиговые матчи — состав/фото берём
+// прямо из users/game_rosters, без tournament_rosters/team_members.
+export const getGameStats = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+
+        const flagsQuery = `
+            SELECT
+                CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
+                CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots
+            FROM games g
+            LEFT JOIN divisions d ON d.id = g.division_id
+            WHERE g.id = $1
+        `;
+
+        const teamQuery = `
+            WITH game_info AS (
+                SELECT home_team_id, away_team_id, status
+                FROM games
+                WHERE id = $1
+            ),
+            goal_stats AS (
+                SELECT
+                    team_id,
+                    COUNT(*)::int AS total_goals,
+                    COUNT(*) FILTER (WHERE goal_strength IN ('pp1', 'pp2'))::int AS pp_goals,
+                    COUNT(*) FILTER (WHERE goal_strength IN ('sh1', 'sh2'))::int AS sh_goals
+                FROM game_events
+                WHERE game_id = $1 AND event_type = 'goal'
+                GROUP BY team_id
+            ),
+            penalty_stats AS (
+                SELECT team_id, COALESCE(SUM(penalty_minutes), 0)::int AS pim
+                FROM game_events
+                WHERE game_id = $1 AND event_type = 'penalty'
+                GROUP BY team_id
+            ),
+            shots_faced_stats AS (
+                -- Все броски в створ по вратарям команды (team_id = команда вратаря).
+                SELECT team_id, COALESCE(SUM(shots_count), 0)::int AS shots_faced
+                FROM game_shots_by_goalie
+                WHERE game_id = $1
+                GROUP BY team_id
+            ),
+            goal_to_goalie AS (
+                -- Для каждого гола определяем, кто стоял в воротах команды-соперника
+                -- через game_goalie_log (берём последнюю запись лога ДО момента гола).
+                SELECT DISTINCT ON (ge.id)
+                    ge.id AS event_id,
+                    ge.team_id AS scoring_team_id,
+                    CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gi.away_team_id ELSE gi.home_team_id END AS conceding_team_id,
+                    COALESCE(ge.from_shot, true) AS from_shot,
+                    CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id
+                FROM game_events ge
+                CROSS JOIN game_info gi
+                JOIN game_goalie_log gl
+                    ON gl.game_id = ge.game_id
+                   AND gl.time_seconds <= ge.time_seconds
+                WHERE ge.game_id = $1
+                    AND ge.event_type = 'goal'
+                    AND COALESCE(ge.goal_strength, '') <> 'ps'
+                ORDER BY ge.id, gl.time_seconds DESC
+            ),
+            ga_from_shot_stats AS (
+                -- Голы С БРОСКА против конкретного вратаря (не пустые ворота) — уменьшают saves.
+                SELECT conceding_team_id, COUNT(*)::int AS ga_from_shot
+                FROM goal_to_goalie
+                WHERE conceding_goalie_id IS NOT NULL AND from_shot = true
+                GROUP BY conceding_team_id
+            ),
+            empty_net_goals_scored AS (
+                -- Голы в пустые ворота с броска — засчитываются в SOG атакующей команды.
+                SELECT scoring_team_id AS team_id, COUNT(*)::int AS empty_net_goals
+                FROM goal_to_goalie
+                WHERE conceding_goalie_id IS NULL AND from_shot = true
+                GROUP BY scoring_team_id
+            )
+            SELECT
+                gi.home_team_id::int,
+                gi.away_team_id::int,
+                gi.status::varchar,
+                COALESCE(hg.total_goals, 0)::int AS home_goals,
+                COALESCE(hg.pp_goals, 0)::int AS home_pp_goals,
+                COALESCE(hg.sh_goals, 0)::int AS home_sh_goals,
+                COALESCE(ag.total_goals, 0)::int AS away_goals,
+                COALESCE(ag.pp_goals, 0)::int AS away_pp_goals,
+                COALESCE(ag.sh_goals, 0)::int AS away_sh_goals,
+                COALESCE(hp.pim, 0)::int AS home_pim,
+                COALESCE(ap.pim, 0)::int AS away_pim,
+                COALESCE(hsf.shots_faced, 0)::int AS home_shots_faced,
+                COALESCE(asf.shots_faced, 0)::int AS away_shots_faced,
+                COALESCE(hga.ga_from_shot, 0)::int AS home_ga_from_shot,
+                COALESCE(aga.ga_from_shot, 0)::int AS away_ga_from_shot,
+                COALESCE(heng.empty_net_goals, 0)::int AS home_empty_net_goals,
+                COALESCE(aeng.empty_net_goals, 0)::int AS away_empty_net_goals
+            FROM game_info gi
+            LEFT JOIN goal_stats hg ON hg.team_id IS NOT DISTINCT FROM gi.home_team_id
+            LEFT JOIN goal_stats ag ON ag.team_id IS NOT DISTINCT FROM gi.away_team_id
+            LEFT JOIN penalty_stats hp ON hp.team_id IS NOT DISTINCT FROM gi.home_team_id
+            LEFT JOIN penalty_stats ap ON ap.team_id IS NOT DISTINCT FROM gi.away_team_id
+            LEFT JOIN shots_faced_stats hsf ON hsf.team_id = gi.home_team_id
+            LEFT JOIN shots_faced_stats asf ON asf.team_id = gi.away_team_id
+            LEFT JOIN ga_from_shot_stats hga ON hga.conceding_team_id IS NOT DISTINCT FROM gi.home_team_id
+            LEFT JOIN ga_from_shot_stats aga ON aga.conceding_team_id IS NOT DISTINCT FROM gi.away_team_id
+            LEFT JOIN empty_net_goals_scored heng ON heng.team_id IS NOT DISTINCT FROM gi.home_team_id
+            LEFT JOIN empty_net_goals_scored aeng ON aeng.team_id IS NOT DISTINCT FROM gi.away_team_id
+        `;
+
+        const skatersQuery = `
+            SELECT
+                gr.player_id::int,
+                gr.team_id::int,
+                gr.jersey_number::int,
+                u.first_name::varchar,
+                u.last_name::varchar,
+                u.avatar_url::varchar,
+                tm.photo_url::varchar,
+                COALESCE(g.goals, 0)::int AS goals,
+                COALESCE(a.assists, 0)::int AS assists,
+                (COALESCE(g.goals, 0) + COALESCE(a.assists, 0))::int AS points,
+                COALESCE(pm.plus_minus, 0)::int AS plus_minus,
+                COALESCE(pen.penalty_minutes, 0)::int AS penalty_minutes
+            FROM game_rosters gr
+            JOIN users u ON gr.player_id = u.id
+            LEFT JOIN team_members tm ON tm.user_id = gr.player_id AND tm.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT scorer_id, team_id, COUNT(*)::int AS goals
+                FROM game_events
+                WHERE game_id = $1 AND event_type = 'goal'
+                GROUP BY scorer_id, team_id
+            ) g ON g.scorer_id = gr.player_id AND g.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT player_id, team_id, COUNT(*)::int AS assists FROM (
+                    SELECT assist1_id AS player_id, team_id FROM game_events
+                    WHERE game_id = $1 AND event_type = 'goal' AND assist1_id IS NOT NULL
+                    UNION ALL
+                    SELECT assist2_id AS player_id, team_id FROM game_events
+                    WHERE game_id = $1 AND event_type = 'goal' AND assist2_id IS NOT NULL
+                ) sub GROUP BY player_id, team_id
+            ) a ON a.player_id = gr.player_id AND a.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT pm.player_id, pm.team_id,
+                    SUM(CASE WHEN ge.team_id = pm.team_id THEN 1 ELSE -1 END)::int AS plus_minus
+                FROM game_plus_minus pm
+                JOIN game_events ge ON pm.event_id = ge.id
+                WHERE ge.game_id = $1 AND ge.event_type = 'goal'
+                GROUP BY pm.player_id, pm.team_id
+            ) pm ON pm.player_id = gr.player_id AND pm.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT penalty_player_id, team_id, SUM(penalty_minutes)::int AS penalty_minutes
+                FROM game_events
+                WHERE game_id = $1 AND event_type = 'penalty'
+                GROUP BY penalty_player_id, team_id
+            ) pen ON pen.penalty_player_id = gr.player_id AND pen.team_id = gr.team_id
+            WHERE gr.game_id = $1 AND gr.is_in_lineup = true AND gr.position_in_line != 'G'
+            ORDER BY gr.team_id,
+                (COALESCE(g.goals, 0) + COALESCE(a.assists, 0)) DESC,
+                COALESCE(g.goals, 0) DESC
+        `;
+
+        const goaliesQuery = `
+            WITH game_info AS (
+                SELECT home_team_id, away_team_id FROM games WHERE id = $1
+            ),
+            goal_goalie AS (
+                SELECT
+                    ge.id AS event_id,
+                    ge.team_id AS scoring_team_id,
+                    ge.time_seconds,
+                    COALESCE(ge.from_shot, true) AS from_shot,
+                    CASE WHEN ge.team_id = gi.home_team_id
+                        THEN (
+                            SELECT ggl.away_goalie_id FROM game_goalie_log ggl
+                            WHERE ggl.game_id = $1 AND ggl.time_seconds <= ge.time_seconds
+                            ORDER BY ggl.time_seconds DESC LIMIT 1
+                        )
+                        ELSE (
+                            SELECT ggl.home_goalie_id FROM game_goalie_log ggl
+                            WHERE ggl.game_id = $1 AND ggl.time_seconds <= ge.time_seconds
+                            ORDER BY ggl.time_seconds DESC LIMIT 1
+                        )
+                    END AS goalie_id
+                FROM game_events ge
+                CROSS JOIN game_info gi
+                WHERE ge.game_id = $1 AND ge.event_type = 'goal'
+                    AND COALESCE(ge.goal_strength, '') <> 'ps'
+            ),
+            goals_against_per_goalie AS (
+                SELECT goalie_id, COUNT(*)::int AS goals_against
+                FROM goal_goalie
+                WHERE goalie_id IS NOT NULL
+                GROUP BY goalie_id
+            ),
+            goals_against_from_shot AS (
+                SELECT goalie_id, COUNT(*)::int AS ga_fs
+                FROM goal_goalie
+                WHERE goalie_id IS NOT NULL AND from_shot = true
+                GROUP BY goalie_id
+            )
+            SELECT
+                gr.player_id::int,
+                gr.team_id::int,
+                gr.jersey_number::int,
+                u.first_name::varchar,
+                u.last_name::varchar,
+                u.avatar_url::varchar,
+                tm.photo_url::varchar,
+                -- Отражённые = (все броски в створ вратарю) − (голы С БРОСКА против него).
+                -- Если бросков по вратарю нет — NULL (фронт покажет «—», а не 0).
+                CASE
+                    WHEN COALESCE(s.shots_against, 0) > 0
+                    THEN GREATEST(COALESCE(s.shots_against, 0) - COALESCE(gfs.ga_fs, 0), 0)
+                    ELSE NULL
+                END::int AS saves,
+                COALESCE(ga.goals_against, 0)::int AS goals_against,
+                CASE
+                    WHEN COALESCE(s.shots_against, 0) > 0
+                    THEN ROUND(
+                        GREATEST(COALESCE(s.shots_against, 0) - COALESCE(gfs.ga_fs, 0), 0)::numeric
+                        / COALESCE(s.shots_against, 0) * 100, 1
+                    )
+                    ELSE NULL
+                END::float AS save_percent,
+                CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts
+            FROM game_rosters gr
+            JOIN users u ON gr.player_id = u.id
+            LEFT JOIN team_members tm ON tm.user_id = gr.player_id AND tm.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT goalie_id, team_id, SUM(shots_count)::int AS shots_against
+                FROM game_shots_by_goalie
+                WHERE game_id = $1
+                GROUP BY goalie_id, team_id
+            ) s ON s.goalie_id = gr.player_id AND s.team_id = gr.team_id
+            LEFT JOIN goals_against_per_goalie ga ON ga.goalie_id = gr.player_id
+            LEFT JOIN goals_against_from_shot gfs ON gfs.goalie_id = gr.player_id
+            WHERE gr.game_id = $1 AND gr.is_in_lineup = true AND gr.position_in_line = 'G'
+            ORDER BY gr.team_id, COALESCE(s.shots_against, 0) DESC
+        `;
+
+        const [teamResult, skatersResult, goaliesResult, flagsResult] = await Promise.all([
+            pool.query(teamQuery, [gameId]),
+            pool.query(skatersQuery, [gameId]),
+            pool.query(goaliesQuery, [gameId]),
+            pool.query(flagsQuery, [gameId])
+        ]);
+
+        if (teamResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+
+        const r = teamResult.rows[0];
+        const trackPM = flagsResult.rows[0]?.track_plus_minus ?? false;
+        const trackShots = flagsResult.rows[0]?.track_shots ?? false;
+
+        // Маскируем прямо в сырых результатах, до построчной разбивки по командам.
+        if (!trackPM) {
+            skatersResult.rows.forEach(row => { row.plus_minus = null; });
+        }
+        if (!trackShots) {
+            goaliesResult.rows.forEach(row => { row.saves = null; row.save_percent = null; });
+        }
+
+        // Командные броски в створ атакующей команды = броски по вратарям соперника
+        // + голы атакующей команды в пустые ворота соперника.
+        const homeShotsOnGoal = r.away_shots_faced + r.home_empty_net_goals;
+        const awayShotsOnGoal = r.home_shots_faced + r.away_empty_net_goals;
+
+        // Командные отражённые = (броски в створ нашим вратарям) − (голы с броска против них).
+        const homeSaves = Math.max(r.home_shots_faced - r.home_ga_from_shot, 0);
+        const awaySaves = Math.max(r.away_shots_faced - r.away_ga_from_shot, 0);
+
+        const homeShootingPct = homeShotsOnGoal > 0
+            ? parseFloat((r.home_goals / homeShotsOnGoal * 100).toFixed(1)) : 0;
+        const awayShootingPct = awayShotsOnGoal > 0
+            ? parseFloat((r.away_goals / awayShotsOnGoal * 100).toFixed(1)) : 0;
+
+        const homeSavePct = r.home_shots_faced > 0
+            ? parseFloat((homeSaves / r.home_shots_faced * 100).toFixed(1)) : 0;
+        const awaySavePct = r.away_shots_faced > 0
+            ? parseFloat((awaySaves / r.away_shots_faced * 100).toFixed(1)) : 0;
+
+        const homeSkaters = skatersResult.rows.filter(p => p.team_id === r.home_team_id);
+        const awaySkaters = skatersResult.rows.filter(p => p.team_id === r.away_team_id);
+        const homeGoalies = goaliesResult.rows.filter(p => p.team_id === r.home_team_id);
+        const awayGoalies = goaliesResult.rows.filter(p => p.team_id === r.away_team_id);
+
+        // «—» если лига для этой стадии броски вообще не ведёт (trackShots=false),
+        // независимо от того, есть ли физические данные.
+        const homeHasFor = trackShots && homeShotsOnGoal > 0;
+        const awayHasFor = trackShots && awayShotsOnGoal > 0;
+        const homeHasAgainst = trackShots && r.home_shots_faced > 0;
+        const awayHasAgainst = trackShots && r.away_shots_faced > 0;
+
+        res.json({
+            success: true,
+            stats: {
+                home: {
+                    shots_on_goal: homeHasFor ? homeShotsOnGoal : null,
+                    shooting_pct: homeHasFor ? homeShootingPct : null,
+                    pp_goals: r.home_pp_goals,
+                    sh_goals: r.home_sh_goals,
+                    pim: r.home_pim,
+                    saves: homeHasAgainst ? homeSaves : null,
+                    save_pct: homeHasAgainst ? homeSavePct : null,
+                    skaters: homeSkaters,
+                    goalies: homeGoalies
+                },
+                away: {
+                    shots_on_goal: awayHasFor ? awayShotsOnGoal : null,
+                    shooting_pct: awayHasFor ? awayShootingPct : null,
+                    pp_goals: r.away_pp_goals,
+                    sh_goals: r.away_sh_goals,
+                    pim: r.away_pim,
+                    saves: awayHasAgainst ? awaySaves : null,
+                    save_pct: awayHasAgainst ? awaySavePct : null,
+                    skaters: awaySkaters,
+                    goalies: awayGoalies
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Ошибка получения статистики матча:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 };

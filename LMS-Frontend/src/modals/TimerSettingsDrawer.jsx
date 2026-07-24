@@ -23,8 +23,6 @@ export function TimerSettingsDrawer({
   setOtLength,
   soLength,
   setSoLength,
-  trackPlusMinus,
-  setTrackPlusMinus,
   autoStopOnEvent,
   setAutoStopOnEvent,
   arenaAnnouncer,
@@ -147,24 +145,8 @@ export function TimerSettingsDrawer({
 
             </div>
 
-            {/* ── КОЛ 2: СТАТИСТИКА + ДИКТОР АРЕНЫ ── */}
+            {/* ── КОЛ 2: ДИКТОР АРЕНЫ ── */}
             <div className="flex flex-col gap-5">
-
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Icon name="standings" className="w-4 h-4 text-graphite/40" />
-                  <span className="text-[11px] font-black text-graphite/40 uppercase tracking-widest">Статистика</span>
-                </div>
-                <div className="bg-white border border-graphite/5 shadow-sm rounded-md px-5 py-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[13px] font-bold text-graphite">Учет полезности (+/−)</span>
-                    <Switch checked={trackPlusMinus} onChange={(e) => setTrackPlusMinus(e.target.checked)} />
-                  </div>
-                  <p className="text-[11px] text-graphite-light mt-2 leading-relaxed">
-                    Фиксировать игроков на льду в момент взятия ворот для расчета статистики Плюс/Минус.
-                  </p>
-                </div>
-              </div>
 
               <div>
                 <div className="flex items-center gap-2 mb-3">

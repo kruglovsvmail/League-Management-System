@@ -29,8 +29,8 @@ const syncTimerToDB = async (gameId, timerObj) => {
     const currentSeconds = calculateCurrentSeconds(timerObj);
 
     await pool.query(`
-      INSERT INTO game_timers (game_id, time_seconds, is_running, controller, penalties, period_length, ot_length, so_length, periods_count, period, track_plus_minus, auto_stop_on_event, arena_announcer, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+      INSERT INTO game_timers (game_id, time_seconds, is_running, controller, penalties, period_length, ot_length, so_length, periods_count, period, auto_stop_on_event, arena_announcer, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
       ON CONFLICT (game_id) DO UPDATE
       SET time_seconds = EXCLUDED.time_seconds,
           is_running = EXCLUDED.is_running,
@@ -41,7 +41,6 @@ const syncTimerToDB = async (gameId, timerObj) => {
           so_length = EXCLUDED.so_length,
           periods_count = EXCLUDED.periods_count,
           period = EXCLUDED.period,
-          track_plus_minus = EXCLUDED.track_plus_minus,
           auto_stop_on_event = EXCLUDED.auto_stop_on_event,
           arena_announcer = EXCLUDED.arena_announcer,
           updated_at = NOW()
@@ -56,7 +55,6 @@ const syncTimerToDB = async (gameId, timerObj) => {
       timerObj.soLength ?? 3,
       timerObj.periodsCount ?? 3,
       timerObj.period || '1',
-      timerObj.trackPlusMinus ?? false,
       timerObj.autoStopOnEvent ?? false,
       JSON.stringify(timerObj.arenaAnnouncer || {})
     ]);
@@ -463,7 +461,16 @@ export default function setupTimerSockets(io) {
       
       if (!activeTimers[gameId]) {
         try {
-          const res = await pool.query('SELECT * FROM game_timers WHERE game_id = $1', [gameId]);
+          // track_plus_minus читаем ЖИВЫМ из divisions (не застывший снимок game_timers,
+          // скопированный при создании матча) — актуально даже если лига поменяла флаг позже.
+          const res = await pool.query(`
+            SELECT gt.*,
+                   CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS live_track_plus_minus
+            FROM game_timers gt
+            JOIN games g ON g.id = gt.game_id
+            LEFT JOIN divisions d ON d.id = g.division_id
+            WHERE gt.game_id = $1
+          `, [gameId]);
           if (res.rows.length > 0) {
             const row = res.rows[0];
             activeTimers[gameId] = {
@@ -477,7 +484,7 @@ export default function setupTimerSockets(io) {
               soLength: row.so_length ?? 3,
               periodsCount: row.periods_count ?? 3,
               period: row.period || '1',
-              trackPlusMinus: row.track_plus_minus ?? false,
+              trackPlusMinus: row.live_track_plus_minus ?? false,
               autoStopOnEvent: row.auto_stop_on_event ?? false,
               arenaAnnouncer: row.arena_announcer || {}
             };

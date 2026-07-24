@@ -324,7 +324,6 @@ export function GameLiveDesk() {
     otLength: 'Длительность овертайма',
     soLength: 'Мин. бросков в буллитах',
     periodsCount: 'Количество периодов',
-    trackPlusMinus: 'Учёт +/-',
     autoStopOnEvent: 'Автостоп таймера',
     arenaAnnouncer: 'Диктор арены',
   };
@@ -348,7 +347,6 @@ export function GameLiveDesk() {
     if (patch.periodLength !== undefined) restBody.period_length = patch.periodLength;
     if (patch.otLength !== undefined) restBody.ot_length = patch.otLength;
     if (patch.soLength !== undefined) restBody.so_length = patch.soLength;
-    if (patch.trackPlusMinus !== undefined) restBody.track_plus_minus = patch.trackPlusMinus;
     if (patch.autoStopOnEvent !== undefined) restBody.auto_stop_on_event = patch.autoStopOnEvent;
     if (patch.arenaAnnouncer !== undefined) restBody.arena_announcer = patch.arenaAnnouncer;
     fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/timer-settings`, {
@@ -365,7 +363,6 @@ export function GameLiveDesk() {
   const setPeriodLengthPersist = (val) => { setPeriodLength(val); persistTimerSettings({ periodLength: val }); };
   const setOtLengthPersist = (val) => { setOtLength(val); persistTimerSettings({ otLength: val }); };
   const setSoLengthPersist = (val) => { setSoLength(val); persistTimerSettings({ soLength: val }); };
-  const setTrackPlusMinusPersist = (val) => { setTrackPlusMinus(val); persistTimerSettings({ trackPlusMinus: val }); };
   const setAutoStopOnEventPersist = (val) => { setAutoStopOnEvent(val); persistTimerSettings({ autoStopOnEvent: val }); };
   const setArenaAnnouncer = (val) => { setArenaAnnouncerState(val); persistTimerSettings({ arenaAnnouncer: val }); };
 
@@ -842,6 +839,7 @@ export function GameLiveDesk() {
             timerSeconds={timerSeconds}
             onSaveGoalieLog={saveGoalieLog}
             onRequestDeleteGoalieLog={(id) => setDeleteModalState({ isOpen: true, id, type: 'goalie' })}
+            shotsTrackingEnabled={game?.track_shots ?? true}
             isReadOnly={isReadOnly}
           />
 
@@ -874,7 +872,6 @@ export function GameLiveDesk() {
         periodLength={periodLength} setPeriodLength={setPeriodLengthPersist}
         otLength={otLength} setOtLength={setOtLengthPersist}
         soLength={soLength} setSoLength={setSoLengthPersist}
-        trackPlusMinus={trackPlusMinus} setTrackPlusMinus={setTrackPlusMinusPersist}
         autoStopOnEvent={autoStopOnEvent} setAutoStopOnEvent={setAutoStopOnEventPersist}
         arenaAnnouncer={arenaAnnouncer} setArenaAnnouncer={setArenaAnnouncer}
         onResetAnnouncer={() => socket?.emit('timer_action', { gameId, action: 'reset_announcer' })}

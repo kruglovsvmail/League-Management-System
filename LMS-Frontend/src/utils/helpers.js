@@ -82,6 +82,39 @@ export const getAuthHeaders = () => {
   };
 };
 
+/**
+ * Раунд плей-офф (games.stage_label, например "Финал") может физически содержать
+ * несколько разных пар (playoff_matchups) — за 1-е место и за 3-е место и т.д.
+ * games.playoff_match_type хранит это (NULL — обычная/главная пара, используем
+ * stage_label как есть; "place_3"/"place_5"/... — переопределяем текст на "Матч за
+ * N-е место"), заполняется в GameCard.jsx при назначении игры на раунд.
+ */
+export const getPlayoffStageDisplayLabel = (stageLabel, playoffMatchType) => {
+  if (!playoffMatchType) return stageLabel;
+  const n = playoffMatchType.replace('place_', '');
+  return `Матч за ${n}-е место`;
+};
+
+/**
+ * Определяет площадку трансляции по домену ссылки (пользователь может вставить
+ * любую ссылку в любое из полей video_yt_url/video_vk_url — поле само по себе
+ * не гарантирует платформу), чтобы показать реальное название вместо родового
+ * «Ссылка на трансляцию N».
+ */
+export const getStreamPlatformLabel = (url) => {
+  if (!url) return null;
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return 'Трансляция';
+  }
+  if (host.includes('youtube.com') || host.includes('youtu.be')) return 'YouTube';
+  if (host.includes('vk.com') || host.includes('vkvideo.ru') || host.includes('vk.ru')) return 'VK Видео';
+  if (host.includes('rutube.ru')) return 'RuTube';
+  return 'Трансляция';
+};
+
 // =============================================================================
 // СЕТЕВОЙ ГЛОБАЛЬНЫЙ ИНТЕРЦЕПТОР ПРОТУХШЕЙ СЕССИИ (401/403)
 // =============================================================================

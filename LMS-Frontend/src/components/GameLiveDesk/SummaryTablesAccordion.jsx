@@ -17,7 +17,8 @@ export const SummaryTablesAccordion = ({
   goaliesShotsSummary = [],
   onSaveGoalieShotsSummary,
   homeRoster, awayRoster, timerSeconds,
-  onSaveGoalieLog, onRequestDeleteGoalieLog, isReadOnly
+  onSaveGoalieLog, onRequestDeleteGoalieLog, isReadOnly,
+  shotsTrackingEnabled = true
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
@@ -106,6 +107,7 @@ export const SummaryTablesAccordion = ({
     periods.reduce((sum, p) => sum + getGoalieShotsForPeriod(goalieId, p, teamId), 0);
 
   const startEditGoalieShots = (goalieId, teamId) => {
+    if (!shotsTrackingEnabled) return;
     const key = `${goalieId}_${teamId}`;
     setEditGoalieShotKey(key);
     const data = {};
@@ -334,6 +336,12 @@ export const SummaryTablesAccordion = ({
                 <span className="truncate">Броски в створ вратарю</span>
               </div>
 
+              {!shotsTrackingEnabled && (
+                <div className="mx-5 mt-3 px-3 py-2 bg-graphite/5 border border-graphite/15 rounded-md text-[11px] font-semibold text-graphite-light leading-tight mb-2">
+                  Лига не ведёт статистику бросков для этого дивизиона — таблица заблокирована.
+                </div>
+              )}
+
               <div className="overflow-visible pb-12 pt-0.5">
                 <table className="w-full text-sm text-center border-collapse table-fixed select-none">
                   <thead>
@@ -389,7 +397,7 @@ export const SummaryTablesAccordion = ({
                                   <span className="font-semibold text-[13px] text-graphite truncate">{goalieName}</span>
                                 </td>
 
-                                {isEditingGoalie && !isReadOnly ? (
+                                {isEditingGoalie && !isReadOnly && shotsTrackingEnabled ? (
                                   <>
                                     {periods.map(p => (
                                       <td key={p} className="p-0.5 border-r border-graphite/30 text-center">
@@ -425,7 +433,7 @@ export const SummaryTablesAccordion = ({
                                       {getGoalieShotsTotal(goalieId, team.id) || '-'}
                                     </td>
                                     <td className="p-0 text-center">
-                                      {!isReadOnly && (
+                                      {!isReadOnly && shotsTrackingEnabled && (
                                         <div className="flex justify-center items-center w-full h-full px-0.5 opacity-40 hover:opacity-100 transition-opacity">
                                           <button
                                             onClick={() => startEditGoalieShots(goalieId, team.id)}

@@ -85,16 +85,16 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       reg_has_shootouts: div.reg_has_shootouts ?? true, 
       reg_so_length: div.reg_so_length ?? 3, 
       reg_track_plus_minus: div.reg_track_plus_minus ?? false,
-      reg_auto_stop_on_event: div.reg_auto_stop_on_event ?? false,
+      reg_track_shots: div.reg_track_shots ?? true,
 
       playoff_periods_count: div.playoff_periods_count ?? 3,
-      playoff_period_length: div.playoff_period_length ?? 20, 
-      playoff_has_overtime: div.playoff_has_overtime ?? true, 
-      playoff_ot_length: div.playoff_ot_length ?? 20, 
-      playoff_has_shootouts: div.playoff_has_shootouts ?? false, 
-      playoff_so_length: div.playoff_so_length ?? 0, 
+      playoff_period_length: div.playoff_period_length ?? 20,
+      playoff_has_overtime: div.playoff_has_overtime ?? true,
+      playoff_ot_length: div.playoff_ot_length ?? 20,
+      playoff_has_shootouts: div.playoff_has_shootouts ?? false,
+      playoff_so_length: div.playoff_so_length ?? 0,
       playoff_track_plus_minus: div.playoff_track_plus_minus ?? false,
-      playoff_auto_stop_on_event: div.playoff_auto_stop_on_event ?? false,
+      playoff_track_shots: div.playoff_track_shots ?? true,
 
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
       hide_stats_unpaid: div.hide_stats_unpaid ?? false, individual_fee: div.individual_fee ?? '',
@@ -107,8 +107,8 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     name: '', short_name: '', classification: '', tournament_type: 'Регулярный чемпионат', description: '',
     start_date: null, end_date: null, application_start: null, application_end: null, transfer_start: null, transfer_end: null,
     
-    reg_periods_count: 3, reg_period_length: 20, reg_has_overtime: true, reg_ot_length: 5, reg_has_shootouts: true, reg_so_length: 3, reg_track_plus_minus: false, reg_auto_stop_on_event: false,
-    playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false, playoff_auto_stop_on_event: false,
+    reg_periods_count: 3, reg_period_length: 20, reg_has_overtime: true, reg_ot_length: 5, reg_has_shootouts: true, reg_so_length: 3, reg_track_plus_minus: false, reg_track_shots: true,
+    playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false, playoff_track_shots: true,
     
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
     hide_stats_unpaid: false, individual_fee: '',
@@ -455,10 +455,10 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
     value: d.name,
     label: (
       <span className="inline-flex items-center gap-2">
-        <span>{d.name}</span>
         <span className={`shrink-0 text-[10px] font-normal px-1.5 py-0.5 rounded ${d.is_tournament ? 'bg-blue-500/10 text-blue-600' : 'bg-orange/10 text-orange'}`}>
-          {d.is_tournament ? 'Турнир' : 'Дивизион'}
+          {d.is_tournament ? 'Т' : 'Д'}
         </span>
+        <span>{d.name}</span>
       </span>
     ),
   }));
@@ -516,14 +516,18 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             )}
         </div>
 
-        <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
-            <div><div className="text-[13px] font-semibold text-graphite">Считать (+/-)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Учет полезности игроков</div></div>
-            <Switch checked={formData[`${prefix}_track_plus_minus`]} onChange={(e) => handleChange(`${prefix}_track_plus_minus`, e.target.checked)} disabled={isLocked} />
-        </div>
+        <div className="bg-orange/5 border border-orange/10 rounded-md p-4 flex flex-col gap-4">
+            <span className="text-[12px] font-bold text-orange uppercase tracking-wider">Статистика</span>
 
-        <div className="flex justify-between items-center gap-4">
-            <div><div className="text-[13px] font-semibold text-graphite">Автостоп таймера</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Останавливать время при событиях</div></div>
-            <Switch checked={formData[`${prefix}_auto_stop_on_event`]} onChange={(e) => handleChange(`${prefix}_auto_stop_on_event`, e.target.checked)} disabled={isLocked} />
+            <div className="flex justify-between items-center gap-4 border-b border-orange/10 pb-4">
+                <div><div className="text-[13px] font-semibold text-graphite">Считается +/-</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Учет коэффициента полезности игроков</div></div>
+                <Switch checked={formData[`${prefix}_track_plus_minus`]} onChange={(e) => handleChange(`${prefix}_track_plus_minus`, e.target.checked)} disabled={isLocked} />
+            </div>
+
+            <div className="flex justify-between items-center gap-4">
+                <div><div className="text-[13px] font-semibold text-graphite">Считаются броски</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Ведение статистики бросков по вратарям</div></div>
+                <Switch checked={formData[`${prefix}_track_shots`]} onChange={(e) => handleChange(`${prefix}_track_shots`, e.target.checked)} disabled={isLocked} />
+            </div>
         </div>
     </div>
   );

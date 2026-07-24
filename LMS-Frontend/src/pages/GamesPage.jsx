@@ -8,6 +8,7 @@ import { Loader } from '../ui/Loader';
 import { Toast } from '../modals/Toast';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { Switch } from '../ui/Switch';
+import { Checkbox } from '../ui/Checkbox';
 import { useAccess } from '../hooks/useAccess';
 import { GameCard } from '../components/Games/GameCard';
 import { AccessFallback } from '../ui/AccessFallback';
@@ -36,7 +37,8 @@ export function GamesPage() {
     const [toast, setToast] = useState(null);
 
     const [isEditMode, setIsEditMode] = useState(false);
-    const [showFinished, setShowFinished] = useState(true); 
+    const [showFinished, setShowFinished] = useState(true);
+    const [sortNewestFirst, setSortNewestFirst] = useState(false);
     const [editingRowIds, setEditingRowIds] = useState([]); 
 
     const [gameToDelete, setGameToDelete] = useState(null);
@@ -148,6 +150,17 @@ export function GamesPage() {
     const activeDivision = divisions.find(d => d.id === selectedDivisionId);
     const approvedTeams = activeDivision ? (activeDivision.teams || []).filter(t => t.status === 'approved') : [];
 
+    // Выключение глобального режима редактирования — подстраховка синхронизации:
+    // гарантированно закрывает и точечно открытые строки (editingRowIds), чтобы
+    // не оставалось "залипших" карточек, которые не закрылись вместе с общим тумблером.
+    const handleToggleEditMode = () => {
+        setIsEditMode(prev => {
+            const next = !prev;
+            if (!next) setEditingRowIds([]);
+            return next;
+        });
+    };
+
     const handleCreateGame = async () => {
         setIsCreating(true);
         try {
@@ -161,7 +174,11 @@ export function GamesPage() {
             const data = await res.json();
             if (data.success) {
                 setGames(prev => [...prev, data.data]);
-                setEditingRowIds(prev => [...prev, data.data.id]);
+                // Кнопка добавления доступна только внутри isEditMode (см. рендер ниже),
+                // так что новая строка и так уже редактируема через isEditMode || ...
+                // в GameCard — если положить её id ещё и в editingRowIds, при выходе из
+                // глобального режима строка "залипнет" открытой (только этот id, в отличие
+                // от остальных, никто не уберёт), и придётся жать "Готово" отдельно.
                 setToast({ title: 'Успешно', message: 'Матч добавлен в расписание', type: 'success' });
             } else {
                 setToast({ title: 'Ошибка', message: data.error, type: 'error' });
@@ -281,9 +298,28 @@ export function GamesPage() {
     const divisionOptions = divisions.map(d => d.short_name || d.name);
     const currentDivisionLabel = activeDivision ? (activeDivision.short_name || activeDivision.name) : '';
     
-    const displayedGames = !showFinished 
-        ? games.filter(g => g.status !== 'finished' && g.status !== 'cancelled') 
-        : games;
+    const displayedGames = (() => {
+        // Бэкенд всегда отдаёт по возрастанию (game_number/game_date ASC) — при большом
+        // расписании нужные (например, недавно добавленные) матчи оказываются в самом
+        // низу. sortNewestFirst просто разворачивает уже загруженный список на клиенте.
+        const filtered = !showFinished
+            ? games.filter(g => g.status !== 'finished' && g.status !== 'cancelled')
+            : games;
+        return sortNewestFirst ? [...filtered].reverse() : filtered;
+    })();
+
+    const addGameButton = isEditMode && canCreate && (
+        <div className="flex justify-center border-2 border-dashed border-graphite/20 rounded-lg hover:bg-white/10 hover:border-graphite/50">
+            <Button
+                onClick={handleCreateGame}
+                isLoading={isCreating}
+                disabled={isCreating}
+                className="bg-transparent w-full h-[90px] text-[18px] text-graphite/40"
+            >
+                + Добавить матч
+            </Button>
+        </div>
+    );
 
     return (
         <div className="flex flex-col min-h-screen pb-12 relative">
@@ -291,11 +327,19 @@ export function GamesPage() {
                 title="Расписание матчей" 
                 actions={
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3 bg-white/70 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
-                            <span className={`text-[12px] font-bold uppercase tracking-wider ${showFinished ? 'text-orange' : 'text-graphite-light'}`}>
-                                Завершенные
-                            </span>
-                            <Switch checked={showFinished} onChange={() => setShowFinished(!showFinished)} />
+                        <div className="flex items-center gap-4 bg-white/70 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
+                            <Checkbox
+                                label="Завершенные"
+                                checked={showFinished}
+                                onChange={() => setShowFinished(!showFinished)}
+                                className=""
+                            />
+                            <Checkbox
+                                label="Сначала новые"
+                                checked={sortNewestFirst}
+                                onChange={() => setSortNewestFirst(!sortNewestFirst)}
+                                className=""
+                            />
                         </div>
 
                         {canEdit && (
@@ -303,7 +347,7 @@ export function GamesPage() {
                                 <span className={`text-[12px] font-bold uppercase tracking-wider ${isEditMode ? 'text-orange' : 'text-graphite-light'}`}>
                                     Редакт.
                                 </span>
-                                <Switch checked={isEditMode} onChange={() => setIsEditMode(!isEditMode)} />
+                                <Switch checked={isEditMode} onChange={handleToggleEditMode} />
                             </div>
                         )}
 
@@ -356,12 +400,17 @@ export function GamesPage() {
                             </div>
                         ) : displayedGames.length === 0 && !isEditMode ? (
                             <div className="text-center py-20 text-graphite-light font-medium bg-white/0 border border-dashed border-graphite/20 rounded-2xl">
-                                {games.length > 0 ? "Включите тумблер «Завершенные», чтобы увидеть сыгранные матчи." : "В этом дивизионе пока нет матчей. Включите режим редактирования, чтобы создать матч."}
+                                {games.length > 0 ? "Отметьте «Завершенные», чтобы увидеть сыгранные матчи." : "В этом дивизионе пока нет матчей. Включите режим редактирования, чтобы создать матч."}
                             </div>
                         ) : (
                             <>
+                                {/* "Сначала новые" переворачивает список сверху вниз — кнопку добавления
+                                    держим рядом с началом видимого порядка (новые матчи создаются с
+                                    "пустой" датой, то есть логически они самые свежие). */}
+                                {sortNewestFirst && addGameButton}
+
                                 {displayedGames.map((game) => (
-                                    <GameCard 
+                                    <GameCard
                                         key={game.id}
                                         game={game}
                                         isEditMode={isEditMode}
@@ -379,18 +428,7 @@ export function GamesPage() {
                                     />
                                 ))}
 
-                                {isEditMode && canCreate && (
-                                    <div className="mt-4 flex justify-center border-2 border-dashed border-graphite/20 rounded-lg hover:bg-white/10 hover:border-graphite/50">
-                                        <Button 
-                                            onClick={handleCreateGame} 
-                                            isLoading={isCreating}
-                                            disabled={isCreating}
-                                            className="bg-transparent w-full h-[90px] text-[18px] text-graphite/40"
-                                        >
-                                            + Добавить матч
-                                        </Button>
-                                    </div>
-                                )}
+                                {!sortNewestFirst && addGameButton}
                             </>
                         )}
                     </div>

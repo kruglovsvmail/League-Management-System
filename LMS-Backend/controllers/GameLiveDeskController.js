@@ -268,7 +268,7 @@ export const deleteGameEvent = async (req, res) => {
 export const updateTimerSettings = async (req, res) => {
     try {
         const { gameId } = req.params;
-        const { period_length, ot_length, so_length, periods_count, track_plus_minus, auto_stop_on_event, arena_announcer } = req.body;
+        const { period_length, ot_length, so_length, periods_count, auto_stop_on_event, arena_announcer } = req.body;
 
         // COALESCE: этот роут вызывается и с полным набором (батч-сохранение "Утвердить настройки"),
         // и с одним только arena_announcer (мгновенное сохранение тумблера диктора арены) —
@@ -279,13 +279,12 @@ export const updateTimerSettings = async (req, res) => {
                 ot_length = COALESCE($2, ot_length),
                 so_length = COALESCE($3, so_length),
                 periods_count = COALESCE($4, periods_count),
-                track_plus_minus = COALESCE($5, track_plus_minus),
-                auto_stop_on_event = COALESCE($6, auto_stop_on_event),
-                arena_announcer = COALESCE($7::jsonb, arena_announcer)
-            WHERE game_id = $8
+                auto_stop_on_event = COALESCE($5, auto_stop_on_event),
+                arena_announcer = COALESCE($6::jsonb, arena_announcer)
+            WHERE game_id = $7
         `, [
             period_length ?? null, ot_length ?? null, so_length ?? null, periods_count ?? null,
-            track_plus_minus ?? null, auto_stop_on_event ?? null,
+            auto_stop_on_event ?? null,
             arena_announcer !== undefined ? JSON.stringify(arena_announcer) : null,
             gameId
         ]);
@@ -576,6 +575,19 @@ export const saveGoalieShotsSummary = async (req, res) => {
     }
 
     try {
+        const flagRes = await pool.query(`
+            SELECT CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots
+            FROM games g
+            LEFT JOIN divisions d ON d.id = g.division_id
+            WHERE g.id = $1
+        `, [gameId]);
+        if (flagRes.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        if (flagRes.rows[0].track_shots === false) {
+            return res.status(403).json({ success: false, error: 'Лига не ведёт статистику бросков для этого дивизиона' });
+        }
+
         if (goalie_id) {
             await pool.query(`
                 INSERT INTO game_shots_by_goalie (game_id, goalie_id, team_id, period, shots_count)

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Select } from '../../ui/Select';
 import { DateTimePicker } from '../../ui/DateTimePicker';
 import { Tooltip } from '../../ui/Tooltip';
-import { getImageUrl } from '../../utils/helpers';
+import { getImageUrl, getPlayoffStageDisplayLabel } from '../../utils/helpers';
 import dayjs from 'dayjs';
 import { useAccess } from '../../hooks/useAccess';
 import { Icon } from '../../ui/Icon';
@@ -183,17 +183,17 @@ onUpdate(game.id, updates);
         if (game.stage_type === 'regular') {
             roundOptions = REGULAR_ROUNDS.map(r => ({ label: r, value: r, disabled: false }));
         } else if (game.stage_type === 'playoff' && currentBracket) {
-            roundOptions = currentBracket.rounds?.map(r => {
+            roundOptions = (currentBracket.rounds || []).flatMap(r => {
                 let isDisabled = false;
-                
+
                 if (game.home_team_id && game.away_team_id) {
                     const maxGames = (r.wins_needed * 2) - 1;
-                    const existingGamesCount = gamesList.filter(g => 
+                    const existingGamesCount = gamesList.filter(g =>
                         g.id !== game.id &&
                         g.stage_type === 'playoff' &&
                         g.stage_label === r.name &&
                         g.status !== 'cancelled' &&
-                        ((g.home_team_id === game.home_team_id && g.away_team_id === game.away_team_id) || 
+                        ((g.home_team_id === game.home_team_id && g.away_team_id === game.away_team_id) ||
                          (g.home_team_id === game.away_team_id && g.away_team_id === game.home_team_id))
                     ).length;
 
@@ -202,8 +202,31 @@ onUpdate(game.id, updates);
                     }
                 }
 
-                return { label: r.name, value: r.name, disabled: isDisabled };
-            }) || [];
+                // Раунд (например "Финал") может физически содержать несколько разных
+                // пар — за 1-е место и за 3-е/5-е и т.д. (playoff_matchups.ui_metadata
+                // .match_type). Если типов больше одного — раскрываем раунд на отдельный
+                // пункт списка под каждый тип, вместо одного пункта на весь раунд.
+                const placeTypes = Array.from(new Set(
+                    (r.matchups || [])
+                        .map(m => m.ui_metadata?.match_type || 'regular')
+                        .filter(t => t !== 'regular' && t !== 'place_1')
+                ));
+
+                if (placeTypes.length === 0) {
+                    return [{ label: r.name, value: r.name, roundName: r.name, matchType: null, disabled: isDisabled }];
+                }
+
+                return [
+                    { label: r.name, value: r.name, roundName: r.name, matchType: null, disabled: isDisabled },
+                    ...placeTypes.map(t => ({
+                        label: getPlayoffStageDisplayLabel(r.name, t),
+                        value: `${r.name}::${t}`,
+                        roundName: r.name,
+                        matchType: t,
+                        disabled: isDisabled,
+                    })),
+                ];
+            });
         }
 
         return (
@@ -274,11 +297,11 @@ onUpdate(game.id, updates);
                             placeholder="Стадия"
                             onChange={(val) => {
                                 if (val === 'Регулярный чемпионат') {
-                                    handleFieldChange({ stage_type: 'regular', stage_label: '1-й круг' });
+                                    handleFieldChange({ stage_type: 'regular', stage_label: '1-й круг', playoff_match_type: null });
                                 } else if (val.startsWith('Плей-офф: ')) {
                                     const bracketName = val.replace('Плей-офф: ', '');
                                     const bracket = brackets.find(b => b.name === bracketName);
-                                    if (bracket) handleFieldChange({ stage_type: 'playoff', stage_label: bracket.rounds?.[0]?.name || '' });
+                                    if (bracket) handleFieldChange({ stage_type: 'playoff', stage_label: bracket.rounds?.[0]?.name || '', playoff_match_type: null });
                                 }
                             }}
                             disabled={isFinishedOrLive}
@@ -286,19 +309,21 @@ onUpdate(game.id, updates);
                     </div>
                     <div className={`flex items-center gap-2 w-full ${isFinishedOrLive ? 'pointer-events-none' : ''}`}>
                         <div className="flex-1 min-w-0">
-                            <Select 
+                            <Select
                                 options={roundOptions.length > 0 ? roundOptions : ['-']}
-                                value={game.stage_label || '-'}
+                                value={game.playoff_match_type ? `${game.stage_label}::${game.playoff_match_type}` : (game.stage_label || '-')}
                                 onChange={(val, opt) => {
                                     if (opt && opt.disabled) {
-                                        setToast({ 
-                                            title: 'Лимит матчей', 
-                                            message: 'Максимальное количество матчей для этой пары в данном раунде уже создано.', 
-                                            type: 'error' 
+                                        setToast({
+                                            title: 'Лимит матчей',
+                                            message: 'Максимальное количество матчей для этой пары в данном раунде уже создано.',
+                                            type: 'error'
                                         });
-                                        handleFieldChange('stage_label', null);
+                                        handleFieldChange({ stage_label: null, playoff_match_type: null });
+                                    } else if (val === '-') {
+                                        handleFieldChange({ stage_label: null, playoff_match_type: null });
                                     } else {
-                                        handleFieldChange('stage_label', val === '-' ? null : val);
+                                        handleFieldChange({ stage_label: opt?.roundName ?? val, playoff_match_type: opt?.matchType ?? null });
                                     }
                                 }}
                                 disabled={isFinishedOrLive || !game.stage_type || roundOptions.length === 0}
@@ -488,7 +513,7 @@ const dateStr = gameDate ? `${gameDate.format('D MMMM YYYY')}  |  ${gameDate.for
                 </span>
                 
                 <span className="text-[12px] font-bold text-graphite pl-0.5">
-                    {game.stage_label || '-'}
+                    {getPlayoffStageDisplayLabel(game.stage_label, game.playoff_match_type) || '-'}
                 </span>
                 <span className="text-[11px] font-medium text-graphite/50 pl-0.5">
                     {game.series_number ? (game.stage_type === 'playoff' ? 'Матч ' : 'Тур ') + game.series_number : '-'}
