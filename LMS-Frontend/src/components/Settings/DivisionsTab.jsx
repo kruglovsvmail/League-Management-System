@@ -18,19 +18,26 @@ const TYPE_OPTIONS = ['Регулярный чемпионат', 'Плей-оф�
 const TYPE_MAP = { 'Регулярный чемпионат': 'regular', 'Плей-офф': 'playoff', 'Регулярный + Плей-офф': 'mixed' };
 const REV_TYPE_MAP = { 'regular': 'Регулярный чемпионат', 'playoff': 'Плей-офф', 'mixed': 'Регулярный + Плей-офф' };
 
-const CRITERIA_OPTIONS = ['Очные встречи', 'Разница шайб', 'Заброшенные шайбы', 'Количество очков', 'Количество побед в осн. время'];
-
-const CRITERIA_MAP = {
-  'Количество очков': 'points',
-  'Очные встречи': 'h2h',
-  'Разница шайб': 'goals_diff',
-  'Заброшенные шайбы': 'goals_for',
-  'Количество побед в основное время': 'wins_reg'
-};
-
-const REV_CRITERIA_MAP = Object.fromEntries(
-  Object.entries(CRITERIA_MAP).map(([k, v]) => [v, k])
-);
+// Полный пул критериев тай-брейка. formData.ranking_criteria хранит системные
+// ключи (id) напрямую — без перевода в русские названия и обратно.
+// tag определяет бейдж-подпись: "очные" считаются только по матчам между
+// текущей спорной группой команд, "сезон" — по всем матчам регулярки,
+// "доп" — не входят в Регламент, добавлены отдельно.
+const CRITERIA_DEFS = [
+  { id: 'points', label: 'Очки', tag: 'сезон' },
+  { id: 'h2h_points', label: 'Очки в очных встречах', tag: 'очные' },
+  { id: 'h2h_wins', label: 'Победы в очных встречах', tag: 'очные' },
+  { id: 'h2h_diff', label: 'Разница шайб в очных встречах', tag: 'очные' },
+  { id: 'h2h_for', label: 'Заброшенные шайбы в очных встречах', tag: 'очные' },
+  { id: 'wins', label: 'Победы', tag: 'сезон' },
+  { id: 'goals_diff', label: 'Разница шайб', tag: 'сезон' },
+  { id: 'goals_for', label: 'Заброшенные шайбы', tag: 'сезон' },
+  { id: 'penalty_minutes', label: 'Штрафные минуты (меньше — лучше)', tag: 'доп' },
+  { id: 'avg_age', label: 'Средний возраст (старше — лучше)', tag: 'доп' },
+];
+const CRITERIA_BY_ID = Object.fromEntries(CRITERIA_DEFS.map(c => [c.id, c]));
+const ALL_CRITERIA_IDS = CRITERIA_DEFS.map(c => c.id);
+const DEFAULT_ACTIVE_CRITERIA = ['points', 'h2h_points', 'h2h_wins', 'h2h_diff', 'h2h_for', 'wins', 'goals_diff', 'goals_for'];
 
 // application_start/application_end/transfer_start/transfer_end приходят с бэкенда
 // полным ISO-моментом (timestamptz). Нельзя брать .split('T')[0] — это UTC-календарный
@@ -47,15 +54,18 @@ const toClubDateStr = (isoValue) => {
 
 const getInitialFormData = (div = null, isTournamentDefault = false) => {
   if (div) {
-    let parsedCriteria = ['h2h', 'goals_diff', 'goals_for', 'points', 'wins_reg']; 
+    let parsedCriteria = [...DEFAULT_ACTIVE_CRITERIA];
     try {
       if (div.ranking_criteria) {
         const parsed = typeof div.ranking_criteria === 'string' ? JSON.parse(div.ranking_criteria) : div.ranking_criteria;
-        if (Array.isArray(parsed) && parsed.length === 5) parsedCriteria = parsed;
+        if (Array.isArray(parsed)) {
+          // Отбрасываем неизвестные/устаревшие ключи (например, старый бандл "h2h")
+          // и дубликаты — остальное берём как есть, порядок пользователя сохраняется.
+          const valid = [...new Set(parsed.filter(id => ALL_CRITERIA_IDS.includes(id)))];
+          if (valid.length > 0) parsedCriteria = valid;
+        }
       }
     } catch (e) {}
-
-    const uiCriteria = parsedCriteria.map(item => REV_CRITERIA_MAP[item] || item);
 
     return {
       ...div,
@@ -66,8 +76,8 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       application_end: toClubDateStr(div.application_end),
       transfer_start: toClubDateStr(div.transfer_start),
       transfer_end: toClubDateStr(div.transfer_end),
-      ranking_criteria: uiCriteria,
-      
+      ranking_criteria: parsedCriteria,
+
       reg_periods_count: div.reg_periods_count ?? 3, 
       reg_period_length: div.reg_period_length ?? 20, 
       reg_has_overtime: div.reg_has_overtime ?? true, 
@@ -105,7 +115,7 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     is_tournament: isTournamentDefault,
     points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
     points_tech_win: 3, points_tech_loss: 0, points_tech_draw: 0,
-    ranking_criteria: [...CRITERIA_OPTIONS],
+    ranking_criteria: [...DEFAULT_ACTIVE_CRITERIA],
   };
 };
 
@@ -202,10 +212,11 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   const [activeSection, setActiveSection] = useState('general');
 
-  // Управление перетаскиванием (Мышь + Тач)
-  const dragItem = useRef(null);
-  const dragOverItem = useRef(null);
-  const [draggingIndex, setDraggingIndex] = useState(null);
+  // Управление перетаскиванием критериев тай-брейка между "активными" и "стеком" (Мышь + Тач)
+  const dragCriterionId = useRef(null);
+  const dragOverZone = useRef(null); // 'active' | 'stack' | null
+  const dragOverCriterionId = useRef(null); // id активной плашки, над которой сейчас находится перетаскиваемый элемент
+  const [draggingCriterionId, setDraggingCriterionId] = useState(null);
 
   useEffect(() => { if (selectedLeague?.id && canView) fetchSeasons(); }, [selectedLeague, canView]);
 
@@ -292,47 +303,57 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   const handleChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
 
-  // ---- УНИВЕРСАЛЬНАЯ ЛОГИКА DRAG-AND-DROP (Mouse + Touch) ----
+  // ---- УНИВЕРСАЛЬНАЯ ЛОГИКА DRAG-AND-DROP МЕЖДУ ДВУМЯ ЗОНАМИ (Mouse + Touch) ----
+  // "Активные" — formData.ranking_criteria (упорядоченный массив id).
+  // "Стек" — всё остальное из ALL_CRITERIA_IDS, не хранится отдельно, а вычисляется при рендере.
   const applyDrag = () => {
-    if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-        const newCriteria = [...formData.ranking_criteria];
-        const draggedItemContent = newCriteria[dragItem.current];
-        newCriteria.splice(dragItem.current, 1);
-        newCriteria.splice(dragOverItem.current, 0, draggedItemContent);
-        handleChange('ranking_criteria', newCriteria);
+    const id = dragCriterionId.current;
+    if (id) {
+        const withoutDragged = formData.ranking_criteria.filter(c => c !== id);
+        if (dragOverZone.current === 'active') {
+            const overId = dragOverCriterionId.current;
+            const insertAt = overId ? withoutDragged.indexOf(overId) : withoutDragged.length;
+            withoutDragged.splice(insertAt === -1 ? withoutDragged.length : insertAt, 0, id);
+        }
+        // Если бросили в "стек" (или отпустили в никуда) — id просто остаётся исключённым
+        handleChange('ranking_criteria', withoutDragged);
     }
-    dragItem.current = null;
-    dragOverItem.current = null;
-    setDraggingIndex(null);
+    dragCriterionId.current = null;
+    dragOverZone.current = null;
+    dragOverCriterionId.current = null;
+    setDraggingCriterionId(null);
   };
 
   // Десктопные события (HTML5)
-  const handleDragStart = (e, index) => {
-    dragItem.current = index;
-    setDraggingIndex(index);
+  const handleDragStart = (e, id) => {
+    dragCriterionId.current = id;
+    setDraggingCriterionId(id);
     e.dataTransfer.effectAllowed = 'move';
   };
-  const handleDragEnter = (e, index) => { dragOverItem.current = index; };
+  const handleDragEnterActive = (e, overId) => { dragOverZone.current = 'active'; dragOverCriterionId.current = overId; };
+  const handleDragEnterStack = () => { dragOverZone.current = 'stack'; dragOverCriterionId.current = null; };
   const handleDragEnd = () => applyDrag();
 
   // Мобильные события (Touch API)
-  const handleTouchStart = (e, index) => {
-    dragItem.current = index;
-    setDraggingIndex(index);
+  const handleTouchStart = (e, id) => {
+    dragCriterionId.current = id;
+    setDraggingCriterionId(id);
   };
   const handleTouchMove = (e) => {
-    if (dragItem.current === null) return;
+    if (dragCriterionId.current === null) return;
     const touch = e.touches[0];
     const elem = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (elem) {
-        const item = elem.closest('[data-dnd-index]');
-        if (item) {
-            const hoverIndex = parseInt(item.getAttribute('data-dnd-index'), 10);
-            if (!isNaN(hoverIndex)) dragOverItem.current = hoverIndex;
-        }
+    const zone = elem?.closest('[data-dnd-zone]');
+    if (zone) {
+        dragOverZone.current = zone.getAttribute('data-dnd-zone');
+        const item = elem.closest('[data-dnd-id]');
+        dragOverCriterionId.current = (item && zone.getAttribute('data-dnd-zone') === 'active') ? item.getAttribute('data-dnd-id') : null;
     }
   };
   const handleTouchEnd = () => applyDrag();
+
+  const removeFromActive = (id) => handleChange('ranking_criteria', formData.ranking_criteria.filter(c => c !== id));
+  const addToActive = (id) => handleChange('ranking_criteria', [...formData.ranking_criteria, id]);
   // -----------------------------------------------------------
 
   const isOverlap = () => {
@@ -379,7 +400,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       const payload = {
         ...formData,
         tournament_type: TYPE_MAP[formData.tournament_type],
-        ranking_criteria: formData.ranking_criteria.map(item => CRITERIA_MAP[item] || item),
+        ranking_criteria: formData.ranking_criteria,
         clear_logo: logoCleared, clear_regulations: regCleared
       };
 
@@ -727,54 +748,126 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             </div>
                         </div>
                         
-                        {/* Обновленный блок с Drag-and-Drop (Мышь + Тач) */}
-                        <div className="bg-white/70 p-6 rounded-md border border-graphite/10 flex flex-col gap-4 relative z-50">
-                            <span className="text-[15px] font-bold text-graphite mb-1 uppercase">Приоритет при равенстве очков</span>
-                            <div className="flex flex-col gap-1">
-                                {formData.ranking_criteria.map((criteria, index) => (
-                                    <div
-                                        key={criteria}
-                                        data-dnd-index={index}
-                                        draggable={!isLocked}
-                                        onDragStart={(e) => handleDragStart(e, index)}
-                                        onDragEnter={(e) => handleDragEnter(e, index)}
-                                        onDragEnd={handleDragEnd}
-                                        onDragOver={(e) => e.preventDefault()}
-                                        className={`flex items-center gap-4 p-3 rounded-md border transition-all duration-200
-                                            ${isLocked 
-                                                ? 'bg-white/50 border-graphite/5 opacity-70 cursor-not-allowed' 
-                                                : 'bg-white border-graphite/10 shadow-sm cursor-grab hover:border-orange hover:shadow-md'
-                                            }
-                                            ${draggingIndex === index ? 'opacity-40 scale-[0.98] ring-1 ring-orange shadow-lg' : ''}
-                                        `}
-                                    >
-                                        <span className="w-8 h-8 bg-graphite text-white rounded-lg flex justify-center items-center text-[13px] font-bold shrink-0">
-                                            {index + 1}
-                                        </span>
-                                        <span className="text-[14px] font-semibold text-graphite flex-1">
-                                            {criteria}
-                                        </span>
-                                        
-                                        {!isLocked && (
-                                            <div 
-                                                className="text-graphite-light opacity-40 hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing flex items-center justify-center p-1 touch-none"
-                                                onTouchStart={(e) => handleTouchStart(e, index)}
-                                                onTouchMove={handleTouchMove}
-                                                onTouchEnd={handleTouchEnd}
+                        {/* Приоритет при равенстве очков: активные критерии + стек исключённых (Drag-and-Drop, Мышь + Тач) */}
+                        <div className="flex flex-col gap-4">
+                            <div className="bg-white/70 p-6 rounded-md border border-graphite/10 flex flex-col gap-4 relative z-50">
+                                <span className="text-[15px] font-bold text-graphite mb-1 uppercase">Приоритет при равенстве очков</span>
+                                <div
+                                    data-dnd-zone="active"
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDragEnter={() => handleDragEnterActive(null, null)}
+                                    className="flex flex-col gap-1 min-h-[40px]"
+                                >
+                                    {formData.ranking_criteria.map((id, index) => {
+                                        const def = CRITERIA_BY_ID[id];
+                                        if (!def) return null;
+                                        return (
+                                            <div
+                                                key={id}
+                                                data-dnd-id={id}
+                                                data-dnd-zone="active"
+                                                draggable={!isLocked}
+                                                onDragStart={(e) => handleDragStart(e, id)}
+                                                onDragEnter={(e) => { e.stopPropagation(); handleDragEnterActive(e, id); }}
+                                                onDragEnd={handleDragEnd}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onTouchStart={(e) => !isLocked && handleTouchStart(e, id)}
+                                                onTouchMove={(e) => !isLocked && handleTouchMove(e)}
+                                                onTouchEnd={() => !isLocked && handleTouchEnd()}
+                                                className={`flex items-center gap-3 p-3 rounded-md border transition-all duration-200
+                                                    ${isLocked
+                                                        ? 'bg-white/50 border-graphite/5 opacity-70 cursor-not-allowed'
+                                                        : 'bg-white border-graphite/10 shadow-sm cursor-grab active:cursor-grabbing hover:border-orange hover:shadow-md touch-none'
+                                                    }
+                                                    ${draggingCriterionId === id ? 'opacity-40 scale-[0.98] ring-1 ring-orange shadow-lg' : ''}
+                                                `}
                                             >
-                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                                    <path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM20 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
-                                                </svg>
+                                                <span className="w-8 h-8 bg-graphite text-white rounded-lg flex justify-center items-center text-[13px] font-bold shrink-0">
+                                                    {index + 1}
+                                                </span>
+                                                <span className="text-[13px] font-semibold text-graphite flex-1">
+                                                    {def.label}
+                                                </span>
+                                                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                                                    def.tag === 'очные' ? 'bg-orange/10 text-orange'
+                                                    : def.tag === 'сезон' ? 'bg-emerald-500/10 text-emerald-600'
+                                                    : 'bg-purple-500/10 text-purple-600'
+                                                }`}>
+                                                    {def.tag}
+                                                </span>
+
+                                                {!isLocked && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFromActive(id)}
+                                                        className="text-graphite-light hover:text-status-rejected transition-colors text-[16px] leading-none px-1 shrink-0"
+                                                        aria-label="Исключить критерий"
+                                                    >
+                                                        &times;
+                                                    </button>
+                                                )}
                                             </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                            {!isLocked && (
-                                <div className="text-[11px] text-graphite-light mt-2 text-center">
-                                    Потяните за иконку, чтобы изменить приоритет
+                                        );
+                                    })}
                                 </div>
-                            )}
+                                {!isLocked && (
+                                    <div className="text-[11px] text-graphite-light mt-1 text-center">
+                                        Перетащите, чтобы изменить приоритет, или нажмите &times;, чтобы исключить критерий
+                                    </div>
+                                )}
+                            </div>
+
+                            <div
+                                data-dnd-zone="stack"
+                                onDragOver={(e) => e.preventDefault()}
+                                onDragEnter={handleDragEnterStack}
+                                className="p-5 rounded-md border border-dashed border-graphite/20 bg-graphite/[0.03] flex flex-col gap-3"
+                            >
+                                <div>
+                                    <span className="text-[12px] font-bold text-graphite-light uppercase tracking-wide">Неактивные критерии</span>
+                                    {!isLocked && <div className="text-[11px] text-graphite-light/80 mt-0.5">Перетащите плашку наверх, чтобы включить её в сортировку</div>}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {ALL_CRITERIA_IDS.filter(id => !formData.ranking_criteria.includes(id)).map(id => {
+                                        const def = CRITERIA_BY_ID[id];
+                                        return (
+                                            <div
+                                                key={id}
+                                                data-dnd-id={id}
+                                                data-dnd-zone="stack"
+                                                draggable={!isLocked}
+                                                onDragStart={(e) => handleDragStart(e, id)}
+                                                onDragEnter={handleDragEnterStack}
+                                                onDragEnd={handleDragEnd}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onClick={() => !isLocked && addToActive(id)}
+                                                onTouchStart={(e) => !isLocked && handleTouchStart(e, id)}
+                                                onTouchMove={(e) => !isLocked && handleTouchMove(e)}
+                                                onTouchEnd={() => !isLocked && handleTouchEnd()}
+                                                className={`flex items-center gap-2 px-3 py-2 rounded-full border transition-all duration-200
+                                                    ${isLocked
+                                                        ? 'bg-white/40 border-graphite/10 opacity-60 cursor-not-allowed'
+                                                        : 'bg-white border-graphite/15 cursor-grab hover:border-orange'
+                                                    }
+                                                    ${draggingCriterionId === id ? 'opacity-40 scale-[0.98] ring-1 ring-orange' : ''}
+                                                `}
+                                            >
+                                                <span className="text-[12px] font-semibold text-graphite-light">{def.label}</span>
+                                                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                                                    def.tag === 'очные' ? 'bg-orange/10 text-orange'
+                                                    : def.tag === 'сезон' ? 'bg-emerald-500/10 text-emerald-600'
+                                                    : 'bg-purple-500/10 text-purple-600'
+                                                }`}>
+                                                    {def.tag}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                    {ALL_CRITERIA_IDS.filter(id => !formData.ranking_criteria.includes(id)).length === 0 && (
+                                        <span className="text-[12px] text-graphite-light/60 italic">Все критерии активны</span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}

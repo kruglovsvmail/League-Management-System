@@ -23,8 +23,9 @@ export const recalculateDivisionStandings = async (divisionId) => {
         const ptsTechWin = dbRules.points_tech_win ?? 3;
         const ptsTechLoss = dbRules.points_tech_loss ?? 0;
 
-        // 2. Парсим критерии сортировки (теперь тут системные ключи: points, h2h, goals_diff)
-        let rankingCriteria = ['points', 'wins_reg', 'wins_ot', 'goals_diff', 'goals_for'];
+        // 2. Парсим критерии сортировки (системные ключи: points, h2h_points, h2h_wins,
+        // h2h_diff, h2h_for, wins, goals_diff, goals_for, penalty_minutes, avg_age)
+        let rankingCriteria = ['points', 'h2h_points', 'h2h_wins', 'h2h_diff', 'h2h_for', 'wins', 'goals_diff', 'goals_for'];
         if (dbRules.ranking_criteria) {
             try {
                 rankingCriteria = typeof dbRules.ranking_criteria === 'string' 
@@ -41,10 +42,35 @@ export const recalculateDivisionStandings = async (divisionId) => {
         teamsRes.rows.forEach(t => {
             stats[t.team_id] = {
                 team_id: t.team_id,
-                games_played: 0, wins_reg: 0, wins_ot: 0, draws: 0, 
-                losses_ot: 0, losses_reg: 0, goals_for: 0, goals_against: 0, 
-                points: 0, rank: 0
+                games_played: 0, wins_reg: 0, wins_ot: 0, draws: 0,
+                losses_ot: 0, losses_reg: 0, goals_for: 0, goals_against: 0,
+                points: 0, penalty_minutes: 0, avg_age: 0, rank: 0
             };
+        });
+
+        // Штрафные минуты команд за регулярку (для критерия penalty_minutes)
+        const penaltiesRes = await client.query(`
+            SELECT ge.team_id, COALESCE(SUM(ge.penalty_minutes), 0) AS penalty_minutes
+            FROM game_events ge
+            JOIN games g ON g.id = ge.game_id
+            WHERE g.division_id = $1 AND g.status = 'finished' AND g.stage_type = 'regular' AND ge.event_type = 'penalty'
+            GROUP BY ge.team_id
+        `, [divisionId]);
+        penaltiesRes.rows.forEach(row => {
+            if (stats[row.team_id]) stats[row.team_id].penalty_minutes = Number(row.penalty_minutes);
+        });
+
+        // Средний возраст текущего заявленного состава (для критерия avg_age)
+        const agesRes = await client.query(`
+            SELECT tt.team_id, ROUND(AVG(EXTRACT(YEAR FROM age(CURRENT_DATE, u.birth_date)))) AS avg_age
+            FROM tournament_teams tt
+            JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id
+            JOIN users u ON tr.player_id = u.id
+            WHERE tt.division_id = $1 AND tr.application_status = 'approved' AND tr.period_end IS NULL
+            GROUP BY tt.team_id
+        `, [divisionId]);
+        agesRes.rows.forEach(row => {
+            if (stats[row.team_id]) stats[row.team_id].avg_age = row.avg_age !== null ? Number(row.avg_age) : 0;
         });
 
         // 4. Получаем сыгранные матчи (только регулярный чемпионат)
@@ -111,9 +137,24 @@ export const recalculateDivisionStandings = async (divisionId) => {
 
         // Считаем общую статистику
         playedGames.forEach(game => applyGameToStats(game, stats));
-        
-        // Считаем разницу шайб для удобства сортировки
-        Object.values(stats).forEach(t => t.goals_diff = t.goals_for - t.goals_against);
+
+        // Считаем разницу шайб и общее число побед для удобства сортировки
+        Object.values(stats).forEach(t => {
+            t.goals_diff = t.goals_for - t.goals_against;
+            t.wins = t.wins_reg + t.wins_ot;
+        });
+
+        // Критерии "очных встреч" (h2h_*) считаются не по общей статистике, а по
+        // мини-таблице матчей ТОЛЬКО между командами текущей спорной группы —
+        // функция вычисляет нужное значение из этой мини-таблицы.
+        const H2H_GETTERS = {
+            h2h_points: (s) => s.points,
+            h2h_wins: (s) => s.wins_reg + s.wins_ot,
+            h2h_diff: (s) => s.goals_for - s.goals_against,
+            h2h_for: (s) => s.goals_for,
+        };
+        // Критерии, где МЕНЬШЕЕ значение лучше (по умолчанию сортировка по убыванию)
+        const ASCENDING_CRITERIA = new Set(['penalty_minutes']);
 
         // 5. РЕКУРСИВНАЯ СОРТИРОВКА ТАБЛИЦЫ
         function sortTeamsGroup(teamsGroup, criteriaIndex) {
@@ -123,9 +164,9 @@ export const recalculateDivisionStandings = async (divisionId) => {
             }
 
             const criterion = rankingCriteria[criteriaIndex];
+            const isH2h = criterion in H2H_GETTERS;
 
-            // Если критерий - ОЧНЫЕ ВСТРЕЧИ (Head-to-Head)
-            if (criterion === 'h2h') {
+            if (isH2h) {
                 const teamIds = teamsGroup.map(t => t.team_id);
                 const miniStats = {};
                 teamIds.forEach(id => miniStats[id] = { team_id: id, games_played: 0, wins_reg: 0, wins_ot: 0, draws: 0, losses_ot: 0, losses_reg: 0, goals_for: 0, goals_against: 0, points: 0 });
@@ -137,22 +178,15 @@ export const recalculateDivisionStandings = async (divisionId) => {
                     }
                 });
 
-                // Прикрепляем результаты мини-таблицы к командам для сортировки
+                // Прикрепляем нужное для этого критерия значение мини-таблицы к командам
                 teamsGroup.forEach(t => {
-                    t._h2h_points = miniStats[t.team_id].points;
-                    t._h2h_diff = miniStats[t.team_id].goals_for - miniStats[t.team_id].goals_against;
+                    t[`_${criterion}`] = H2H_GETTERS[criterion](miniStats[t.team_id]);
                 });
-
-                // Сортируем по очкам в очных встречах, при равенстве - по разнице шайб в очных
-                teamsGroup.sort((a, b) => {
-                    if (b._h2h_points !== a._h2h_points) return b._h2h_points - a._h2h_points;
-                    return b._h2h_diff - a._h2h_diff;
-                });
-
-            } else {
-                // Обычные (абсолютные) критерии (points, goals_diff, wins_reg и т.д.)
-                teamsGroup.sort((a, b) => b[criterion] - a[criterion]);
             }
+
+            const getValue = (t) => isH2h ? t[`_${criterion}`] : t[criterion];
+            const dir = ASCENDING_CRITERIA.has(criterion) ? 1 : -1;
+            teamsGroup.sort((a, b) => dir * (getValue(a) - getValue(b)));
 
             // Группируем команды с одинаковым текущим показателем и отправляем на следующий критерий
             const result = [];
@@ -161,15 +195,8 @@ export const recalculateDivisionStandings = async (divisionId) => {
             for (let i = 1; i < teamsGroup.length; i++) {
                 const prev = currentSubGroup[0];
                 const curr = teamsGroup[i];
-                
-                let isTie = false;
-                if (criterion === 'h2h') {
-                    isTie = (prev._h2h_points === curr._h2h_points && prev._h2h_diff === curr._h2h_diff);
-                } else {
-                    isTie = (prev[criterion] === curr[criterion]);
-                }
 
-                if (isTie) {
+                if (getValue(prev) === getValue(curr)) {
                     currentSubGroup.push(curr);
                 } else {
                     result.push(...sortTeamsGroup(currentSubGroup, criteriaIndex + 1));
@@ -192,26 +219,29 @@ export const recalculateDivisionStandings = async (divisionId) => {
         // 7. Сохраняем в БД
         for (const team of finalSortedTeams) {
             await client.query(`
-                INSERT INTO division_standings 
-                (division_id, team_id, games_played, wins_reg, wins_ot, draws, losses_ot, losses_reg, goals_for, goals_against, points, rank, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
-                ON CONFLICT (division_id, team_id) 
+                INSERT INTO division_standings
+                (division_id, team_id, games_played, wins_reg, wins_ot, draws, losses_ot, losses_reg, goals_for, goals_against, points, penalty_minutes, avg_age, rank, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+                ON CONFLICT (division_id, team_id)
                 DO UPDATE SET
                     games_played = EXCLUDED.games_played,
-                    wins_reg = EXCLUDED.wins_reg, 
-                    wins_ot = EXCLUDED.wins_ot, 
-                    draws = EXCLUDED.draws, 
-                    losses_ot = EXCLUDED.losses_ot, 
+                    wins_reg = EXCLUDED.wins_reg,
+                    wins_ot = EXCLUDED.wins_ot,
+                    draws = EXCLUDED.draws,
+                    losses_ot = EXCLUDED.losses_ot,
                     losses_reg = EXCLUDED.losses_reg,
-                    goals_for = EXCLUDED.goals_for, 
-                    goals_against = EXCLUDED.goals_against, 
+                    goals_for = EXCLUDED.goals_for,
+                    goals_against = EXCLUDED.goals_against,
                     points = EXCLUDED.points,
+                    penalty_minutes = EXCLUDED.penalty_minutes,
+                    avg_age = EXCLUDED.avg_age,
                     rank = EXCLUDED.rank,
                     updated_at = NOW()
             `, [
-                divisionId, team.team_id, team.games_played, team.wins_reg, 
+                divisionId, team.team_id, team.games_played, team.wins_reg,
                 team.wins_ot, team.draws, team.losses_ot, team.losses_reg,
-                team.goals_for, team.goals_against, team.points, team.rank
+                team.goals_for, team.goals_against, team.points,
+                team.penalty_minutes, team.avg_age, team.rank
             ]);
         }
 
