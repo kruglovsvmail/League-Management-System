@@ -160,7 +160,7 @@ export function Select({
                       ? 'line-through text-graphite/40 bg-graphite/[0.02] hover:bg-graphite/5' 
                       : String(value) === String(opt.value) 
                         ? 'bg-orange/10 text-orange' 
-                        : opt.label?.includes('Очистите') 
+                        : typeof opt.label === 'string' && opt.label.includes('Очистите')
                             ? 'text-status-rejected hover:bg-status-rejected/10'
                             : 'text-graphite hover:bg-orange/5 hover:text-orange'
                   }`}

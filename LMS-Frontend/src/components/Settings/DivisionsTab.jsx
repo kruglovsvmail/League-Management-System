@@ -45,7 +45,7 @@ const toClubDateStr = (isoValue) => {
   return `${get('year')}-${get('month')}-${get('day')}`;
 };
 
-const getInitialFormData = (div = null) => {
+const getInitialFormData = (div = null, isTournamentDefault = false) => {
   if (div) {
     let parsedCriteria = ['h2h', 'goals_diff', 'goals_for', 'points', 'wins_reg']; 
     try {
@@ -88,6 +88,7 @@ const getInitialFormData = (div = null) => {
 
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
       hide_stats_unpaid: div.hide_stats_unpaid ?? false, individual_fee: div.individual_fee ?? '',
+      is_tournament: div.is_tournament ?? false,
       points_win_reg: div.points_win_reg ?? 2, points_win_ot: div.points_win_ot ?? 2, points_draw: div.points_draw ?? 1, points_loss_ot: div.points_loss_ot ?? 1, points_loss_reg: div.points_loss_reg ?? 0,
       points_tech_win: div.points_tech_win ?? 3, points_tech_loss: div.points_tech_loss ?? 0, points_tech_draw: div.points_tech_draw ?? 0,
     };
@@ -101,6 +102,7 @@ const getInitialFormData = (div = null) => {
     
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
     hide_stats_unpaid: false, individual_fee: '',
+    is_tournament: isTournamentDefault,
     points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
     points_tech_win: 3, points_tech_loss: 0, points_tech_draw: 0,
     ranking_criteria: [...CRITERIA_OPTIONS],
@@ -186,6 +188,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
   const [divisions, setDivisions] = useState([]);
   const [selectedDivisionId, setSelectedDivisionId] = useState(null);
+  const [newIsTournament, setNewIsTournament] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -241,7 +244,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   useEffect(() => {
     setLogoFile(null); setRegFile(null); setLogoCleared(false); setRegCleared(false);
     if (selectedDivisionId === 'new') {
-      const initial = getInitialFormData();
+      const initial = getInitialFormData(null, newIsTournament);
       setFormData(initial);
       setOriginalData(initial);
       setActiveSection('general');
@@ -255,21 +258,27 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       setFormData(null);
       setOriginalData(null);
     }
-  }, [selectedDivisionId, divisions]);
+  }, [selectedDivisionId, divisions, newIsTournament]);
 
   useEffect(() => {
     if (setHeaderActions && canCreate && selectedSeasonId) {
       const isCreatingNew = selectedDivisionId === 'new';
-      const actionBtn = (
-        <Button 
-          onClick={() => {
-            if (isCreatingNew) setSelectedDivisionId(divisions.length > 0 ? divisions[0].id : null);
-            else setSelectedDivisionId('new');
-          }} 
-          className={isCreatingNew ? 'bg-white text-orange border border-orange hover:bg-orange/5' : ''}
+      const actionBtn = isCreatingNew ? (
+        <Button
+          onClick={() => setSelectedDivisionId(divisions.length > 0 ? divisions[0].id : null)}
+          className="bg-white text-orange border border-orange hover:bg-orange/5"
         >
-          {isCreatingNew ? 'Отменить создание' : '+ Новый дивизион'}
+          Отменить создание
         </Button>
+      ) : (
+        <div className="flex gap-2">
+          <Button onClick={() => { setNewIsTournament(false); setSelectedDivisionId('new'); }}>
+            + Новый дивизион
+          </Button>
+          <Button onClick={() => { setNewIsTournament(true); setSelectedDivisionId('new'); }}>
+            + Новый турнир
+          </Button>
+        </div>
       );
       setHeaderActions(actionBtn);
     } else if (setHeaderActions) {
@@ -389,7 +398,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       if (logoFile) await uploadFileS3(savedDivId, 'logo', logoFile);
       if (regFile) await uploadFileS3(savedDivId, 'regulations', regFile);
 
-      setToast({ title: 'Успешно', message: isNew ? 'Дивизион создан' : 'Настройки сохранены', type: 'success' });
+      setToast({ title: 'Успешно', message: isNew ? (formData.is_tournament ? 'Турнир создан' : 'Дивизион создан') : 'Настройки сохранены', type: 'success' });
       if (isNew) {
           setSelectedDivisionId(savedDivId);
       }
@@ -405,7 +414,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   };
 
   if (!canView) {
-    return <AccessFallback variant="full" message="У вас нет прав для просмотра настроек дивизионов." />;
+    return <AccessFallback variant="full" message="У вас нет прав для просмотра настроек дивизионов и турниров." />;
   }
 
   const typeVal = TYPE_MAP[formData?.tournament_type];
@@ -414,8 +423,24 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   const isCreatingNew = selectedDivisionId === 'new';
 
+  // Слово меняется по всей форме в зависимости от того, дивизион это или турнир
+  // (структурно одна и та же сущность, отличие только в отображаемом названии).
+  const isTournamentEntity = !!formData?.is_tournament;
+  const entityNom = isTournamentEntity ? 'турнир' : 'дивизион';
+  const entityGen = isTournamentEntity ? 'турнира' : 'дивизиона';
+
   const currSeasonName = seasons.find(s => s.id === selectedSeasonId)?.name || '';
-  const divOpts = divisions.map(d => d.name);
+  const divOpts = divisions.map(d => ({
+    value: d.name,
+    label: (
+      <span className="inline-flex items-center gap-2">
+        <span>{d.name}</span>
+        <span className={`shrink-0 text-[10px] font-normal px-1.5 py-0.5 rounded ${d.is_tournament ? 'bg-blue-500/10 text-blue-600' : 'bg-orange/10 text-orange'}`}>
+          {d.is_tournament ? 'Турнир' : 'Дивизион'}
+        </span>
+      </span>
+    ),
+  }));
   const selDivName = isCreatingNew ? '' : (divisions.find(d => d.id === selectedDivisionId)?.name || '');
 
   const menuItems = [
@@ -495,13 +520,13 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             onChange={(name) => setSelectedSeasonId(seasons.find(s => s.name === name)?.id)} 
           />
           
-          <Select 
-            label="Дивизион"
-            options={divOpts} 
-            value={selDivName} 
-            onChange={(name) => setSelectedDivisionId(divisions.find(d => d.name === name)?.id)} 
-            disabled={!selectedSeasonId || divisions.length === 0} 
-            placeholder="Выберите дивизион" 
+          <Select
+            label="Дивизион / Турнир"
+            options={divOpts}
+            value={selDivName}
+            onChange={(name) => setSelectedDivisionId(divisions.find(d => d.name === name)?.id)}
+            disabled={!selectedSeasonId || divisions.length === 0}
+            placeholder="Выберите дивизион или турнир"
           />
         </div>
 
@@ -531,7 +556,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                     disabled={!isFormValid() || !isDirty()}
                     className="w-full py-3"
                 >
-                    {isCreatingNew ? 'Создать дивизион' : 'Сохранить настройки'}
+                    {isCreatingNew ? `Создать ${entityNom}` : 'Сохранить настройки'}
                 </Button>
                 {(!isDirty() && !isCreatingNew) && <div className="text-[11px] text-center text-graphite-light mt-2 font-medium">Нет несохраненных изменений</div>}
             </div>
@@ -549,8 +574,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
         {!formData && !isLoading && selectedSeasonId && divisions.length === 0 && (
             <div className="text-center py-20 text-graphite-light font-medium text-[15px]">
-                В этом сезоне еще нет созданных дивизионов.<br/>
-                {canCreate ? 'Нажмите «+ Новый дивизион» в шапке, чтобы создать первый.' : 'Ожидайте создания дивизионов администраторами.'}
+                В этом сезоне еще нет созданных дивизионов или турниров.<br/>
+                {canCreate ? 'Нажмите «+ Новый дивизион» или «+ Новый турнир» в шапке, чтобы создать первый.' : 'Ожидайте создания дивизионов и турниров администраторами.'}
             </div>
         )}
 
@@ -559,7 +584,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                 
                 {isLocked && !isCreatingNew && (
                     <div className="mb-2">
-                        <AccessFallback variant="readonly" message="У вас нет прав для редактирования настроек дивизиона. Вы находитесь в режиме просмотра." />
+                        <AccessFallback variant="readonly" message={`У вас нет прав для редактирования настроек ${entityGen}. Вы находитесь в режиме просмотра.`} />
                     </div>
                 )}
 
@@ -576,7 +601,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             <span className="text-[14px] font-bold text-graphite uppercase tracking-wider mb-1">Основные данные</span>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <Input label="Полное название*" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} disabled={isLocked} />
-                                <Input label="Классификация дивизиона" placeholder="Например: Любитель, Мастер, Юноши" value={formData.classification || ''} onChange={(e) => handleChange('classification', e.target.value)} disabled={isLocked} />
+                                <Input label={`Классификация ${entityGen}`} placeholder="Например: Любитель, Мастер, Юноши" value={formData.classification || ''} onChange={(e) => handleChange('classification', e.target.value)} disabled={isLocked} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <Input label="Короткое название*" value={formData.short_name} onChange={(e) => handleChange('short_name', e.target.value)} disabled={isLocked} />
@@ -584,7 +609,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             </div>
                             <div className="flex flex-col w-full mt-2">
                                 <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Описание (необязательно)</label>
-                                <textarea value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} disabled={isLocked} className="w-full min-h-[110px] px-4 py-3 border border-graphite/20 rounded-md bg-white/50 text-graphite text-[13px] outline-none focus:border-orange focus:bg-white resize-none disabled:opacity-60 transition-colors" placeholder="Введите краткое описание или особенности дивизиона..." />
+                                <textarea value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} disabled={isLocked} className="w-full min-h-[110px] px-4 py-3 border border-graphite/20 rounded-md bg-white/50 text-graphite text-[13px] outline-none focus:border-orange focus:bg-white resize-none disabled:opacity-60 transition-colors" placeholder={`Введите краткое описание или особенности ${entityGen}...`} />
                             </div>
                         </div>
 
@@ -592,7 +617,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             <span className="text-[14px] font-bold text-graphite uppercase tracking-wider mb-1">Логотип и регламент</span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div>
-                                    <Uploader label="Логотип дивизиона" heightClass="h-[220px]" accept=".jpg,.png,.webp" initialUrl={formData.logo_url && !logoCleared ? getImageUrl(formData.logo_url) : null} onFileSelect={(f, isClear) => { if (!isLocked) { setLogoFile(f); setLogoCleared(isClear); }}} emptyImage="/img/Logo_division_default.webp" />
+                                    <Uploader label={`Логотип ${entityGen}`} heightClass="h-[220px]" accept=".jpg,.png,.webp" initialUrl={formData.logo_url && !logoCleared ? getImageUrl(formData.logo_url) : null} onFileSelect={(f, isClear) => { if (!isLocked) { setLogoFile(f); setLogoCleared(isClear); }}} emptyImage="/img/Logo_division_default.webp" />
                                 </div>
                                 <div>
                                     <Uploader label="Документ регламента" heightClass="h-[220px]" accept=".pdf,.doc,.docx" isDefaultPreview={true} mockText="Загрузить файл (PDF, DOC)" initialUrl={formData.regulations_url && !regCleared ? getImageUrl(formData.regulations_url) : null} onFileSelect={(f, isClear) => { if (!isLocked) { setRegFile(f); setRegCleared(isClear); }}} />
@@ -607,7 +632,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                     <div className="flex flex-col gap-8 animate-zoom-in">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div className="bg-white/70 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
-                                <span className="text-[14px] font-bold text-graphite uppercase">Сроки турнира*</span>
+                                <span className="text-[14px] font-bold text-graphite uppercase">Сроки {entityGen}*</span>
                                 <DatePicker placeholder="Старт" value={formData.start_date} onChange={(val) => handleChange('start_date', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.end_date} onChange={(val) => handleChange('end_date', val)} disabled={isLocked} />
                             </div>
@@ -756,7 +781,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                     <div className="animate-zoom-in w-full h-full">
                         {isCreatingNew ? (
                             <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-md text-graphite-light py-12 px-6">
-                                Сначала создайте и сохраните дивизион, чтобы настроить для него сетки плей-офф.
+                                Сначала создайте и сохраните {entityNom}, чтобы настроить для него сетки плей-офф.
                             </div>
                         ) : (
                             <PlayoffSummary divisionId={formData.id} canEditPlayoff={canEditPlayoff} />

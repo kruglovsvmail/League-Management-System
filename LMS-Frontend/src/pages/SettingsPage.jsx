@@ -30,7 +30,7 @@ export function SettingsPage() {
 
   // Формируем массив доступных вкладок в новом порядке
   const availableTabs = [];
-  if (canViewDivisions) availableTabs.push({ index: 0, label: 'Дивизионы' });
+  if (canViewDivisions) availableTabs.push({ index: 0, label: 'Дивизионы и Турниры' });
   if (canViewStaff) availableTabs.push({ index: 1, label: 'Персонал' });
   if (canViewServiceAccounts) availableTabs.push({ index: 2, label: 'Общий доступ' });
   if (canViewArenas) availableTabs.push({ index: 3, label: 'Арены' });
