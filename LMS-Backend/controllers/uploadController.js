@@ -6,8 +6,9 @@ export const uploadFile = async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Файл не найден' });
 
     // Если с фронта пришло кастомное имя (например, user_1_avatar.png), используем его,
-    // иначе берем оригинальное имя загружаемого файла
-    const fileName = req.body.fileName ? `uploads/${req.body.fileName}` : `uploads/${req.file.originalname}`;
+    // иначе берем оригинальное имя загружаемого файла. Дата в начале ключа — чтобы
+    // при замене файла URL менялся и браузер не показывал старую картинку из кэша.
+    const fileName = req.body.fileName ? `uploads/${Date.now()}_${req.body.fileName}` : `uploads/${Date.now()}_${req.file.originalname}`;
 
     await s3.send(new PutObjectCommand({
       Bucket: 'hockeyeco-uploads',

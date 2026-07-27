@@ -528,7 +528,7 @@ export const uploadRegistryFile = async (req, res) => {
         if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
 
         const ext = req.file.originalname.split('.').pop();
-        const fileName = `uploads/${entity}_${id}_${type}.${ext}`;
+        const fileName = `uploads/${entity}_${id}_${type}_${Date.now()}.${ext}`;
         
         await s3.send(new PutObjectCommand({
             Bucket: 'hockeyeco-uploads',

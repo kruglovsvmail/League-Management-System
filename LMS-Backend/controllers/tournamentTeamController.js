@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
+import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 
 export const getTournamentTeamRoster = async (req, res) => {
     try {
@@ -117,7 +118,22 @@ export const updateTournamentTeamStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        await pool.query(`UPDATE tournament_teams SET status = $1, updated_at = NOW() WHERE id = $2`, [status, id]);
+        const { rows } = await pool.query(
+            `UPDATE tournament_teams SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING division_id`,
+            [status, id]
+        );
+
+        // Смена статуса заявки команды (допуск/отклонение) меняет состав дивизиона,
+        // поэтому таблицу нужно пересчитать сразу, а не ждать следующего сыгранного матча.
+        const divisionId = rows[0]?.division_id;
+        if (divisionId) {
+            try {
+                await recalculateDivisionStandings(divisionId);
+            } catch (calcErr) {
+                console.error('Ошибка пересчета таблицы после смены статуса команды:', calcErr);
+            }
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка смены статуса команды:', err);

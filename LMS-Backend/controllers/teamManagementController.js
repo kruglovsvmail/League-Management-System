@@ -166,7 +166,7 @@ export const uploadMemberPhoto = async (req, res) => {
         const { teamId, userId } = req.params;
         if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
         const ext = req.file.originalname.split('.').pop();
-        const fileName = `uploads/teams_${teamId}_users_${userId}_photo.${ext}`;
+        const fileName = `uploads/teams_${teamId}_users_${userId}_photo_${Date.now()}.${ext}`;
         
         await s3.send(new PutObjectCommand({
             Bucket: 'hockeyeco-uploads', Key: fileName, Body: req.file.buffer, ContentType: req.file.mimetype
