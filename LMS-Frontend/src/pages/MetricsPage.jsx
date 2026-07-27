@@ -1,5 +1,5 @@
 // MetricsPage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import dayjs from 'dayjs';
 import { Header } from '../components/Header';
 import { Loader } from '../ui/Loader';
@@ -11,17 +11,35 @@ import { DatePicker } from '../ui/DatePicker';
 import { Tooltip } from '../ui/Tooltip';
 import { getImageUrl, getAuthHeaders } from '../utils/helpers';
 
-const SERIES_COLORS = ['#FF7A00', '#2C2C2E', '#3B82F6', '#10B981', '#A855F7'];
+// Категориальная палитра для графиков — проверена скриптом на различимость (в т.ч.
+// для дальтоников): фиксированный порядок оттенков, не подбирались "на глаз". Оранжевый —
+// это реальный бренд-оранжевый (совпадает с --orange), а не случайный близкий цвет.
+const CHART_BLUE = '#2a78d6';
+const CHART_ORANGE = '#FF6432';
+const CHART_AQUA = '#1baf7a';
+const CHART_YELLOW = '#eda100';
+const CHART_INK = '#2C2C2E';
+const CHART_MUTED = 'rgba(44,44,46,0.45)';
+const CHART_GRID = 'rgba(44,44,46,0.08)';
+// Сплошной нейтральный серый для "остальное"/неглавного сегмента доната — CHART_MUTED
+// специально прозрачный (годится для текста и осей), в толстом сегменте кольца он выглядел
+// бы бледным пятном, здесь нужен solid-цвет
+const CHART_NEUTRAL = '#9a9a9d';
+// Ступени одного оттенка синего (светлый → тёмный) — для порядковых шкал
+// ("Глубина использования": 1 раздел, 2 раздела... это ступени, а не разные категории)
+const ORDINAL_BLUE_RAMP = ['#b7d3f6', '#6da7ec', '#2a78d6', '#184f95'];
 
-// Фиксированные цвета по разделам (не зависят от порядка в массиве)
+// Фиксированные цвета по разделам (не зависят от порядка в массиве). «Общие» —
+// не отдельная категория, а сумма остальных, поэтому получает нейтральный графит,
+// а не ещё один "цветной" слот — так у категорий и агрегата разная визуальная роль.
 const PAGE_COLORS = {
-  tournaments: '#3B82F6',    // синий — Турниры/Лиги
-  my_teams: '#10B981',       // зелёный — Мои команды
-  calendar: '#FF7A00',       // оранжевый (бренд) — Календарь
-  event_details: '#A855F7',  // фиолетовый — Детали события
-  total: '#2C2C2E',          // графит — суммарная линия «Общие»
+  tournaments: CHART_BLUE,
+  calendar: CHART_ORANGE,
+  my_teams: CHART_AQUA,
+  event_details: CHART_YELLOW,
+  total: CHART_INK,
 };
-const colorForPage = (page) => PAGE_COLORS[page] || '#2C2C2E';
+const colorForPage = (page) => PAGE_COLORS[page] || CHART_INK;
 
 // Статичный список разделов-чипсов для графика (совпадает с PAGE_LABELS бэкенда).
 // Бэкенд всегда отдаёт данные по всем разделам сразу («page=all») плюс суммарную
@@ -58,60 +76,106 @@ const buildSmoothPath = (points) => {
 };
 
 // ── Мини-компонент: линейный график по дням (чистый SVG, без библиотек) ──
-// Поверх SVG лежат невидимые хотспоты, привязанные к точкам в процентных
-// координатах: клик по точке открывает Tooltip со значением. showValues
-// дополнительно подписывает каждую точку прямо на графике.
+// Наведение курсора двигает общий "прицел" по оси X и в одной подсказке сразу
+// показывает значения всех видимых серий на этот день — не нужно целиться в точку.
+// showValues дополнительно подписывает каждую точку прямо на графике (плотный режим);
+// по умолчанию подписан только конец линии — остальное несёт подсказка при наведении.
 function DailyLineChart({ dates, series, colors, metricWord, showValues }) {
   const width = 900;
-  const height = 220;
-  const padY = 20;
+  const height = 240;
+  const padTop = 16;
+  const padBottom = 34;
   const padX = 10;
+  const plotH = height - padTop - padBottom;
+
+  const svgRef = useRef(null);
+  const [hoverIdx, setHoverIdx] = useState(null);
 
   const maxVal = Math.max(1, ...series.flatMap((s) => s.data));
+  // Округляем верх шкалы до "красивого" числа (кратного шагу), чтобы деления
+  // по оси Y были читаемыми числами, а не случайными дробями
+  const rawStep = maxVal / 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+  const step = Math.ceil(rawStep / magnitude) * magnitude || 1;
+  const niceMax = step * 4;
 
   const xFor = (idx) => padX + (idx / Math.max(dates.length - 1, 1)) * (width - padX * 2);
-  const yFor = (val) => height - padY - (val / maxVal) * (height - padY * 2);
+  const yFor = (val) => padTop + plotH - (val / niceMax) * plotH;
 
-  // Показываем не более ~6 подписей дат, чтобы не сваливались друг на друга
-  const labelStep = Math.max(1, Math.ceil(dates.length / 6));
+  // Показываем не более ~7 подписей дат, чтобы не сваливались друг на друга
+  const labelStep = Math.max(1, Math.ceil(dates.length / 7));
 
-  const svgHeight = height + 24 + (showValues ? 14 : 0);
+  const handlePointerMove = (e) => {
+    const svg = svgRef.current;
+    if (!svg || dates.length === 0) return;
+    const rect = svg.getBoundingClientRect();
+    const localX = ((e.clientX - rect.left) / rect.width) * width;
+    let idx = 0;
+    let best = Infinity;
+    dates.forEach((_, i) => {
+      const d = Math.abs(xFor(i) - localX);
+      if (d < best) { best = d; idx = i; }
+    });
+    setHoverIdx(idx);
+  };
 
   return (
     <div className="w-full overflow-x-auto">
       <div className="relative min-w-[600px]">
-        <svg viewBox={`0 0 ${width} ${svgHeight}`} className="w-full" style={{ height: 'auto' }}>
-          {/* Горизонтальные направляющие */}
-          {[0, 0.5, 1].map((t) => (
-            <line
-              key={t}
-              x1={padX} x2={width - padX}
-              y1={padY + t * (height - padY * 2)} y2={padY + t * (height - padY * 2)}
-              stroke="rgba(44,44,46,0.08)" strokeWidth="1"
-            />
-          ))}
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${width} ${height}`}
+          className="w-full"
+          style={{ height: 'auto', overflow: 'visible' }}
+          onPointerMove={handlePointerMove}
+          onPointerLeave={() => setHoverIdx(null)}
+        >
+          {/* Горизонтальные направляющие + деления по оси Y (раньше их не было вовсе) */}
+          {[0, 0.5, 1].map((t) => {
+            const y = padTop + plotH - t * plotH;
+            return (
+              <g key={t}>
+                <line x1={padX} x2={width - padX} y1={y} y2={y} stroke={CHART_GRID} strokeWidth="1" />
+                <text x={0} y={y - 4} fontSize="10" fill={CHART_MUTED}>
+                  {Math.round(niceMax * t).toLocaleString('ru')}
+                </text>
+              </g>
+            );
+          })}
 
           {series.map((s, sIdx) => {
+            const color = colors[sIdx % colors.length];
+            const isTotal = s.page === 'total';
             const points = s.data.map((v, i) => ({ x: xFor(i), y: yFor(v) }));
+            const last = points[points.length - 1];
             return (
               <g key={s.page}>
-                <path d={buildSmoothPath(points)} fill="none" stroke={colors[sIdx % colors.length]} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+                {/* «Общие» — не категория, а сумма остальных: тоньше и пунктиром,
+                    чтобы читалась как фон/контекст, а не ещё одна равная линия */}
+                <path
+                  d={buildSmoothPath(points)}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={isTotal ? 1.5 : 2}
+                  strokeDasharray={isTotal ? '5 4' : undefined}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
                 {points.map((p, i) => (
-                  <circle key={i} cx={p.x} cy={p.y} r="3" fill={colors[sIdx % colors.length]} />
+                  <circle key={i} cx={p.x} cy={p.y} r={isTotal ? 3 : 4} fill={color} stroke="#fff" strokeWidth="2" />
                 ))}
-                {showValues && points.map((p, i) => (
-                  <text
-                    key={`v-${i}`}
-                    x={p.x}
-                    y={p.y - 8}
-                    fontSize="10"
-                    fontWeight="700"
-                    fill={colors[sIdx % colors.length]}
-                    textAnchor="middle"
-                  >
-                    {s.data[i]}
+                {showValues ? (
+                  points.map((p, i) => (
+                    <text key={`v-${i}`} x={p.x} y={p.y - 10} fontSize="10" fontWeight="700" fill={color} textAnchor="middle">
+                      {s.data[i]}
+                    </text>
+                  ))
+                ) : (
+                  // Подписываем только конец линии (последний день) — не каждую точку
+                  <text x={last.x - 8} y={last.y - 10} fontSize="11" fontWeight="800" fill={color} textAnchor="end">
+                    {s.data[s.data.length - 1]}
                   </text>
-                ))}
+                )}
               </g>
             );
           })}
@@ -119,38 +183,55 @@ function DailyLineChart({ dates, series, colors, metricWord, showValues }) {
           {/* Подписи дат по оси X */}
           {dates.map((d, i) =>
             i % labelStep === 0 ? (
-              <text key={d} x={xFor(i)} y={height + 18} fontSize="11" fill="rgba(44,44,46,0.5)" textAnchor="middle">
+              <text key={d} x={xFor(i)} y={height - 10} fontSize="11" fill={CHART_MUTED} textAnchor="middle">
                 {dayjs(d).format('DD.MM')}
               </text>
             ) : null
           )}
+
+          {/* Прицел по наведению: вертикальная линия + точка на каждой серии в этот день */}
+          {hoverIdx !== null && (
+            <>
+              <line
+                x1={xFor(hoverIdx)} x2={xFor(hoverIdx)} y1={padTop} y2={padTop + plotH}
+                stroke={CHART_MUTED} strokeWidth="1" strokeDasharray="3 3" pointerEvents="none"
+              />
+              {series.map((s, sIdx) => (
+                <circle
+                  key={`hover-${s.page}`}
+                  cx={xFor(hoverIdx)} cy={yFor(s.data[hoverIdx])} r="5"
+                  fill={colors[sIdx % colors.length]} stroke="#fff" strokeWidth="2" pointerEvents="none"
+                />
+              ))}
+            </>
+          )}
         </svg>
 
-        {/* Кликабельные хотспоты точек: позиции в процентах повторяют координаты SVG,
-            поэтому корректно масштабируются вместе с responsive-шириной графика */}
-        {series.map((s, sIdx) =>
-          s.data.map((v, i) => (
-            <div
-              key={`${s.page}-${i}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
-              style={{
-                left: `${(xFor(i) / width) * 100}%`,
-                top: `${(yFor(v) / svgHeight) * 100}%`,
-              }}
-            >
-              <Tooltip
-                trigger="click"
-                noUnderline
-                title={`${v} ${metricWord}`}
-                subtitle={`${s.label} · ${dayjs(dates[i]).format('D MMMM')}`}
-              >
-                <span
-                  className="block w-4 h-4 rounded-full hover:bg-white/40 transition-colors"
-                  style={{ boxShadow: `0 0 0 0 ${colors[sIdx % colors.length]}` }}
-                />
-              </Tooltip>
+        {/* Одна подсказка на все видимые серии сразу — не нужно кликать по каждой точке */}
+        {hoverIdx !== null && (
+          <div
+            className="absolute z-10 pointer-events-none rounded-xl bg-[#1c1c1e] text-white text-[12px] px-3 py-2.5 shadow-lg min-w-[150px]"
+            style={{
+              left: `${Math.min((xFor(hoverIdx) / width) * 100, 78)}%`,
+              top: 4,
+              transform: xFor(hoverIdx) / width > 0.78 ? 'translateX(-100%)' : 'none',
+            }}
+          >
+            <div className="font-bold text-[11.5px] mb-1.5 pb-1.5 border-b border-white/15">
+              {dayjs(dates[hoverIdx]).format('D MMMM')}
             </div>
-          ))
+            <div className="flex flex-col gap-1">
+              {series.map((s, sIdx) => (
+                <div key={s.page} className="flex items-center justify-between gap-2.5">
+                  <span className="flex items-center gap-1.5 text-white/70">
+                    <span className="w-2.5 h-[2px] rounded-full shrink-0" style={{ backgroundColor: colors[sIdx % colors.length] }} />
+                    {s.label}
+                  </span>
+                  <span className="font-bold">{s.data[hoverIdx]} {metricWord}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -159,11 +240,15 @@ function DailyLineChart({ dates, series, colors, metricWord, showValues }) {
 
 // ── Мини-компонент: кольцевая (donut) диаграмма на чистом SVG ──────────────
 // Сегменты рисуются несколькими наложенными <circle> через трюк
-// strokeDasharray/strokeDashoffset — без сторонних библиотек графиков.
+// strokeDasharray/strokeDashoffset — без сторонних библиотек графиков. Между
+// сегментами оставлен небольшой зазор (а не встык), наведение — на сегмент или
+// на строку легенды — подсвечивает пару и приглушает остальные.
 function DonutChart({ segments, centerValue, centerLabel, size = 132, thickness = 16 }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
   const total = segments.reduce((sum, s) => sum + s.value, 0);
   const radius = (size - thickness) / 2;
   const circumference = 2 * Math.PI * radius;
+  const gapLen = circumference * 0.014;
   const center = size / 2;
 
   let offsetAcc = 0;
@@ -175,9 +260,10 @@ function DonutChart({ segments, centerValue, centerLabel, size = 132, thickness 
           <circle cx={center} cy={center} r={radius} fill="none" stroke="rgba(44,44,46,0.08)" strokeWidth={thickness} />
           {total > 0 && segments.map((s, idx) => {
             if (s.value <= 0) return null;
-            const dash = (s.value / total) * circumference;
+            const sliceLen = (s.value / total) * circumference;
+            const dash = Math.max(0, sliceLen - gapLen);
             const dashoffset = -offsetAcc;
-            offsetAcc += dash;
+            offsetAcc += sliceLen;
             return (
               <circle
                 key={idx}
@@ -188,7 +274,13 @@ function DonutChart({ segments, centerValue, centerLabel, size = 132, thickness 
                 strokeDasharray={`${dash} ${circumference - dash}`}
                 strokeDashoffset={dashoffset}
                 transform={`rotate(-90 ${center} ${center})`}
-              />
+                opacity={hoverIdx === null || hoverIdx === idx ? 1 : 0.35}
+                className="cursor-pointer transition-opacity duration-150"
+                onMouseEnter={() => setHoverIdx(idx)}
+                onMouseLeave={() => setHoverIdx(null)}
+              >
+                <title>{s.label}: {s.value.toLocaleString('ru')}{s.pct != null ? ` (${s.pct}%)` : ''}</title>
+              </circle>
             );
           })}
         </svg>
@@ -201,7 +293,13 @@ function DonutChart({ segments, centerValue, centerLabel, size = 132, thickness 
       </div>
       <div className="flex flex-col gap-2.5 flex-1 min-w-0">
         {segments.map((s, idx) => (
-          <div key={idx} className="flex items-center justify-between gap-2 text-[13px]">
+          <div
+            key={idx}
+            className="flex items-center justify-between gap-2 text-[13px] cursor-pointer transition-opacity duration-150"
+            style={{ opacity: hoverIdx === null || hoverIdx === idx ? 1 : 0.45 }}
+            onMouseEnter={() => setHoverIdx(idx)}
+            onMouseLeave={() => setHoverIdx(null)}
+          >
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
               <span className="font-semibold text-graphite truncate">{s.label}</span>
@@ -465,8 +563,10 @@ export function MetricsPage() {
                     color: active ? '#fff' : 'rgba(44,44,46,0.5)',
                   }}
                 >
+                  {/* Короткая линия, а не точка — легенда линейного графика мирит форму
+                      ключа с формой самого маркера (линия, не сегмент/столбец) */}
                   <span
-                    className="w-2 h-2 rounded-full shrink-0"
+                    className="w-3 h-[2px] rounded-full shrink-0"
                     style={{ backgroundColor: active ? '#fff' : color }}
                   />
                   {opt.label}
@@ -525,8 +625,8 @@ export function MetricsPage() {
               <p className="text-[12px] text-graphite-light mb-4">Все пользователи в базе системы</p>
               <DonutChart
                 segments={[
-                  { label: 'Активированные', value: audience.accounts.activated, pct: audience.accounts.activated_pct, color: '#10B981' },
-                  { label: 'Виртуальные', value: audience.accounts.virtual, pct: audience.accounts.virtual_pct, color: '#2C2C2E' },
+                  { label: 'Активированные', value: audience.accounts.activated, pct: audience.accounts.activated_pct, color: CHART_ORANGE },
+                  { label: 'Виртуальные', value: audience.accounts.virtual, pct: audience.accounts.virtual_pct, color: CHART_NEUTRAL },
                 ]}
                 centerValue={audience.accounts.total.toLocaleString('ru')}
                 centerLabel="всего"
@@ -568,8 +668,10 @@ export function MetricsPage() {
                     <span className="font-semibold text-graphite">Заходили хоть раз</span>
                     <span className="text-graphite-light">{audience.coverage.ever_visited} · <b className="text-graphite">{audience.coverage.ever_pct}%</b></span>
                   </div>
-                  <div className="w-full h-2 bg-graphite/10 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500 bg-[#3B82F6]" style={{ width: `${audience.coverage.ever_pct}%` }} />
+                  {/* Подложка — светлый оттенок ТОГО ЖЕ цвета, что заливка (не серая):
+                      так состояние читается по всей полосе, а не только у закрашенной части */}
+                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(42,120,214,0.14)' }}>
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${audience.coverage.ever_pct}%`, backgroundColor: CHART_BLUE }} />
                   </div>
                 </div>
                 <div>
@@ -577,8 +679,8 @@ export function MetricsPage() {
                     <span className="font-semibold text-graphite">Активны за 30 дней</span>
                     <span className="text-graphite-light">{audience.coverage.active_30d} · <b className="text-graphite">{audience.coverage.active_30d_pct}%</b></span>
                   </div>
-                  <div className="w-full h-2 bg-graphite/10 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500 bg-orange" style={{ width: `${audience.coverage.active_30d_pct}%` }} />
+                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,100,50,0.16)' }}>
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${audience.coverage.active_30d_pct}%`, backgroundColor: CHART_ORANGE }} />
                   </div>
                 </div>
               </div>
@@ -603,12 +705,12 @@ export function MetricsPage() {
               <>
                 <DonutChart
                   segments={[
-                    { label: 'Подписаны', value: pushStats.subscribed_users, pct: pushStats.coverage_pct, color: '#FF7A00' },
+                    { label: 'Подписаны', value: pushStats.subscribed_users, pct: pushStats.coverage_pct, color: CHART_ORANGE },
                     {
                       label: 'Не подписаны',
                       value: Math.max(0, pushStats.total_audience - pushStats.subscribed_users),
                       pct: Math.round((100 - pushStats.coverage_pct) * 10) / 10,
-                      color: '#303030ff',
+                      color: CHART_NEUTRAL,
                     },
                   ]}
                   centerValue={`${pushStats.coverage_pct}%`}
@@ -632,19 +734,22 @@ export function MetricsPage() {
               <div className="h-20 flex items-center justify-center"><Loader text="" /></div>
             ) : (
               <div className="flex flex-col gap-4">
+                {/* Это порядковая шкала (1 раздел → 2 → 3...), а не отдельные категории —
+                    один оттенок синего, светлее → темнее, а не радуга из разных цветов */}
                 {engagement.distribution.map((d, idx) => {
                   const maxCount = Math.max(1, ...engagement.distribution.map((x) => x.user_count));
                   const pct = (d.user_count / maxCount) * 100;
+                  const rampColor = ORDINAL_BLUE_RAMP[Math.min(idx, ORDINAL_BLUE_RAMP.length - 1)];
                   return (
                     <div key={d.sections}>
                       <div className="flex justify-between items-baseline text-[13px] mb-1.5">
                         <span className="font-semibold text-graphite">{d.label}</span>
                         <span className="text-graphite-light">{d.user_count} польз.</span>
                       </div>
-                      <div className="w-full h-2 bg-graphite/10 rounded-full overflow-hidden">
+                      <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: `${rampColor}22` }}>
                         <div
                           className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${pct}%`, backgroundColor: SERIES_COLORS[idx % SERIES_COLORS.length] }}
+                          style={{ width: `${pct}%`, backgroundColor: rampColor }}
                         />
                       </div>
                     </div>

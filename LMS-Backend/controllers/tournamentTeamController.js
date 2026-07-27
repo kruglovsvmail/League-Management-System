@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
+import { recalculatePlayerStatistics } from '../utils/playerStatsCalculator.js';
 
 export const getTournamentTeamRoster = async (req, res) => {
     try {
@@ -129,6 +130,7 @@ export const updateTournamentTeamStatus = async (req, res) => {
         if (divisionId) {
             try {
                 await recalculateDivisionStandings(divisionId);
+                await recalculatePlayerStatistics(divisionId);
             } catch (calcErr) {
                 console.error('Ошибка пересчета таблицы после смены статуса команды:', calcErr);
             }
