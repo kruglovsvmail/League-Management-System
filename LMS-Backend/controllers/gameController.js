@@ -866,10 +866,44 @@ export const updateGameStatus = async (req, res) => {
         }
 
         await client.query(`
-            UPDATE games 
+            UPDATE games
             SET status = $1, end_type = $2, home_score = $3, away_score = $4, is_technical = $5, needs_recalc = false
             WHERE id = $6
         `, [status, endType, finalHomeScore, finalAwayScore, isTechnical, gameId]);
+
+        // Матч только что стал "finished" — засчитываем его как отбытый матч всем активным
+        // игровым дисквалификациям обеих команд этого дивизиона (списание идёт по факту того,
+        // что команда сыграла матч, а не по факту участия конкретного игрока в протоколе).
+        const isNewlyFinished = status === 'finished' && game.status !== 'finished';
+        if (isNewlyFinished && game.division_id) {
+            const teamsInGame = [game.home_team_id, game.away_team_id].filter(Boolean);
+            if (teamsInGame.length > 0) {
+                await client.query(`
+                    UPDATE disqualifications d
+                    SET games_served = d.games_served + 1
+                    FROM tournament_rosters tr
+                    JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                    WHERE d.tournament_roster_id = tr.id
+                      AND d.status = 'active'
+                      AND d.games_assigned IS NOT NULL
+                      AND tt.division_id = $1
+                      AND tt.team_id = ANY($2::int[])
+                `, [game.division_id, teamsInGame]);
+
+                // То же самое — для дисквалификаций представителей команды (тренер/менеджер)
+                await client.query(`
+                    UPDATE disqualifications d
+                    SET games_served = d.games_served + 1
+                    FROM tournament_team_roles ttr
+                    JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
+                    WHERE d.tournament_team_role_id = ttr.id
+                      AND d.status = 'active'
+                      AND d.games_assigned IS NOT NULL
+                      AND tt.division_id = $1
+                      AND tt.team_id = ANY($2::int[])
+                `, [game.division_id, teamsInGame]);
+            }
+        }
 
         await client.query('COMMIT');
 
@@ -941,17 +975,23 @@ export const getGameRoster = async (req, res) => {
             `, [gameId, teamId]),
 
             pool.query(`
-                SELECT ttr.user_id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url, 
+                SELECT ttr.user_id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
                        string_agg(ttr.tournament_role, ', ') as roles
                 FROM tournament_team_roles ttr
                 JOIN users u ON ttr.user_id = u.id
                 JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
-                JOIN games g ON g.division_id = tt.division_id 
+                JOIN games g ON g.division_id = tt.division_id
                    AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-                WHERE g.id = $1 
-                  AND tt.team_id = $2 
+                WHERE g.id = $1
+                  AND tt.team_id = $2
                   AND ttr.left_at IS NULL
+                  -- представители заявляются на матч автоматически (нет отдельного действия "добавить"),
+                  -- поэтому дисквалифицированных на период наказания просто не показываем в протоколе
+                  AND NOT EXISTS (
+                      SELECT 1 FROM disqualifications d
+                      WHERE d.tournament_team_role_id = ttr.id AND d.status = 'active'
+                  )
                 GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
             `, [gameId, teamId])
         ]);
@@ -981,8 +1021,27 @@ export const saveGameRoster = async (req, res) => {
 
         const { roster } = req.body;
 
+        if (roster && roster.length > 0) {
+            const playerIds = roster.map(p => p.player_id);
+            const dqCheck = await client.query(`
+                SELECT u.first_name, u.last_name
+                FROM disqualifications d
+                JOIN tournament_rosters tr ON d.tournament_roster_id = tr.id
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                JOIN games g ON g.division_id = tt.division_id
+                JOIN users u ON tr.player_id = u.id
+                WHERE g.id = $1 AND tt.team_id = $2 AND tr.player_id = ANY($3::int[]) AND d.status = 'active'
+            `, [gameId, teamId, playerIds]);
+
+            if (dqCheck.rows.length > 0) {
+                client.release();
+                const names = dqCheck.rows.map(r => `${r.last_name} ${r.first_name}`).join(', ');
+                return res.status(400).json({ success: false, error: `Нельзя включить в протокол дисквалифицированных игроков: ${names}` });
+            }
+        }
+
         await client.query('BEGIN');
-        
+
         await client.query('DELETE FROM game_rosters WHERE game_id = $1 AND team_id = $2', [gameId, teamId]);
 
         if (roster && roster.length > 0) {

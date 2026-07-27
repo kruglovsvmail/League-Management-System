@@ -1,11 +1,11 @@
 import React from 'react';
 import { Icon } from './Icon';
 
-export function AccessFallback({ 
-  variant = 'full', 
-  message = 'Приносим извинения, но Ваши права ограничены.' 
+export function AccessFallback({
+  variant = 'full',
+  message
 }) {
-  
+
   // Режим 1: Информационный баннер "Только чтение" для форм и настроек
   if (variant === 'readonly') {
     return (
@@ -14,7 +14,7 @@ export function AccessFallback({
           <Icon name="lock" className="w-4 h-4 text-slate-500" />
         </div>
         <span className="text-sm font-medium text-slate-700 tracking-tight">
-          Только просмотр. Редактирование недоступно.
+          {message || 'Только просмотр. Редактирование недоступно.'}
         </span>
       </div>
     );
@@ -40,7 +40,7 @@ export function AccessFallback({
         Доступ ограничен
       </h3>
       <p className="text-slate-500 max-w-md leading-relaxed relative z-10 text-sm md:text-base">
-        {message}
+        {message || 'Приносим извинения, но Ваши права ограничены.'}
       </p>
     </div>
   );

@@ -83,6 +83,35 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     }
   };
 
+  const renderTeamFineBadge = (activeDisqualifications) => {
+    if (!activeDisqualifications || activeDisqualifications.length === 0) return null;
+
+    const tooltipSubtitleNode = (
+      <div className="flex flex-col gap-2 mt-1">
+        {activeDisqualifications.map((d, index) => (
+          <div key={index} className="text-[11px] leading-tight pb-1 border-b border-graphite/10 last:border-0 last:pb-0">
+            <span className="font-bold text-status-rejected block mb-0.5">
+              {d.penalty_amount} ₽ {d.penalty_amount_paid ? '(оплачено)' : '(не оплачено)'}
+            </span>
+            <span className="text-graphite/80 block line-clamp-2" title={d.reason}>Причина: {d.reason}</span>
+          </div>
+        ))}
+      </div>
+    );
+
+    const tooltipTitle = activeDisqualifications.length > 1
+      ? `Штрафы (${activeDisqualifications.length})`
+      : 'Штраф';
+
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="cursor-help shrink-0 ml-2">
+        <Tooltip title={tooltipTitle} subtitle={tooltipSubtitleNode} position="top">
+          <Badge label="Штраф" type="expired" />
+        </Tooltip>
+      </div>
+    );
+  };
+
   const tabsCounts = [
     `Допущенные (${teams.filter(t => t.status === 'approved').length})`,
     `На проверке (${teams.filter(t => t.status === 'pending').length})`,
@@ -100,11 +129,17 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
         <img src={getImageUrl(row.logo_url || '/default/Logo_division_default.webp')} className="w-full h-full object-contain drop-shadow-sm" alt="logo" />
       </div>
     )},
-    { label: 'Название', sortKey: 'name', width: 'w-[300px]', render: (row) => (
-      <span onClick={() => onTeamSelect && onTeamSelect(row)} className="font-bold text-graphite text-[15px] cursor-pointer hover:transition-colors block truncate w-full" title={row.name}>
-        {row.name}
-      </span> 
-    )},
+    { label: 'Название', sortKey: 'name', width: 'w-[300px]', render: (row) => {
+      const fineBadge = renderTeamFineBadge(row.active_disqualifications);
+      return (
+        <div onClick={() => onTeamSelect && onTeamSelect(row)} className="flex items-center min-w-0 w-full cursor-pointer">
+          <span className="font-bold text-graphite text-[15px] hover:transition-colors truncate" title={row.name}>
+            {row.name}
+          </span>
+          {fineBadge}
+        </div>
+      );
+    }},
     { label: 'ID', sortKey: 'id', width: 'w-[60px]', render: (row) => <span className="text-[12px] text-graphite/50 font-mono" title="ID заявки в БД">{row.id}</span> },
     
     { label: 'Абр.', sortKey: 'short_name', width: 'w-[100px]', align: 'center', render: (row) => <span className="text-graphite-light font-medium">{row.short_name || '-'}</span> },

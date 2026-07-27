@@ -86,9 +86,19 @@ export const getDivisions = async (req, res) => {
                     ),
                     'avg_age', (
                         SELECT ROUND(AVG(EXTRACT(YEAR FROM age(CURRENT_DATE, u.birth_date))))
-                        FROM tournament_rosters tr3 
-                        JOIN users u ON tr3.player_id = u.id 
+                        FROM tournament_rosters tr3
+                        JOIN users u ON tr3.player_id = u.id
                         WHERE tr3.tournament_team_id = tt.id AND tr3.application_status = 'approved' AND tr3.period_end IS NULL
+                    ),
+                    'active_disqualifications', (
+                        SELECT COALESCE(json_agg(json_build_object(
+                            'status', d.status,
+                            'penalty_amount', d.penalty_amount,
+                            'penalty_amount_paid', d.penalty_amount_paid,
+                            'reason', d.reason
+                        )), '[]'::json)
+                        FROM disqualifications d
+                        WHERE d.tournament_team_id = tt.id AND d.status = 'active'
                     )
                 ) ORDER BY t.name) as teams
                 FROM tournament_teams tt

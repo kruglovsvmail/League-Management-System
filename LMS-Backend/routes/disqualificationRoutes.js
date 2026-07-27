@@ -3,7 +3,8 @@ import { verifyToken, requirePermission } from '../controllers/authController.js
 import {
     getSeasonDisqualifications,
     createDisqualification,
-    updateDisqualificationStatus
+    deleteDisqualification,
+    toggleDisqualificationPaid
 } from '../controllers/disqualificationController.js';
 
 const router = express.Router();
@@ -17,7 +18,10 @@ router.get('/seasons/:seasonId/disqualifications', requirePermission('DISQUALIFI
 // Создать новый штраф
 router.post('/disqualifications', requirePermission('DISQUALIFICATIONS_CREATE'), createDisqualification);
 
-// Обновить статус штрафа (отменить или отметить как отбытый)
-router.patch('/disqualifications/:id/status', requirePermission('DISQUALIFICATIONS_STATUS_CHANGE'), updateDisqualificationStatus);
+// Удалить штраф
+router.delete('/disqualifications/:id', requirePermission('DISQUALIFICATIONS_STATUS_CHANGE'), deleteDisqualification);
+
+// Отметить/снять отметку об оплате штрафа
+router.patch('/disqualifications/:id/toggle-paid', requirePermission('DISQUALIFICATIONS_STATUS_CHANGE'), toggleDisqualificationPaid);
 
 export default router;

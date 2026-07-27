@@ -46,6 +46,8 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
     hasAccess('DIVISIONS_VIEW') ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
     hasAccess('TRANSFERS_VIEW') ? { name: "Трансферы", path: "/transfers", icon: "transfers" } : null,
     hasAccess('DISQUALIFICATIONS_VIEW') ? { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" } : null,
+    (selectedLeague?.disqualification_mode === 'sdk' && hasAccess('SDK_MEETINGS_VIEW'))
+      ? { name: "Заседания СДК", path: "/sdk-meetings", icon: "roster" } : null,
     { name: "Справочник", path: "/handbook", icon: "handbook" },
     hasAccess('SETTINGS_STAFF_VIEW') ? { name: "Управление лигой", path: "/settings", icon: "settings" } : null
   ].filter(Boolean);

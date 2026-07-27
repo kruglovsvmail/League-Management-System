@@ -95,12 +95,14 @@ const fetchRawProtocolData = async (gameId) => {
         JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
         JOIN users u ON u.id = ttr.user_id
         WHERE tt.team_id = $2 AND tt.division_id = $1 AND ttr.left_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.tournament_team_role_id = ttr.id AND d.status = 'active')
         UNION ALL
         SELECT 'away' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name, ttr.tournament_role as role
         FROM tournament_team_roles ttr
         JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
         JOIN users u ON u.id = ttr.user_id
         WHERE tt.team_id = $3 AND tt.division_id = $1 AND ttr.left_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.tournament_team_role_id = ttr.id AND d.status = 'active')
     `;
     const signersResult = await pool.query(signersQuery, [game.division_id, game.home_team_id, game.away_team_id]);
     
@@ -460,6 +462,30 @@ export const signProtocol = async (req, res) => {
 
         if (!role || !userId) {
             return res.status(400).json({ success: false, error: 'Роль или пользователь не указаны' });
+        }
+
+        // Подписи представителей команды (тренер/официальное лицо) — та же проверка,
+        // что фильтрует выпадающий список на фронте (eligibleSigners), только теперь и на сервере:
+        // иначе можно было отправить подпись за дисквалифицированного или вообще постороннего userId напрямую в API.
+        const sideMatch = role.match(/^(home|away)_/);
+        if (sideMatch) {
+            const side = sideMatch[1];
+            const gameRes = await pool.query('SELECT division_id, home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+            if (gameRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+            const { division_id, home_team_id, away_team_id } = gameRes.rows[0];
+            const teamId = side === 'home' ? home_team_id : away_team_id;
+
+            const eligibleRes = await pool.query(`
+                SELECT 1
+                FROM tournament_team_roles ttr
+                JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
+                WHERE ttr.user_id = $1 AND tt.team_id = $2 AND tt.division_id = $3 AND ttr.left_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.tournament_team_role_id = ttr.id AND d.status = 'active')
+            `, [userId, teamId, division_id]);
+
+            if (eligibleRes.rows.length === 0) {
+                return res.status(403).json({ success: false, error: 'Этот пользователь не может подписать протокол за команду — не найден в заявке представителей или дисквалифицирован' });
+            }
         }
 
         const userRes = await pool.query('SELECT sign_pin_hash, last_name, first_name, middle_name FROM users WHERE id = $1', [userId]);

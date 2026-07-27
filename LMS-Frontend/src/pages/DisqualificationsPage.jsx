@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -12,10 +12,14 @@ import { AccessFallback } from '../ui/AccessFallback';
 import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
 import { CreateDisqualificationModal } from '../modals/CreateDisqualificationModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
+import { ConfirmModal } from '../modals/ConfirmModal';
+
+const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Менеджер команды', team_admin: 'Администратор' };
 
 export function DisqualificationsPage() {
   const { selectedLeague } = useOutletContext();
   const { checkAccess } = useAccess();
+  const navigate = useNavigate();
 
   // Проверка прав пользователя по новой матрице
   const canView = checkAccess('DISQUALIFICATIONS_VIEW');
@@ -34,19 +38,11 @@ export function DisqualificationsPage() {
 
   // Читаем текущую вкладку из URL (если пусто, ставим 0)
   const statusFilterIndex = parseInt(searchParams.get('status') || '0', 10);
-  const typeFilterIndex = parseInt(searchParams.get('type') || '0', 10);
 
-  // Функции для обновления URL при клике на вкладки
+  // Функция для обновления URL при клике на вкладку
   const setStatusFilterIndex = (index) => {
     setSearchParams(prev => {
       prev.set('status', index);
-      return prev;
-    }, { replace: true });
-  };
-
-  const setTypeFilterIndex = (index) => {
-    setSearchParams(prev => {
-      prev.set('type', index);
       return prev;
     }, { replace: true });
   };
@@ -63,6 +59,9 @@ export function DisqualificationsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null); // { id, type: 'paid' | 'delete' } — содержит текст для модалки, не управляет видимостью
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
   
@@ -106,18 +105,44 @@ export function DisqualificationsPage() {
     } catch (err) { console.error(err); }
   };
 
-  const handleAction = async (e, id, action) => {
+  const requestConfirm = (e, id, type) => {
     e.stopPropagation();
+    setConfirmAction({ id, type });
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirm = async () => {
+    if (!confirmAction) return;
+    const { id, type } = confirmAction;
+    setIsConfirming(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/disqualifications/${id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-        body: JSON.stringify({ status: action })
-      });
+      let res;
+      if (type === 'delete') {
+        res = await fetch(`${SERVER_URL}/api/disqualifications/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+      } else if (type === 'paid') {
+        res = await fetch(`${SERVER_URL}/api/disqualifications/${id}/toggle-paid`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+      }
       const data = await res.json();
-      if (data.success) fetchDisqualifications(true);
-      else alert(data.error);
+      if (data.success) {
+        setIsConfirmOpen(false);
+        fetchDisqualifications(true);
+      } else alert(data.error);
     } catch (err) { alert('Ошибка соединения'); }
+    finally { setIsConfirming(false); }
+  };
+
+  // confirmAction (данные для текста модалки) намеренно не сбрасывается сразу при закрытии —
+  // иначе спред CONFIRM_CONTENT[type] превращается в {} и во время анимации закрытия
+  // на долю секунды видны дефолтные "Удаление"-тексты ConfirmModal, даже если открывали не удаление.
+  const CONFIRM_CONTENT = {
+    paid: { title: 'Отметка об оплате', message: 'Изменить статус оплаты штрафа?', confirmLabel: 'Подтвердить', confirmingLabel: 'Сохранение...', tone: 'default' },
+    delete: { title: 'Удаление', message: 'Вы уверены, что хотите удалить дисквалификацию? Это действие нельзя отменить.', confirmLabel: 'Удалить', confirmingLabel: 'Удаление...', tone: 'danger' }
   };
 
   const handlePlayerClick = (e, playerId) => {
@@ -135,14 +160,11 @@ export function DisqualificationsPage() {
     });
   };
 
-  const statuses = ['active', 'completed', 'cancelled'];
-  const types = ['all', 'games', 'time', 'manual'];
+  const statuses = ['active', 'completed'];
   const uniqueDivisions = ['Все дивизионы', ...new Set(disqualifications.map(d => d.division_name))];
 
   const filteredData = disqualifications.filter(d => {
     if (d.status !== statuses[statusFilterIndex]) return false;
-    const currentType = types[typeFilterIndex];
-    if (currentType !== 'all' && d.penalty_type !== currentType) return false;
     if (divisionFilter !== 'Все дивизионы' && d.division_name !== divisionFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -155,6 +177,22 @@ export function DisqualificationsPage() {
   const formatDate = (dateString) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  const formatConditions = (d) => {
+    const parts = [];
+    if (d.games_assigned != null) {
+      const remaining = Math.max(d.games_assigned - (d.games_served || 0), 0);
+      parts.push(`${remaining} из ${d.games_assigned} матч(ей)`);
+    }
+    if (d.penalty_amount != null) {
+      parts.push(d.penalty_amount_paid ? `${d.penalty_amount} ₽ (оплачено)` : `${d.penalty_amount} ₽ (не оплачено)`);
+    }
+    if (parts.length > 0) {
+      return parts.join(d.penalty_logic === 'or' ? ' или ' : ' и ');
+    }
+    if (d.penalty_type === 'time') return `До ${formatDate(d.end_date)}`;
+    return 'Условия не указаны';
   };
 
   if (!canView) {
@@ -182,14 +220,21 @@ export function DisqualificationsPage() {
                 }} />
               </div>
             )}
-            {canCreate && (
+            {canCreate && selectedLeague?.disqualification_mode !== 'sdk' && (
               <Button className="bg-status-rejected hover:brightness-90 text-white border-none transition-all" onClick={() => setIsCreateModalOpen(true)}>+ Назначить дисквал</Button>
             )}
           </>
         }
       />
 
-      {isReadOnly && (
+      {selectedLeague?.disqualification_mode === 'sdk' ? (
+        <div className="px-10 pt-6">
+          <AccessFallback
+            variant="readonly"
+            message={`Эта лига проводит заседания СДК — дисквалификации назначаются только через них. Здесь доступен просмотр${canAction ? ' и отметка исполнения' : ''}.`}
+          />
+        </div>
+      ) : isReadOnly && (
         <div className="px-10 pt-6">
           <AccessFallback variant="readonly" message="У вас нет прав для управления дисквалификациями. Вы находитесь в режиме просмотра." />
         </div>
@@ -201,11 +246,7 @@ export function DisqualificationsPage() {
         <div className="w-[340px] shrink-0 sticky top-[128px] max-h-[calc(100vh-140px)] overflow-y-auto bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-6 custom-scrollbar z-20">
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Статус</label>
-            <SegmentButton options={['Активные', 'Отбытые', 'Отмененные']} defaultIndex={statusFilterIndex} onChange={setStatusFilterIndex} />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Тип наказания</label>
-            <SegmentButton options={['Все', 'Матчи', 'Время', 'Ручной']} defaultIndex={typeFilterIndex} onChange={setTypeFilterIndex} />
+            <SegmentButton options={['Активные', 'Отбытые']} defaultIndex={statusFilterIndex} onChange={setStatusFilterIndex} />
           </div>
           <div className="space-y-2">
             <Select label="Дивизион" options={uniqueDivisions} value={divisionFilter} onChange={setDivisionFilter} />
@@ -227,13 +268,18 @@ export function DisqualificationsPage() {
             ) : (
               filteredData.map((d) => {
                 const isExpanded = expandedId === d.id;
-                const playerPhoto = getImageUrl(d.member_photo || '/default/user_default.webp');
                 const teamLogo = getImageUrl(d.team_logo || '/default/Logo_team_default.webp');
+                const isTeamTarget = d.target_type === 'team';
+                const personPhoto = getImageUrl(d.member_photo || '/default/user_default.webp');
+                const avatarSrc = isTeamTarget ? teamLogo : personPhoto;
 
-                let penaltyText = '';
-                if (d.penalty_type === 'games') penaltyText = `Осталось матчей: ${d.games_assigned - d.games_served}`;
-                if (d.penalty_type === 'time') penaltyText = `До ${formatDate(d.end_date)}`;
-                if (d.penalty_type === 'manual') penaltyText = 'До решения СДК';
+                const personName = d.last_name ? `${d.last_name} ${d.first_name || ''}`.trim() : null;
+                const targetName = isTeamTarget
+                  ? d.team_name
+                  : personName || (d.target_type === 'staff' ? 'Представитель' : 'Игрок');
+                const targetSubtitle = d.target_type === 'staff' && d.staff_role ? STAFF_ROLE_LABELS[d.staff_role] || d.staff_role : null;
+
+                const penaltyText = `Осталось: ${formatConditions(d)}`;
 
                 return (
                   <div key={d.id} className="mb-3">
@@ -241,23 +287,24 @@ export function DisqualificationsPage() {
                       
                       <div onClick={() => toggleExpand(d.id)} className="p-4 grid grid-cols-[100px_48px_1fr_48px_1fr_150px_10px] gap-4 items-center cursor-pointer select-none">
                         <div className="text-center">
-                          <Badge label={d.status === 'active' ? 'Дискв.' : d.status === 'completed' ? 'Отбыл' : 'Отменен'} type={d.status === 'active' ? 'expired' : d.status === 'completed' ? 'filled' : 'empty'} />
+                          <Badge label={d.status === 'active' ? 'Дискв.' : 'Отбыл'} type={d.status === 'active' ? 'expired' : 'filled'} />
                         </div>
                         
-                        <div 
-                          className="w-12 h-12 rounded-lg overflow-hidden bg-graphite/5 border shrink-0 hover:opacity-80 transition-opacity"
-                          onClick={(e) => handlePlayerClick(e, d.player_id)}
+                        <div
+                          className={`w-12 h-12 rounded-lg overflow-hidden shrink-0 transition-opacity ${isTeamTarget ? 'bg-white p-1 border flex items-center justify-center' : 'bg-graphite/5 border hover:opacity-80'}`}
+                          onClick={isTeamTarget ? undefined : (e) => handlePlayerClick(e, d.player_id)}
                         >
-                          <img src={playerPhoto} alt="Player" className="w-full h-full object-cover" onError={(e) => e.target.src = getImageUrl('/default/user_default.webp')}/>
+                          <img src={avatarSrc} alt={isTeamTarget ? 'Team' : 'Player'} className={isTeamTarget ? 'w-full h-full object-contain' : 'w-full h-full object-cover'} onError={(e) => e.target.src = getImageUrl(isTeamTarget ? '/default/Logo_team_default.webp' : '/default/user_default.webp')}/>
                         </div>
-                        
+
                         <div>
-                          <span 
-                            className="text-[14px] font-bold text-graphite leading-tight hover:text-orange hover:cursor-pointer transition-colors inline-block"
-                            onClick={(e) => handlePlayerClick(e, d.player_id)}
+                          <span
+                            className={`text-[14px] font-bold text-graphite leading-tight inline-block ${isTeamTarget ? '' : 'hover:text-orange hover:cursor-pointer transition-colors'}`}
+                            onClick={isTeamTarget ? undefined : (e) => handlePlayerClick(e, d.player_id)}
                           >
-                            {d.last_name} {d.first_name}
+                            {targetName}{isTeamTarget && <span className="ml-1.5 text-[10px] font-bold text-graphite-light uppercase align-middle">Вся команда</span>}
                           </span>
+                          {targetSubtitle && <div className="text-[11px] font-medium text-graphite-light">{targetSubtitle}</div>}
                           <div className="text-[12px] font-medium text-status-rejected mt-0.5">{penaltyText}</div>
                         </div>
 
@@ -277,16 +324,42 @@ export function DisqualificationsPage() {
                       <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                         <div className="overflow-hidden">
                           <div className="px-6 py-4 bg-status-rejected/5 border-t border-status-rejected/10 flex flex-col gap-4">
-                            <div>
-                              <div className="text-[10px] uppercase font-bold text-status-rejected/60 mb-1">Причина / Пункт регламента</div>
-                              <div className="text-[13px] font-medium text-graphite leading-relaxed">{d.reason}</div>
-                            </div>
-                            
+                            {d.sdk_decision_id ? (
+                              <div
+                                onClick={(e) => { e.stopPropagation(); navigate(`/sdk-meetings/${d.sdk_meeting_id}`); }}
+                                className="flex items-center justify-between gap-3 bg-white/60 border border-status-rejected/20 rounded-md px-4 py-3 cursor-pointer hover:border-status-rejected/50 transition-colors"
+                              >
+                                <div>
+                                  <div className="text-[10px] uppercase font-bold text-status-rejected/60 mb-1">Назначено решением СДК</div>
+                                  <div className="text-[13px] font-medium text-graphite leading-relaxed">
+                                    <span className="font-black text-orange">{d.sdk_violation_code}.</span> {d.sdk_violation_title}
+                                  </div>
+                                  <div className="text-[11px] text-graphite-light mt-1">Заседание №{d.sdk_meeting_number ?? '-'} • нажмите, чтобы открыть</div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <div className="text-[10px] uppercase font-bold text-status-rejected/60 mb-1">Причина / Пункт регламента</div>
+                                <div className="text-[13px] font-medium text-graphite leading-relaxed">{d.reason}</div>
+                              </div>
+                            )}
+
                             {/* Блок кнопок управления показывается только если есть права */}
                             {canAction && d.status === 'active' && (
-                              <div className="flex gap-2 justify-end">
-                                <Button onClick={(e) => handleAction(e, d.id, 'cancelled')} className="bg-white border-graphite/20 text-graphite hover:border-graphite">Списать</Button>
-                                <Button onClick={(e) => handleAction(e, d.id, 'completed')} className="bg-status-accepted hover:bg-status-accepted/90 text-white border-none">Отбыл</Button>
+                              <div className="flex gap-2 justify-end flex-wrap">
+                                {d.penalty_amount != null && (
+                                  <Button
+                                    onClick={(e) => requestConfirm(e, d.id, 'paid')}
+                                    className={d.penalty_amount_paid
+                                      ? 'bg-status-accepted/10 text-status-accepted border-status-accepted/20 hover:border-status-accepted/40'
+                                      : 'bg-status-pending/10 text-status-pending border-status-pending/20 hover:border-status-pending/40'}
+                                  >
+                                    {d.penalty_amount_paid ? 'Штраф оплачен' : 'Отметить оплату'}
+                                  </Button>
+                                )}
+                                {!d.sdk_decision_id && (
+                                  <Button onClick={(e) => requestConfirm(e, d.id, 'delete')} className="bg-white border-graphite/20 text-graphite hover:border-graphite">Удалить</Button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -304,6 +377,13 @@ export function DisqualificationsPage() {
 
       <CreateDisqualificationModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} divisions={divisionsList} onSuccess={() => fetchDisqualifications(true)} />
       <PlayerProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} playerId={selectedPlayerId} />
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirm}
+        isLoading={isConfirming}
+        {...(confirmAction ? CONFIRM_CONTENT[confirmAction.type] : {})}
+      />
     </div>
   );
 }

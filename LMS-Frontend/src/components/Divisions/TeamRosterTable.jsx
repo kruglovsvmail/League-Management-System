@@ -48,6 +48,44 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     return new Set(Object.keys(counts).filter(num => counts[num] > 1).map(String));
   }, [roster, isStaff]);
 
+  const renderDsqBadge = (activeDisqualifications) => {
+    if (!activeDisqualifications || activeDisqualifications.length === 0) return null;
+
+    const tooltipSubtitleNode = (
+      <div className="flex flex-col gap-2 mt-1">
+        {activeDisqualifications.map((d, index) => {
+          let penaltyText = '';
+          if (d.penalty_type === 'games') {
+            penaltyText = `Осталось матчей: ${d.games_assigned - d.games_served}`;
+          } else if (d.penalty_type === 'time') {
+            penaltyText = `До: ${dayjs(d.end_date).format('DD.MM.YYYY')}`;
+          } else if (d.penalty_type === 'manual') {
+            penaltyText = 'До решения СДК';
+          }
+
+          return (
+            <div key={index} className="text-[11px] leading-tight pb-1 border-b border-graphite/10 last:border-0 last:pb-0">
+              <span className="font-bold text-status-rejected block mb-0.5">{penaltyText}</span>
+              <span className="text-graphite/80 block line-clamp-2" title={d.reason}>Причина: {d.reason}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+
+    const tooltipTitle = activeDisqualifications.length > 1
+      ? `Дисквалификации (${activeDisqualifications.length})`
+      : 'Дисквалификация';
+
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="cursor-help shrink-0 ml-5">
+        <Tooltip title={tooltipTitle} subtitle={tooltipSubtitleNode} position="top">
+          <Badge label="Дискв." type="expired" />
+        </Tooltip>
+      </div>
+    );
+  };
+
   // Считаем сколько всего документов требуется в этом дивизионе
   const reqMed = division?.req_med_cert ?? true;
   const reqIns = division?.req_insurance ?? true;
@@ -80,43 +118,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         if (row.is_captain) statusBadge = ' | Капитан';
         else if (row.is_assistant) statusBadge = ' | Ассистент';
 
-        let dsqBadge = null;
-        
-        if (row.active_disqualifications && row.active_disqualifications.length > 0) {
-          const tooltipSubtitleNode = (
-            <div className="flex flex-col gap-2 mt-1">
-              {row.active_disqualifications.map((d, index) => {
-                let penaltyText = '';
-                if (d.penalty_type === 'games') {
-                  penaltyText = `Осталось матчей: ${d.games_assigned - d.games_served}`;
-                } else if (d.penalty_type === 'time') {
-                  penaltyText = `До: ${dayjs(d.end_date).format('DD.MM.YYYY')}`;
-                } else if (d.penalty_type === 'manual') {
-                  penaltyText = 'До решения СДК';
-                }
-                
-                return (
-                  <div key={index} className="text-[11px] leading-tight pb-1 border-b border-graphite/10 last:border-0 last:pb-0">
-                    <span className="font-bold text-status-rejected block mb-0.5">{penaltyText}</span>
-                    <span className="text-graphite/80 block line-clamp-2" title={d.reason}>Причина: {d.reason}</span>
-                  </div>
-                );
-              })}
-            </div>
-          );
-
-          const tooltipTitle = row.active_disqualifications.length > 1 
-            ? `Дисквалификации (${row.active_disqualifications.length})` 
-            : 'Дисквалификация';
-
-          dsqBadge = (
-            <div onClick={(e) => e.stopPropagation()} className="cursor-help shrink-0 ml-5">
-              <Tooltip title={tooltipTitle} subtitle={tooltipSubtitleNode} position="top">
-                <Badge label="Дискв." type="expired" />
-              </Tooltip>
-            </div>
-          );
-        }
+        const dsqBadge = renderDsqBadge(row.active_disqualifications);
 
         return (
           <div 
@@ -314,30 +316,36 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       }
     },
     {
-      label: 'ФИО', 
+      label: 'ФИО',
       sortKey: 'last_name',
       width: 'w-[300px]',
-      render: (row) => (
-        <div 
-          onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
-          className="flex flex-col min-w-0 w-full cursor-pointer group"
-        >
-          <span 
-            className="font-bold text-graphite text-[14px] block truncate w-full group-hover:transition-colors"
-            title={`${row.last_name || ''} ${row.first_name || ''}`}
+      render: (row) => {
+        const dsqBadge = renderDsqBadge(row.active_disqualifications);
+        return (
+          <div
+            onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
+            className="flex items-center min-w-0 w-full cursor-pointer group"
           >
-            {`${row.last_name || ''} ${row.first_name || ''}`.trim()}
-          </span>
-          {row.middle_name && (
-            <span 
-              className="text-[12px] text-graphite/50 font-medium block truncate w-full group-hover:transition-colors"
-              title={row.middle_name}
-            >
-              {row.middle_name}
-            </span>
-          )}
-        </div>
-      )
+            <div className="flex flex-col min-w-0">
+              <span
+                className="font-bold text-graphite text-[14px] block truncate w-full group-hover:transition-colors"
+                title={`${row.last_name || ''} ${row.first_name || ''}`}
+              >
+                {`${row.last_name || ''} ${row.first_name || ''}`.trim()}
+              </span>
+              {row.middle_name && (
+                <span
+                  className="text-[12px] text-graphite/50 font-medium block truncate w-full group-hover:transition-colors"
+                  title={row.middle_name}
+                >
+                  {row.middle_name}
+                </span>
+              )}
+            </div>
+            {dsqBadge}
+          </div>
+        );
+      }
     },
     { 
       label: 'ID', 

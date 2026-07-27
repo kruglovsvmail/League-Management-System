@@ -76,13 +76,27 @@ export const getTournamentTeamRoster = async (req, res) => {
         const staffResult = await pool.query(`
             SELECT
                 ttr.user_id as player_id,
+                MIN(ttr.id) as tournament_team_role_id,
                 u.first_name,
                 u.last_name,
                 u.middle_name,
                 u.phone,
                 u.avatar_url as user_avatar_url,
                 tm.photo_url as team_member_photo_url,
-                string_agg(ttr.tournament_role, ', ') as roles
+                string_agg(ttr.tournament_role, ', ') as roles,
+                COALESCE(
+                    (SELECT json_agg(json_build_object(
+                        'status', d.status,
+                        'penalty_type', d.penalty_type,
+                        'games_assigned', d.games_assigned,
+                        'games_served', d.games_served,
+                        'end_date', d.end_date,
+                        'reason', d.reason
+                    ))
+                    FROM disqualifications d
+                    WHERE d.tournament_team_role_id = ANY(array_agg(ttr.id)) AND d.status = 'active'),
+                    '[]'::json
+                ) as active_disqualifications
             FROM tournament_team_roles ttr
             JOIN users u ON ttr.user_id = u.id
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id

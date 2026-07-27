@@ -12,7 +12,7 @@ export const getLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const result = await pool.query(
-      'SELECT sec_access_before_hours, sec_access_after_hours FROM leagues WHERE id = $1', 
+      'SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode FROM leagues WHERE id = $1',
       [leagueId]
     );
     res.json({ success: true, data: result.rows[0] });
@@ -24,11 +24,15 @@ export const getLeaguePreferences = async (req, res) => {
 export const updateLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { sec_access_before_hours, sec_access_after_hours } = req.body;
-    
+    const { sec_access_before_hours, sec_access_after_hours, disqualification_mode } = req.body;
+
+    if (disqualification_mode && !['light', 'sdk'].includes(disqualification_mode)) {
+      return res.status(400).json({ success: false, error: 'Некорректный режим дисквалификаций' });
+    }
+
     await pool.query(
-      'UPDATE leagues SET sec_access_before_hours = $1, sec_access_after_hours = $2 WHERE id = $3',
-      [sec_access_before_hours, sec_access_after_hours, leagueId]
+      'UPDATE leagues SET sec_access_before_hours = $1, sec_access_after_hours = $2, disqualification_mode = COALESCE($3, disqualification_mode) WHERE id = $4',
+      [sec_access_before_hours, sec_access_after_hours, disqualification_mode, leagueId]
     );
     res.json({ success: true });
   } catch (err) {

@@ -9,6 +9,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { DivisionsPage } from './pages/DivisionsPage';
 import { TransfersPage } from './pages/TransfersPage';
 import { DisqualificationsPage } from './pages/DisqualificationsPage';
+import { SdkMeetingsPage } from './pages/SdkMeetingsPage';
+import { SdkMeetingPage } from './pages/SdkMeetingPage';
 import { GlobalRegistryPage } from './pages/GlobalRegistryPage';
 import { TeamManagementPage } from './pages/TeamManagementPage';
 import { MetricsPage } from './pages/MetricsPage';
@@ -192,6 +194,8 @@ export default function App() {
             <Route path="transfers" element={<TransfersPage />} />
             <Route path="games/:gameId" element={<GamePage />} />
             <Route path="disqualifications" element={<DisqualificationsPage />} />
+            <Route path="sdk-meetings" element={<SdkMeetingsPage />} />
+            <Route path="sdk-meetings/:meetingId" element={<SdkMeetingPage />} />
             <Route path="*" element={<Navigate to={defaultRoute} replace />} />
           </Route>
         </Routes>

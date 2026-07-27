@@ -110,18 +110,18 @@ const fetchUserProfile = async (userId) => {
   if (user.global_role === ROLES.GLOBAL_ADMIN) {
     leaguesResult = await pool.query(`
       SELECT id, name, short_name, city, logo_url, 'admin' as role,
-             sec_access_before_hours, sec_access_after_hours
+             sec_access_before_hours, sec_access_after_hours, disqualification_mode
       FROM leagues
     `);
   } else {
     leaguesResult = await pool.query(`
-      SELECT l.id, l.name, l.short_name, l.city, l.logo_url, 
-             l.sec_access_before_hours, l.sec_access_after_hours,
+      SELECT l.id, l.name, l.short_name, l.city, l.logo_url,
+             l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode,
              string_agg(ls.role, ', ') as role
       FROM league_staff ls
       JOIN leagues l ON ls.league_id = l.id
       WHERE ls.user_id = $1 AND ls.end_date IS NULL
-      GROUP BY l.id, l.name, l.short_name, l.city, l.logo_url, l.sec_access_before_hours, l.sec_access_after_hours
+      GROUP BY l.id, l.name, l.short_name, l.city, l.logo_url, l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode
     `, [user.id]);
   }
 
@@ -335,6 +335,82 @@ const getLeagueIdFromContext = async (req) => {
       JOIN divisions d ON tt.division_id = d.id
       JOIN seasons s ON d.season_id = s.id
       WHERE tt.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  // --- СДК (Спортивно-дисциплинарный комитет) ---
+
+  if (req.params.meetingId || req.body.meeting_id) {
+    const id = req.params.meetingId || req.body.meeting_id;
+    const res = await pool.query('SELECT league_id FROM sdk_meetings WHERE id = $1', [id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/meetings') && req.params.id) {
+    const res = await pool.query('SELECT league_id FROM sdk_meetings WHERE id = $1', [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/meeting-decisions') && req.params.id) {
+    const res = await pool.query(`
+      SELECT m.league_id FROM sdk_meeting_decisions d
+      JOIN sdk_meetings m ON d.meeting_id = m.id
+      WHERE d.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/meeting-members') && req.params.id) {
+    const res = await pool.query(`
+      SELECT m.league_id FROM sdk_meeting_members mm
+      JOIN sdk_meetings m ON mm.meeting_id = m.id
+      WHERE mm.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/meeting-representatives') && req.params.id) {
+    const res = await pool.query(`
+      SELECT m.league_id FROM sdk_meeting_representatives r
+      JOIN sdk_meetings m ON r.meeting_id = m.id
+      WHERE r.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/meeting-documents') && req.params.id) {
+    const res = await pool.query(`
+      SELECT m.league_id FROM sdk_meeting_documents doc
+      JOIN sdk_meetings m ON doc.meeting_id = m.id
+      WHERE doc.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/venues') && req.params.id) {
+    const res = await pool.query(`
+      SELECT s.league_id FROM sdk_venues v
+      JOIN seasons s ON v.season_id = s.id
+      WHERE v.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/commission-members') && req.params.id) {
+    const res = await pool.query(`
+      SELECT s.league_id FROM sdk_commission_members cm
+      JOIN seasons s ON cm.season_id = s.id
+      WHERE cm.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/sdk/violation-types') && req.params.id) {
+    const res = await pool.query(`
+      SELECT s.league_id FROM sdk_violation_types vt
+      JOIN seasons s ON vt.season_id = s.id
+      WHERE vt.id = $1
     `, [req.params.id]);
     if (res.rows.length > 0) return res.rows[0].league_id;
   }

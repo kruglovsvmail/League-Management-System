@@ -4,7 +4,13 @@ import { getToken } from '../../utils/helpers';
 import { Icon } from '../../ui/Icon';
 import { Loader } from '../../ui/Loader';
 import { Stepper } from '../../ui/Stepper';
+import { SegmentButton } from '../../ui/SegmentButton';
 import { useAccess } from '../../hooks/useAccess';
+
+const DISQUALIFICATION_MODES = [
+  { value: 'light', label: 'Лайт' },
+  { value: 'sdk', label: 'Через СДК' }
+];
 
 export function PreferencesTab({ setToast }) {
   const { selectedLeague } = useOutletContext(); // Берем ID лиги отсюда
@@ -16,7 +22,8 @@ export function PreferencesTab({ setToast }) {
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     sec_access_before_hours: 12,
-    sec_access_after_hours: 3
+    sec_access_after_hours: 3,
+    disqualification_mode: 'light'
   });
 
   useEffect(() => {
@@ -32,7 +39,8 @@ export function PreferencesTab({ setToast }) {
         if (data.success && data.data) {
           setFormData({
             sec_access_before_hours: data.data.sec_access_before_hours ?? 12,
-            sec_access_after_hours: data.data.sec_access_after_hours ?? 3
+            sec_access_after_hours: data.data.sec_access_after_hours ?? 3,
+            disqualification_mode: data.data.disqualification_mode ?? 'light'
           });
         }
       } catch (err) {
@@ -63,6 +71,7 @@ export function PreferencesTab({ setToast }) {
         if (selectedLeague) {
             selectedLeague.sec_access_before_hours = updatedData.sec_access_before_hours;
             selectedLeague.sec_access_after_hours = updatedData.sec_access_after_hours;
+            selectedLeague.disqualification_mode = updatedData.disqualification_mode;
         }
       }
     } catch (err) {
@@ -126,6 +135,28 @@ export function PreferencesTab({ setToast }) {
                 disabled={!canEdit}
               />
             </div>
+          </div>
+        </div>
+
+        {/* БЛОК: РЕЖИМ ДИСКВАЛИФИКАЦИЙ */}
+        <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px]">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="disqualifications" className="w-4 h-4 text-graphite/40" />
+              <h4 className="text-[13px] font-black uppercase text-graphite tracking-tight">Дисквалификации</h4>
+            </div>
+            <p className="text-[11px] text-graphite-light leading-relaxed pr-8">
+              Лайт — простой реестр банов. Через СДК — заседания комитета с решениями по нарушителям
+            </p>
+          </div>
+
+          <div className="mt-6">
+            <SegmentButton
+              options={DISQUALIFICATION_MODES.map(m => m.label)}
+              defaultIndex={DISQUALIFICATION_MODES.findIndex(m => m.value === formData.disqualification_mode)}
+              onChange={(idx) => handleStepChange('disqualification_mode', DISQUALIFICATION_MODES[idx].value)}
+              className={!canEdit ? 'pointer-events-none opacity-50' : ''}
+            />
           </div>
         </div>
 
