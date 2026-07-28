@@ -65,20 +65,24 @@ export const getTournamentTeamRoster = async (req, res) => {
             -- Оптимизация: собираем дисквалификации в один проход
             LEFT JOIN (
                 SELECT
-                    user_id,
+                    d.user_id,
                     json_agg(
                         json_build_object(
-                            'status', status,
-                            'penalty_type', penalty_type,
-                            'games_assigned', games_assigned,
-                            'games_served', games_served,
-                            'end_date', end_date,
-                            'reason', reason
+                            'status', d.status,
+                            'penalty_type', d.penalty_type,
+                            'games_assigned', d.games_assigned,
+                            'games_served', d.games_served,
+                            'end_date', d.end_date,
+                            'reason', d.reason,
+                            'mandatory_games', d.mandatory_games,
+                            'additional_games', d.additional_games,
+                            'penalty_amount', d.penalty_amount,
+                            'penalty_amount_paid', d.penalty_amount_paid
                         )
                     ) as active_disqualifications
-                FROM disqualifications
-                WHERE status = 'active' AND league_id = $2
-                GROUP BY user_id
+                FROM disqualifications d
+                WHERE d.status = 'active' AND d.league_id = $2
+                GROUP BY d.user_id
             ) dq ON dq.user_id = tr.player_id
 
             WHERE tr.tournament_team_id = $1
@@ -104,7 +108,11 @@ export const getTournamentTeamRoster = async (req, res) => {
                         'games_assigned', d.games_assigned,
                         'games_served', d.games_served,
                         'end_date', d.end_date,
-                        'reason', d.reason
+                        'reason', d.reason,
+                        'mandatory_games', d.mandatory_games,
+                        'additional_games', d.additional_games,
+                        'penalty_amount', d.penalty_amount,
+                        'penalty_amount_paid', d.penalty_amount_paid
                     ))
                     FROM disqualifications d
                     WHERE d.user_id = ttr.user_id AND d.league_id = $2 AND d.status = 'active'),

@@ -8,6 +8,7 @@ import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
 import { Badge } from '../ui/Badge';
+import { DisqualificationPills } from '../ui/DisqualificationBadge';
 import { AccessFallback } from '../ui/AccessFallback';
 import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../utils/helpers';
 import { CreateDisqualificationModal } from '../modals/CreateDisqualificationModal';
@@ -31,7 +32,6 @@ export function DisqualificationsPage() {
   const [seasons, setSeasons] = useState([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState(null);
   const [disqualifications, setDisqualifications] = useState([]);
-  const [divisionsList, setDivisionsList] = useState([]); 
   const [isLoading, setIsLoading] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -80,19 +80,12 @@ export function DisqualificationsPage() {
     }
   }, [selectedLeague, canView]);
 
-  // Список дисквалификаций теперь на уровне лиги (наказание переживает смену сезона),
-  // а справочник дивизионов season-scoped — нужен только для контекста модалки создания
+  // Список дисквалификаций теперь на уровне лиги (наказание переживает смену сезона)
   useEffect(() => {
     if (selectedLeague?.id && canView) {
       fetchDisqualifications();
     }
   }, [selectedLeague?.id, canView]);
-
-  useEffect(() => {
-    if (selectedSeasonId && canView) {
-      fetchDivisions();
-    }
-  }, [selectedSeasonId, canView]);
 
   const fetchDisqualifications = async (isQuiet = false) => {
     if (!isQuiet) setIsLoading(true);
@@ -102,14 +95,6 @@ export function DisqualificationsPage() {
       if (data.success) setDisqualifications(data.data);
     } catch (err) { console.error(err); }
     finally { if (!isQuiet) setIsLoading(false); }
-  };
-
-  const fetchDivisions = async () => {
-    try {
-      const res = await fetch(`${SERVER_URL}/api/seasons/${selectedSeasonId}/divisions`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
-      const data = await res.json();
-      if (data.success) setDivisionsList(data.data);
-    } catch (err) { console.error(err); }
   };
 
   const requestConfirm = (e, id, type) => {
@@ -184,22 +169,6 @@ export function DisqualificationsPage() {
   const formatDate = (dateString) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
-
-  const formatConditions = (d) => {
-    const parts = [];
-    if (d.games_assigned != null) {
-      const remaining = Math.max(d.games_assigned - (d.games_served || 0), 0);
-      parts.push(`${remaining} из ${d.games_assigned} матч(ей)`);
-    }
-    if (d.penalty_amount != null) {
-      parts.push(d.penalty_amount_paid ? `${d.penalty_amount} ₽ (оплачено)` : `${d.penalty_amount} ₽ (не оплачено)`);
-    }
-    if (parts.length > 0) {
-      return parts.join(d.penalty_logic === 'or' ? ' или ' : ' и ');
-    }
-    if (d.penalty_type === 'time') return `До ${formatDate(d.end_date)}`;
-    return 'Условия не указаны';
   };
 
   if (!canView) {
@@ -278,8 +247,6 @@ export function DisqualificationsPage() {
                   : personName || (d.target_type === 'staff' ? 'Представитель' : 'Игрок');
                 const targetSubtitle = d.target_type === 'staff' && d.staff_role ? STAFF_ROLE_LABELS[d.staff_role] || d.staff_role : null;
 
-                const penaltyText = `Осталось: ${formatConditions(d)}`;
-
                 return (
                   <div key={d.id} className="mb-3">
                     <div className={`bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg overflow-hidden transition-all duration-100 ${isExpanded ? 'border-status-rejected/30 shadow-mg' : 'hover:border-status-rejected/50 shadow-mg'}`}>
@@ -304,7 +271,7 @@ export function DisqualificationsPage() {
                             {targetName}{isTeamTarget && <span className="ml-1.5 text-[10px] font-bold text-graphite-light uppercase align-middle">Вся команда</span>}
                           </span>
                           {targetSubtitle && <div className="text-[11px] font-medium text-graphite-light">{targetSubtitle}</div>}
-                          <div className="text-[12px] font-medium text-status-rejected mt-0.5">{penaltyText}</div>
+                          <div className="mt-1"><DisqualificationPills d={d} /></div>
                         </div>
 
                         <div className="w-14 h-12 rounded-lg overflow-hidden flex items-center justify-center p-1 shrink-0">
@@ -374,7 +341,7 @@ export function DisqualificationsPage() {
         </div>
       </div>
 
-      <CreateDisqualificationModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} divisions={divisionsList} onSuccess={() => fetchDisqualifications(true)} />
+      <CreateDisqualificationModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} seasonId={selectedSeasonId} onSuccess={() => fetchDisqualifications(true)} />
       <PlayerProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} playerId={selectedPlayerId} />
       <ConfirmModal
         isOpen={isConfirmOpen}

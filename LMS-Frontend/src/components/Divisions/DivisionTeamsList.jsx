@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { PaperApplicationModal } from '../../modals/PaperApplicationModal';
 import { Badge } from '../../ui/Badge';
+import { DisqualificationBadge } from '../../ui/DisqualificationBadge';
 import { Icon } from '../../ui/Icon';
 import { Table } from '../../ui/Table2';
 import { Tabs } from '../../ui/Tabs';
@@ -83,34 +84,9 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     }
   };
 
-  const renderTeamFineBadge = (activeDisqualifications) => {
-    if (!activeDisqualifications || activeDisqualifications.length === 0) return null;
-
-    const tooltipSubtitleNode = (
-      <div className="flex flex-col gap-2 mt-1">
-        {activeDisqualifications.map((d, index) => (
-          <div key={index} className="text-[11px] leading-tight pb-1 border-b border-graphite/10 last:border-0 last:pb-0">
-            <span className="font-bold text-status-rejected block mb-0.5">
-              {d.penalty_amount} ₽ {d.penalty_amount_paid ? '(оплачено)' : '(не оплачено)'}
-            </span>
-            <span className="text-graphite/80 block line-clamp-2" title={d.reason}>Причина: {d.reason}</span>
-          </div>
-        ))}
-      </div>
-    );
-
-    const tooltipTitle = activeDisqualifications.length > 1
-      ? `Штрафы (${activeDisqualifications.length})`
-      : 'Штраф';
-
-    return (
-      <div onClick={(e) => e.stopPropagation()} className="cursor-help shrink-0 ml-2">
-        <Tooltip title={tooltipTitle} subtitle={tooltipSubtitleNode} position="top">
-          <Badge label="Штраф" type="expired" />
-        </Tooltip>
-      </div>
-    );
-  };
+  const renderTeamFineBadge = (activeDisqualifications) => (
+    <DisqualificationBadge activeDisqualifications={activeDisqualifications} label="Штраф" className="ml-2" />
+  );
 
   const tabsCounts = [
     `Допущенные (${teams.filter(t => t.status === 'approved').length})`,

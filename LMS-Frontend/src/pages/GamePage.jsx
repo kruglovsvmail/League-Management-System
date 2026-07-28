@@ -9,6 +9,7 @@ import { Button } from '../ui/Button';
 import { Table } from '../ui/Table2';
 import { Tabs } from '../ui/Tabs';
 import { Icon } from '../ui/Icon';
+import { DisqualificationBadge } from '../ui/DisqualificationBadge';
 import { Tooltip } from '../ui/Tooltip'; // ДОБАВЛЕН ИМПОРТ TOOLTIP
 import { Toast } from '../modals/Toast'; // ДОБАВЛЕН ИМПОРТ TOAST
 import { GameStatusModal } from '../modals/GameStatusModal';
@@ -32,6 +33,8 @@ const ROLE_MAP = {
 
 const POS_MAP = { 'G': 'Вр.', 'LD': 'Защ.', 'RD': 'Защ.', 'LW': 'Нап.', 'C': 'Нап.', 'RW': 'Нап.' };
 const POS_ORDER = { 'G': 1, 'LD': 2, 'RD': 2, 'LW': 3, 'C': 3, 'RW': 3 };
+
+const renderDsqBadge = (activeDisqualifications) => <DisqualificationBadge activeDisqualifications={activeDisqualifications} />;
 
 // Командный блок вкладки «Статистика» — сравнение хозяева/гости построчно.
 const STATS_COMPARE_ROWS = [
@@ -302,11 +305,14 @@ export function GamePage() {
     const rosterColumns = [
       { label: 'Фото', width: 'w-[80px]', align: 'left', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" /> )},
       { label: 'Игрок',  align: 'left',  render: (r) => (
-        <button onClick={() => setSelectedPlayerId(r.player_id)} className="text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors flex items-center gap-1 truncate text-left">
-          <span>{r.last_name} {r.first_name}</span>
-          {r.is_captain && <span className="text-orange text-[12px] font-bold ml-1">К</span>}
-          {r.is_assistant && <span className="text-orange text-[12px] font-bold ml-1">А</span>}
-        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={() => setSelectedPlayerId(r.player_id)} className="text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors flex items-center gap-1 truncate text-left">
+            <span>{r.last_name} {r.first_name}</span>
+            {r.is_captain && <span className="text-orange text-[12px] font-bold ml-1">К</span>}
+            {r.is_assistant && <span className="text-orange text-[12px] font-bold ml-1">А</span>}
+          </button>
+          {renderDsqBadge(r.active_disqualifications)}
+        </div>
       )},
       { label: '#', width: 'w-[30px]', render: (r) => (
         <span className={`text-[13px] font-bold ${duplicates.has(r.jersey_number) ? 'text-status-rejected animate-pulse' : 'text-graphite/80'}`}>{r.jersey_number || '-'}</span>
@@ -316,7 +322,12 @@ export function GamePage() {
 
     const staffColumns = [
       { label: 'Фото', width: 'w-[80px]', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/5" alt="" /> )},
-      { label: 'Представитель', sortKey: 'last_name', render: (r) => <span className="text-[13px] font-semibold text-graphite/85">{r.last_name} {r.first_name}</span> },
+      { label: 'Представитель', sortKey: 'last_name', render: (r) => (
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[13px] font-semibold text-graphite/85">{r.last_name} {r.first_name}</span>
+          {renderDsqBadge(r.active_disqualifications)}
+        </div>
+      )},
       { label: 'Должность', sortKey: 'roles', render: (r) => (
         <div className="flex flex-col gap-1 py-1">
           {r.roles ? r.roles.split(', ').map((role, i) => (
@@ -345,7 +356,7 @@ export function GamePage() {
         </div>
         <div className="flex-1 mb-6 flex flex-col">
           {sortedRoster.length > 0 ? (
-            <div className="mb-6"><Table columns={rosterColumns} data={sortedRoster} hideHeader={true} /></div>
+            <div className="mb-6"><Table columns={rosterColumns} data={sortedRoster} hideHeader={true} rowClassName={(r) => r.active_disqualifications?.length > 0 ? 'bg-status-rejected/10' : ''} /></div>
           ) : (
             <div className="p-8 flex flex-col items-center justify-center text-center mb-6 min-h-[120px]">
               <span className="text-[14px] font-medium text-graphite-light">Состав не сформирован</span>
@@ -353,7 +364,7 @@ export function GamePage() {
           )}
           {staff.length > 0 && (
             <div className="mt-2">
-              <h4 className="text-[10px] font-black uppercase text-graphite/40 tracking-wider mb-2 px-2">Тренеры и персонал</h4>
+              <h4 className="text-[10px] font-black uppercase text-graphite/40 tracking-wider mb-2 px-2">Тренеры и представители</h4>
               <div><Table columns={staffColumns} data={staff} hideHeader={true} /></div>
             </div>
           )}

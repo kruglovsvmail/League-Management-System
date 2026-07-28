@@ -15,6 +15,8 @@ export const getLeagueDisqualifications = async (req, res) => {
                 d.reason,
                 d.penalty_type,
                 d.games_assigned,
+                d.mandatory_games,
+                d.additional_games,
                 d.games_served,
                 d.penalty_amount,
                 d.penalty_amount_paid,
@@ -154,7 +156,7 @@ export const createDisqualification = async (req, res) => {
     try {
         const {
             target_type, tournament_roster_id, tournament_team_role_id, tournament_team_id,
-            reason, penalty_games, penalty_amount, penalty_logic, start_date
+            reason, penalty_games, mandatory_games, additional_games, penalty_amount, penalty_logic, start_date
         } = req.body;
 
         const targetType = target_type || 'player';
@@ -210,6 +212,8 @@ export const createDisqualification = async (req, res) => {
 
         // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
         const safePenaltyGames = targetType === 'team' ? null : (penalty_games || null);
+        const safeMandatoryGames = targetType === 'team' ? null : (mandatory_games || null);
+        const safeAdditionalGames = targetType === 'team' ? null : (additional_games || null);
 
         if (!safePenaltyGames && !penalty_amount) {
             return res.status(400).json({ success: false, error: 'Укажите матчи и/или сумму штрафа' });
@@ -221,9 +225,9 @@ export const createDisqualification = async (req, res) => {
         const result = await pool.query(`
             INSERT INTO disqualifications
                 (target_type, user_id, team_id, league_id,
-                 reason, penalty_type, games_assigned, games_served, penalty_amount, penalty_logic, start_date, status)
+                 reason, penalty_type, games_assigned, mandatory_games, additional_games, games_served, penalty_amount, penalty_logic, start_date, status)
             VALUES
-                ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, 'active')
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12, 'active')
             RETURNING id
         `, [
             targetType,
@@ -233,6 +237,8 @@ export const createDisqualification = async (req, res) => {
             reason,
             penaltyType,
             safePenaltyGames,
+            safeMandatoryGames,
+            safeAdditionalGames,
             penalty_amount || null,
             (safePenaltyGames && penalty_amount) ? (penalty_logic || 'and') : null,
             start_date

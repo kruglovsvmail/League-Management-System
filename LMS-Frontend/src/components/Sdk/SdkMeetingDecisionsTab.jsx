@@ -190,7 +190,7 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                     <div className="flex items-center gap-2 flex-wrap">
                       {isPunish && hasSplit && d.mandatory_games != null && (
                         <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">
-                          Обязательные: {mandatoryServed}/{d.mandatory_games}
+                          Обяз. матчи: {mandatoryServed}/{d.mandatory_games}
                         </Pill>
                       )}
                       {isPunish && hasSplit && d.additional_games != null && (

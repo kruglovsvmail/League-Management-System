@@ -936,53 +936,69 @@ export const getGameRoster = async (req, res) => {
             });
         }
 
+        // Резолвим лигу матча один раз — используется ниже, чтобы отметить дисквалифицированных
+        // игроков/представителей флагом (не скрывая их, а помечая для UI — бейдж "Дискв.")
+        const leagueRes = await pool.query(`
+            SELECT s.league_id FROM games g
+            JOIN divisions div ON g.division_id = div.id
+            JOIN seasons s ON div.season_id = s.id
+            WHERE g.id = $1
+        `, [gameId]);
+        const leagueId = leagueRes.rows[0]?.league_id || null;
+
+        const dqSubquery = (userIdCol) => `(
+            SELECT COALESCE(json_agg(json_build_object(
+                'reason', d.reason, 'penalty_type', d.penalty_type,
+                'games_assigned', d.games_assigned, 'games_served', d.games_served, 'end_date', d.end_date,
+                'mandatory_games', d.mandatory_games, 'additional_games', d.additional_games,
+                'penalty_amount', d.penalty_amount, 'penalty_amount_paid', d.penalty_amount_paid
+            )), '[]'::json)
+            FROM disqualifications d
+            WHERE d.user_id = ${userIdCol} AND d.league_id = $3 AND d.status = 'active'
+        ) as active_disqualifications`;
+
         const [tRosterRes, gRosterRes, staffRes] = await Promise.all([
             pool.query(`
-                SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position, tm.photo_url
+                SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position, tm.photo_url,
+                       ${dqSubquery('tr.player_id')}
                 FROM tournament_rosters tr
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
                 JOIN games g ON g.division_id = tt.division_id
                 JOIN users u ON tr.player_id = u.id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2
-                WHERE g.id = $1 
-                  AND tt.team_id = $2 
-                  AND tr.application_status = 'approved' 
+                WHERE g.id = $1
+                  AND tt.team_id = $2
+                  AND tr.application_status = 'approved'
                   AND tr.period_end IS NULL
                 ORDER BY u.last_name
-            `, [gameId, teamId]),
+            `, [gameId, teamId, leagueId]),
 
             pool.query(`
                 SELECT gr.player_id, gr.jersey_number, gr.position_in_line, gr.is_captain, gr.is_assistant,
-                       u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+                       u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
+                       ${dqSubquery('gr.player_id')}
                 FROM game_rosters gr
                 JOIN users u ON gr.player_id = u.id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
                 WHERE gr.game_id = $1 AND gr.team_id = $2
                 ORDER BY u.last_name
-            `, [gameId, teamId]),
+            `, [gameId, teamId, leagueId]),
 
             pool.query(`
                 SELECT ttr.user_id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
-                       string_agg(ttr.tournament_role, ', ') as roles
+                       string_agg(ttr.tournament_role, ', ') as roles,
+                       ${dqSubquery('ttr.user_id')}
                 FROM tournament_team_roles ttr
                 JOIN users u ON ttr.user_id = u.id
                 JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
                 JOIN games g ON g.division_id = tt.division_id
                    AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
-                JOIN divisions div ON g.division_id = div.id
-                JOIN seasons s ON div.season_id = s.id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
                 WHERE g.id = $1
                   AND tt.team_id = $2
                   AND ttr.left_at IS NULL
-                  -- представители заявляются на матч автоматически (нет отдельного действия "добавить"),
-                  -- поэтому дисквалифицированных на период наказания просто не показываем в протоколе
-                  AND NOT EXISTS (
-                      SELECT 1 FROM disqualifications d
-                      WHERE d.user_id = ttr.user_id AND d.league_id = s.league_id AND d.status = 'active'
-                  )
                 GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
-            `, [gameId, teamId])
+            `, [gameId, teamId, leagueId])
         ]);
 
         res.json({

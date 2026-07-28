@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Table } from '../../ui/Table2';
 import { Badge } from '../../ui/Badge';
-import { Tooltip } from '../../ui/Tooltip';
+import { DisqualificationBadge } from '../../ui/DisqualificationBadge';
 import { Switch } from '../../ui/Switch';
 import dayjs from 'dayjs';
 import { getImageUrl } from '../../utils/helpers';
@@ -48,43 +48,9 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     return new Set(Object.keys(counts).filter(num => counts[num] > 1).map(String));
   }, [roster, isStaff]);
 
-  const renderDsqBadge = (activeDisqualifications) => {
-    if (!activeDisqualifications || activeDisqualifications.length === 0) return null;
-
-    const tooltipSubtitleNode = (
-      <div className="flex flex-col gap-2 mt-1">
-        {activeDisqualifications.map((d, index) => {
-          let penaltyText = '';
-          if (d.penalty_type === 'games') {
-            penaltyText = `Осталось матчей: ${d.games_assigned - d.games_served}`;
-          } else if (d.penalty_type === 'time') {
-            penaltyText = `До: ${dayjs(d.end_date).format('DD.MM.YYYY')}`;
-          } else if (d.penalty_type === 'manual') {
-            penaltyText = 'До решения СДК';
-          }
-
-          return (
-            <div key={index} className="text-[11px] leading-tight pb-1 border-b border-graphite/10 last:border-0 last:pb-0">
-              <span className="font-bold text-status-rejected block mb-0.5">{penaltyText}</span>
-              <span className="text-graphite/80 block line-clamp-2" title={d.reason}>Причина: {d.reason}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-
-    const tooltipTitle = activeDisqualifications.length > 1
-      ? `Дисквалификации (${activeDisqualifications.length})`
-      : 'Дисквалификация';
-
-    return (
-      <div onClick={(e) => e.stopPropagation()} className="cursor-help shrink-0 ml-5">
-        <Tooltip title={tooltipTitle} subtitle={tooltipSubtitleNode} position="top">
-          <Badge label="Дискв." type="expired" />
-        </Tooltip>
-      </div>
-    );
-  };
+  const renderDsqBadge = (activeDisqualifications) => (
+    <DisqualificationBadge activeDisqualifications={activeDisqualifications} className="ml-5" />
+  );
 
   // Считаем сколько всего документов требуется в этом дивизионе
   const reqMed = division?.req_med_cert ?? true;

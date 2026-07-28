@@ -95,7 +95,11 @@ export const getDivisions = async (req, res) => {
                             'status', d.status,
                             'penalty_amount', d.penalty_amount,
                             'penalty_amount_paid', d.penalty_amount_paid,
-                            'reason', d.reason
+                            'reason', d.reason,
+                            'mandatory_games', d.mandatory_games,
+                            'additional_games', d.additional_games,
+                            'games_assigned', d.games_assigned,
+                            'games_served', d.games_served
                         )), '[]'::json)
                         FROM disqualifications d
                         WHERE d.target_type = 'team'

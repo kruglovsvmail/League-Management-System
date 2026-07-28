@@ -4,8 +4,11 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Table } from '../ui/Table2';
+import { DisqualificationBadge } from '../ui/DisqualificationBadge';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { AccessFallback } from '../ui/AccessFallback';
+
+const renderDsqBadge = (activeDisqualifications) => <DisqualificationBadge activeDisqualifications={activeDisqualifications} />;
 
 const POSITION_MAP = { 'goalie': 'Вр', 'defense': 'Защ', 'forward': 'Нап' };
 
@@ -169,12 +172,17 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       width: 'w-[80px]', 
       render: (p) => ( <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-8 h-8 rounded-md object-cover bg-graphite/5 shrink-0" alt="av" /> )
     },
-    { 
-      label: 'Игрок', 
+    {
+      label: 'Игрок',
       render: (p) => (
-        <div className="min-w-0 flex flex-col justify-center">
-          <span className="text-[13px] font-bold text-graphite leading-tight block truncate">{p.last_name} {p.first_name}</span>
-          {p.middle_name && <span className="text-[11px] text-graphite-light block truncate mt-[2px]">{p.middle_name}</span>}
+        <div className="min-w-0 flex items-center gap-2">
+          <div className="flex flex-col justify-center min-w-0">
+            <span className="text-[13px] font-bold text-graphite leading-tight block truncate">{p.last_name} {p.first_name}</span>
+            {p.middle_name && <span className="text-[11px] text-graphite-light block truncate mt-[2px]">{p.middle_name}</span>}
+          </div>
+          {p.active_disqualifications?.length > 0 && (
+            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>{renderDsqBadge(p.active_disqualifications)}</div>
+          )}
         </div>
       )
     },
@@ -323,17 +331,23 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                           </span>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => handleAdd(p)}
-                        disabled={readOnly}
-                        className={`w-8 h-8 flex items-center justify-center rounded-md shrink-0 transition-colors ${
-                          readOnly 
-                            ? 'bg-graphite/5 text-graphite/20 cursor-not-allowed' 
-                            : 'bg-graphite/5 text-graphite hover:bg-orange hover:text-white'
-                        }`}
-                      >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                      </button>
+                      {p.active_disqualifications?.length > 0 ? (
+                        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {renderDsqBadge(p.active_disqualifications)}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleAdd(p)}
+                          disabled={readOnly}
+                          className={`w-8 h-8 flex items-center justify-center rounded-md shrink-0 transition-colors ${
+                            readOnly
+                              ? 'bg-graphite/5 text-graphite/20 cursor-not-allowed'
+                              : 'bg-graphite/5 text-graphite hover:bg-orange hover:text-white'
+                          }`}
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -356,7 +370,12 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                       Состав пуст.<br/>Выберите игроков из списка слева.
                     </div>
                   ) : (
-                    <Table columns={selectedColumns} data={selected} hideHeader={true} />
+                    <Table
+                      columns={selectedColumns}
+                      data={selected}
+                      hideHeader={true}
+                      rowClassName={(p) => p.active_disqualifications?.length > 0 ? 'bg-status-rejected/10' : ''}
+                    />
                   )}
                 </div>
 
