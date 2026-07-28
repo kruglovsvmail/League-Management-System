@@ -9,7 +9,7 @@ import { SdkCommissionMembersSection } from '../Sdk/SdkCommissionMembersSection'
 import { SdkViolationTypesSection } from '../Sdk/SdkViolationTypesSection';
 import { getToken } from '../../utils/helpers';
 
-const SECTIONS = ['Места проведения', 'Участники комиссии', 'Нарушения'];
+const SECTIONS = ['Места проведения', 'Члены СДК', 'Таблица штрафов'];
 
 export function SdkReferencesTab({ setToast }) {
   const { selectedLeague } = useOutletContext();

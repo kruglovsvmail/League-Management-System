@@ -228,7 +228,6 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
             </div>
 
             <div className="flex flex-col gap-2 pt-4 border-t border-graphite/10 shrink-0">
-              <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Решение</span>
               <SegmentButton options={['Наказать', 'Оправдать']} defaultIndex={decisionIndex} onChange={setDecisionIndex} />
             </div>
 

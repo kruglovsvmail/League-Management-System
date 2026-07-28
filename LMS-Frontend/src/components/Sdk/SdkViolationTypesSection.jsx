@@ -113,16 +113,16 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
   };
 
   const columns = [
-    { label: 'Пункт', sortKey: 'code', width: 'w-20', render: (row) => <span className="font-black text-orange">{row.code}</span> },
+    { label: 'Пункт', sortKey: 'code', width: 'w-14', render: (row) => <span className="font-black text-orange">{row.code}</span> },
     { label: 'Нарушение', sortKey: 'title', render: (row) => <span className="font-medium text-graphite">{row.title}</span> },
-    { label: 'Обязательные, матчи', width: 'w-28', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.mandatory_games_min, row.mandatory_games_max)}</span> },
-    { label: 'Доп. матчи', width: 'w-24', align: 'center', render: (row) => <span className="text-graphite-light">{row.additional_games ?? '-'}</span> },
-    { label: 'Доп. штраф, ₽', width: 'w-32', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.additional_amount_min, row.additional_amount_max)}</span> },
-    { label: 'Минуты', width: 'w-24', align: 'center', render: (row) => <span className="text-graphite-light">{row.penalty_minutes_note || '-'}</span> },
-    { label: '', width: 'w-12', align: 'center', render: (row) => {
+    { label: 'Обяз.', width: 'w-20', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.mandatory_games_min, row.mandatory_games_max)}</span> },
+    { label: 'Доп. матчи', width: 'w-16', align: 'center', render: (row) => <span className="text-graphite-light">{row.additional_games ?? '-'}</span> },
+    { label: 'Доп. штраф', width: 'w-20', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.additional_amount_min, row.additional_amount_max)}</span> },
+    { label: 'Минуты', width: 'w-16', align: 'center', render: (row) => <span className="text-graphite-light">{row.penalty_minutes_note || '-'}</span> },
+    { label: '', width: 'w-10', align: 'center', render: (row) => {
         if (!canDelete) return null;
         return (
-          <button onClick={() => setItemToDelete(row)} className="p-2 text-graphite-light hover:text-status-rejected hover:bg-status-rejected/10 rounded-lg transition-colors">
+          <button onClick={() => setItemToDelete(row)} className="p-1.5 text-graphite-light hover:text-status-rejected hover:bg-status-rejected/10 rounded-lg transition-colors">
             <Icon name="delete" className="w-5 h-5" />
           </button>
         );
@@ -142,7 +142,7 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
       </div>
 
       {canManage && seasonId && (
-        <div className="w-full lg:w-[500px] shrink-0 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-4 sticky top-[100px] order-1 lg:order-2">
+        <div className="w-full lg:w-[380px] shrink-0 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-4 sticky top-[100px] order-1 lg:order-2">
           <span className="text-[14px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-4">Новый пункт</span>
           <Input placeholder="Номер пункта (например, 2.4)" value={formData.code} onChange={e => setFormData({ ...formData, code: e.target.value })} />
           <div className="flex flex-col">
