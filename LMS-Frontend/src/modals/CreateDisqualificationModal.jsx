@@ -2,19 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Select } from '../ui/Select';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Input } from '../ui/Input';
+import { Stepper } from '../ui/Stepper';
 import { Button } from '../ui/Button';
 import { getImageUrl, getToken } from '../utils/helpers';
 
 const POSITION_LABELS = { goalie: 'Вратарь', defense: 'Защитник', forward: 'Нападающий' };
 const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Менеджер команды', team_admin: 'Администратор' };
 const TARGET_TYPES = ['player', 'staff', 'team'];
-
-const PENALTY_MODES = [
-  { key: 'games', title: 'Только матчи', desc: 'Снимается после пропуска нужного числа матчей' },
-  { key: 'money', title: 'Только штраф', desc: 'Снимается после оплаты штрафа' },
-  { key: 'or', title: 'Штраф ИЛИ матчи', desc: 'Снимается, как только выполнено любое одно из условий' },
-  { key: 'and', title: 'Штраф И матчи', desc: 'Снимается только когда выполнены оба условия' }
-];
 
 export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], onSuccess }) {
   const [targetTypeIndex, setTargetTypeIndex] = useState(0);
@@ -30,9 +24,9 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
   const [selectedTeamRoleId, setSelectedTeamRoleId] = useState(null);
 
   const [reason, setReason] = useState('');
-  const [penaltyModeKey, setPenaltyModeKey] = useState('games');
-  const [penaltyGames, setPenaltyGames] = useState('');
-  const [penaltyAmount, setPenaltyAmount] = useState('');
+  const [mandatoryGamesInput, setMandatoryGamesInput] = useState(0);
+  const [additionalGamesInput, setAdditionalGamesInput] = useState(0);
+  const [additionalAmountInput, setAdditionalAmountInput] = useState('');
 
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,7 +39,7 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
     if (!isOpen) {
       setTargetTypeIndex(0); setSelectedDivName(''); setSelectedTeamName('');
       setTeams([]); setPlayers([]); setStaff([]); setSearchQuery(''); setSelectedRosterId(null); setSelectedTeamRoleId(null);
-      setReason(''); setPenaltyModeKey('games'); setPenaltyGames(''); setPenaltyAmount('');
+      setReason(''); setMandatoryGamesInput(0); setAdditionalGamesInput(0); setAdditionalAmountInput('');
     }
   }, [isOpen]);
 
@@ -84,11 +78,6 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
     }
   }, [tournamentTeamId]);
 
-  // Для цели "команда" допустим только денежный штраф — нет смысла "пропускать матчи" командой целиком
-  useEffect(() => {
-    if (targetType === 'team') setPenaltyModeKey('money');
-  }, [targetType]);
-
   const filteredPlayers = players.filter(p => {
     const fullName = `${p.last_name || ''} ${p.first_name || ''} ${p.middle_name || ''}`.toLowerCase();
     return fullName.includes(searchQuery.toLowerCase());
@@ -99,14 +88,42 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
     return fullName.includes(searchQuery.toLowerCase());
   });
 
-  const penaltyMode = penaltyModeKey;
-  const gamesFilled = Number(penaltyGames) > 0;
-  const moneyFilled = Number(penaltyAmount) > 0;
-  const isPenaltyValid = penaltyMode === 'games' ? gamesFilled :
-    penaltyMode === 'money' ? moneyFilled :
-    gamesFilled && moneyFilled;
+  // Живые значения из полей формы.
+  const liveAdditionalAmount = additionalAmountInput === '' ? 0 : Number(additionalAmountInput);
+  const liveNeedsChoice = Number(additionalGamesInput) > 0 && liveAdditionalAmount > 0;
 
-  const isFormValid = reason.trim() && isPenaltyValid && (
+  // Итоговые penalty_games/penalty_amount/penalty_logic. Обязательные матчи отбываются всегда.
+  // Если заполнены и доп.матчи, и доп.штраф — оба фиксируются одновременно с penalty_logic='or':
+  // нарушитель сам гасит дисквал тем, что наступит раньше (отбыл матчи целиком ИЛИ оплатил штраф).
+  const computePenalty = () => {
+    if (targetType === 'team') {
+      return { games: null, amount: additionalAmountInput === '' ? null : Number(additionalAmountInput), logic: null };
+    }
+    const mandatoryVal = Number(mandatoryGamesInput) || 0;
+    const additionalGamesVal = Number(additionalGamesInput) || 0;
+    const gamesTotal = mandatoryVal + additionalGamesVal;
+    const amountVal = additionalAmountInput === '' ? null : Number(additionalAmountInput);
+
+    if (liveNeedsChoice) {
+      return { games: gamesTotal, amount: amountVal, logic: 'or' };
+    }
+    if (amountVal > 0 && mandatoryVal > 0) {
+      return { games: mandatoryVal, amount: amountVal, logic: 'and' };
+    }
+    if (amountVal > 0) {
+      return { games: null, amount: amountVal, logic: null };
+    }
+    return { games: gamesTotal > 0 ? gamesTotal : null, amount: null, logic: null };
+  };
+
+  const arePenaltyFieldsValid = () => {
+    if (targetType === 'team') return Number(additionalAmountInput) > 0;
+    const mandatoryVal = Number(mandatoryGamesInput) || 0;
+    const additionalGamesVal = Number(additionalGamesInput) || 0;
+    return (mandatoryVal + additionalGamesVal) > 0 || liveAdditionalAmount > 0;
+  };
+
+  const isFormValid = reason.trim() && arePenaltyFieldsValid() && (
     targetType === 'team' ? !!tournamentTeamId :
     targetType === 'staff' ? !!selectedTeamRoleId :
     !!selectedRosterId
@@ -117,6 +134,7 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
 
     setIsSubmitting(true);
     try {
+      const computed = computePenalty();
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/disqualifications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
@@ -126,9 +144,9 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
           tournament_team_role_id: targetType === 'staff' ? selectedTeamRoleId : null,
           tournament_team_id: targetType === 'team' ? tournamentTeamId : null,
           reason: reason.trim(),
-          penalty_games: (penaltyMode === 'games' || penaltyMode === 'or' || penaltyMode === 'and') ? Number(penaltyGames) : null,
-          penalty_amount: (penaltyMode === 'money' || penaltyMode === 'or' || penaltyMode === 'and') ? Number(penaltyAmount) : null,
-          penalty_logic: (penaltyMode === 'or' || penaltyMode === 'and') ? penaltyMode : null,
+          penalty_games: computed.games,
+          penalty_amount: computed.amount,
+          penalty_logic: computed.logic,
           start_date: new Date().toISOString().split('T')[0]
         })
       });
@@ -169,34 +187,43 @@ export function CreateDisqualificationModal({ isOpen, onClose, divisions = [], o
 
             <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-md animate-zoom-in">
               {targetType === 'team' ? (
-                <p className="text-[11px] text-graphite-light leading-relaxed">Для цели «Команда» доступен только денежный штраф — без счётчика пропущенных матчей.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Каким наказанием снимается</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {PENALTY_MODES.map((mode) => (
-                      <button
-                        key={mode.key}
-                        type="button"
-                        onClick={() => setPenaltyModeKey(mode.key)}
-                        className={`text-left p-3 rounded-md border transition-all duration-200 ${penaltyModeKey === mode.key ? 'border-status-rejected bg-status-rejected/10 shadow-sm' : 'border-graphite/10 bg-white hover:border-graphite/30'}`}
-                      >
-                        <span className={`block text-[12px] font-bold leading-tight ${penaltyModeKey === mode.key ? 'text-status-rejected' : 'text-graphite'}`}>{mode.title}</span>
-                        <span className="block text-[10px] text-graphite-light mt-1 leading-snug">{mode.desc}</span>
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex flex-col gap-1">
+                  <Input label="Штраф, ₽" type="number" value={additionalAmountInput} onChange={e => setAdditionalAmountInput(e.target.value.replace(/[^\d]/g, ''))} />
+                  <p className="text-[10px] text-graphite/50 leading-relaxed px-0.5 mt-1">Для цели «Команда» доступен только денежный штраф.</p>
                 </div>
-              )}
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Обязательные условия</span>
+                    <div className="flex items-center justify-between gap-3 bg-white rounded-md border border-graphite/10 px-4 py-3">
+                      <span className="text-[13px] font-bold text-graphite">Матчи</span>
+                      <Stepper initialValue={mandatoryGamesInput} min={0} max={30} onChange={setMandatoryGamesInput} />
+                    </div>
+                    
+                  </div>
 
-              <div className="flex gap-3">
-                {(penaltyMode === 'games' || penaltyMode === 'or' || penaltyMode === 'and') && (
-                  <Input label="Матчи" type="number" value={penaltyGames} onChange={e => setPenaltyGames(e.target.value)} />
-                )}
-                {(penaltyMode === 'money' || penaltyMode === 'or' || penaltyMode === 'and') && (
-                  <Input label="Штраф, ₽" type="number" value={penaltyAmount} onChange={e => setPenaltyAmount(e.target.value)} />
-                )}
-              </div>
+                  <div className="flex flex-col gap-2 pt-4 border-t border-graphite/10">
+                    <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Дополнительные условия</span>
+
+                    <div className="flex items-center justify-between gap-3 bg-white rounded-md border border-graphite/10 px-4 py-3">
+                      <span className="text-[13px] font-bold text-graphite">Доп. матчи</span>
+                      <Stepper initialValue={additionalGamesInput} min={0} max={30} onChange={setAdditionalGamesInput} />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 bg-white rounded-md border border-graphite/10 px-4 py-3">
+                      <span className="text-[13px] font-bold text-graphite">Доп. штраф</span>
+                      <div className="relative shrink-0">
+                        <Input type="number" value={additionalAmountInput} onChange={e => setAdditionalAmountInput(e.target.value.replace(/[^\d]/g, ''))} className="w-[114px] pl-2.5 pr-6 py-2 text-right" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] font-bold text-graphite-light pointer-events-none">₽</span>
+                      </div>
+                    </div>
+
+                    {!liveNeedsChoice && liveAdditionalAmount > 0 && Number(mandatoryGamesInput) > 0 && (
+                      <span className="text-[10px] text-graphite/50 px-0.5">Начисляется вместе с обязательными матчами, без выбора.</span>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

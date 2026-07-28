@@ -318,15 +318,39 @@ const getLeagueIdFromContext = async (req) => {
   }
   
   if (req.originalUrl.includes('/disqualifications') && req.params.id) {
-     const res = await pool.query(`
-      SELECT s.league_id FROM disqualifications d
-      JOIN tournament_rosters tr ON d.tournament_roster_id = tr.id
-      JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-      JOIN divisions div ON tt.division_id = div.id
-      JOIN seasons s ON div.season_id = s.id
-      WHERE d.id = $1
-    `, [req.params.id]);
+     const res = await pool.query(`SELECT league_id FROM disqualifications WHERE id = $1`, [req.params.id]);
     if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
+  if (req.originalUrl.includes('/disqualifications/history')) {
+    const { target_type, tournament_roster_id, tournament_team_role_id, tournament_team_id } = req.query;
+    if (target_type === 'staff' && tournament_team_role_id) {
+      const res = await pool.query(`
+        SELECT s.league_id FROM tournament_team_roles ttr
+        JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
+        JOIN divisions d ON tt.division_id = d.id
+        JOIN seasons s ON d.season_id = s.id
+        WHERE ttr.id = $1
+      `, [tournament_team_role_id]);
+      if (res.rows.length > 0) return res.rows[0].league_id;
+    } else if (target_type === 'team' && tournament_team_id) {
+      const res = await pool.query(`
+        SELECT s.league_id FROM tournament_teams tt
+        JOIN divisions d ON tt.division_id = d.id
+        JOIN seasons s ON d.season_id = s.id
+        WHERE tt.id = $1
+      `, [tournament_team_id]);
+      if (res.rows.length > 0) return res.rows[0].league_id;
+    } else if (tournament_roster_id) {
+      const res = await pool.query(`
+        SELECT s.league_id FROM tournament_rosters tr
+        JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+        JOIN divisions d ON tt.division_id = d.id
+        JOIN seasons s ON d.season_id = s.id
+        WHERE tr.id = $1
+      `, [tournament_roster_id]);
+      if (res.rows.length > 0) return res.rows[0].league_id;
+    }
   }
 
   if (req.originalUrl.includes('/tournament-teams') && req.params.id) {
@@ -366,15 +390,6 @@ const getLeagueIdFromContext = async (req) => {
       SELECT m.league_id FROM sdk_meeting_members mm
       JOIN sdk_meetings m ON mm.meeting_id = m.id
       WHERE mm.id = $1
-    `, [req.params.id]);
-    if (res.rows.length > 0) return res.rows[0].league_id;
-  }
-
-  if (req.originalUrl.includes('/sdk/meeting-representatives') && req.params.id) {
-    const res = await pool.query(`
-      SELECT m.league_id FROM sdk_meeting_representatives r
-      JOIN sdk_meetings m ON r.meeting_id = m.id
-      WHERE r.id = $1
     `, [req.params.id]);
     if (res.rows.length > 0) return res.rows[0].league_id;
   }

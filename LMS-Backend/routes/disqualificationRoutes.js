@@ -1,7 +1,8 @@
 import express from 'express';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import {
-    getSeasonDisqualifications,
+    getLeagueDisqualifications,
+    getPersonDisqualificationHistory,
     createDisqualification,
     deleteDisqualification,
     toggleDisqualificationPaid
@@ -12,8 +13,11 @@ const router = express.Router();
 // Защита всех эндпоинтов токеном
 router.use(verifyToken);
 
-// Получить все штрафы в сезоне
-router.get('/seasons/:seasonId/disqualifications', requirePermission('DISQUALIFICATIONS_VIEW'), getSeasonDisqualifications);
+// Получить все штрафы в лиге (дисквалификация переживает смену сезона — список не сезонный)
+router.get('/leagues/:leagueId/disqualifications', requirePermission('DISQUALIFICATIONS_VIEW'), getLeagueDisqualifications);
+
+// История дисквалификаций конкретного человека/команды в лиге (для шторки назначения наказания)
+router.get('/disqualifications/history', requirePermission('DISQUALIFICATIONS_VIEW'), getPersonDisqualificationHistory);
 
 // Создать новый штраф
 router.post('/disqualifications', requirePermission('DISQUALIFICATIONS_CREATE'), createDisqualification);

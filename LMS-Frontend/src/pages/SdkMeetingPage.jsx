@@ -11,7 +11,6 @@ import { Tabs } from '../ui/Tabs';
 import { Toast } from '../modals/Toast';
 import { AccessFallback } from '../ui/AccessFallback';
 import { SdkMeetingMembersTab } from '../components/Sdk/SdkMeetingMembersTab';
-import { SdkMeetingRepresentativesTab } from '../components/Sdk/SdkMeetingRepresentativesTab';
 import { SdkMeetingDocumentsTab } from '../components/Sdk/SdkMeetingDocumentsTab';
 import { SdkMeetingDecisionsTab } from '../components/Sdk/SdkMeetingDecisionsTab';
 import { getToken } from '../utils/helpers';
@@ -134,13 +133,12 @@ export function SdkMeetingPage() {
 
       <div className="px-10 pt-8 flex flex-col lg:flex-row gap-8 relative z-10 items-start">
         <div className="flex-1 min-w-0 w-full order-2 lg:order-1 flex flex-col gap-8">
-          <Tabs tabs={['Решения', 'Члены СДК', 'Приглашённые', 'Сканы/Документы']} activeTab={tabIndex} onChange={setTabIndex} />
+          <Tabs tabs={['Решения', 'Члены СДК', 'Сканы/Документы']} activeTab={tabIndex} onChange={setTabIndex} />
 
           <div key={tabIndex} className="animate-zoom-in">
             {tabIndex === 0 && <SdkMeetingDecisionsTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
             {tabIndex === 1 && <SdkMeetingMembersTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
-            {tabIndex === 2 && <SdkMeetingRepresentativesTab meetingId={meetingId} canManage={canManage} setToast={setToast} />}
-            {tabIndex === 3 && <SdkMeetingDocumentsTab meetingId={meetingId} canManage={canManage} setToast={setToast} />}
+            {tabIndex === 2 && <SdkMeetingDocumentsTab meetingId={meetingId} canManage={canManage} setToast={setToast} />}
           </div>
         </div>
 

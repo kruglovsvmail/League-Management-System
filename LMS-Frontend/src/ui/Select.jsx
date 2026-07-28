@@ -10,7 +10,8 @@ export function Select({
   hasError = false, 
   className, 
   disabled = false,
-  isSearchable = false 
+  isSearchable = false,
+  wrapText = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -100,21 +101,38 @@ export function Select({
       <div className="relative" ref={selectRef}>
         
         {effectiveIsSearchable ? (
-          <div className="relative w-full h-full">
-             <input
-                className={`${sizeClass} w-full rounded-md border flex items-center transition-all duration-300 outline-none text-[13px] font-semibold text-graphite placeholder:font-medium placeholder-graphite/40 ${
-                  disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70' 
-                  : hasError ? 'border-status-rejected bg-status-rejected/5' 
-                  : isOpen ? 'border-orange bg-white/70 shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' 
-                  : 'border-graphite/40 bg-white/70 hover:border-orange'
-                }`}
-                placeholder={displayValue || placeholder}
-                value={isOpen ? searchTerm : displayValue}
-                onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }}
-                onClick={() => { if (!disabled) setIsOpen(true); }}
-                readOnly={disabled}
-             />
-          </div>
+          wrapText && !isOpen ? (
+            <div
+              onClick={() => { if (!disabled) setIsOpen(true); }}
+              className={`${sizeClass} rounded-md border flex justify-between items-start gap-2 transition-all duration-300 ${
+                disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70'
+                  : hasError ? 'border-status-rejected bg-status-rejected/5 cursor-pointer'
+                  : 'border-graphite/40 bg-white/70 hover:border-orange cursor-pointer'
+              }`}
+            >
+              <span className={`text-[13px] font-semibold leading-snug whitespace-normal ${value ? 'text-graphite' : 'text-graphite/50'}`}>
+                {displayValue || placeholder}
+              </span>
+              {!disabled && <span className="text-[10px] text-graphite-light shrink-0 mt-0.5">▼</span>}
+            </div>
+          ) : (
+            <div className="relative w-full h-full">
+               <input
+                  className={`${sizeClass} w-full rounded-md border flex items-center transition-all duration-300 outline-none text-[13px] font-semibold text-graphite placeholder:font-medium placeholder-graphite/40 ${
+                    disabled ? 'border-graphite/10 bg-graphite/5 cursor-not-allowed opacity-70'
+                    : hasError ? 'border-status-rejected bg-status-rejected/5'
+                    : isOpen ? 'border-orange bg-white/70 shadow-[0_0_0_3px_rgba(255,122,0,0.2)]'
+                    : 'border-graphite/40 bg-white/70 hover:border-orange'
+                  }`}
+                  placeholder={displayValue || placeholder}
+                  value={isOpen ? searchTerm : displayValue}
+                  onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }}
+                  onClick={() => { if (!disabled) setIsOpen(true); }}
+                  readOnly={disabled}
+                  autoFocus={wrapText}
+               />
+            </div>
+          )
         ) : (
           <div 
             onClick={() => { if (!disabled) setIsOpen(!isOpen) }}

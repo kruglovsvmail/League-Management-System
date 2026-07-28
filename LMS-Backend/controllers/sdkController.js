@@ -133,7 +133,7 @@ export const getSdkViolationTypes = async (req, res) => {
     const { seasonId } = req.params;
     const result = await pool.query(
       `SELECT id, season_id, code, title,
-              penalty_games_min, penalty_games_max, penalty_amount_min, penalty_amount_max,
+              mandatory_games_min, mandatory_games_max, additional_games, additional_amount_min, additional_amount_max,
               penalty_minutes_note, created_at
        FROM sdk_violation_types WHERE season_id = $1
        ORDER BY code ASC`,
@@ -151,8 +151,9 @@ export const createSdkViolationType = async (req, res) => {
     const { seasonId } = req.params;
     const {
       code, title,
-      penalty_games_min, penalty_games_max,
-      penalty_amount_min, penalty_amount_max,
+      mandatory_games_min, mandatory_games_max,
+      additional_games,
+      additional_amount_min, additional_amount_max,
       penalty_minutes_note
     } = req.body;
 
@@ -162,12 +163,13 @@ export const createSdkViolationType = async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO sdk_violation_types
-        (season_id, code, title, penalty_games_min, penalty_games_max, penalty_amount_min, penalty_amount_max, penalty_minutes_note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        (season_id, code, title, mandatory_games_min, mandatory_games_max, additional_games, additional_amount_min, additional_amount_max, penalty_minutes_note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         seasonId, code, title,
-        penalty_games_min || null, penalty_games_max || penalty_games_min || null,
-        penalty_amount_min || null, penalty_amount_max || penalty_amount_min || null,
+        mandatory_games_min || null, mandatory_games_max || mandatory_games_min || null,
+        additional_games || null,
+        additional_amount_min || null, additional_amount_max || additional_amount_min || null,
         penalty_minutes_note || null
       ]
     );
@@ -337,7 +339,7 @@ export const deleteSdkMeeting = async (req, res) => {
     if (disqualificationIds.length > 0) {
       await client.query('DELETE FROM disqualifications WHERE id = ANY($1::int[])', [disqualificationIds]);
     }
-    // Каскадом удалятся: sdk_meeting_members, sdk_meeting_representatives, sdk_meeting_documents, sdk_meeting_decisions
+    // Каскадом удалятся: sdk_meeting_members, sdk_meeting_documents, sdk_meeting_decisions
     await client.query('DELETE FROM sdk_meetings WHERE id = $1', [id]);
     await client.query('COMMIT');
 
@@ -422,61 +424,6 @@ export const removeSdkMeetingMember = async (req, res) => {
   }
 };
 
-// ==========================================
-// СДК: ПРЕДСТАВИТЕЛИ КОМАНД (sdk_meeting_representatives)
-// ==========================================
-
-export const getSdkMeetingRepresentatives = async (req, res) => {
-  try {
-    const { meetingId } = req.params;
-    const result = await pool.query(`
-      SELECT r.id, r.meeting_id, r.tournament_team_id, r.user_id, r.full_name, r.created_at,
-             t.name as team_name, u.phone, u.avatar_url
-      FROM sdk_meeting_representatives r
-      LEFT JOIN tournament_teams tt ON r.tournament_team_id = tt.id
-      LEFT JOIN teams t ON tt.team_id = t.id
-      LEFT JOIN users u ON r.user_id = u.id
-      WHERE r.meeting_id = $1
-      ORDER BY r.full_name ASC
-    `, [meetingId]);
-    res.json({ success: true, data: result.rows });
-  } catch (err) {
-    console.error('Ошибка получения представителей СДК:', err);
-    res.status(500).json({ success: false, error: 'Ошибка загрузки данных' });
-  }
-};
-
-export const addSdkMeetingRepresentative = async (req, res) => {
-  try {
-    const { meetingId } = req.params;
-    const { full_name, tournament_team_id, user_id } = req.body;
-
-    if (!full_name) {
-      return res.status(400).json({ success: false, error: 'Не указано ФИО приглашённого' });
-    }
-
-    const result = await pool.query(`
-      INSERT INTO sdk_meeting_representatives (meeting_id, full_name, tournament_team_id, user_id)
-      VALUES ($1, $2, $3, $4) RETURNING id
-    `, [meetingId, full_name, tournament_team_id || null, user_id || null]);
-
-    res.json({ success: true, id: result.rows[0].id });
-  } catch (err) {
-    console.error('Ошибка добавления приглашённого СДК:', err);
-    res.status(500).json({ success: false, error: 'Ошибка сохранения' });
-  }
-};
-
-export const removeSdkMeetingRepresentative = async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.query(`DELETE FROM sdk_meeting_representatives WHERE id = $1`, [id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Ошибка удаления представителя СДК:', err);
-    res.status(500).json({ success: false, error: 'Ошибка удаления' });
-  }
-};
 
 // ==========================================
 // СДК: ДОКУМЕНТЫ И СКАНЫ (sdk_meeting_documents)
@@ -576,6 +523,7 @@ export const getSdkMeetingDecisions = async (req, res) => {
     const result = await pool.query(`
       SELECT dec.id, dec.meeting_id, dec.violation_type_id, dec.game_id, dec.tournament_team_id,
              dec.target_type, dec.tournament_roster_id, dec.tournament_team_role_id, dec.decision, dec.penalty_games,
+             dec.mandatory_games, dec.additional_games,
              dec.penalty_amount, dec.penalty_minutes, dec.penalty_logic, dec.penalty_amount_paid,
              dec.status, dec.disqualification_id, dec.created_at,
              COALESCE(dec.violation_code_snapshot, vt.code) as violation_code,
@@ -624,7 +572,8 @@ export const createSdkMeetingDecision = async (req, res) => {
     const { meetingId } = req.params;
     const {
       violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id, target_type,
-      tournament_roster_id, tournament_team_role_id, decision, penalty_games, penalty_amount, penalty_minutes, penalty_logic
+      tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
+      penalty_amount, penalty_minutes, penalty_logic
     } = req.body;
 
     if ((!violation_type_id && !violation_title_manual) || !tournament_team_id || !decision) {
@@ -639,6 +588,8 @@ export const createSdkMeetingDecision = async (req, res) => {
 
     // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
     const safePenaltyGames = target_type === 'team' ? null : (penalty_games || null);
+    const safeMandatoryGames = target_type === 'team' ? null : (mandatory_games || null);
+    const safeAdditionalGames = target_type === 'team' ? null : (additional_games || null);
 
     // Пункт нарушения либо из справочника (violation_type_id), либо вписан вручную —
     // в обоих случаях текст "замораживается" в снапшот, как и при выборе из справочника
@@ -647,14 +598,15 @@ export const createSdkMeetingDecision = async (req, res) => {
     const result = await pool.query(`
       INSERT INTO sdk_meeting_decisions
         (meeting_id, violation_type_id, violation_code_snapshot, violation_title_snapshot, game_id, tournament_team_id, target_type,
-         tournament_roster_id, tournament_team_role_id, decision, penalty_games, penalty_amount, penalty_minutes, penalty_logic, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
+         penalty_amount, penalty_minutes, penalty_logic, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING id
     `, [
       meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, target_type || 'player',
       target_type === 'player' ? tournament_roster_id : null,
       target_type === 'staff' ? tournament_team_role_id : null,
-      decision, safePenaltyGames, penalty_amount || null, penalty_minutes || null,
+      decision, safePenaltyGames, safeMandatoryGames, safeAdditionalGames, penalty_amount || null, penalty_minutes || null,
       (safePenaltyGames && penalty_amount) ? (penalty_logic || 'and') : null, req.user.id
     ]);
 
@@ -670,8 +622,8 @@ export const updateSdkMeetingDecision = async (req, res) => {
     const { id } = req.params;
     const {
       violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id, target_type,
-      tournament_roster_id, tournament_team_role_id, decision, penalty_games, penalty_amount, penalty_minutes,
-      penalty_logic, penalty_amount_paid, status
+      tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
+      penalty_amount, penalty_minutes, penalty_logic, penalty_amount_paid, status
     } = req.body;
 
     if ((!violation_type_id && !violation_title_manual) || !tournament_team_id || !decision) {
@@ -680,20 +632,22 @@ export const updateSdkMeetingDecision = async (req, res) => {
 
     // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
     const safePenaltyGames = target_type === 'team' ? null : (penalty_games || null);
+    const safeMandatoryGames = target_type === 'team' ? null : (mandatory_games || null);
+    const safeAdditionalGames = target_type === 'team' ? null : (additional_games || null);
 
     const violationSnapshot = await getViolationSnapshot(violation_type_id, violation_code_manual, violation_title_manual);
 
     await pool.query(`
       UPDATE sdk_meeting_decisions
       SET violation_type_id = $1, violation_code_snapshot = $2, violation_title_snapshot = $3, game_id = $4, tournament_team_id = $5, target_type = $6,
-          tournament_roster_id = $7, tournament_team_role_id = $8, decision = $9, penalty_games = $10, penalty_amount = $11,
-          penalty_minutes = $12, penalty_logic = $13, penalty_amount_paid = $14, status = $15
-      WHERE id = $16
+          tournament_roster_id = $7, tournament_team_role_id = $8, decision = $9, penalty_games = $10, mandatory_games = $11, additional_games = $12,
+          penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17
+      WHERE id = $18
     `, [
       violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, target_type || 'player',
       target_type === 'player' ? tournament_roster_id : null,
       target_type === 'staff' ? tournament_team_role_id : null,
-      decision, safePenaltyGames, penalty_amount || null, penalty_minutes || null,
+      decision, safePenaltyGames, safeMandatoryGames, safeAdditionalGames, penalty_amount || null, penalty_minutes || null,
       (safePenaltyGames && penalty_amount) ? (penalty_logic || 'and') : null,
       penalty_amount_paid || false, status || 'active', id
     ]);

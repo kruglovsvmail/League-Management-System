@@ -98,7 +98,10 @@ export const getDivisions = async (req, res) => {
                             'reason', d.reason
                         )), '[]'::json)
                         FROM disqualifications d
-                        WHERE d.tournament_team_id = tt.id AND d.status = 'active'
+                        WHERE d.target_type = 'team'
+                          AND d.team_id = t.id
+                          AND d.league_id = (SELECT league_id FROM seasons WHERE id = $1)
+                          AND d.status = 'active'
                     )
                 ) ORDER BY t.name) as teams
                 FROM tournament_teams tt

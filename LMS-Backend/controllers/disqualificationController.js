@@ -1,18 +1,17 @@
 import pool from '../config/db.js';
 
-// Получение списка всех дисквалификаций для конкретного сезона
-export const getSeasonDisqualifications = async (req, res) => {
+// Получение списка всех дисквалификаций для лиги (переживают смену сезона — не сезонный список)
+export const getLeagueDisqualifications = async (req, res) => {
     try {
-        const { seasonId } = req.params;
+        const { leagueId } = req.params;
 
         const result = await pool.query(`
             SELECT
                 d.id,
                 d.target_type,
-                d.tournament_roster_id,
-                d.tournament_team_role_id,
-                d.tournament_team_id,
-                COALESCE(tr.player_id, ttr.user_id) as player_id,
+                d.user_id,
+                d.team_id,
+                d.league_id,
                 d.reason,
                 d.penalty_type,
                 d.games_assigned,
@@ -23,41 +22,129 @@ export const getSeasonDisqualifications = async (req, res) => {
                 d.start_date,
                 d.end_date,
                 d.status,
-                COALESCE(u_player.first_name, u_staff.first_name) as first_name,
-                COALESCE(u_player.last_name, u_staff.last_name) as last_name,
-                COALESCE(u_player.middle_name, u_staff.middle_name) as middle_name,
-                COALESCE(u_player.avatar_url, u_staff.avatar_url) as avatar_url,
-                ttr.tournament_role as staff_role,
-                COALESCE(
-                    (SELECT photo_url FROM team_members tm WHERE tm.user_id = u_player.id AND tm.team_id = t.id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1),
-                    (SELECT photo_url FROM team_members tm WHERE tm.user_id = u_staff.id AND tm.team_id = t.id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1)
-                ) as member_photo,
+                u.first_name,
+                u.last_name,
+                u.middle_name,
+                u.avatar_url,
+                staff_role.tournament_role as staff_role,
+                (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = d.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1) as member_photo,
                 t.name as team_name,
                 t.logo_url as team_logo,
-                div.name as division_name,
+                cur_div.name as division_name,
                 dec.id as sdk_decision_id,
                 dec.meeting_id as sdk_meeting_id,
                 COALESCE(dec.violation_code_snapshot, vt.code) as sdk_violation_code,
                 COALESCE(dec.violation_title_snapshot, vt.title) as sdk_violation_title,
                 sm.sequence_number as sdk_meeting_number
             FROM disqualifications d
-            LEFT JOIN tournament_rosters tr ON d.tournament_roster_id = tr.id
-            LEFT JOIN users u_player ON tr.player_id = u_player.id
-            LEFT JOIN tournament_team_roles ttr ON d.tournament_team_role_id = ttr.id
-            LEFT JOIN users u_staff ON ttr.user_id = u_staff.id
-            JOIN tournament_teams tt ON tt.id = COALESCE(tr.tournament_team_id, ttr.tournament_team_id, d.tournament_team_id)
-            JOIN teams t ON tt.team_id = t.id
-            JOIN divisions div ON tt.division_id = div.id
+            JOIN teams t ON d.team_id = t.id
+            LEFT JOIN users u ON d.user_id = u.id
+            -- "Текущий" (последний по сезону) дивизион этой команды в лиге — чисто для отображения контекста
+            LEFT JOIN LATERAL (
+                SELECT div.name
+                FROM tournament_teams tt
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE tt.team_id = d.team_id AND s.league_id = d.league_id
+                ORDER BY s.is_active DESC, s.start_date DESC
+                LIMIT 1
+            ) cur_div ON true
+            -- Роль представителя (для отображения), если это дисквалификация представителя команды
+            LEFT JOIN LATERAL (
+                SELECT ttr.tournament_role
+                FROM tournament_team_roles ttr
+                JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE ttr.user_id = d.user_id AND tt.team_id = d.team_id AND s.league_id = d.league_id AND ttr.left_at IS NULL
+                ORDER BY s.is_active DESC, s.start_date DESC
+                LIMIT 1
+            ) staff_role ON d.target_type = 'staff'
             LEFT JOIN sdk_meeting_decisions dec ON dec.disqualification_id = d.id
             LEFT JOIN sdk_violation_types vt ON dec.violation_type_id = vt.id
             LEFT JOIN sdk_meetings sm ON dec.meeting_id = sm.id
-            WHERE div.season_id = $1
+            WHERE d.league_id = $1
             ORDER BY d.created_at DESC
-        `, [seasonId]);
+        `, [leagueId]);
 
         res.json({ success: true, data: result.rows });
     } catch (err) {
         console.error('Ошибка получения списка штрафов:', err);
+        res.status(500).json({ success: false, error: 'Ошибка загрузки данных' });
+    }
+};
+
+// История дисквалификаций конкретного человека (по всем ролям, т.к. дисквал сквозной) или команды в лиге —
+// используется в шторке создания решения СДК/лайт-дисквала, чтобы показать прошлые наказания выбранного нарушителя
+export const getPersonDisqualificationHistory = async (req, res) => {
+    try {
+        const { target_type, tournament_roster_id, tournament_team_role_id, tournament_team_id } = req.query;
+
+        let resolveRes;
+        if (target_type === 'staff') {
+            if (!tournament_team_role_id) return res.json({ success: true, data: [] });
+            resolveRes = await pool.query(`
+                SELECT ttr.user_id, tt.team_id, s.league_id
+                FROM tournament_team_roles ttr
+                JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE ttr.id = $1
+            `, [tournament_team_role_id]);
+        } else if (target_type === 'team') {
+            if (!tournament_team_id) return res.json({ success: true, data: [] });
+            resolveRes = await pool.query(`
+                SELECT NULL::int as user_id, tt.team_id, s.league_id
+                FROM tournament_teams tt
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE tt.id = $1
+            `, [tournament_team_id]);
+        } else {
+            if (!tournament_roster_id) return res.json({ success: true, data: [] });
+            resolveRes = await pool.query(`
+                SELECT tr.player_id as user_id, tt.team_id, s.league_id
+                FROM tournament_rosters tr
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE tr.id = $1
+            `, [tournament_roster_id]);
+        }
+
+        if (resolveRes.rows.length === 0) {
+            return res.json({ success: true, data: [] });
+        }
+        const { user_id: userId, team_id: teamId, league_id: leagueId } = resolveRes.rows[0];
+
+        const result = await pool.query(`
+            SELECT
+                d.id, d.reason, d.status, d.start_date, d.end_date,
+                d.games_assigned, d.games_served, d.penalty_amount, d.penalty_amount_paid, d.penalty_logic,
+                COALESCE(dec.violation_code_snapshot, vt.code) as violation_code,
+                COALESCE(dec.violation_title_snapshot, vt.title) as violation_title,
+                COALESCE(seas_meeting.name, seas_range.name) as season_name
+            FROM disqualifications d
+            LEFT JOIN sdk_meeting_decisions dec ON dec.disqualification_id = d.id
+            LEFT JOIN sdk_violation_types vt ON dec.violation_type_id = vt.id
+            LEFT JOIN sdk_meetings sm ON dec.meeting_id = sm.id
+            LEFT JOIN seasons seas_meeting ON sm.season_id = seas_meeting.id
+            LEFT JOIN LATERAL (
+                SELECT s.name FROM seasons s
+                WHERE s.league_id = d.league_id AND d.start_date BETWEEN s.start_date AND COALESCE(s.end_date, d.start_date)
+                ORDER BY s.start_date DESC LIMIT 1
+            ) seas_range ON sm.id IS NULL
+            WHERE d.league_id = $1
+              AND (
+                ($2::int IS NOT NULL AND d.user_id = $2)
+                OR ($2::int IS NULL AND d.target_type = 'team' AND d.team_id = $3)
+              )
+            ORDER BY d.start_date DESC, d.created_at DESC
+        `, [leagueId, userId, teamId]);
+
+        res.json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error('Ошибка получения истории дисквалификаций:', err);
         res.status(500).json({ success: false, error: 'Ошибка загрузки данных' });
     }
 };
@@ -85,6 +172,42 @@ export const createDisqualification = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Не выбрана команда' });
         }
 
+        // Дисквалификация теперь крепится к user_id + team_id (глобальные) + league_id, а не к сезонной заявке —
+        // резолвим их из выбранной в форме сезонной строки состава.
+        let resolveRes;
+        if (targetType === 'player') {
+            resolveRes = await pool.query(`
+                SELECT tr.player_id as user_id, tt.team_id, s.league_id
+                FROM tournament_rosters tr
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE tr.id = $1
+            `, [tournament_roster_id]);
+        } else if (targetType === 'staff') {
+            resolveRes = await pool.query(`
+                SELECT ttr.user_id, tt.team_id, s.league_id
+                FROM tournament_team_roles ttr
+                JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE ttr.id = $1
+            `, [tournament_team_role_id]);
+        } else {
+            resolveRes = await pool.query(`
+                SELECT NULL::int as user_id, tt.team_id, s.league_id
+                FROM tournament_teams tt
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE tt.id = $1
+            `, [tournament_team_id]);
+        }
+
+        if (resolveRes.rows.length === 0) {
+            return res.status(400).json({ success: false, error: 'Не удалось определить команду/лигу нарушителя' });
+        }
+        const { user_id: resolvedUserId, team_id: resolvedTeamId, league_id: resolvedLeagueId } = resolveRes.rows[0];
+
         // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
         const safePenaltyGames = targetType === 'team' ? null : (penalty_games || null);
 
@@ -97,16 +220,16 @@ export const createDisqualification = async (req, res) => {
 
         const result = await pool.query(`
             INSERT INTO disqualifications
-                (target_type, tournament_roster_id, tournament_team_role_id, tournament_team_id,
+                (target_type, user_id, team_id, league_id,
                  reason, penalty_type, games_assigned, games_served, penalty_amount, penalty_logic, start_date, status)
             VALUES
                 ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, 'active')
             RETURNING id
         `, [
             targetType,
-            targetType === 'player' ? tournament_roster_id : null,
-            targetType === 'staff' ? tournament_team_role_id : null,
-            targetType === 'team' ? tournament_team_id : null,
+            resolvedUserId,
+            resolvedTeamId,
+            resolvedLeagueId,
             reason,
             penaltyType,
             safePenaltyGames,

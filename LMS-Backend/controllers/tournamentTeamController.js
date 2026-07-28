@@ -8,6 +8,17 @@ export const getTournamentTeamRoster = async (req, res) => {
     try {
         const { id } = req.params;
 
+        // Дисквалификации теперь привязаны к user_id + league_id (не к сезонной заявке),
+        // поэтому сперва резолвим лигу этой турнирной команды — она одна на весь запрос.
+        const leagueRes = await pool.query(`
+            SELECT s.league_id
+            FROM tournament_teams tt
+            JOIN divisions div ON tt.division_id = div.id
+            JOIN seasons s ON div.season_id = s.id
+            WHERE tt.id = $1
+        `, [id]);
+        const leagueId = leagueRes.rows[0]?.league_id || null;
+
         // 1. Получаем игроков ростера (с оптимизированным получением фото и дисквалификаций)
         const result = await pool.query(`
             SELECT
@@ -34,27 +45,27 @@ export const getTournamentTeamRoster = async (req, res) => {
                 u.avatar_url as user_avatar_url,
                 tm_photo.photo_url as team_member_photo_url,
                 lq.short_name as qualification_short_name,
-                
-                -- Оптимизированный сбор активных дисквалификаций
+
+                -- Оптимизированный сбор активных дисквалификаций (по игроку в рамках лиги)
                 COALESCE(dq.active_disqualifications, '[]'::json) as active_disqualifications
 
             FROM tournament_rosters tr
             JOIN users u ON tr.player_id = u.id
             JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
             LEFT JOIN league_qualifications lq ON tr.qualification_id = lq.id
-            
+
             -- Оптимизация: берем последнее фото без сканирования всей таблицы на каждую строку
             LEFT JOIN LATERAL (
-                SELECT photo_url 
-                FROM team_members 
-                WHERE user_id = u.id AND team_id = tt.team_id AND photo_url IS NOT NULL 
+                SELECT photo_url
+                FROM team_members
+                WHERE user_id = u.id AND team_id = tt.team_id AND photo_url IS NOT NULL
                 ORDER BY id DESC LIMIT 1
             ) tm_photo ON true
 
             -- Оптимизация: собираем дисквалификации в один проход
             LEFT JOIN (
-                SELECT 
-                    tournament_roster_id, 
+                SELECT
+                    user_id,
                     json_agg(
                         json_build_object(
                             'status', status,
@@ -66,13 +77,13 @@ export const getTournamentTeamRoster = async (req, res) => {
                         )
                     ) as active_disqualifications
                 FROM disqualifications
-                WHERE status = 'active'
-                GROUP BY tournament_roster_id
-            ) dq ON dq.tournament_roster_id = tr.id
+                WHERE status = 'active' AND league_id = $2
+                GROUP BY user_id
+            ) dq ON dq.user_id = tr.player_id
 
             WHERE tr.tournament_team_id = $1
             ORDER BY u.last_name, u.first_name
-        `, [id]);
+        `, [id, leagueId]);
 
         // 2. Получаем представителей (staff) команды из ТУРНИРНОЙ заявки (tournament_team_roles)
         const staffResult = await pool.query(`
@@ -96,7 +107,7 @@ export const getTournamentTeamRoster = async (req, res) => {
                         'reason', d.reason
                     ))
                     FROM disqualifications d
-                    WHERE d.tournament_team_role_id = ANY(array_agg(ttr.id)) AND d.status = 'active'),
+                    WHERE d.user_id = ttr.user_id AND d.league_id = $2 AND d.status = 'active'),
                     '[]'::json
                 ) as active_disqualifications
             FROM tournament_team_roles ttr
@@ -106,7 +117,7 @@ export const getTournamentTeamRoster = async (req, res) => {
             WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
             GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url
             ORDER BY u.last_name, u.first_name
-        `, [id]);
+        `, [id, leagueId]);
 
         res.json({ success: true, data: result.rows, staff: staffResult.rows });
     } catch (err) {

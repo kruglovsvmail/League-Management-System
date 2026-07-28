@@ -10,8 +10,9 @@ import { getToken } from '../../utils/helpers';
 
 const EMPTY_FORM = {
   code: '', title: '',
-  penalty_games_min: '', penalty_games_max: '',
-  penalty_amount_min: '', penalty_amount_max: '',
+  mandatory_games_min: '', mandatory_games_max: '',
+  additional_games: '',
+  additional_amount_min: '', additional_amount_max: '',
   penalty_minutes_note: ''
 };
 
@@ -66,10 +67,11 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
         body: JSON.stringify({
           code: formData.code.trim(),
           title: formData.title.trim(),
-          penalty_games_min: formData.penalty_games_min ? parseInt(formData.penalty_games_min, 10) : null,
-          penalty_games_max: formData.penalty_games_max ? parseInt(formData.penalty_games_max, 10) : null,
-          penalty_amount_min: formData.penalty_amount_min ? parseFloat(formData.penalty_amount_min) : null,
-          penalty_amount_max: formData.penalty_amount_max ? parseFloat(formData.penalty_amount_max) : null,
+          mandatory_games_min: formData.mandatory_games_min ? parseInt(formData.mandatory_games_min, 10) : null,
+          mandatory_games_max: formData.mandatory_games_max ? parseInt(formData.mandatory_games_max, 10) : null,
+          additional_games: formData.additional_games ? parseInt(formData.additional_games, 10) : null,
+          additional_amount_min: formData.additional_amount_min ? parseFloat(formData.additional_amount_min) : null,
+          additional_amount_max: formData.additional_amount_max ? parseFloat(formData.additional_amount_max) : null,
           penalty_minutes_note: formData.penalty_minutes_note.trim() || null
         })
       });
@@ -113,8 +115,9 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
   const columns = [
     { label: 'Пункт', sortKey: 'code', width: 'w-20', render: (row) => <span className="font-black text-orange">{row.code}</span> },
     { label: 'Нарушение', sortKey: 'title', render: (row) => <span className="font-medium text-graphite">{row.title}</span> },
-    { label: 'Матчи', width: 'w-24', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.penalty_games_min, row.penalty_games_max)}</span> },
-    { label: 'Штраф, ₽', width: 'w-32', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.penalty_amount_min, row.penalty_amount_max)}</span> },
+    { label: 'Обязательные, матчи', width: 'w-28', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.mandatory_games_min, row.mandatory_games_max)}</span> },
+    { label: 'Доп. матчи', width: 'w-24', align: 'center', render: (row) => <span className="text-graphite-light">{row.additional_games ?? '-'}</span> },
+    { label: 'Доп. штраф, ₽', width: 'w-32', align: 'center', render: (row) => <span className="text-graphite-light">{formatRange(row.additional_amount_min, row.additional_amount_max)}</span> },
     { label: 'Минуты', width: 'w-24', align: 'center', render: (row) => <span className="text-graphite-light">{row.penalty_minutes_note || '-'}</span> },
     { label: '', width: 'w-12', align: 'center', render: (row) => {
         if (!canDelete) return null;
@@ -153,18 +156,25 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Матчи дисквалификации (необязательно)</span>
+            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Обязательные матчи (необязательно)</span>
             <div className="flex gap-3">
-              <Input placeholder="От" type="number" value={formData.penalty_games_min} onChange={e => setFormData({ ...formData, penalty_games_min: e.target.value })} />
-              <Input placeholder="До (если диапазон)" type="number" value={formData.penalty_games_max} onChange={e => setFormData({ ...formData, penalty_games_max: e.target.value })} />
+              <Input placeholder="От" type="number" value={formData.mandatory_games_min} onChange={e => setFormData({ ...formData, mandatory_games_min: e.target.value })} />
+              <Input placeholder="До (если диапазон)" type="number" value={formData.mandatory_games_max} onChange={e => setFormData({ ...formData, mandatory_games_max: e.target.value })} />
             </div>
+            <span className="text-[10px] text-graphite/50 leading-relaxed px-0.5">Матчи, которые нарушитель обязан пропустить в любом случае — без выбора.</span>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Штраф, ₽ (необязательно)</span>
+            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Дополнительно, матчи (необязательно)</span>
+            <Input placeholder="Например: 2" type="number" value={formData.additional_games} onChange={e => setFormData({ ...formData, additional_games: e.target.value })} />
+            <span className="text-[10px] text-graphite/50 leading-relaxed px-0.5">Если заполнено вместе со штрафом ниже — комиссия при вынесении решения выбирает: доп. матчами ИЛИ доп. деньгами.</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Дополнительно, штраф ₽ (необязательно)</span>
             <div className="flex gap-3">
-              <Input placeholder="От" type="number" value={formData.penalty_amount_min} onChange={e => setFormData({ ...formData, penalty_amount_min: e.target.value })} />
-              <Input placeholder="До (если диапазон)" type="number" value={formData.penalty_amount_max} onChange={e => setFormData({ ...formData, penalty_amount_max: e.target.value })} />
+              <Input placeholder="От" type="number" value={formData.additional_amount_min} onChange={e => setFormData({ ...formData, additional_amount_min: e.target.value })} />
+              <Input placeholder="До (если диапазон)" type="number" value={formData.additional_amount_max} onChange={e => setFormData({ ...formData, additional_amount_max: e.target.value })} />
             </div>
           </div>
 
@@ -172,10 +182,6 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
             <Input placeholder="Например: 2+20" value={formData.penalty_minutes_note} onChange={e => setFormData({ ...formData, penalty_minutes_note: e.target.value })} />
             <span className="text-[10px] text-graphite/50 leading-relaxed px-0.5">Штраф (минуты) — хоккейная нотация, необязательно</span>
           </div>
-
-          <p className="text-[10px] text-graphite/50 leading-relaxed px-0.5">
-            Эти значения — ориентир для комиссии. Итоговое наказание всё равно вводится вручную при вынесении решения.
-          </p>
 
           <Button onClick={handleCreate} isLoading={isSubmitting} className="w-full">Добавить</Button>
         </div>

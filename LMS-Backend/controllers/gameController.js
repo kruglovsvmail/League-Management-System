@@ -878,30 +878,17 @@ export const updateGameStatus = async (req, res) => {
         if (isNewlyFinished && game.division_id) {
             const teamsInGame = [game.home_team_id, game.away_team_id].filter(Boolean);
             if (teamsInGame.length > 0) {
+                // Дисквалификация теперь привязана к user_id/team_id + лиге (не к сезонной заявке) —
+                // считаем отбытые матчи по факту того, что команда-источник сыграла игру в этой лиге,
+                // независимо от того, в каком сезоне идёт матч (наказание переживает смену сезона).
                 await client.query(`
                     UPDATE disqualifications d
                     SET games_served = d.games_served + 1
-                    FROM tournament_rosters tr
-                    JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-                    WHERE d.tournament_roster_id = tr.id
-                      AND d.status = 'active'
+                    WHERE d.status = 'active'
                       AND d.games_assigned IS NOT NULL
-                      AND tt.division_id = $1
-                      AND tt.team_id = ANY($2::int[])
-                `, [game.division_id, teamsInGame]);
-
-                // То же самое — для дисквалификаций представителей команды (тренер/менеджер)
-                await client.query(`
-                    UPDATE disqualifications d
-                    SET games_served = d.games_served + 1
-                    FROM tournament_team_roles ttr
-                    JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
-                    WHERE d.tournament_team_role_id = ttr.id
-                      AND d.status = 'active'
-                      AND d.games_assigned IS NOT NULL
-                      AND tt.division_id = $1
-                      AND tt.team_id = ANY($2::int[])
-                `, [game.division_id, teamsInGame]);
+                      AND d.team_id = ANY($1::int[])
+                      AND d.league_id = (SELECT s.league_id FROM divisions div JOIN seasons s ON div.season_id = s.id WHERE div.id = $2)
+                `, [teamsInGame, game.division_id]);
             }
         }
 
@@ -982,6 +969,8 @@ export const getGameRoster = async (req, res) => {
                 JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
                 JOIN games g ON g.division_id = tt.division_id
                    AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
+                JOIN divisions div ON g.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
                 WHERE g.id = $1
                   AND tt.team_id = $2
@@ -990,7 +979,7 @@ export const getGameRoster = async (req, res) => {
                   -- поэтому дисквалифицированных на период наказания просто не показываем в протоколе
                   AND NOT EXISTS (
                       SELECT 1 FROM disqualifications d
-                      WHERE d.tournament_team_role_id = ttr.id AND d.status = 'active'
+                      WHERE d.user_id = ttr.user_id AND d.league_id = s.league_id AND d.status = 'active'
                   )
                 GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
             `, [gameId, teamId])
@@ -1026,12 +1015,12 @@ export const saveGameRoster = async (req, res) => {
             const dqCheck = await client.query(`
                 SELECT u.first_name, u.last_name
                 FROM disqualifications d
-                JOIN tournament_rosters tr ON d.tournament_roster_id = tr.id
-                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-                JOIN games g ON g.division_id = tt.division_id
-                JOIN users u ON tr.player_id = u.id
-                WHERE g.id = $1 AND tt.team_id = $2 AND tr.player_id = ANY($3::int[]) AND d.status = 'active'
-            `, [gameId, teamId, playerIds]);
+                JOIN users u ON d.user_id = u.id
+                JOIN games g ON g.id = $1
+                JOIN divisions div ON g.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE d.user_id = ANY($2::int[]) AND d.league_id = s.league_id AND d.status = 'active'
+            `, [gameId, playerIds]);
 
             if (dqCheck.rows.length > 0) {
                 client.release();

@@ -80,9 +80,16 @@ export function DisqualificationsPage() {
     }
   }, [selectedLeague, canView]);
 
+  // Список дисквалификаций теперь на уровне лиги (наказание переживает смену сезона),
+  // а справочник дивизионов season-scoped — нужен только для контекста модалки создания
+  useEffect(() => {
+    if (selectedLeague?.id && canView) {
+      fetchDisqualifications();
+    }
+  }, [selectedLeague?.id, canView]);
+
   useEffect(() => {
     if (selectedSeasonId && canView) {
-      fetchDisqualifications();
       fetchDivisions();
     }
   }, [selectedSeasonId, canView]);
@@ -90,10 +97,10 @@ export function DisqualificationsPage() {
   const fetchDisqualifications = async (isQuiet = false) => {
     if (!isQuiet) setIsLoading(true);
     try {
-      const res = await fetch(`${SERVER_URL}/api/seasons/${selectedSeasonId}/disqualifications`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+      const res = await fetch(`${SERVER_URL}/api/leagues/${selectedLeague.id}/disqualifications`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
       const data = await res.json();
       if (data.success) setDisqualifications(data.data);
-    } catch (err) { console.error(err); } 
+    } catch (err) { console.error(err); }
     finally { if (!isQuiet) setIsLoading(false); }
   };
 
@@ -212,14 +219,6 @@ export function DisqualificationsPage() {
         title="Дисквалификации" 
         actions={
           <>
-            {seasons.length > 0 && (
-              <div className="w-32">
-                <Select options={seasons.map(s => s.name)} value={seasons.find(s => s.id === selectedSeasonId)?.name || ''} onChange={(val) => {
-                  const found = seasons.find(s => s.name === val);
-                  if (found) setSelectedSeasonId(found.id);
-                }} />
-              </div>
-            )}
             {canCreate && selectedLeague?.disqualification_mode !== 'sdk' && (
               <Button className="bg-status-rejected hover:brightness-90 text-white border-none transition-all" onClick={() => setIsCreateModalOpen(true)}>+ Назначить дисквал</Button>
             )}

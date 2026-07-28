@@ -7,7 +7,6 @@ import {
   getSdkViolationTypes, createSdkViolationType, deleteSdkViolationType,
   getSdkMeetings, getSdkMeeting, createSdkMeeting, updateSdkMeeting, deleteSdkMeeting,
   getSdkMeetingMembers, addSdkMeetingMember, removeSdkMeetingMember,
-  getSdkMeetingRepresentatives, addSdkMeetingRepresentative, removeSdkMeetingRepresentative,
   getSdkMeetingDocuments, uploadSdkMeetingDocuments, deleteSdkMeetingDocument,
   getSdkMeetingDecisions, createSdkMeetingDecision, updateSdkMeetingDecision, togglePaidSdkMeetingDecision, deleteSdkMeetingDecision
 } from '../controllers/sdkController.js';
@@ -41,11 +40,6 @@ router.delete('/sdk/meetings/:id', requirePermission('SDK_MEETINGS_MANAGE'), del
 router.get('/sdk/meetings/:meetingId/members', requirePermission('SDK_MEETINGS_VIEW'), getSdkMeetingMembers);
 router.post('/sdk/meetings/:meetingId/members', requirePermission('SDK_MEETINGS_MANAGE'), addSdkMeetingMember);
 router.delete('/sdk/meeting-members/:id', requirePermission('SDK_MEETINGS_MANAGE'), removeSdkMeetingMember);
-
-// ПРЕДСТАВИТЕЛИ КОМАНД
-router.get('/sdk/meetings/:meetingId/representatives', requirePermission('SDK_MEETINGS_VIEW'), getSdkMeetingRepresentatives);
-router.post('/sdk/meetings/:meetingId/representatives', requirePermission('SDK_MEETINGS_MANAGE'), addSdkMeetingRepresentative);
-router.delete('/sdk/meeting-representatives/:id', requirePermission('SDK_MEETINGS_MANAGE'), removeSdkMeetingRepresentative);
 
 // ДОКУМЕНТЫ И СКАНЫ
 router.get('/sdk/meetings/:meetingId/documents', requirePermission('SDK_MEETINGS_VIEW'), getSdkMeetingDocuments);

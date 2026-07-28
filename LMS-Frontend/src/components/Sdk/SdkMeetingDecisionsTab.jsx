@@ -120,11 +120,20 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
               : (d.team_member_photo_url || d.user_avatar_url || '/default/user_default.webp'));
             const teamLogoSrc = getImageUrl(d.team_logo || '/default/Logo_team_default.webp');
 
-            const gamesText = d.penalty_games ? `${d.penalty_games} ${pluralizeMatches(d.penalty_games)}` : null;
-            const amountText = d.penalty_amount ? `${d.penalty_amount} ₽` : null;
-            const hasSanction = isPunish && (gamesText || amountText);
+            // Обязательные/доп.матчи хранятся раздельно (mandatory_games/additional_games) только начиная с
+            // введения этого разбиения — у решений, созданных раньше, будет только общий penalty_games.
+            const hasSplit = d.mandatory_games != null || d.additional_games != null;
+            const dqServed = d.dq_games_served || 0;
+            const mandatoryServed = hasSplit && d.mandatory_games != null ? Math.min(dqServed, d.mandatory_games) : null;
+            const additionalServed = hasSplit && d.additional_games != null
+              ? Math.min(Math.max(dqServed - (d.mandatory_games || 0), 0), d.additional_games)
+              : null;
 
-            const gamesRemaining = d.penalty_games && d.dq_games_assigned != null
+            const gamesText = !hasSplit && d.penalty_games ? `${d.penalty_games} ${pluralizeMatches(d.penalty_games)}` : null;
+            const amountText = d.penalty_amount ? `${d.penalty_amount} ₽` : null;
+            const hasSanction = isPunish && (gamesText || amountText || hasSplit);
+
+            const gamesRemaining = !hasSplit && d.penalty_games && d.dq_games_assigned != null
               ? Math.max(d.dq_games_assigned - (d.dq_games_served || 0), 0)
               : null;
 
@@ -179,13 +188,23 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                 {(hasSanction || canManage) && (
                   <div className="flex items-center justify-between gap-3 pt-2 border-t border-graphite/10">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {isPunish && gamesText && (
+                      {isPunish && hasSplit && d.mandatory_games != null && (
+                        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">
+                          Обязательные: {mandatoryServed}/{d.mandatory_games}
+                        </Pill>
+                      )}
+                      {isPunish && hasSplit && d.additional_games != null && (
+                        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">
+                          Доп. матчи: {additionalServed}/{d.additional_games}
+                        </Pill>
+                      )}
+                      {isPunish && !hasSplit && gamesText && (
                         <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">{gamesText}</Pill>
                       )}
-                      {isPunish && gamesRemaining != null && d.status === 'active' && (
+                      {isPunish && !hasSplit && gamesRemaining != null && d.status === 'active' && (
                         <Pill className="bg-graphite/5 text-graphite/70 border border-graphite/10">Осталось {gamesRemaining}</Pill>
                       )}
-                      {isPunish && gamesText && amountText && (
+                      {isPunish && (hasSplit || gamesText) && amountText && (
                         <span className="text-[10px] font-bold text-graphite-light/60 uppercase">{d.penalty_logic === 'or' ? 'или' : 'и'}</span>
                       )}
                       {isPunish && amountText && (
