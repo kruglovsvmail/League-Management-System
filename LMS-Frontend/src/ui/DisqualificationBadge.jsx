@@ -32,6 +32,9 @@ export function DisqualificationPills({ d }) {
 
   return (
     <div className="flex flex-wrap gap-1">
+      {d.is_team_wide && (
+        <Pill className="bg-graphite/10 text-graphite/70 border border-graphite/10">Штраф команды</Pill>
+      )}
       {hasSplit && d.mandatory_games != null && (
         <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">Обяз. матчи: {mandatoryServed}/{d.mandatory_games}</Pill>
       )}

@@ -32,21 +32,44 @@ export function Select({
   // Итоговый флаг: поиск включен только если это запрошено пропсами И мы не на мобилке
   const effectiveIsSearchable = isSearchable && !isMobile;
 
-  const normalizedOptions = options.map(opt => 
+  const normalizedOptions = options.map(opt =>
     typeof opt === 'object' && opt !== null ? opt : { value: opt, label: opt, disabled: false }
   );
 
-  const selectedOption = normalizedOptions.find(opt => String(opt.value) === String(value));
-  const displayValue = selectedOption ? selectedOption.label : '';
+  // Строки-заголовки (type: 'section' | 'subsection') структурируют длинный список,
+  // но выбрать их нельзя — они не значения, а разделители
+  const isHeaderOption = (opt) => opt.type === 'section' || opt.type === 'subsection';
 
+  // prefix — выделяемая часть перед текстом опции (например, номер пункта нарушения):
+  // в списке она красится акцентом, но при поиске и в закрытом поле участвует как обычный текст
+  const optionText = (opt) => [opt.prefix, opt.label].filter(Boolean).join(' ');
+
+  const selectedOption = normalizedOptions.find(opt => !isHeaderOption(opt) && String(opt.value) === String(value));
+  const displayValue = selectedOption ? optionText(selectedOption) : '';
+
+  // При поиске заголовки прячем: пользователь ищет конкретный пункт, а не раздел
   const filteredOptions = effectiveIsSearchable && searchTerm
-    ? normalizedOptions.filter(opt => String(opt.label).toLowerCase().includes(searchTerm.toLowerCase()))
+    ? normalizedOptions.filter(opt => !isHeaderOption(opt) && optionText(opt).toLowerCase().includes(searchTerm.toLowerCase()))
     : normalizedOptions;
+
+  const maxHeight = wrapText ? 560 : 320;
 
   useEffect(() => {
     if (isOpen && selectRef.current) {
       const rect = selectRef.current.getBoundingClientRect();
-      const estimatedHeight = Math.min(filteredOptions.length * (wrapText ? 60 : 40) + 10, 480);
+
+      // Ширина списка намеренно не привязана к полю: длинные формулировки в него не влезают
+      const panelWidth = wrapText
+        ? Math.min(Math.max(rect.width * 1.5, 420), window.innerWidth - 40)
+        : rect.width;
+
+      // Если справа не хватает места — раскрываемся влево, выравниваясь по правому краю поля
+      let calculatedLeft = rect.left;
+      if (calculatedLeft + panelWidth > window.innerWidth - 20) {
+        calculatedLeft = Math.max(20, rect.right - panelWidth);
+      }
+
+      const estimatedHeight = Math.min(filteredOptions.length * (wrapText ? 60 : 40) + 10, maxHeight);
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
 
@@ -55,9 +78,9 @@ export function Select({
         calculatedTop = rect.top + window.scrollY - estimatedHeight - 6;
       }
 
-      setCoords({ left: rect.left, top: calculatedTop, width: rect.width });
+      setCoords({ left: calculatedLeft, top: calculatedTop, width: panelWidth });
     }
-  }, [isOpen, filteredOptions.length]);
+  }, [isOpen, filteredOptions.length, wrapText]);
 
   useEffect(() => {
     const handleClose = () => { setIsOpen(false); setSearchTerm(''); };
@@ -111,7 +134,8 @@ export function Select({
               }`}
             >
               <span className={`text-[13px] font-semibold leading-snug whitespace-normal ${value ? 'text-graphite' : 'text-graphite/50'}`}>
-                {displayValue || placeholder}
+                {selectedOption?.prefix && <span className="font-black text-orange">{selectedOption.prefix} </span>}
+                {selectedOption ? selectedOption.label : placeholder}
               </span>
               {!disabled && <span className="text-[10px] text-graphite-light shrink-0 mt-0.5">▼</span>}
             </div>
@@ -156,37 +180,55 @@ export function Select({
 
         {isOpen && !disabled && createPortal(
           <div 
-            className={`portal-dropdown absolute bg-white/50 backdrop-blur-[14px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-zoom-in overflow-y-auto max-h-[480px] ${scrollbarStyles}`}
+            className={`portal-dropdown absolute bg-white/50 backdrop-blur-[14px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-zoom-in overflow-y-auto ${scrollbarStyles}`}
             style={{
               top: `${coords.top}px`,
               left: `${coords.left}px`,
-              minWidth: `${Math.max(coords.width, wrapText ? 420 : 100)}px`,
-              maxWidth: 'calc(100vw - 40px)' // Защита от вылетания за правый край экрана
+              maxHeight: `${maxHeight}px`,
+              ...(wrapText
+                ? { width: `${coords.width}px` }
+                : { minWidth: `${Math.max(coords.width, 100)}px`, maxWidth: 'calc(100vw - 40px)' })
             }}
           >
             {effectiveIsSearchable && (
               <div className="px-3 py-2 hover:bg-graphite/5 cursor-pointer text-graphite/40 text-xs text-left transition-colors whitespace-nowrap" onClick={() => handleSelect('', { value: '', label: '—' })}>—</div>
             )}
-            
+
             {filteredOptions.length > 0 ? (
               filteredOptions.map((opt, idx) => (
-                <div 
-                  key={idx}
-                  onClick={() => handleSelect(opt.value, opt)}
-                  className={`px-4 py-2.5 text-[13px] font-semibold cursor-pointer border-b border-graphite/5 last:border-0 transition-colors text-left leading-snug ${
-                    wrapText ? 'whitespace-normal' : 'whitespace-nowrap overflow-hidden text-ellipsis'
-                  } ${
-                    opt.disabled 
-                      ? 'line-through text-graphite/40 bg-graphite/[0.02] hover:bg-graphite/5' 
-                      : String(value) === String(opt.value) 
-                        ? 'bg-orange/10 text-orange' 
-                        : typeof opt.label === 'string' && opt.label.includes('Очистите')
-                            ? 'text-status-rejected hover:bg-status-rejected/10'
-                            : 'text-graphite hover:bg-orange/5 hover:text-orange'
-                  }`}
-                >
-                  {opt.label}
-                </div>
+                isHeaderOption(opt) ? (
+                  <div
+                    key={idx}
+                    className={`px-4 border-b border-graphite/5 last:border-0 whitespace-normal leading-snug select-none ${
+                      opt.type === 'section'
+                        ? 'py-2.5 text-[13px] font-black text-orange uppercase tracking-wide text-center bg-orange/5'
+                        : 'py-2 text-[12px] font-bold italic text-status-pending text-left bg-status-pending/5'
+                    }`}
+                  >
+                    {opt.label}
+                  </div>
+                ) : (
+                  <div
+                    key={idx}
+                    onClick={() => handleSelect(opt.value, opt)}
+                    className={`px-4 py-2.5 text-[13px] font-semibold cursor-pointer border-b border-graphite/5 last:border-0 transition-colors text-left leading-snug ${
+                      wrapText ? 'whitespace-normal' : 'whitespace-nowrap overflow-hidden text-ellipsis'
+                    } ${
+                      opt.disabled
+                        ? 'line-through text-graphite/40 bg-graphite/[0.02] hover:bg-graphite/5'
+                        : String(value) === String(opt.value)
+                          ? 'bg-orange/10 text-orange'
+                          : typeof opt.label === 'string' && opt.label.includes('Очистите')
+                              ? 'text-status-rejected hover:bg-status-rejected/10'
+                              : 'text-graphite hover:bg-orange/5 hover:text-orange'
+                    }`}
+                  >
+                    {opt.prefix && (
+                      <span className={String(value) === String(opt.value) ? 'font-black' : 'font-black text-orange'}>{opt.prefix} </span>
+                    )}
+                    {opt.label}
+                  </div>
+                )
               ))
             ) : (
               <div className="px-3 py-3 text-graphite/40 text-xs text-center font-medium">Нет совпадений</div>

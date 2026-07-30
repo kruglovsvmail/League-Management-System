@@ -16,6 +16,12 @@ export function SegmentButton({ options = ['Дни', 'Недели', 'Месяц
     }
   };
 
+  // Переключатель может управляться и снаружи (например, выбранный пункт справочника
+  // сам задаёт цель наказания) — подхватываем изменение defaultIndex, а не только монтирование
+  useEffect(() => {
+    setActiveIndex(defaultIndex);
+  }, [defaultIndex]);
+
   // Вычисляем размеры перед тем, как браузер отрисует кадр
   useLayoutEffect(() => {
     updateSlider();

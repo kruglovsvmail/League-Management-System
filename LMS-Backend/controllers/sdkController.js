@@ -128,15 +128,44 @@ export const deleteSdkCommissionMember = async (req, res) => {
 // СДК: СПРАВОЧНИК НАРУШЕНИЙ (sdk_violation_types)
 // ==========================================
 
+const VIOLATION_TYPE_COLUMNS = `id, season_id, row_type, sort_order, code, title,
+              mandatory_games_min, mandatory_games_max, additional_games_min, additional_games_max,
+              additional_amount_min, additional_amount_max,
+              penalty_minutes_note, is_team_penalty, split_among_members, created_at`;
+
+// Заголовки и подзаголовки живут в той же таблице, что и пункты (row_type), потому что
+// порядок в "Таблице штрафов" чередуется: секция → подсекция → пункты → следующая секция.
+// Единственный источник порядка — sort_order, код пункта для сортировки не годится
+// (пункты повторяются, а у заголовков кода нет вовсе).
+const normalizeViolationTypeBody = (body) => {
+  const rowType = ['section', 'subsection', 'violation'].includes(body.row_type) ? body.row_type : 'violation';
+  const isHeader = rowType !== 'violation';
+  const isTeamPenalty = !isHeader && !!body.is_team_penalty;
+
+  return {
+    row_type: rowType,
+    code: body.code?.trim() || null,
+    title: body.title?.trim() || '',
+    // У заголовков нет санкций, у командных штрафов — только деньги (матчи команде не назначаются)
+    mandatory_games_min: isHeader || isTeamPenalty ? null : (body.mandatory_games_min || null),
+    mandatory_games_max: isHeader || isTeamPenalty ? null : (body.mandatory_games_max || body.mandatory_games_min || null),
+    additional_games_min: isHeader || isTeamPenalty ? null : (body.additional_games_min || null),
+    additional_games_max: isHeader || isTeamPenalty ? null : (body.additional_games_max || body.additional_games_min || null),
+    additional_amount_min: isHeader ? null : (body.additional_amount_min || null),
+    additional_amount_max: isHeader ? null : (body.additional_amount_max || body.additional_amount_min || null),
+    penalty_minutes_note: isHeader ? null : (body.penalty_minutes_note?.trim() || null),
+    is_team_penalty: isTeamPenalty,
+    split_among_members: isTeamPenalty && !!body.split_among_members
+  };
+};
+
 export const getSdkViolationTypes = async (req, res) => {
   try {
     const { seasonId } = req.params;
     const result = await pool.query(
-      `SELECT id, season_id, code, title,
-              mandatory_games_min, mandatory_games_max, additional_games, additional_amount_min, additional_amount_max,
-              penalty_minutes_note, created_at
+      `SELECT ${VIOLATION_TYPE_COLUMNS}
        FROM sdk_violation_types WHERE season_id = $1
-       ORDER BY code ASC`,
+       ORDER BY sort_order ASC, id ASC`,
       [seasonId]
     );
     res.json({ success: true, data: result.rows });
@@ -149,37 +178,106 @@ export const getSdkViolationTypes = async (req, res) => {
 export const createSdkViolationType = async (req, res) => {
   try {
     const { seasonId } = req.params;
-    const {
-      code, title,
-      mandatory_games_min, mandatory_games_max,
-      additional_games,
-      additional_amount_min, additional_amount_max,
-      penalty_minutes_note
-    } = req.body;
+    const v = normalizeViolationTypeBody(req.body);
 
-    if (!code || !title) {
-      return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
+    if (!v.title) {
+      return res.status(400).json({ success: false, error: 'Не заполнен текст' });
+    }
+    if (v.row_type === 'violation' && !v.code) {
+      return res.status(400).json({ success: false, error: 'Не заполнен номер пункта' });
     }
 
+    // Новая строка всегда встаёт в конец списка сезона — дальше её переносят перетаскиванием
     const result = await pool.query(
       `INSERT INTO sdk_violation_types
-        (season_id, code, title, mandatory_games_min, mandatory_games_max, additional_games, additional_amount_min, additional_amount_max, penalty_minutes_note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        (season_id, row_type, code, title, mandatory_games_min, mandatory_games_max, additional_games_min, additional_games_max,
+         additional_amount_min, additional_amount_max, penalty_minutes_note, is_team_penalty, split_among_members, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+               (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM sdk_violation_types WHERE season_id = $1))
+       RETURNING id`,
       [
-        seasonId, code, title,
-        mandatory_games_min || null, mandatory_games_max || mandatory_games_min || null,
-        additional_games || null,
-        additional_amount_min || null, additional_amount_max || additional_amount_min || null,
-        penalty_minutes_note || null
+        seasonId, v.row_type, v.code, v.title,
+        v.mandatory_games_min, v.mandatory_games_max, v.additional_games_min, v.additional_games_max,
+        v.additional_amount_min, v.additional_amount_max, v.penalty_minutes_note,
+        v.is_team_penalty, v.split_among_members
       ]
     );
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ success: false, error: 'Пункт с таким номером уже существует в этом сезоне' });
-    }
     console.error('Ошибка создания пункта нарушения СДК:', err);
     res.status(500).json({ success: false, error: 'Ошибка сохранения' });
+  }
+};
+
+export const updateSdkViolationType = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const v = normalizeViolationTypeBody(req.body);
+
+    if (!v.title) {
+      return res.status(400).json({ success: false, error: 'Не заполнен текст' });
+    }
+    if (v.row_type === 'violation' && !v.code) {
+      return res.status(400).json({ success: false, error: 'Не заполнен номер пункта' });
+    }
+
+    // Снапшоты в вынесенных решениях (violation_code_snapshot / violation_title_snapshot)
+    // намеренно не трогаем: решение должно хранить формулировку на момент его вынесения.
+    const result = await pool.query(
+      `UPDATE sdk_violation_types
+       SET row_type = $1, code = $2, title = $3,
+           mandatory_games_min = $4, mandatory_games_max = $5, additional_games_min = $6, additional_games_max = $7,
+           additional_amount_min = $8, additional_amount_max = $9, penalty_minutes_note = $10,
+           is_team_penalty = $11, split_among_members = $12
+       WHERE id = $13
+       RETURNING ${VIOLATION_TYPE_COLUMNS}`,
+      [
+        v.row_type, v.code, v.title,
+        v.mandatory_games_min, v.mandatory_games_max, v.additional_games_min, v.additional_games_max,
+        v.additional_amount_min, v.additional_amount_max, v.penalty_minutes_note,
+        v.is_team_penalty, v.split_among_members, id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Пункт не найден' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    console.error('Ошибка обновления пункта нарушения СДК:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сохранения' });
+  }
+};
+
+export const reorderSdkViolationTypes = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { seasonId } = req.params;
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Не передан порядок строк' });
+    }
+
+    await client.query('BEGIN');
+    // Порядок задаётся позицией в массиве; ограничение по season_id не даёт перетащить
+    // строку в чужой сезон подменой id в запросе
+    await client.query(
+      `UPDATE sdk_violation_types t
+       SET sort_order = v.ord
+       FROM (SELECT * FROM unnest($1::int[]) WITH ORDINALITY AS u(id, ord)) v
+       WHERE t.id = v.id AND t.season_id = $2`,
+      [ids.map(Number), seasonId]
+    );
+    await client.query('COMMIT');
+
+    res.json({ success: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Ошибка сортировки справочника нарушений СДК:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сохранения порядка' });
+  } finally {
+    client.release();
   }
 };
 
@@ -525,7 +623,16 @@ export const getSdkMeetingDecisions = async (req, res) => {
              dec.target_type, dec.tournament_roster_id, dec.tournament_team_role_id, dec.decision, dec.penalty_games,
              dec.mandatory_games, dec.additional_games,
              dec.penalty_amount, dec.penalty_minutes, dec.penalty_logic, dec.penalty_amount_paid,
-             dec.status, dec.disqualification_id, dec.created_at,
+             dec.status, dec.disqualification_id, dec.team_penalty_mode, dec.created_at,
+             COALESCE((
+               SELECT json_agg(json_build_object(
+                   'id', dm.id, 'user_id', dm.user_id, 'full_name', dm.full_name_snapshot,
+                   'share_amount', dm.share_amount, 'paid', COALESCE(mdq.penalty_amount_paid, false)
+               ) ORDER BY dm.full_name_snapshot)
+               FROM sdk_decision_members dm
+               LEFT JOIN disqualifications mdq ON mdq.id = dm.disqualification_id
+               WHERE dm.decision_id = dec.id
+             ), '[]'::json) as members,
              COALESCE(dec.violation_code_snapshot, vt.code) as violation_code,
              COALESCE(dec.violation_title_snapshot, vt.title) as violation_title,
              t.name as team_name, t.logo_url as team_logo, div.name as division_name,
@@ -567,94 +674,276 @@ const getViolationSnapshot = async (violationTypeId, manualCode, manualTitle) =>
   return { code: res.rows[0]?.code || null, title: res.rows[0]?.title || null };
 };
 
+// Деление суммы поровну без потери копеек: остаток от деления раскидывается
+// по первым участникам, чтобы сумма долей в точности сходилась с общей суммой штрафа.
+const buildEqualShares = (total, count) => {
+  const cents = Math.round(Number(total) * 100);
+  const base = Math.floor(cents / count);
+  const remainder = cents - base * count;
+  return Array.from({ length: count }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
+};
+
+const buildDecisionReason = (snapshot) =>
+  snapshot.code ? `${snapshot.code}. ${snapshot.title}` : snapshot.title;
+
+const resolveDecisionContext = async (client, meetingId, tournamentTeamId) => {
+  const r = await client.query(`
+    SELECT tt.team_id, m.league_id
+    FROM tournament_teams tt
+    JOIN sdk_meetings m ON m.id = $1
+    WHERE tt.id = $2
+  `, [meetingId, tournamentTeamId]);
+  return r.rows[0] || {};
+};
+
+// Режим "штраф делится между участниками": одно решение СДК превращается в N персональных
+// наказаний. Триггер sdk_sync_disqualification для таких решений намеренно ничего не создаёт —
+// общей записи на команду здесь быть не должно, каждый отвечает только за свою долю.
+const syncDecisionMembers = async (client, { decisionId, meetingId, tournamentTeamId, memberUserIds, totalAmount, reason }) => {
+  const ids = [...new Set((memberUserIds || []).map(Number).filter(Boolean))];
+
+  const existingRes = await client.query(
+    'SELECT id, user_id, disqualification_id FROM sdk_decision_members WHERE decision_id = $1',
+    [decisionId]
+  );
+  const keep = new Set(ids);
+
+  for (const row of existingRes.rows) {
+    if (keep.has(Number(row.user_id))) continue;
+    await client.query('DELETE FROM sdk_decision_members WHERE id = $1', [row.id]);
+    if (row.disqualification_id) {
+      await client.query('DELETE FROM disqualifications WHERE id = $1', [row.disqualification_id]);
+    }
+  }
+
+  if (ids.length === 0) return;
+
+  const { team_id, league_id } = await resolveDecisionContext(client, meetingId, tournamentTeamId);
+  const shares = buildEqualShares(totalAmount || 0, ids.length);
+
+  const peopleRes = await client.query(`
+    SELECT u.id, u.first_name, u.last_name, u.middle_name,
+           EXISTS (SELECT 1 FROM tournament_rosters tr WHERE tr.tournament_team_id = $2 AND tr.player_id = u.id) AS is_player
+    FROM users u WHERE u.id = ANY($1::int[])
+  `, [ids, tournamentTeamId]);
+  const people = new Map(peopleRes.rows.map(r => [Number(r.id), r]));
+
+  const existingByUser = new Map(existingRes.rows.map(r => [Number(r.user_id), r]));
+
+  for (let i = 0; i < ids.length; i++) {
+    const userId = ids[i];
+    const share = shares[i];
+    const person = people.get(userId);
+    const fullName = person
+      ? [person.last_name, person.first_name, person.middle_name].filter(Boolean).join(' ')
+      : null;
+    const targetType = person?.is_player ? 'player' : 'staff';
+    const existing = existingByUser.get(userId);
+
+    if (existing?.disqualification_id) {
+      await client.query(
+        `UPDATE disqualifications SET reason = $1, penalty_amount = $2, updated_at = NOW() WHERE id = $3`,
+        [reason, share, existing.disqualification_id]
+      );
+      await client.query(
+        `UPDATE sdk_decision_members SET share_amount = $1, full_name_snapshot = $2 WHERE id = $3`,
+        [share, fullName, existing.id]
+      );
+      continue;
+    }
+
+    const dqRes = await client.query(`
+      INSERT INTO disqualifications
+        (target_type, user_id, team_id, league_id, reason, penalty_type, penalty_amount, penalty_amount_paid, start_date, status)
+      VALUES ($1, $2, $3, $4, $5, 'manual', $6, false, CURRENT_DATE, 'active')
+      RETURNING id
+    `, [targetType, userId, team_id, league_id, reason, share]);
+
+    await client.query(`
+      INSERT INTO sdk_decision_members (decision_id, user_id, full_name_snapshot, share_amount, disqualification_id)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (decision_id, user_id) DO UPDATE
+        SET share_amount = EXCLUDED.share_amount, full_name_snapshot = EXCLUDED.full_name_snapshot,
+            disqualification_id = EXCLUDED.disqualification_id
+    `, [decisionId, userId, fullName, share, dqRes.rows[0].id]);
+  }
+};
+
+// Общая нормализация тела решения для create/update: чем является наказание, решает
+// цель (кто наказан) и режим командного штрафа из справочника.
+const normalizeDecisionBody = (body) => {
+  const targetType = body.target_type || 'player';
+  const teamPenaltyMode = targetType === 'team' && ['whole', 'split'].includes(body.team_penalty_mode)
+    ? body.team_penalty_mode
+    : null;
+
+  // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
+  const penaltyGames = targetType === 'team' ? null : (body.penalty_games || null);
+
+  return {
+    targetType,
+    teamPenaltyMode,
+    penaltyGames,
+    mandatoryGames: targetType === 'team' ? null : (body.mandatory_games || null),
+    additionalGames: targetType === 'team' ? null : (body.additional_games || null),
+    penaltyAmount: body.penalty_amount || null,
+    penaltyLogic: (penaltyGames && body.penalty_amount) ? (body.penalty_logic || 'and') : null
+  };
+};
+
 export const createSdkMeetingDecision = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { meetingId } = req.params;
     const {
-      violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id, target_type,
-      tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
-      penalty_amount, penalty_minutes, penalty_logic
+      violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id,
+      tournament_roster_id, tournament_team_role_id, decision, penalty_minutes, member_user_ids
     } = req.body;
 
     if ((!violation_type_id && !violation_title_manual) || !tournament_team_id || !decision) {
       return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
     }
-    if (target_type === 'player' && !tournament_roster_id) {
+
+    const v = normalizeDecisionBody(req.body);
+
+    if (v.targetType === 'player' && !tournament_roster_id) {
       return res.status(400).json({ success: false, error: 'Не выбран игрок-нарушитель' });
     }
-    if (target_type === 'staff' && !tournament_team_role_id) {
+    if (v.targetType === 'staff' && !tournament_team_role_id) {
       return res.status(400).json({ success: false, error: 'Не выбран представитель команды' });
     }
-
-    // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
-    const safePenaltyGames = target_type === 'team' ? null : (penalty_games || null);
-    const safeMandatoryGames = target_type === 'team' ? null : (mandatory_games || null);
-    const safeAdditionalGames = target_type === 'team' ? null : (additional_games || null);
+    if (v.teamPenaltyMode === 'split' && decision === 'punish' && !(member_user_ids?.length > 0)) {
+      return res.status(400).json({ success: false, error: 'Не выбраны участники, между которыми делится штраф' });
+    }
 
     // Пункт нарушения либо из справочника (violation_type_id), либо вписан вручную —
     // в обоих случаях текст "замораживается" в снапшот, как и при выборе из справочника
     const violationSnapshot = await getViolationSnapshot(violation_type_id, violation_code_manual, violation_title_manual);
 
-    const result = await pool.query(`
+    await client.query('BEGIN');
+
+    const result = await client.query(`
       INSERT INTO sdk_meeting_decisions
         (meeting_id, violation_type_id, violation_code_snapshot, violation_title_snapshot, game_id, tournament_team_id, target_type,
          tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
-         penalty_amount, penalty_minutes, penalty_logic, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         penalty_amount, penalty_minutes, penalty_logic, team_penalty_mode, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING id
     `, [
-      meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, target_type || 'player',
-      target_type === 'player' ? tournament_roster_id : null,
-      target_type === 'staff' ? tournament_team_role_id : null,
-      decision, safePenaltyGames, safeMandatoryGames, safeAdditionalGames, penalty_amount || null, penalty_minutes || null,
-      (safePenaltyGames && penalty_amount) ? (penalty_logic || 'and') : null, req.user.id
+      meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
+      v.targetType === 'player' ? tournament_roster_id : null,
+      v.targetType === 'staff' ? tournament_team_role_id : null,
+      decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
+      v.penaltyLogic, v.teamPenaltyMode, req.user.id
     ]);
 
+    if (v.teamPenaltyMode === 'split' && decision === 'punish') {
+      await syncDecisionMembers(client, {
+        decisionId: result.rows[0].id,
+        meetingId,
+        tournamentTeamId: tournament_team_id,
+        memberUserIds: member_user_ids,
+        totalAmount: v.penaltyAmount,
+        reason: buildDecisionReason(violationSnapshot)
+      });
+    }
+
+    await client.query('COMMIT');
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Ошибка создания решения СДК:', err);
     res.status(500).json({ success: false, error: 'Ошибка сохранения' });
+  } finally {
+    client.release();
   }
 };
 
 export const updateSdkMeetingDecision = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     const {
-      violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id, target_type,
-      tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
-      penalty_amount, penalty_minutes, penalty_logic, penalty_amount_paid, status
+      violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id,
+      tournament_roster_id, tournament_team_role_id, decision, penalty_minutes,
+      penalty_amount_paid, status, member_user_ids
     } = req.body;
 
     if ((!violation_type_id && !violation_title_manual) || !tournament_team_id || !decision) {
       return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
     }
 
-    // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
-    const safePenaltyGames = target_type === 'team' ? null : (penalty_games || null);
-    const safeMandatoryGames = target_type === 'team' ? null : (mandatory_games || null);
-    const safeAdditionalGames = target_type === 'team' ? null : (additional_games || null);
-
+    const v = normalizeDecisionBody(req.body);
     const violationSnapshot = await getViolationSnapshot(violation_type_id, violation_code_manual, violation_title_manual);
 
-    await pool.query(`
+    await client.query('BEGIN');
+
+    const meetingRes = await client.query('SELECT meeting_id FROM sdk_meeting_decisions WHERE id = $1', [id]);
+    if (meetingRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Решение не найдено' });
+    }
+
+    await client.query(`
       UPDATE sdk_meeting_decisions
       SET violation_type_id = $1, violation_code_snapshot = $2, violation_title_snapshot = $3, game_id = $4, tournament_team_id = $5, target_type = $6,
           tournament_roster_id = $7, tournament_team_role_id = $8, decision = $9, penalty_games = $10, mandatory_games = $11, additional_games = $12,
-          penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17
-      WHERE id = $18
+          penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17, team_penalty_mode = $18
+      WHERE id = $19
     `, [
-      violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, target_type || 'player',
-      target_type === 'player' ? tournament_roster_id : null,
-      target_type === 'staff' ? tournament_team_role_id : null,
-      decision, safePenaltyGames, safeMandatoryGames, safeAdditionalGames, penalty_amount || null, penalty_minutes || null,
-      (safePenaltyGames && penalty_amount) ? (penalty_logic || 'and') : null,
-      penalty_amount_paid || false, status || 'active', id
+      violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
+      v.targetType === 'player' ? tournament_roster_id : null,
+      v.targetType === 'staff' ? tournament_team_role_id : null,
+      decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
+      v.penaltyLogic, penalty_amount_paid || false, status || 'active', v.teamPenaltyMode, id
     ]);
+
+    // Список участников передаём только когда решение действительно делится: в остальных
+    // случаях (сменили режим, оправдали) прежние доли надо убрать вместе с их наказаниями.
+    const keepMembers = v.teamPenaltyMode === 'split' && decision === 'punish';
+    await syncDecisionMembers(client, {
+      decisionId: id,
+      meetingId: meetingRes.rows[0].meeting_id,
+      tournamentTeamId: tournament_team_id,
+      memberUserIds: keepMembers ? member_user_ids : [],
+      totalAmount: v.penaltyAmount,
+      reason: buildDecisionReason(violationSnapshot)
+    });
+
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Ошибка обновления решения СДК:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сохранения' });
+  } finally {
+    client.release();
+  }
+};
+
+export const togglePaidSdkDecisionMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const memberRes = await pool.query('SELECT disqualification_id FROM sdk_decision_members WHERE id = $1', [id]);
+    if (memberRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Участник не найден' });
+    }
+    const dqId = memberRes.rows[0].disqualification_id;
+    if (!dqId) {
+      return res.status(409).json({ success: false, error: 'У участника нет связанного наказания' });
+    }
+
+    // Ledger (disqualifications) — источник истины: BEFORE-триггер disqualification_auto_complete
+    // сам переведёт долю в "Отбыто", как только она оплачена.
+    await pool.query(`
+      UPDATE disqualifications SET penalty_amount_paid = NOT penalty_amount_paid, updated_at = NOW()
+      WHERE id = $1
+    `, [dqId]);
 
     res.json({ success: true });
   } catch (err) {
-    console.error('Ошибка обновления решения СДК:', err);
+    console.error('Ошибка отметки оплаты доли участника:', err);
     res.status(500).json({ success: false, error: 'Ошибка сохранения' });
   }
 };
@@ -710,10 +999,21 @@ export const deleteSdkMeetingDecision = async (req, res) => {
     }
     const { disqualification_id } = decRes.rows[0];
 
+    // Доли участников (командный штраф с делением) — такие же наказания в ledger,
+    // их надо снять вместе с решением, иначе останутся висеть без источника
+    const memberDqRes = await client.query(
+      'SELECT disqualification_id FROM sdk_decision_members WHERE decision_id = $1 AND disqualification_id IS NOT NULL',
+      [id]
+    );
+
     await client.query('BEGIN');
     await client.query('DELETE FROM sdk_meeting_decisions WHERE id = $1', [id]);
     if (disqualification_id) {
       await client.query('DELETE FROM disqualifications WHERE id = $1', [disqualification_id]);
+    }
+    if (memberDqRes.rows.length > 0) {
+      await client.query('DELETE FROM disqualifications WHERE id = ANY($1::int[])',
+        [memberDqRes.rows.map(r => r.disqualification_id)]);
     }
     await client.query('COMMIT');
 

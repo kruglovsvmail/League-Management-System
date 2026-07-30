@@ -385,6 +385,16 @@ const getLeagueIdFromContext = async (req) => {
     if (res.rows.length > 0) return res.rows[0].league_id;
   }
 
+  if (req.originalUrl.includes('/sdk/decision-members') && req.params.id) {
+    const res = await pool.query(`
+      SELECT m.league_id FROM sdk_decision_members dm
+      JOIN sdk_meeting_decisions d ON dm.decision_id = d.id
+      JOIN sdk_meetings m ON d.meeting_id = m.id
+      WHERE dm.id = $1
+    `, [req.params.id]);
+    if (res.rows.length > 0) return res.rows[0].league_id;
+  }
+
   if (req.originalUrl.includes('/sdk/meeting-members') && req.params.id) {
     const res = await pool.query(`
       SELECT m.league_id FROM sdk_meeting_members mm

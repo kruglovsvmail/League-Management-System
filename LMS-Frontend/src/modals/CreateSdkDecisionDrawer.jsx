@@ -28,6 +28,8 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
   const [additionalGamesInput, setAdditionalGamesInput] = useState(0);
   const [additionalAmountInput, setAdditionalAmountInput] = useState('');
 
+  const [selectedMemberIds, setSelectedMemberIds] = useState([]);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
@@ -36,7 +38,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     targetTypeIndex, setTargetTypeIndex, targetType,
     divisions, selectedDivName, setSelectedDivName, divisionId,
     teams, selectedTeamName, setSelectedTeamName, tournamentTeamId,
-    filteredPlayers, filteredStaff,
+    filteredPlayers, filteredStaff, filteredMembers,
     searchQuery, setSearchQuery,
     selectedRosterId, setSelectedRosterId,
     selectedTeamRoleId, setSelectedTeamRoleId,
@@ -50,6 +52,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
       setGames([]); setGameId(''); setViolationTypeId(''); setPenaltyMinutes('');
       setIsManualViolation(false); setManualViolationTitle('');
       setMandatoryGamesInput(0); setAdditionalGamesInput(0); setAdditionalAmountInput('');
+      setSelectedMemberIds([]);
       return;
     }
     if (seasonId) {
@@ -68,26 +71,60 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     const vt = violationTypes.find(v => String(v.id) === String(id));
     if (vt) {
       setMandatoryGamesInput(Number(vt.mandatory_games_min) > 0 ? Number(vt.mandatory_games_min) : 0);
-      setAdditionalGamesInput(Number(vt.additional_games) > 0 ? Number(vt.additional_games) : 0);
+      setAdditionalGamesInput(Number(vt.additional_games_min) > 0 ? Number(vt.additional_games_min) : 0);
       setAdditionalAmountInput(vt.additional_amount_min != null ? String(Math.round(Number(vt.additional_amount_min))) : '');
       setPenaltyMinutes(vt.penalty_minutes_note || '');
+      // Командный пункт наказывает команду по определению — цель переключаем сами,
+      // чтобы нельзя было случайно повесить его на конкретного человека
+      if (vt.is_team_penalty) setTargetTypeIndex(2);
     }
   };
 
   const selectedViolation = violationTypes.find(v => String(v.id) === String(violationTypeId));
+
+  // Пункты справочника, кроме заголовков — только их можно выбрать как нарушение
+  const violationOptions = violationTypes.map(v => (
+    v.row_type === 'violation' || !v.row_type
+      ? { value: v.id, prefix: v.code, label: v.title }
+      : { type: v.row_type, label: v.title }
+  ));
+
+  const teamPenaltyMode = targetType === 'team' && selectedViolation?.is_team_penalty
+    ? (selectedViolation.split_among_members ? 'split' : 'whole')
+    : null;
+  const isSplitMode = teamPenaltyMode === 'split' && decisions[decisionIndex] === 'punish';
 
   const teamGames = games.filter(g => g.home_team_id === teams.find(t => t.name === selectedTeamName)?.team_id || g.away_team_id === teams.find(t => t.name === selectedTeamName)?.team_id);
 
   // Для цели "команда" игровое наказание в минутах относится к конкретному игроку, а не к команде
   useEffect(() => {
     if (targetType === 'team') { setPenaltyMinutes(''); }
+    if (targetType !== 'team') { setSelectedMemberIds([]); }
   }, [targetType]);
+
+  useEffect(() => { setSelectedMemberIds([]); }, [tournamentTeamId]);
+
+  const toggleMember = (userId) => {
+    setSelectedMemberIds(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+  };
+
+  const toggleAllMembers = (checked) => {
+    const visibleIds = filteredMembers.map(m => m.player_id);
+    setSelectedMemberIds(prev => checked
+      ? [...new Set([...prev, ...visibleIds])]
+      : prev.filter(id => !visibleIds.includes(id)));
+  };
+
+  const totalAmount = additionalAmountInput === '' ? 0 : Number(additionalAmountInput);
+  const shareHint = selectedMemberIds.length > 0 && totalAmount > 0
+    ? `${selectedMemberIds.length} чел. × ${Math.round(totalAmount / selectedMemberIds.length).toLocaleString('ru-RU')} ₽`
+    : 'Отметьте, между кем делится сумма';
 
   const penaltyInputs = { targetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput };
   const isPenaltyValid = decisions[decisionIndex] !== 'punish' || arePenaltyFieldsValid(penaltyInputs);
   const isViolationValid = isManualViolation ? !!manualViolationTitle.trim() : !!violationTypeId;
   const isFormValid = tournamentTeamId && isViolationValid && isPenaltyValid && (
-    targetType === 'team' ? true :
+    targetType === 'team' ? (!isSplitMode || selectedMemberIds.length > 0) :
     targetType === 'staff' ? !!selectedTeamRoleId :
     !!selectedRosterId
   );
@@ -117,7 +154,9 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
           additional_games: computed.additionalGames,
           penalty_amount: computed.amount,
           penalty_minutes: targetType !== 'team' ? (penaltyMinutes || null) : null,
-          penalty_logic: computed.logic
+          penalty_logic: computed.logic,
+          team_penalty_mode: teamPenaltyMode,
+          member_user_ids: isSplitMode ? selectedMemberIds : []
         })
       });
       const data = await res.json();
@@ -163,7 +202,9 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
           <div className="w-full flex-1 flex flex-col p-6 overflow-hidden border-r border-graphite/10 bg-white">
             <RosterPickerPanel
               targetType={targetType}
-              teamMessage="Решение будет вынесено на всю команду — выбирать конкретного человека не нужно."
+              teamMessage={teamPenaltyMode === 'whole'
+                ? 'Штраф на всю команду: ограничение получат все участники состава, кроме тренера и главного тренера — до полной оплаты суммы.'
+                : 'Решение будет вынесено на всю команду — выбирать конкретного человека не нужно.'}
               divisionId={divisionId}
               tournamentTeamId={tournamentTeamId}
               isLoadingPlayers={isLoadingPlayers}
@@ -175,6 +216,12 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
               setSelectedRosterId={setSelectedRosterId}
               selectedTeamRoleId={selectedTeamRoleId}
               setSelectedTeamRoleId={setSelectedTeamRoleId}
+              isMultiSelect={isSplitMode}
+              filteredMembers={filteredMembers}
+              selectedUserIds={selectedMemberIds}
+              onToggleUser={toggleMember}
+              onToggleAll={toggleAllMembers}
+              shareHint={shareHint}
             />
           </div>
 
@@ -196,7 +243,17 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                     <Input placeholder="Например: Неспортивное поведение" value={manualViolationTitle} onChange={e => setManualViolationTitle(e.target.value)} />
                   </div>
                 ) : (
-                  <Select options={violationTypes.map(v => ({ value: v.id, label: `${v.code}. ${v.title}` }))} value={violationTypeId} onChange={handleSelectViolation} isSearchable wrapText />
+                  <Select options={violationOptions} value={violationTypeId} onChange={handleSelectViolation} isSearchable wrapText />
+                )}
+
+                {teamPenaltyMode && (
+                  <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-status-pending/10 border border-status-pending/20 animate-zoom-in">
+                    <span className="text-[11px] font-bold text-status-pending leading-snug">
+                      {teamPenaltyMode === 'split'
+                        ? 'Штраф команды делится поровну между отмеченными участниками — каждый освобождается, оплатив свою долю.'
+                        : 'Штраф на команду целиком — ограничение для всех участников, кроме тренера и главного тренера.'}
+                    </span>
+                  </div>
                 )}
               </div>
 

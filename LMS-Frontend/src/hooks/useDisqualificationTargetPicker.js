@@ -111,11 +111,23 @@ export function useDisqualificationTargetPicker({ isOpen, seasonId }) {
     return fullName.includes(searchQuery.toLowerCase());
   });
 
+  // Полный состав команды одним списком (игроки + руководство, включая тренеров) — нужен
+  // для командного штрафа с делением: сумма делится между отмеченными людьми.
+  const allMembers = [
+    ...players.map(p => ({ ...p, member_kind: 'player' })),
+    ...staff.filter(s => !players.some(p => p.player_id === s.player_id)).map(s => ({ ...s, member_kind: 'staff' }))
+  ];
+
+  const filteredMembers = allMembers.filter(m => {
+    const fullName = `${m.last_name || ''} ${m.first_name || ''} ${m.middle_name || ''}`.toLowerCase();
+    return fullName.includes(searchQuery.toLowerCase());
+  });
+
   return {
     targetTypeIndex, setTargetTypeIndex, targetType,
     divisions, selectedDivName, setSelectedDivName, divisionId,
     teams, selectedTeamName, setSelectedTeamName, tournamentTeamId,
-    players, staff, filteredPlayers, filteredStaff,
+    players, staff, filteredPlayers, filteredStaff, allMembers, filteredMembers,
     searchQuery, setSearchQuery,
     selectedRosterId, setSelectedRosterId,
     selectedTeamRoleId, setSelectedTeamRoleId,

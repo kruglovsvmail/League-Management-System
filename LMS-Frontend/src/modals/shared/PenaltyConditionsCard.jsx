@@ -102,7 +102,7 @@ export function PenaltyConditionsCard({
           <div className="flex flex-col gap-0.5">
             <span className="text-[13px] font-bold text-graphite">Доп. матчи</span>
             <span className="text-[10px] text-graphite-light">
-              {formatRangeHint(selectedViolation?.additional_games, selectedViolation?.additional_games, '', '...') || 'Не указано в справочнике'}
+              {formatRangeHint(selectedViolation?.additional_games_min, selectedViolation?.additional_games_max, '', '...') || 'Не указано в справочнике'}
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">

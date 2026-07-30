@@ -74,6 +74,22 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
     }
   };
 
+  // В режиме "штраф делится" оплата отмечается по каждому участнику отдельно —
+  // ограничение снимается персонально, как только человек закрыл свою долю
+  const handleToggleMemberPaid = async (member) => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/sdk/decision-members/${member.id}/toggle-paid`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      const data = await res.json();
+      if (data.success) fetchDecisions();
+      else setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+    } catch (err) {
+      setToast({ title: 'Ошибка', message: 'Сбой сохранения', type: 'error' });
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!decisionToDelete) return;
     setIsDeleting(true);
@@ -136,6 +152,11 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
             const gamesRemaining = !hasSplit && d.penalty_games && d.dq_games_assigned != null
               ? Math.max(d.dq_games_assigned - (d.dq_games_served || 0), 0)
               : null;
+
+            // Командный штраф с делением: общей записи нет, оплата идёт по долям участников
+            const isSplitPenalty = d.team_penalty_mode === 'split';
+            const members = isSplitPenalty ? (d.members || []) : [];
+            const paidMembersCount = members.filter(m => m.paid).length;
 
             return (
               <div key={d.id} className="p-4 bg-white/40 border border-graphite/10 rounded-md flex flex-col gap-3">
@@ -207,7 +228,12 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                       {isPunish && (hasSplit || gamesText) && amountText && (
                         <span className="text-[10px] font-bold text-graphite-light/60 uppercase">{d.penalty_logic === 'or' ? 'или' : 'и'}</span>
                       )}
-                      {isPunish && amountText && (
+                      {isPunish && amountText && isSplitPenalty && (
+                        <Pill className="bg-status-pending/10 text-status-pending border border-status-pending/20">
+                          {amountText} на {members.length} чел. · оплатили {paidMembersCount} из {members.length}
+                        </Pill>
+                      )}
+                      {isPunish && amountText && !isSplitPenalty && (
                         <button
                           onClick={() => canManage && handleTogglePaid(d)}
                           disabled={!canManage}
@@ -218,6 +244,9 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                           </Pill>
                         </button>
                       )}
+                      {isPunish && d.team_penalty_mode === 'whole' && (
+                        <span className="text-[10px] font-bold text-graphite-light/60 uppercase">на всю команду</span>
+                      )}
                     </div>
 
                     {canManage && (
@@ -225,6 +254,26 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                         <Icon name="delete" className="w-4 h-4" />
                       </button>
                     )}
+                  </div>
+                )}
+
+                {isPunish && members.length > 0 && (
+                  <div className="flex flex-col gap-2 pt-2 border-t border-graphite/10">
+                    <span className="text-[10px] font-black text-graphite-light uppercase tracking-wide">Доли участников</span>
+                    <div className="flex flex-wrap gap-2">
+                      {members.map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => canManage && handleToggleMemberPaid(m)}
+                          disabled={!canManage}
+                          className={canManage ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'}
+                        >
+                          <Pill className={m.paid ? 'bg-status-accepted/10 text-status-accepted border border-status-accepted/20' : 'bg-status-pending/10 text-status-pending border border-status-pending/20'}>
+                            {m.full_name || `ID ${m.user_id}`} · {Math.round(Number(m.share_amount))} ₽
+                          </Pill>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

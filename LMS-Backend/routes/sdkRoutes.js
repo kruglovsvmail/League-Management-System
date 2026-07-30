@@ -4,11 +4,12 @@ import upload from '../config/upload.js';
 import {
   getSdkVenues, createSdkVenue, deleteSdkVenue,
   getSdkCommissionMembers, createSdkCommissionMember, deleteSdkCommissionMember,
-  getSdkViolationTypes, createSdkViolationType, deleteSdkViolationType,
+  getSdkViolationTypes, createSdkViolationType, updateSdkViolationType, reorderSdkViolationTypes, deleteSdkViolationType,
   getSdkMeetings, getSdkMeeting, createSdkMeeting, updateSdkMeeting, deleteSdkMeeting,
   getSdkMeetingMembers, addSdkMeetingMember, removeSdkMeetingMember,
   getSdkMeetingDocuments, uploadSdkMeetingDocuments, deleteSdkMeetingDocument,
-  getSdkMeetingDecisions, createSdkMeetingDecision, updateSdkMeetingDecision, togglePaidSdkMeetingDecision, deleteSdkMeetingDecision
+  getSdkMeetingDecisions, createSdkMeetingDecision, updateSdkMeetingDecision, togglePaidSdkMeetingDecision, deleteSdkMeetingDecision,
+  togglePaidSdkDecisionMember
 } from '../controllers/sdkController.js';
 
 const router = express.Router();
@@ -27,6 +28,8 @@ router.delete('/sdk/commission-members/:id', requirePermission('SDK_REFERENCES_M
 // СПРАВОЧНИК НАРУШЕНИЙ (по сезонам)
 router.get('/seasons/:seasonId/sdk/violation-types', requirePermission('SDK_REFERENCES_VIEW'), getSdkViolationTypes);
 router.post('/seasons/:seasonId/sdk/violation-types', requirePermission('SDK_REFERENCES_MANAGE'), createSdkViolationType);
+router.put('/seasons/:seasonId/sdk/violation-types/reorder', requirePermission('SDK_REFERENCES_MANAGE'), reorderSdkViolationTypes);
+router.put('/sdk/violation-types/:id', requirePermission('SDK_REFERENCES_MANAGE'), updateSdkViolationType);
 router.delete('/sdk/violation-types/:id', requirePermission('SDK_VIOLATION_TYPES_DELETE'), deleteSdkViolationType);
 
 // ЗАСЕДАНИЯ
@@ -52,5 +55,6 @@ router.post('/sdk/meetings/:meetingId/decisions', requirePermission('SDK_MEETING
 router.put('/sdk/meeting-decisions/:id', requirePermission('SDK_MEETINGS_MANAGE'), updateSdkMeetingDecision);
 router.patch('/sdk/meeting-decisions/:id/toggle-paid', requirePermission('SDK_MEETINGS_MANAGE'), togglePaidSdkMeetingDecision);
 router.delete('/sdk/meeting-decisions/:id', requirePermission('SDK_MEETINGS_MANAGE'), deleteSdkMeetingDecision);
+router.patch('/sdk/decision-members/:id/toggle-paid', requirePermission('SDK_MEETINGS_MANAGE'), togglePaidSdkDecisionMember);
 
 export default router;

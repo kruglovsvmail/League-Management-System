@@ -46,8 +46,8 @@ export const getTournamentTeamRoster = async (req, res) => {
                 tm_photo.photo_url as team_member_photo_url,
                 lq.short_name as qualification_short_name,
 
-                -- Оптимизированный сбор активных дисквалификаций (по игроку в рамках лиги)
-                COALESCE(dq.active_disqualifications, '[]'::json) as active_disqualifications
+                -- Личные наказания + командный штраф (ограничивает всех, кроме тренеров)
+                user_active_disqualifications(tr.player_id, $2) as active_disqualifications
 
             FROM tournament_rosters tr
             JOIN users u ON tr.player_id = u.id
@@ -61,29 +61,6 @@ export const getTournamentTeamRoster = async (req, res) => {
                 WHERE user_id = u.id AND team_id = tt.team_id AND photo_url IS NOT NULL
                 ORDER BY id DESC LIMIT 1
             ) tm_photo ON true
-
-            -- Оптимизация: собираем дисквалификации в один проход
-            LEFT JOIN (
-                SELECT
-                    d.user_id,
-                    json_agg(
-                        json_build_object(
-                            'status', d.status,
-                            'penalty_type', d.penalty_type,
-                            'games_assigned', d.games_assigned,
-                            'games_served', d.games_served,
-                            'end_date', d.end_date,
-                            'reason', d.reason,
-                            'mandatory_games', d.mandatory_games,
-                            'additional_games', d.additional_games,
-                            'penalty_amount', d.penalty_amount,
-                            'penalty_amount_paid', d.penalty_amount_paid
-                        )
-                    ) as active_disqualifications
-                FROM disqualifications d
-                WHERE d.status = 'active' AND d.league_id = $2
-                GROUP BY d.user_id
-            ) dq ON dq.user_id = tr.player_id
 
             WHERE tr.tournament_team_id = $1
             ORDER BY u.last_name, u.first_name
@@ -101,23 +78,7 @@ export const getTournamentTeamRoster = async (req, res) => {
                 u.avatar_url as user_avatar_url,
                 tm.photo_url as team_member_photo_url,
                 string_agg(ttr.tournament_role, ', ') as roles,
-                COALESCE(
-                    (SELECT json_agg(json_build_object(
-                        'status', d.status,
-                        'penalty_type', d.penalty_type,
-                        'games_assigned', d.games_assigned,
-                        'games_served', d.games_served,
-                        'end_date', d.end_date,
-                        'reason', d.reason,
-                        'mandatory_games', d.mandatory_games,
-                        'additional_games', d.additional_games,
-                        'penalty_amount', d.penalty_amount,
-                        'penalty_amount_paid', d.penalty_amount_paid
-                    ))
-                    FROM disqualifications d
-                    WHERE d.user_id = ttr.user_id AND d.league_id = $2 AND d.status = 'active'),
-                    '[]'::json
-                ) as active_disqualifications
+                user_active_disqualifications(ttr.user_id, $2) as active_disqualifications
             FROM tournament_team_roles ttr
             JOIN users u ON ttr.user_id = u.id
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id

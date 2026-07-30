@@ -946,16 +946,9 @@ export const getGameRoster = async (req, res) => {
         `, [gameId]);
         const leagueId = leagueRes.rows[0]?.league_id || null;
 
-        const dqSubquery = (userIdCol) => `(
-            SELECT COALESCE(json_agg(json_build_object(
-                'reason', d.reason, 'penalty_type', d.penalty_type,
-                'games_assigned', d.games_assigned, 'games_served', d.games_served, 'end_date', d.end_date,
-                'mandatory_games', d.mandatory_games, 'additional_games', d.additional_games,
-                'penalty_amount', d.penalty_amount, 'penalty_amount_paid', d.penalty_amount_paid
-            )), '[]'::json)
-            FROM disqualifications d
-            WHERE d.user_id = ${userIdCol} AND d.league_id = $3 AND d.status = 'active'
-        ) as active_disqualifications`;
+        // Личные наказания и командный штраф (он ограничивает всех, кроме тренеров)
+        // собирает одна SQL-функция — чтобы правило было одинаковым во всех местах.
+        const dqSubquery = (userIdCol) => `user_active_disqualifications(${userIdCol}, $3) as active_disqualifications`;
 
         const [tRosterRes, gRosterRes, staffRes] = await Promise.all([
             pool.query(`
@@ -1030,12 +1023,12 @@ export const saveGameRoster = async (req, res) => {
             const playerIds = roster.map(p => p.player_id);
             const dqCheck = await client.query(`
                 SELECT u.first_name, u.last_name
-                FROM disqualifications d
-                JOIN users u ON d.user_id = u.id
+                FROM users u
                 JOIN games g ON g.id = $1
                 JOIN divisions div ON g.division_id = div.id
                 JOIN seasons s ON div.season_id = s.id
-                WHERE d.user_id = ANY($2::int[]) AND d.league_id = s.league_id AND d.status = 'active'
+                WHERE u.id = ANY($2::int[])
+                  AND json_array_length(user_active_disqualifications(u.id, s.league_id)) > 0
             `, [gameId, playerIds]);
 
             if (dqCheck.rows.length > 0) {
