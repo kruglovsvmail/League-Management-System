@@ -145,6 +145,7 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
               value={getValueForSelect(key)}
               onChange={(val) => handleSelectChange(key, val)}
               disabled={readOnly}
+              isSearchable
             />
           </div>
         </div>

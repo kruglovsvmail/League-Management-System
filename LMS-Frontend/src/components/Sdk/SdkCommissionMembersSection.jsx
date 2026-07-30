@@ -43,6 +43,7 @@ export function SdkCommissionMembersSection({ seasonId, setToast }) {
 
   const [memberToDelete, setMemberToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [savingPermanentId, setSavingPermanentId] = useState(null);
 
   const fetchMembers = async () => {
     if (!seasonId) { setIsLoading(false); return; }
@@ -154,11 +155,33 @@ export function SdkCommissionMembersSection({ seasonId, setToast }) {
     }
   };
 
+  // Штатный член комиссии автоматически попадает в явку каждого нового заседания сезона
+  const handleTogglePermanent = async (row) => {
+    setSavingPermanentId(row.id);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/sdk/commission-members/${row.id}/permanent`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        body: JSON.stringify({ is_permanent: !row.is_permanent })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMembers(prev => prev.map(m => (m.id === row.id ? { ...m, is_permanent: !m.is_permanent } : m)));
+      } else {
+        setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+      }
+    } catch (err) {
+      setToast({ title: 'Ошибка', message: 'Сбой сохранения', type: 'error' });
+    } finally {
+      setSavingPermanentId(null);
+    }
+  };
+
   const columns = [
     { label: 'ФИО', sortKey: 'full_name', render: (row) => (
       <div className="flex items-center gap-3">
         {row.user_id && (
-          <div className="w-[32px] h-[32px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
+          <div className="w-[32px] h-[32px] rounded-md overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
             <img src={getImageUrl(row.avatar_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="avatar" />
           </div>
         )}
@@ -167,6 +190,19 @@ export function SdkCommissionMembersSection({ seasonId, setToast }) {
     )},
     { label: 'Должность', sortKey: 'position', render: (row) => <span className="text-graphite-light">{row.position || '-'}</span> },
     { label: 'Телефон', width: 'w-[160px]', render: (row) => <span className="font-semibold text-graphite-light">{formatPhoneDisplay(row.phone)}</span> },
+    { label: 'Штатный', width: 'w-[110px]', align: 'center', render: (row) => (
+      <button
+        type="button"
+        onClick={() => canManage && savingPermanentId !== row.id && handleTogglePermanent(row)}
+        disabled={!canManage}
+        title="Штатные автоматически попадают в явку каждого нового заседания сезона"
+        className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[6px] border-2 transition-colors ${
+          row.is_permanent ? 'bg-orange border-orange' : 'border-graphite/30 bg-white'
+        } ${canManage ? 'cursor-pointer hover:border-orange' : 'cursor-default opacity-70'} ${savingPermanentId === row.id ? 'opacity-50' : ''}`}
+      >
+        {row.is_permanent && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><polyline points="20 6 9 17 4 12" /></svg>}
+      </button>
+    )},
     { label: '', width: 'w-12', align: 'center', render: (row) => {
         if (!canManage) return null;
         return (
@@ -214,7 +250,7 @@ export function SdkCommissionMembersSection({ seasonId, setToast }) {
 
               {foundUser && (
                 <div className="flex items-center gap-3 bg-white/40 border border-graphite/10 rounded-md p-3 animate-zoom-in">
-                  <div className="w-[36px] h-[36px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
+                  <div className="w-[36px] h-[36px] rounded-md overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
                     <img src={getImageUrl(foundUser.avatar_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="avatar" />
                   </div>
                   <span className="font-bold text-[13px] text-graphite">{`${foundUser.last_name} ${foundUser.first_name}`}</span>

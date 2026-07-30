@@ -68,12 +68,12 @@ export const getSdkCommissionMembers = async (req, res) => {
   try {
     const { seasonId } = req.params;
     const result = await pool.query(
-      `SELECT cm.id, cm.season_id, cm.full_name, cm.position, cm.created_at,
+      `SELECT cm.id, cm.season_id, cm.full_name, cm.position, cm.is_permanent, cm.created_at,
               cm.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url
        FROM sdk_commission_members cm
        LEFT JOIN users u ON cm.user_id = u.id
        WHERE cm.season_id = $1
-       ORDER BY cm.full_name ASC`,
+       ORDER BY cm.is_permanent DESC, cm.full_name ASC`,
       [seasonId]
     );
     res.json({ success: true, data: result.rows });
@@ -103,6 +103,27 @@ export const createSdkCommissionMember = async (req, res) => {
       return res.status(409).json({ success: false, error: 'Этот пользователь уже добавлен в комиссию в этом сезоне' });
     }
     console.error('Ошибка создания участника СДК:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сохранения' });
+  }
+};
+
+// Штатность — признак сезона, а не отдельного заседания: такие члены комиссии
+// автоматически попадают в явку каждого нового заседания этого сезона.
+export const setSdkCommissionMemberPermanent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_permanent } = req.body;
+
+    const result = await pool.query(
+      `UPDATE sdk_commission_members SET is_permanent = $1 WHERE id = $2 RETURNING id, is_permanent`,
+      [!!is_permanent, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Участник не найден' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    console.error('Ошибка изменения штатности участника СДК:', err);
     res.status(500).json({ success: false, error: 'Ошибка сохранения' });
   }
 };
@@ -387,6 +408,16 @@ export const createSdkMeeting = async (req, res) => {
       held_at, period_start, period_end, status || null, req.user.id
     ]);
 
+    // Штатных членов комиссии сезона сразу отмечаем в явке нового заседания —
+    // ФИО фиксируем снимком, как и при ручном добавлении
+    await pool.query(`
+      INSERT INTO sdk_meeting_members (meeting_id, commission_member_id, full_name_snapshot)
+      SELECT $1, cm.id, cm.full_name
+      FROM sdk_commission_members cm
+      WHERE cm.season_id = $2 AND cm.is_permanent = true
+      ON CONFLICT ON CONSTRAINT sdk_meeting_members_unique DO NOTHING
+    `, [result.rows[0].id, season_id]);
+
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
     console.error('Ошибка создания заседания СДК:', err);
@@ -427,18 +458,30 @@ export const deleteSdkMeeting = async (req, res) => {
 
     // Дисквалификации, назначенные решениями этого заседания — их тоже нужно снять,
     // иначе после удаления заседания они останутся активными без какой-либо привязки
-    const disqRes = await client.query(
-      'SELECT disqualification_id FROM sdk_meeting_decisions WHERE meeting_id = $1 AND disqualification_id IS NOT NULL',
-      [id]
-    );
-    const disqualificationIds = disqRes.rows.map(r => r.disqualification_id);
+    // Сюда попадают и обычные наказания решений, и доли участников командного штрафа
+    // с делением (sdk_decision_members) — они тоже живут в ledger отдельными записями
+    const disqRes = await client.query(`
+      SELECT dec.disqualification_id AS id
+      FROM sdk_meeting_decisions dec
+      WHERE dec.meeting_id = $1 AND dec.disqualification_id IS NOT NULL
+      UNION
+      SELECT dm.disqualification_id
+      FROM sdk_decision_members dm
+      JOIN sdk_meeting_decisions dec ON dec.id = dm.decision_id
+      WHERE dec.meeting_id = $1 AND dm.disqualification_id IS NOT NULL
+    `, [id]);
+    const disqualificationIds = disqRes.rows.map(r => r.id);
 
     await client.query('BEGIN');
+    // Порядок принципиален: сперва заседание. Если удалить наказание раньше, внешний ключ
+    // решения (ON DELETE SET NULL) обнулит disqualification_id, и этот UPDATE поднимет триггер
+    // sdk_sync_disqualification — и тот заведёт наказание заново, уже без привязки к заседанию.
+    // Каскадом удалятся: sdk_meeting_members, sdk_meeting_documents,
+    // sdk_meeting_decisions и связанные с ними sdk_decision_members
+    await client.query('DELETE FROM sdk_meetings WHERE id = $1', [id]);
     if (disqualificationIds.length > 0) {
       await client.query('DELETE FROM disqualifications WHERE id = ANY($1::int[])', [disqualificationIds]);
     }
-    // Каскадом удалятся: sdk_meeting_members, sdk_meeting_documents, sdk_meeting_decisions
-    await client.query('DELETE FROM sdk_meetings WHERE id = $1', [id]);
     await client.query('COMMIT');
 
     for (const doc of docsRes.rows) {
@@ -623,7 +666,7 @@ export const getSdkMeetingDecisions = async (req, res) => {
              dec.target_type, dec.tournament_roster_id, dec.tournament_team_role_id, dec.decision, dec.penalty_games,
              dec.mandatory_games, dec.additional_games,
              dec.penalty_amount, dec.penalty_minutes, dec.penalty_logic, dec.penalty_amount_paid,
-             dec.status, dec.disqualification_id, dec.team_penalty_mode, dec.created_at,
+             dec.status, dec.disqualification_id, dec.team_penalty_mode, dec.hearing_basis, dec.other_person_name, dec.created_at,
              COALESCE((
                SELECT json_agg(json_build_object(
                    'id', dm.id, 'user_id', dm.user_id, 'full_name', dm.full_name_snapshot,
@@ -777,17 +820,21 @@ const normalizeDecisionBody = (body) => {
     ? body.team_penalty_mode
     : null;
 
-  // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
-  const penaltyGames = targetType === 'team' ? null : (body.penalty_games || null);
+  // Для команды и "иного лица" допустим только денежный штраф: счётчика матчей у команды нет,
+  // а иное лицо не заявлено ни за одну команду — пропускать матчи ему нечего.
+  const moneyOnly = targetType === 'team' || targetType === 'other';
+  const penaltyGames = moneyOnly ? null : (body.penalty_games || null);
 
   return {
     targetType,
     teamPenaltyMode,
     penaltyGames,
-    mandatoryGames: targetType === 'team' ? null : (body.mandatory_games || null),
-    additionalGames: targetType === 'team' ? null : (body.additional_games || null),
+    mandatoryGames: moneyOnly ? null : (body.mandatory_games || null),
+    additionalGames: moneyOnly ? null : (body.additional_games || null),
     penaltyAmount: body.penalty_amount || null,
-    penaltyLogic: (penaltyGames && body.penalty_amount) ? (body.penalty_logic || 'and') : null
+    penaltyLogic: (penaltyGames && body.penalty_amount) ? (body.penalty_logic || 'and') : null,
+    hearingBasis: body.hearing_basis?.trim() || null,
+    otherPersonName: targetType === 'other' ? (body.other_person_name?.trim() || null) : null
   };
 };
 
@@ -812,6 +859,9 @@ export const createSdkMeetingDecision = async (req, res) => {
     if (v.targetType === 'staff' && !tournament_team_role_id) {
       return res.status(400).json({ success: false, error: 'Не выбран представитель команды' });
     }
+    if (v.targetType === 'other' && !v.otherPersonName) {
+      return res.status(400).json({ success: false, error: 'Не указано, кто именно является нарушителем' });
+    }
     if (v.teamPenaltyMode === 'split' && decision === 'punish' && !(member_user_ids?.length > 0)) {
       return res.status(400).json({ success: false, error: 'Не выбраны участники, между которыми делится штраф' });
     }
@@ -826,15 +876,15 @@ export const createSdkMeetingDecision = async (req, res) => {
       INSERT INTO sdk_meeting_decisions
         (meeting_id, violation_type_id, violation_code_snapshot, violation_title_snapshot, game_id, tournament_team_id, target_type,
          tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
-         penalty_amount, penalty_minutes, penalty_logic, team_penalty_mode, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         penalty_amount, penalty_minutes, penalty_logic, team_penalty_mode, hearing_basis, other_person_name, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING id
     `, [
       meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
       v.targetType === 'player' ? tournament_roster_id : null,
       v.targetType === 'staff' ? tournament_team_role_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
-      v.penaltyLogic, v.teamPenaltyMode, req.user.id
+      v.penaltyLogic, v.teamPenaltyMode, v.hearingBasis, v.otherPersonName, req.user.id
     ]);
 
     if (v.teamPenaltyMode === 'split' && decision === 'punish') {
@@ -888,14 +938,16 @@ export const updateSdkMeetingDecision = async (req, res) => {
       UPDATE sdk_meeting_decisions
       SET violation_type_id = $1, violation_code_snapshot = $2, violation_title_snapshot = $3, game_id = $4, tournament_team_id = $5, target_type = $6,
           tournament_roster_id = $7, tournament_team_role_id = $8, decision = $9, penalty_games = $10, mandatory_games = $11, additional_games = $12,
-          penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17, team_penalty_mode = $18
-      WHERE id = $19
+          penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17, team_penalty_mode = $18,
+          hearing_basis = $19, other_person_name = $20
+      WHERE id = $21
     `, [
       violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
       v.targetType === 'player' ? tournament_roster_id : null,
       v.targetType === 'staff' ? tournament_team_role_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
-      v.penaltyLogic, penalty_amount_paid || false, status || 'active', v.teamPenaltyMode, id
+      v.penaltyLogic, penalty_amount_paid || false, status || 'active', v.teamPenaltyMode,
+      v.hearingBasis, v.otherPersonName, id
     ]);
 
     // Список участников передаём только когда решение действительно делится: в остальных

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
 import { Table } from '../../ui/Table2';
+import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
 import { Loader } from '../../ui/Loader';
 import { Modal } from '../../modals/Modal';
@@ -52,6 +53,7 @@ export function StaffTab({ setToast }) {
 
   const [staff, setStaff] = useState([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [staffQuery, setStaffQuery] = useState('');
   
   const [phoneRaw, setPhoneRaw] = useState('');
   const [foundUser, setFoundUser] = useState(null);
@@ -190,6 +192,13 @@ export function StaffTab({ setToast }) {
     return <AccessFallback variant="full" message="У вас нет прав для просмотра персонала лиги." />;
   }
 
+  // Ищем и по ФИО, и по названию роли — по тем же подписям, что человек видит в таблице
+  const query = staffQuery.trim().toLowerCase();
+  const filteredStaff = !query ? staff : staff.filter(row => {
+    const fullName = `${row.last_name || ''} ${row.first_name || ''} ${row.middle_name || ''}`.toLowerCase();
+    return fullName.includes(query) || getRolesDisplay(row.roles).toLowerCase().includes(query);
+  });
+
   const staffColumns = [
     { label: 'Фото', width: 'text-center w-16', render: (row) => (
         <div className="w-[40px] h-[40px] rounded-md overflow-hidden bg-graphite/5 border border-graphite/10 inline-block">
@@ -230,13 +239,34 @@ export function StaffTab({ setToast }) {
         
         {/* ЛЕВАЯ КОЛОНКА (ТАБЛИЦА) */}
         <div className="flex-1 w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[400px] relative order-2 lg:order-1">
-          <div className="flex justify-between items-center mb-6 pb-4 border-b border-graphite/10">
-            <div>
+          <div className="flex justify-between items-center gap-4 mb-6 pb-4 border-b border-graphite/10">
+            <div className="min-w-0">
               <h3 className="text-[16px] font-black uppercase text-graphite tracking-wide">Штат лиги</h3>
               <p className="text-[12px] font-medium text-graphite-light mt-1">Официальные лица и менеджмент</p>
             </div>
-            <div className="bg-graphite/5 text-graphite/60 px-3 py-1.5 rounded-md text-[13px] font-black">
-              {staff.length} чел.
+
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="relative">
+                <Input
+                  placeholder="Поиск по ФИО или роли"
+                  value={staffQuery}
+                  onChange={e => setStaffQuery(e.target.value)}
+                  className="w-[220px] pl-3 pr-8 py-2 text-[13px]"
+                />
+                {staffQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setStaffQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-graphite/40 hover:text-orange transition-colors text-[16px] leading-none"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <div className="bg-graphite/5 text-graphite/60 px-3 py-1.5 rounded-md text-[13px] font-black whitespace-nowrap">
+                {query ? `${filteredStaff.length} из ${staff.length}` : `${staff.length} чел.`}
+              </div>
             </div>
           </div>
 
@@ -247,10 +277,12 @@ export function StaffTab({ setToast }) {
           ) : null}
           
           <div className={`transition-opacity duration-300 ease-in-out ${isLoadingStaff ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
-            {staff.length > 0 ? (
-              <Table columns={staffColumns} data={staff} />
+            {filteredStaff.length > 0 ? (
+              <Table columns={staffColumns} data={filteredStaff} />
             ) : (
-              <div className="text-center py-20 text-graphite-light font-medium">Персонал лиги пока не назначен</div>
+              <div className="text-center py-20 text-graphite-light font-medium">
+                {staff.length === 0 ? 'Персонал лиги пока не назначен' : 'Никого не нашли по этому запросу'}
+              </div>
             )}
           </div>
         </div>
@@ -281,7 +313,7 @@ export function StaffTab({ setToast }) {
             {foundUser && (
               <div className="bg-white/40 border border-graphite/10 rounded-md p-5 flex flex-col gap-5 animate-zoom-in shadow-sm mt-2">
                 <div className="flex items-center gap-4 border-b border-graphite/10 pb-4">
-                  <div className="w-[50px] h-[50px] rounded-full overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
+                  <div className="w-[50px] h-[50px] rounded-lg overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
                     <img src={getImageUrl(foundUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex flex-col">
@@ -305,7 +337,7 @@ export function StaffTab({ setToast }) {
           {editModalUser && (
             <div className="flex flex-col gap-6 font-sans p-1">
                <div className="flex items-center gap-4 bg-graphite/5 p-4 rounded-md border border-graphite/10">
-                  <div className="w-[60px] h-[60px] rounded-full overflow-hidden shrink-0 border-2 border-white shadow-sm">
+                  <div className="w-[60px] h-[60px] rounded-lg overflow-hidden shrink-0 border-2 border-white shadow-sm">
                       <img src={getImageUrl(editModalUser.avatar_url || '/default/user_default.webp')} alt="Avatar" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex flex-col">

@@ -8,7 +8,7 @@ import { Loader } from '../ui/Loader';
 import { DatePicker } from '../ui/DatePicker';
 import { AccessFallback } from '../ui/AccessFallback';
 import { Modal } from '../modals/Modal';
-import { getToken } from '../utils/helpers';
+import { getToken, getImageUrl } from '../utils/helpers';
 
 const MEETING_TYPES = [
   { value: 'sdk', label: 'СДК' },
@@ -37,7 +37,12 @@ export function SdkMeetingsPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [seasonFilter, setSeasonFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('sdk');
+
+  const [permanentMembers, setPermanentMembers] = useState([]);
+  const [isEditingPermanent, setIsEditingPermanent] = useState(false);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [savingMemberId, setSavingMemberId] = useState(null);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,11 +57,46 @@ export function SdkMeetingsPage() {
       .then(data => {
         if (data.success) {
           setSeasons(data.data);
-          const active = data.data.find(s => s.is_active);
-          setForm(f => ({ ...f, season_id: active?.id || data.data[0]?.id || '' }));
+          // По умолчанию открываем самый свежий сезон, а не "Все сезоны": штатные члены
+          // комиссии свои у каждого сезона, и без выбранного сезона показать их нечем
+          const latest = [...data.data].sort((a, b) => b.id - a.id)[0];
+          const active = data.data.find(s => s.is_active) || latest;
+          setSeasonFilter(latest?.id || '');
+          setForm(f => ({ ...f, season_id: active?.id || latest?.id || '' }));
         }
       });
   }, [selectedLeague?.id, canView]);
+
+  const fetchPermanentMembers = () => {
+    if (!seasonFilter) { setPermanentMembers([]); return; }
+    setIsLoadingMembers(true);
+    fetch(`${SERVER_URL}/api/seasons/${seasonFilter}/sdk/commission-members`, { headers: { 'Authorization': `Bearer ${getToken()}` } })
+      .then(res => res.json())
+      .then(data => { if (data.success) setPermanentMembers(data.data); })
+      .finally(() => setIsLoadingMembers(false));
+  };
+
+  useEffect(() => {
+    setIsEditingPermanent(false);
+    fetchPermanentMembers();
+  }, [seasonFilter]);
+
+  const handleTogglePermanent = async (member) => {
+    setSavingMemberId(member.id);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/sdk/commission-members/${member.id}/permanent`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        body: JSON.stringify({ is_permanent: !member.is_permanent })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPermanentMembers(prev => prev.map(m => (m.id === member.id ? { ...m, is_permanent: !m.is_permanent } : m)));
+      }
+    } finally {
+      setSavingMemberId(null);
+    }
+  };
 
   useEffect(() => {
     if (!form.season_id) { setVenues([]); return; }
@@ -142,9 +182,79 @@ export function SdkMeetingsPage() {
       />
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
-        <div className="w-[300px] shrink-0 sticky top-[128px] bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5 z-20">
-          <Select label="Сезон" options={[{ value: '', label: 'Все сезоны' }, ...seasons.map(s => ({ value: s.id, label: s.name }))]} value={seasonFilter} onChange={setSeasonFilter} />
-          <Select label="Тип комиссии" options={[{ value: '', label: 'Все типы' }, ...MEETING_TYPES]} value={typeFilter} onChange={setTypeFilter} />
+        <div className="w-[300px] shrink-0 sticky top-[128px] flex flex-col gap-6 z-20">
+          <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
+            <Select label="Сезон" options={[{ value: '', label: 'Все сезоны' }, ...seasons.map(s => ({ value: s.id, label: s.name }))]} value={seasonFilter} onChange={setSeasonFilter} />
+            <Select label="Тип комиссии" options={[{ value: '', label: 'Все типы' }, ...MEETING_TYPES]} value={typeFilter} onChange={setTypeFilter} />
+          </div>
+
+          {/* Штатность привязана к сезону, поэтому при "Все сезоны" блок скрыт —
+              показывать вперемешку штатных из разных сезонов было бы неверно */}
+          {seasonFilter && (
+            <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-4 animate-zoom-in">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Члены СДК (штатные)</span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPermanent(v => !v)}
+                    className="text-[11px] font-bold text-orange hover:underline shrink-0"
+                  >
+                    {isEditingPermanent ? 'Готово' : 'Изменить'}
+                  </button>
+                )}
+              </div>
+
+              {isEditingPermanent && (
+                <span className="text-[10px] text-graphite/50 leading-relaxed">
+                  Нажмите на карточку, чтобы сделать человека штатным. Штатные попадают в явку каждого нового заседания этого сезона автоматически.
+                </span>
+              )}
+
+              {isLoadingMembers ? (
+                <span className="text-[12px] text-graphite-light">Загрузка…</span>
+              ) : (() => {
+                const visible = isEditingPermanent ? permanentMembers : permanentMembers.filter(m => m.is_permanent);
+                if (visible.length === 0) {
+                  return (
+                    <span className="text-[12px] text-graphite-light leading-relaxed">
+                      {permanentMembers.length === 0
+                        ? 'В справочнике сезона нет членов комиссии.'
+                        : 'Штатные члены не отмечены.'}
+                    </span>
+                  );
+                }
+                return (
+                  <div className="flex flex-col gap-2 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
+                    {visible.map(m => {
+                      const [lastName, firstName, ...restName] = (m.full_name || '').split(' ');
+                      const middleName = restName.join(' ');
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() => { if (isEditingPermanent && savingMemberId !== m.id) handleTogglePermanent(m); }}
+                          className={`flex items-center gap-3 p-2.5 rounded-md border transition-all ${
+                            isEditingPermanent
+                              ? `cursor-pointer ${m.is_permanent ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 bg-white hover:border-graphite/30'}`
+                              : 'border-transparent'
+                          } ${savingMemberId === m.id ? 'opacity-50' : ''}`}
+                        >
+                          <div className="w-[42px] h-[42px] rounded-lg overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
+                            <img src={getImageUrl(m.avatar_url || '/default/user_default.webp')} alt="" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="flex flex-col min-w-0 leading-tight">
+                            <span className="text-[13px] font-bold text-graphite truncate">{[lastName, firstName].filter(Boolean).join(' ')}</span>
+                            {middleName && <span className="text-[12px] font-medium text-graphite-light truncate">{middleName}</span>}
+                            {m.position && <span className="text-[11px] font-black text-orange truncate mt-0.5">{m.position}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 relative z-10 min-h-[500px]">

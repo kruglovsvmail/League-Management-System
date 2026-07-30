@@ -18,6 +18,9 @@ export function useDisqualificationTargetPicker({ isOpen, seasonId }) {
 
   const [players, setPlayers] = useState([]);
   const [staff, setStaff] = useState([]);
+  // Список ролей, которыми ограничен выбор представителя (руководитель / администратор / тренер).
+  // null — без ограничения: так работает лайт-модалка, где категории представителя нет.
+  const [staffRoleFilter, setStaffRoleFilter] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRosterId, setSelectedRosterId] = useState(null);
   const [selectedTeamRoleId, setSelectedTeamRoleId] = useState(null);
@@ -108,7 +111,9 @@ export function useDisqualificationTargetPicker({ isOpen, seasonId }) {
 
   const filteredStaff = staff.filter(s => {
     const fullName = `${s.last_name || ''} ${s.first_name || ''} ${s.middle_name || ''}`.toLowerCase();
-    return fullName.includes(searchQuery.toLowerCase());
+    if (!fullName.includes(searchQuery.toLowerCase())) return false;
+    if (!staffRoleFilter) return true;
+    return (s.roles || '').split(', ').some(r => staffRoleFilter.includes(r));
   });
 
   // Полный состав команды одним списком (игроки + руководство, включая тренеров) — нужен
@@ -128,6 +133,7 @@ export function useDisqualificationTargetPicker({ isOpen, seasonId }) {
     divisions, selectedDivName, setSelectedDivName, divisionId,
     teams, selectedTeamName, setSelectedTeamName, tournamentTeamId,
     players, staff, filteredPlayers, filteredStaff, allMembers, filteredMembers,
+    staffRoleFilter, setStaffRoleFilter,
     searchQuery, setSearchQuery,
     selectedRosterId, setSelectedRosterId,
     selectedTeamRoleId, setSelectedTeamRoleId,

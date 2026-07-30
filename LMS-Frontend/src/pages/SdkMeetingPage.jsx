@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -7,8 +7,10 @@ import { Input } from '../ui/Input';
 import { DatePicker } from '../ui/DatePicker';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
+import { Icon } from '../ui/Icon';
 import { Tabs } from '../ui/Tabs';
 import { Toast } from '../modals/Toast';
+import { ConfirmModal } from '../modals/ConfirmModal';
 import { AccessFallback } from '../ui/AccessFallback';
 import { SdkMeetingMembersTab } from '../components/Sdk/SdkMeetingMembersTab';
 import { SdkMeetingDocumentsTab } from '../components/Sdk/SdkMeetingDocumentsTab';
@@ -42,6 +44,8 @@ export function SdkMeetingPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
   const [toast, setToast] = useState(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
 
@@ -99,6 +103,30 @@ export function SdkMeetingPage() {
     }
   };
 
+  // Удаление уносит за собой всё заседание целиком: явку, документы, решения
+  // и назначенные ими наказания — поэтому только через подтверждение
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/sdk/meetings/${meetingId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        navigate('/sdk-meetings');
+      } else {
+        setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+        setIsDeleteOpen(false);
+      }
+    } catch (err) {
+      setToast({ title: 'Ошибка', message: 'Сбой удаления', type: 'error' });
+      setIsDeleteOpen(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (!canView) {
     return (
       <div className="flex flex-col flex-1 animate-zoom-in">
@@ -123,7 +151,14 @@ export function SdkMeetingPage() {
 
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
-      <Header title={`${typeLabel} №${meeting.sequence_number ?? '-'}`} actions={<Button onClick={() => navigate('/sdk-meetings')} className="bg-white border-graphite/20 text-graphite hover:border-graphite">К списку заседаний</Button>} />
+      <Header
+        title={`${typeLabel} №${meeting.sequence_number ?? '-'}`}
+        subtitle={
+          <Link to="/sdk-meetings" className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
+            <Icon name="chevron_left" className="w-4 h-4" /> К списку заседаний
+          </Link>
+        }
+      />
 
       {toast && (
         <div className="fixed top-[110px] right-10 z-[9999]">
@@ -133,11 +168,11 @@ export function SdkMeetingPage() {
 
       <div className="px-10 pt-8 flex flex-col lg:flex-row gap-8 relative z-10 items-start">
         <div className="flex-1 min-w-0 w-full order-2 lg:order-1 flex flex-col gap-8">
-          <Tabs tabs={['Решения', 'Члены СДК', 'Сканы/Документы']} activeTab={tabIndex} onChange={setTabIndex} />
+          <Tabs tabs={['Члены СДК', 'Решения', 'Сканы/Документы']} activeTab={tabIndex} onChange={setTabIndex} />
 
           <div key={tabIndex} className="animate-zoom-in">
-            {tabIndex === 0 && <SdkMeetingDecisionsTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
-            {tabIndex === 1 && <SdkMeetingMembersTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
+            {tabIndex === 0 && <SdkMeetingMembersTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
+            {tabIndex === 1 && <SdkMeetingDecisionsTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
             {tabIndex === 2 && <SdkMeetingDocumentsTab meetingId={meetingId} canManage={canManage} setToast={setToast} />}
           </div>
         </div>
@@ -162,12 +197,29 @@ export function SdkMeetingPage() {
             </div>
           </div>
           {canManage && (
-            <div className="flex justify-end mt-2 pt-4 border-t border-graphite/10">
+            <div className="flex flex-col gap-3 mt-2 pt-4 border-t border-graphite/10">
               <Button onClick={handleSave} isLoading={isSaving} className="w-full">Сохранить</Button>
+              <button
+                type="button"
+                onClick={() => setIsDeleteOpen(true)}
+                className="w-full py-2.5 rounded-md text-[13px] font-bold text-status-rejected border border-status-rejected/30 hover:bg-status-rejected/10 transition-colors"
+              >
+                Удалить заседание
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={handleDelete}
+        isLoading={isDeleting}
+        title="Удаление заседания"
+        message={`${typeLabel} №${meeting.sequence_number ?? '-'} будет удалено вместе со всеми решениями, явкой членов комиссии, документами и назначенными наказаниями. Это действие нельзя отменить.`}
+        confirmLabel="Удалить"
+      />
     </div>
   );
 }

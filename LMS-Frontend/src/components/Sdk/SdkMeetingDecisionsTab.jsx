@@ -184,7 +184,12 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                   </div>
 
                   <div className="flex flex-col shrink-0 w-[190px] gap-1.5">
-                    {isTeamTarget ? (
+                    {d.target_type === 'other' ? (
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[16px] font-black text-graphite">{d.other_person_name || 'Иное лицо'}</span>
+                        <span className="text-[10px] text-graphite-light/70 mt-1">Иное лицо</span>
+                      </div>
+                    ) : isTeamTarget ? (
                       <span className="text-[16px] font-black text-graphite leading-tight">Вся команда</span>
                     ) : (
                       <div className="flex flex-col leading-tight">
@@ -199,6 +204,12 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                     <span className="font-black text-orange">{d.violation_code}.</span> {d.violation_title}
                   </div>
                 </div>
+
+                {d.hearing_basis && (
+                  <div className="text-[11px] text-graphite/40 font-medium">
+                    Основание: {d.hearing_basis}
+                  </div>
+                )}
 
                 {d.penalty_minutes && (
                   <div className="text-[11px] text-graphite/40 font-medium">

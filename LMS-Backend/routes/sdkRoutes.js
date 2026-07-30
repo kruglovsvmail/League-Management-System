@@ -3,7 +3,7 @@ import { verifyToken, requirePermission } from '../controllers/authController.js
 import upload from '../config/upload.js';
 import {
   getSdkVenues, createSdkVenue, deleteSdkVenue,
-  getSdkCommissionMembers, createSdkCommissionMember, deleteSdkCommissionMember,
+  getSdkCommissionMembers, createSdkCommissionMember, setSdkCommissionMemberPermanent, deleteSdkCommissionMember,
   getSdkViolationTypes, createSdkViolationType, updateSdkViolationType, reorderSdkViolationTypes, deleteSdkViolationType,
   getSdkMeetings, getSdkMeeting, createSdkMeeting, updateSdkMeeting, deleteSdkMeeting,
   getSdkMeetingMembers, addSdkMeetingMember, removeSdkMeetingMember,
@@ -23,6 +23,7 @@ router.delete('/sdk/venues/:id', requirePermission('SDK_REFERENCES_MANAGE'), del
 // УЧАСТНИКИ КОМИССИИ (по сезонам)
 router.get('/seasons/:seasonId/sdk/commission-members', requirePermission('SDK_REFERENCES_VIEW'), getSdkCommissionMembers);
 router.post('/seasons/:seasonId/sdk/commission-members', requirePermission('SDK_REFERENCES_MANAGE'), createSdkCommissionMember);
+router.patch('/sdk/commission-members/:id/permanent', requirePermission('SDK_REFERENCES_MANAGE'), setSdkCommissionMemberPermanent);
 router.delete('/sdk/commission-members/:id', requirePermission('SDK_REFERENCES_MANAGE'), deleteSdkCommissionMember);
 
 // СПРАВОЧНИК НАРУШЕНИЙ (по сезонам)

@@ -41,10 +41,15 @@ export function Select({
   const isHeaderOption = (opt) => opt.type === 'section' || opt.type === 'subsection';
 
   // prefix — выделяемая часть перед текстом опции (например, номер пункта нарушения):
-  // в списке она красится акцентом, но при поиске и в закрытом поле участвует как обычный текст
-  const optionText = (opt) => [opt.prefix, opt.label].filter(Boolean).join(' ');
+  // в списке она красится акцентом, а в поиске участвует как обычный текст.
+  // label может быть и React-нодой (бейдж + название), поэтому текстовое представление
+  // считаем отдельно и только для строковых лейблов — для поиска и для value инпута.
+  const optionText = (opt) => [opt.prefix, typeof opt.label === 'string' ? opt.label : '']
+    .filter(Boolean).join(' ');
 
   const selectedOption = normalizedOptions.find(opt => !isHeaderOption(opt) && String(opt.value) === String(value));
+  // Для отрисовки в закрытом поле берём label как есть — ноду рвать в строку нельзя
+  const displayNode = selectedOption ? selectedOption.label : '';
   const displayValue = selectedOption ? optionText(selectedOption) : '';
 
   // При поиске заголовки прячем: пользователь ищет конкретный пункт, а не раздел
@@ -135,7 +140,7 @@ export function Select({
             >
               <span className={`text-[13px] font-semibold leading-snug whitespace-normal ${value ? 'text-graphite' : 'text-graphite/50'}`}>
                 {selectedOption?.prefix && <span className="font-black text-orange">{selectedOption.prefix} </span>}
-                {selectedOption ? selectedOption.label : placeholder}
+                {selectedOption ? displayNode : placeholder}
               </span>
               {!disabled && <span className="text-[10px] text-graphite-light shrink-0 mt-0.5">▼</span>}
             </div>
@@ -168,7 +173,8 @@ export function Select({
             }`}
           >
             <span className={`text-[13px] font-semibold truncate pr-2 ${value ? 'text-graphite' : 'text-graphite/50'}`}>
-              {displayValue || placeholder}
+              {selectedOption?.prefix && <span className="font-black text-orange">{selectedOption.prefix} </span>}
+              {selectedOption ? displayNode : placeholder}
             </span>
             {!disabled && (
               <span className={`text-[10px] transform transition-transform duration-300 ${isOpen ? 'rotate-180 text-orange' : 'text-graphite-light'}`}>
