@@ -38,7 +38,7 @@ export function SettingsPage() {
   if (canViewArenas) availableTabs.push({ index: 3, label: 'Арены' });
   if (canViewQuals) availableTabs.push({ index: 4, label: 'Квалификации' });
   if (canViewPreferences) availableTabs.push({ index: 5, label: 'Параметры' });
-  if (canViewSdkReferences) availableTabs.push({ index: 6, label: 'Справочники СДК' });
+  if (canViewSdkReferences) availableTabs.push({ index: 6, label: 'Справочники' });
 
   const defaultTabIndex = availableTabs.length > 0 ? availableTabs[0].index : 0;
   const activeTab = activeTabParam ? parseInt(activeTabParam, 10) : defaultTabIndex;

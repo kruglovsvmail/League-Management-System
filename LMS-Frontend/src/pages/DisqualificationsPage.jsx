@@ -15,7 +15,9 @@ import { CreateDisqualificationModal } from '../modals/CreateDisqualificationMod
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
 
-const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Менеджер команды', team_admin: 'Администратор' };
+// Роли турнирной заявки. head_coach оставлен для исторических записей: в новых заявках
+// главного тренера нет — он подаётся как «Тренер команды».
+const STAFF_ROLE_LABELS = { team_manager: 'Руководитель команды', coach: 'Тренер команды', team_admin: 'Администратор команды', head_coach: 'Тренер команды' };
 
 export function DisqualificationsPage() {
   const { selectedLeague } = useOutletContext();

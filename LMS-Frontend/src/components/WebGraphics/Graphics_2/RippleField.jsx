@@ -1,28 +1,34 @@
 import React, { useEffect, useRef } from 'react';
 import { onBandOnset } from '../audioReactive';
 
-// Аудио-реактивные кольца позади логотипа — по одному независимому кольцу на КАЖДЫЙ
-// удар каждой частотной полосы (см. onBandOnset в audioReactive.js).
+// Аудио-реактивный слой под эмблемой: на КАЖДЫЙ удар каждой частотной полосы
+// (см. onBandOnset в audioReactive.js) от центра разлетаются ТРЕУГОЛЬНЫЕ ОСКОЛКИ —
+// та же геометрия, что и во всей графике лиги, только живая. Кругов здесь нет
+// принципиально: система построена на треугольниках.
 //
-// В отличие от дефолтной графики (мягкая «рябь на воде») здесь кольца ГРАНЁНЫЕ:
-// шестиугольники с лёгким дрожанием граней, вращающиеся вокруг центра — та же
-// плоская кристаллическая геометрия, что у снежинок паттерна лиги.
-//   bass (бочка)        — крупные медленные шестиугольники, синие, толстая линия
-//   mid  (вокал/гитары) — 12-гранники среднего размера, белые
-//   high (хай-хэт)      — мелкие быстрые треугольные вспышки, светло-голубые
+//   bass (бочка)        — крупные редкие осколки, жёлтые
+//   mid  (вокал/гитары) — средние, белые
+//   high (хай-хэт)      — мелкая частая крошка, серая
 //
-// Рендер на canvas: на плотных треках одновременно живёт до ~10 колец, каждое
-// перерисовывается каждый кадр — DOM/SVG на этом объёме дороже.
+// Рендер на canvas: одновременно живёт до ~10 залпов по 10–26 треугольников —
+// это сотни нод, если делать через DOM.
 
 const BAND_CONFIG = {
-  bass: { minR: 0.42, maxR: 0.86, life: 1000, sides: 6, spin: 0.5, width: 3, color: '49,176,240', baseAlpha: 0.55, max: 3 },
-  mid: { minR: 0.40, maxR: 0.78, life: 720, sides: 12, spin: -0.8, width: 1.5, color: '232,241,248', baseAlpha: 0.4, max: 3 },
-  high: { minR: 0.34, maxR: 0.70, life: 560, sides: 3, spin: 1.6, width: 2, color: '196,214,230', baseAlpha: 0.45, max: 4 },
+  bass: { minR: 0.28, maxR: 0.95, life: 950, count: 10, size: 17, color: '255,200,0', alpha: 0.8, spin: 1.1, max: 3 },
+  mid: { minR: 0.24, maxR: 0.82, life: 700, count: 16, size: 11, color: '255,255,255', alpha: 0.6, spin: -1.5, max: 3 },
+  high: { minR: 0.20, maxR: 0.70, life: 520, count: 26, size: 6, color: '142,142,142', alpha: 0.75, spin: 2.4, max: 4 },
 };
+
+// Детерминированный псевдослучай: залп с одним seed обязан выглядеть одинаково
+// во всех кадрах своей жизни, иначе осколки «кипят» на месте.
+function rnd(i, seed) {
+  const x = Math.sin(i * 91.7 + seed * 47.3) * 43758.5453;
+  return x - Math.floor(x);
+}
 
 function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
 
-export function RippleField({ size = 520, className = '' }) {
+export function RippleField({ size = 380, className = '' }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -38,25 +44,21 @@ export function RippleField({ size = 520, className = '' }) {
     const cy = size / 2;
     const R = size / 2;
 
-    const rings = []; // { band, born, phase, strength }
+    const bursts = []; // { band, born, seed, strength }
     let rafId = null;
+    let seedCounter = 0;
 
     const spawn = (band, strength) => {
       const cfg = BAND_CONFIG[band];
       if (!cfg) return;
-      const sameBand = rings.filter(r => r.band === band);
+      const sameBand = bursts.filter(b => b.band === band);
       if (sameBand.length >= cfg.max) {
-        // Пул: вытесняем самое старое кольцо полосы, а не копим их бесконечно.
+        // Пул: вытесняем самый старый залп полосы, а не копим их бесконечно.
         const oldest = sameBand.reduce((a, b) => (a.born < b.born ? a : b));
-        const idx = rings.indexOf(oldest);
-        if (idx !== -1) rings.splice(idx, 1);
+        const idx = bursts.indexOf(oldest);
+        if (idx !== -1) bursts.splice(idx, 1);
       }
-      rings.push({
-        band,
-        born: performance.now(),
-        phase: Math.random() * Math.PI * 2,
-        strength: Math.max(0.4, strength),
-      });
+      bursts.push({ band, born: performance.now(), seed: ++seedCounter, strength: Math.max(0.4, strength) });
       if (rafId == null) rafId = requestAnimationFrame(loop);
     };
 
@@ -65,41 +67,48 @@ export function RippleField({ size = 520, className = '' }) {
       const now = performance.now();
       ctx.clearRect(0, 0, size, size);
 
-      for (let i = rings.length - 1; i >= 0; i--) {
-        const r = rings[i];
-        const cfg = BAND_CONFIG[r.band];
-        const t = (now - r.born) / cfg.life;
-        if (t >= 1) { rings.splice(i, 1); continue; }
+      for (let i = bursts.length - 1; i >= 0; i--) {
+        const b = bursts[i];
+        const cfg = BAND_CONFIG[b.band];
+        const t = (now - b.born) / cfg.life;
+        if (t >= 1) { bursts.splice(i, 1); continue; }
 
         const eased = easeOutQuad(t);
-        const baseR = (cfg.minR + (cfg.maxR - cfg.minR) * eased) * R;
-        const jitter = (1 - t) * R * 0.02; // грани слегка «дышат» и успокаиваются к концу
-        const rot = r.phase + t * cfg.spin;
-        const alpha = cfg.baseAlpha * r.strength * Math.pow(1 - t, 1.3);
+        const alpha = cfg.alpha * b.strength * Math.pow(1 - t, 1.3);
+        ctx.fillStyle = `rgba(${cfg.color},${alpha.toFixed(3)})`;
 
-        ctx.beginPath();
-        for (let s = 0; s <= cfg.sides; s++) {
-          const angle = rot + (s / cfg.sides) * Math.PI * 2;
-          const rad = baseR + Math.sin(s * 2.7 + r.phase) * jitter;
-          const x = cx + rad * Math.cos(angle);
-          const y = cy + rad * Math.sin(angle);
-          if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        for (let d = 0; d < cfg.count; d++) {
+          // У каждого осколка свои угол вылета, дальность и собственное вращение
+          const a = (d / cfg.count) * Math.PI * 2 + rnd(d, b.seed) * 0.5;
+          const spread = 0.72 + rnd(d + 50, b.seed) * 0.56;
+          const r = (cfg.minR + (cfg.maxR - cfg.minR) * eased) * R * spread;
+          const sc = cfg.size * (0.4 + rnd(d + 100, b.seed)) * (1 - t * 0.5) * b.strength;
+          const rot = rnd(d + 150, b.seed) * Math.PI * 2 + t * cfg.spin;
+
+          const px = cx + r * Math.cos(a);
+          const py = cy + r * Math.sin(a);
+
+          ctx.beginPath();
+          for (let v = 0; v < 3; v++) {
+            const va = rot + (v * 2 * Math.PI) / 3;
+            const vr = sc * (0.6 + rnd(d * 3 + v + 200, b.seed) * 0.8);
+            const x = px + Math.cos(va) * vr;
+            const y = py + Math.sin(va) * vr;
+            if (v === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.fill();
         }
-        ctx.closePath();
-        ctx.strokeStyle = `rgba(${cfg.color},${alpha.toFixed(3)})`;
-        ctx.lineWidth = cfg.width;
-        ctx.lineJoin = 'miter';
-        ctx.stroke();
       }
 
-      if (rings.length > 0) rafId = requestAnimationFrame(loop);
+      if (bursts.length > 0) rafId = requestAnimationFrame(loop);
     };
 
     const unsubscribe = onBandOnset(spawn);
     return () => {
       unsubscribe();
       if (rafId) cancelAnimationFrame(rafId);
-      rings.length = 0;
+      bursts.length = 0;
     };
   }, [size]);
 

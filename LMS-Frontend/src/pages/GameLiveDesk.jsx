@@ -479,9 +479,29 @@ export function GameLiveDesk() {
     return () => socket.off('arena_play', handler);
   }, [socket]);
 
+  // Журнал работы с таймером. Пишется, только если у дивизиона включён контроль
+  // (divisions.track_timer_log). Время не отправляем: его ставит сервер — часы на машине
+  // секретаря могут быть сбиты, а журнал существует ровно для проверки секретаря.
+  // Ошибки глотаем: журнал не должен мешать вести матч.
+  const logTimerAction = (action, timerSecs, extra = {}) => {
+    if (!game?.track_timer_log) return;
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/timer-log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+      body: JSON.stringify({
+        action,
+        timer_seconds: Math.max(0, Math.round(timerSecs || 0)),
+        period: currentPeriod,
+        ...extra,
+      })
+    }).catch(() => {});
+  };
+
   const handleTimerAction = (action) => {
     if (isReadOnly) return;
     lockSocketUpdates();
+    logTimerAction(action, timerSeconds);
     
     setTimerData(prev => {
         if (action === 'start') return { ...prev, isRunning: true, startedAt: Date.now() + prev.serverTimeOffset };
@@ -501,10 +521,12 @@ export function GameLiveDesk() {
     
     setTimerData(prev => ({ ...prev, accumulatedSeconds: limits.start, isRunning: false, startedAt: null }));
     setIsTimerRunning(false);
-    
-    socket?.emit('timer_action', { 
-        gameId, 
-        action: 'change_period', 
+    // Период пишем в журнал новый — важно, куда переключились
+    logTimerAction('change_period', limits.start, { period });
+
+    socket?.emit('timer_action', {
+        gameId,
+        action: 'change_period',
         timerData: { seconds: limits.start, period, isRunning: false } 
     });
     socket?.emit('game_updated', { gameId });
@@ -884,12 +906,15 @@ export function GameLiveDesk() {
         onSetTime={(secs) => {
           if (isReadOnly) return;
           lockSocketUpdates();
+          // В журнал пишем значение ПОСЛЕ правки — оно и окажется на табло
+          logTimerAction('set_time', secs);
           setTimerData(prev => ({ ...prev, accumulatedSeconds: secs, startedAt: prev.isRunning ? (Date.now() + prev.serverTimeOffset) : null }));
           socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: secs } });
         }}
         onAdjustTime={(delta) => {
           if (isReadOnly) return;
           lockSocketUpdates();
+          logTimerAction('adjust', Math.max(0, timerSeconds + delta), { delta_seconds: delta });
           setTimerData(prev => {
             let current = prev.accumulatedSeconds || 0;
             if (prev.isRunning && prev.startedAt) {

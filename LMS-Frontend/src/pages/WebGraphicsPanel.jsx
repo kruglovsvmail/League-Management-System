@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 
 // DND Kit импорты
 import { 
@@ -23,10 +23,12 @@ import { AutoPlaylistWidget } from '../components/WebGraphicsPanel/AutoPlaylistW
 import { AudioPlayerWidget } from '../components/WebGraphicsPanel/AudioPlayerWidget';
 import { useAccess } from '../hooks/useAccess';
 import { AccessFallback } from '../ui/AccessFallback';
+import { Icon } from '../ui/Icon';
 import { getToken } from '../utils/helpers';
 
 export function WebGraphicsPanel() {
   const { gameId } = useParams();
+  const navigate = useNavigate();
 
   // Устанавливаем заголовок вкладки
   useEffect(() => {
@@ -300,7 +302,20 @@ export function WebGraphicsPanel() {
       <div className="h-screen w-full bg-gray-bg-light text-graphite font-sans flex flex-col overflow-hidden relative">
         <main className="flex-1 flex w-full h-full min-h-0">
 
-          <section className="flex-1 h-full flex flex-col min-h-0 bg-[#f8f9fa]">
+          <section className="relative flex-1 h-full flex flex-col min-h-0 bg-[#f8f9fa]">
+            {/* Панель занимает весь экран и своей шапки не имеет — выхода из неё не было вовсе.
+                Кнопка плавающая, а не в полосе сверху: высота здесь дороже, плитки и так
+                скроллятся. Угол первой плитки пустой (её содержимое отцентровано),
+                поэтому кнопка ничего не перекрывает. */}
+            <button
+              onClick={() => navigate(`/games/${gameId}`)}
+              title="Вернуться на страницу матча"
+              aria-label="Вернуться на страницу матча"
+              className="absolute top-3 left-3 z-20 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm border border-graphite/15 shadow-md flex items-center justify-center text-graphite-light hover:text-orange hover:border-orange/40 transition-colors"
+            >
+              <Icon name="chevron_left" className="w-4 h-4" />
+            </button>
+
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-3 auto-rows-[260px] w-full border-t border-l border-graphite/10 bg-white">
 

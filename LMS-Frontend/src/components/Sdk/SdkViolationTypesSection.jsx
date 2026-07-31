@@ -7,6 +7,7 @@ import { Icon } from '../../ui/Icon';
 import { SegmentButton } from '../../ui/SegmentButton';
 import { Tooltip } from '../../ui/Tooltip';
 import { ConfirmModal } from '../../modals/ConfirmModal';
+import { CopyFromSeasonPanel } from './CopyFromSeasonPanel';
 import { getToken } from '../../utils/helpers';
 
 const ROW_TYPES = ['violation', 'section', 'subsection'];
@@ -91,7 +92,7 @@ function Checkbox({ checked, onChange, label, hint, disabled }) {
   );
 }
 
-export function SdkViolationTypesSection({ seasonId, setToast }) {
+export function SdkViolationTypesSection({ seasonId, seasons = [], setToast }) {
   const { checkAccess } = useAccess();
   const canManage = checkAccess('SDK_REFERENCES_MANAGE');
   const canDelete = checkAccess('SDK_VIOLATION_TYPES_DELETE');
@@ -109,6 +110,30 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
   const [dragOverId, setDragOverId] = useState(null);
 
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
+
+  // Выбором сезона и состоянием кнопки заведует CopyFromSeasonPanel — здесь только запрос.
+  // Сервер разрешает копирование только в пустой справочник: порядок строк держится
+  // на sort_order, и подмешивание чужих секций перемешало бы разделы с пунктами.
+  const handleCopy = async (fromSeasonId) => {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/seasons/${seasonId}/sdk/violation-types/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        body: JSON.stringify({ fromSeasonId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setToast({ title: 'Готово', message: `Скопировано строк: ${data.copied}`, type: 'success' });
+        fetchItems();
+      } else {
+        setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+      }
+      return data;
+    } catch (err) {
+      setToast({ title: 'Ошибка', message: 'Сбой копирования', type: 'error' });
+      return { success: false };
+    }
+  };
 
   const fetchItems = async () => {
     if (!seasonId) { setIsLoading(false); return; }
@@ -315,7 +340,16 @@ export function SdkViolationTypesSection({ seasonId, setToast }) {
             </tbody>
           </table>
         ) : (
-          <div className="text-center py-20 text-graphite-light font-medium">Справочник нарушений на этот сезон пока пуст</div>
+          <div className="py-16 flex flex-col gap-6">
+            <div className="text-center text-graphite-light font-medium">Справочник нарушений на этот сезон пока пуст</div>
+            <CopyFromSeasonPanel
+              seasons={seasons}
+              seasonId={seasonId}
+              canManage={canManage}
+              onCopy={handleCopy}
+              hint="Перенесёт разделы, пункты регламента и все санкции в том же порядке. Дальше их можно править под этот сезон."
+            />
+          </div>
         )}
       </div>
 

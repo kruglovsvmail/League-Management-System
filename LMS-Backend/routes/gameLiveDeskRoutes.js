@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import {
     getGameEvents,
@@ -20,10 +21,34 @@ import {
 } from '../controllers/GameLiveDeskController.js';
 import { generateRosterAnnouncement, generateEventAnnouncement, testPronunciation } from '../controllers/ttsArenaController.js';
 import { broadcastRosterAnnouncement, broadcastEventAnnouncement } from '../controllers/ttsBroadcastController.js';
+import { createTimerLogEntry, exportTimerLog } from '../controllers/gameTimerLogController.js';
 
 const router = express.Router();
 
 router.use(verifyToken);
+
+// Журнал работы с таймером: пишет панель секретаря, выгружает шторка «Настройки матча».
+// Запись доступна тем же, кто ведёт матч; выгрузка — всем, кто пустили на страницу матча.
+//
+// Потолок на запись. Живой секретарь даже в самом суматошном отрезке делает от силы
+// 20-30 действий в минуту; 60 — заведомо выше потолка человека, но обрубает залипшую
+// кнопку или цикл в клиенте, который иначе насыпал бы тысячи строк.
+// Ключ — пара «матч + пользователь», а не IP: на арене несколько секретарей могут сидеть
+// за одним NAT, и общий счётчик резал бы их друг об друга.
+const timerLogLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => `${req.params.gameId}:${req.user?.id || 'anon'}`,
+    // Панель ответ не читает — просто молча пропустит лишнее нажатие
+    message: { success: false, error: 'Слишком много действий с таймером за минуту' },
+});
+
+router.post('/games/:gameId/timer-log', timerLogLimiter, express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), createTimerLogEntry);
+// Выгрузка — тем же, кто имеет доступ в панель секретаря: журнал поимённо называет,
+// кто и когда трогал таймер, и посторонним авторизованным пользователям не предназначен.
+router.get('/games/:gameId/timer-log/export', requirePermission('MATCH_SECRETARY_PANEL_ENTER'), exportTimerLog);
 
 router.get('/games/:gameId/events', getGameEvents);
 router.post('/games/:gameId/events', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), createGameEvent);

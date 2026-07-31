@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Switch } from '../ui/Switch';
 import { Stepper } from '../ui/Stepper';
@@ -30,8 +30,35 @@ export function TimerSettingsDrawer({
   gameId,
   setToast,
   onResetAnnouncer,
+  trackTimerLog = false,
 }) {
   const filesCacheRef = useRef(null);
+  const [isDownloadingLog, setIsDownloadingLog] = useState(false);
+
+  // Эндпоинт закрыт токеном, поэтому тянем через fetch и отдаём blob ссылке,
+  // а не подставляем URL в href напрямую.
+  const downloadTimerLog = async () => {
+    setIsDownloadingLog(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/timer-log/export`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      if (!res.ok) throw new Error('export');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `timer-log-game-${gameId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setToast?.({ title: 'Ошибка', message: 'Не удалось скачать журнал таймера', type: 'error' });
+    } finally {
+      setIsDownloadingLog(false);
+    }
+  };
 
   const fetchArenaFiles = async () => {
     if (filesCacheRef.current) return filesCacheRef.current;
@@ -150,7 +177,7 @@ export function TimerSettingsDrawer({
 
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <Icon name="live_stream" className="w-4 h-4 text-graphite/40" />
+                  <Icon name="mic" className="w-4 h-4 text-graphite/40" />
                   <span className="text-[11px] font-black text-graphite/40 uppercase tracking-widest">Диктор арены</span>
                 </div>
                 <div className="bg-white border border-graphite/5 shadow-sm rounded-md">
@@ -201,6 +228,30 @@ export function TimerSettingsDrawer({
 
                 </div>
               </div>
+
+              {/* Журнал таймера — только если лига включила контроль у дивизиона.
+                  Скачивается CSV: время устройства секретаря, действие, показание таймера. */}
+              {trackTimerLog && (
+                <div className="bg-white rounded-md border border-graphite/10 overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-graphite/10">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-graphite/50">Лог таймера</span>
+                  </div>
+                  <div className="px-4 py-3 flex flex-col gap-2">
+                    <p className="text-[11px] text-graphite-light leading-tight">
+                      Все старты, остановки и корректировки времени по этому матчу. Время серверное,
+                      показано в часовом поясе арены.
+                    </p>
+                    <button
+                      onClick={downloadTimerLog}
+                      disabled={isDownloadingLog}
+                      className="w-full flex items-center justify-center gap-2 text-[11px] font-bold text-orange border border-orange/30 rounded-md py-1.5 hover:bg-orange/10 disabled:opacity-50 transition-colors"
+                    >
+                      <Icon name="download" className="w-3.5 h-3.5" />
+                      {isDownloadingLog ? 'Готовим файл...' : 'Скачать журнал'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
             </div>
 

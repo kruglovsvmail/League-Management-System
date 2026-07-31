@@ -412,6 +412,9 @@ export const getGameById = async (req, res) => {
                 gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.auto_stop_on_event, gt.shootout_status, gt.arena_announcer,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots,
+                -- Журнал работы с таймером — контроль административный, поэтому один флаг
+                -- на дивизион, без деления на регулярку и плей-офф
+                COALESCE(d.track_timer_log, false) AS track_timer_log,
                 a.name as location_text,
                 a.timezone as arena_timezone,
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
@@ -547,12 +550,26 @@ export const getArenas = async (req, res) => {
         const params = [];
 
         if (leagueId) {
+            // Порядок арен в выпадающих списках задаёт сама лига
+            // (Настройки -> Арены -> «Сортировка в выпадающих списках»).
+            // Список уже отфильтрован по league_arenas, поэтому сортировка ничего не скрывает.
+            const prefRes = await pool.query('SELECT arena_sort_order FROM leagues WHERE id = $1', [leagueId]);
+            // Дата — это дата привязки арены к лиге, а не к системе:
+            // у самой таблицы arenas даты создания нет.
+            const ARENA_ORDER_BY = {
+                name: 'a.name ASC',
+                city: 'a.city ASC, a.name ASC',
+                added_desc: 'la.created_at DESC, a.name ASC',
+                added_asc: 'la.created_at ASC, a.name ASC',
+            };
+            const orderBy = ARENA_ORDER_BY[prefRes.rows[0]?.arena_sort_order] || ARENA_ORDER_BY.name;
+
             query = `
-                SELECT a.id, a.name, a.city, a.timezone 
+                SELECT a.id, a.name, a.city, a.timezone, la.created_at AS added_at
                 FROM arenas a
                 JOIN league_arenas la ON a.id = la.arena_id
                 WHERE a.status = 'active' AND la.league_id = $1
-                ORDER BY a.name
+                ORDER BY ${orderBy}
             `;
             params.push(leagueId);
         } else {

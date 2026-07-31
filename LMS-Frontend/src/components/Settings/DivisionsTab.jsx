@@ -96,6 +96,9 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       playoff_track_plus_minus: div.playoff_track_plus_minus ?? false,
       playoff_track_shots: div.playoff_track_shots ?? true,
 
+      // Один флаг на дивизион: контроль административный, регулярку и плей-офф не разделяем
+      track_timer_log: div.track_timer_log ?? false,
+
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
       hide_stats_unpaid: div.hide_stats_unpaid ?? false, individual_fee: div.individual_fee ?? '',
       is_tournament: div.is_tournament ?? false,
@@ -109,7 +112,8 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     
     reg_periods_count: 3, reg_period_length: 20, reg_has_overtime: true, reg_ot_length: 5, reg_has_shootouts: true, reg_so_length: 3, reg_track_plus_minus: false, reg_track_shots: true,
     playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false, playoff_track_shots: true,
-    
+    track_timer_log: false,
+
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
     hide_stats_unpaid: false, individual_fee: '',
     is_tournament: isTournamentDefault,
@@ -211,6 +215,9 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const [regCleared, setRegCleared] = useState(false);
 
   const [activeSection, setActiveSection] = useState('general');
+  // Какой дивизион уже загружен в форму. Нужен, чтобы отличить настоящую смену дивизиона
+  // от перезагрузки списка после сохранения: во втором случае раздел меню менять нельзя.
+  const loadedDivisionRef = useRef(null);
 
   // Управление перетаскиванием критериев тай-брейка между "активными" и "стеком" (Мышь + Тач)
   const dragCriterionId = useRef(null);
@@ -245,7 +252,10 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
       const data = await res.json();
       if (data.success) {
         setDivisions(data.data);
-        if (selectedDivisionId === 'new') return; 
+        if (selectedDivisionId === 'new') return;
+        // Список перезагружается и после сохранения — тогда выбор надо оставить на месте.
+        // На первый дивизион переключаемся только если текущий пропал (или это другой сезон).
+        if (data.data.some(d => d.id === selectedDivisionId)) return;
         if (data.data.length > 0) setSelectedDivisionId(data.data[0].id);
         else setSelectedDivisionId(null);
       }
@@ -254,17 +264,24 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   useEffect(() => {
     setLogoFile(null); setRegFile(null); setLogoCleared(false); setRegCleared(false);
+
+    // Эффект срабатывает и когда divisions просто перезагрузился после сохранения.
+    // Форму в этом случае пересобрать надо (сервер мог нормализовать значения),
+    // а вот раздел меню — оставить: иначе пользователя выбрасывает на «Общую информацию».
+    const divisionChanged = loadedDivisionRef.current !== selectedDivisionId;
+    loadedDivisionRef.current = selectedDivisionId;
+
     if (selectedDivisionId === 'new') {
       const initial = getInitialFormData(null, newIsTournament);
       setFormData(initial);
       setOriginalData(initial);
-      setActiveSection('general');
+      if (divisionChanged) setActiveSection('general');
     } else if (selectedDivisionId) {
       const div = divisions.find(d => d.id === selectedDivisionId);
       const initial = getInitialFormData(div);
       setFormData(initial);
       setOriginalData(initial);
-      setActiveSection('general');
+      if (divisionChanged) setActiveSection('general');
     } else {
       setFormData(null);
       setOriginalData(null);
@@ -467,7 +484,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const menuItems = [
     { id: 'general', label: 'Общая информация' },
     { id: 'dates', label: 'Сроки и заявки' },
-    { id: 'mechanics', label: 'Механика матча' },
+    { id: 'mechanics', label: 'Механика матчей' },
   ];
   if (showRegular) menuItems.push({ id: 'regular', label: 'Регулярный чемпионат' });
   if (showPlayoff) menuItems.push({ id: 'playoff', label: 'Плей-офф' });
@@ -726,9 +743,28 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
                 {/* РАЗДЕЛ 3: МЕХАНИКА МАТЧА */}
                 {activeSection === 'mechanics' && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 animate-zoom-in">
-                        {showRegular && renderMechanicsBlock('reg', 'Регулярный чемпионат')}
-                        {showPlayoff && renderMechanicsBlock('playoff', 'Плей-офф')}
+                    <div className="flex flex-col gap-6 animate-zoom-in">
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            {showRegular && renderMechanicsBlock('reg', 'Регулярный чемпионат')}
+                            {showPlayoff && renderMechanicsBlock('playoff', 'Плей-офф')}
+                        </div>
+
+                        {/* Отдельным блоком, а не внутри reg/playoff: флаг один на дивизион */}
+                        <div className="bg-white/70 p-5 rounded-md border border-graphite/10 flex justify-between items-center gap-4">
+                            <div>
+                                <div className="text-[13px] font-semibold text-graphite">Вести контроль таймера и его корректировок</div>
+                                <div className="text-[11px] text-graphite-light mt-0.5 leading-tight max-w-[640px]">
+                                    Записывает каждый старт и стоп таймера, каждую корректировку кнопками, ручной ввод времени
+                                    и смену периода — с реальным временем на устройстве секретаря. Журнал по каждому матчу
+                                    скачивается в панели секретаря, в шторке «Настройки матча».
+                                </div>
+                            </div>
+                            <Switch
+                                checked={formData.track_timer_log}
+                                onChange={(e) => handleChange('track_timer_log', e.target.checked)}
+                                disabled={isLocked}
+                            />
+                        </div>
                     </div>
                 )}
 

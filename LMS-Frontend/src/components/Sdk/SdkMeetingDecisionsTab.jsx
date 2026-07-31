@@ -13,7 +13,9 @@ const STATUS_PILL = {
 };
 const STATUS_LABEL = { active: 'Действует', completed: 'Отбыто', cancelled: 'Отменено' };
 
-const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Менеджер команды', team_admin: 'Администратор' };
+// Роли турнирной заявки. head_coach оставлен для исторических записей: в новых заявках
+// главного тренера нет — он подаётся как «Тренер команды».
+const STAFF_ROLE_LABELS = { team_manager: 'Руководитель команды', coach: 'Тренер команды', team_admin: 'Администратор команды', head_coach: 'Тренер команды' };
 
 const Pill = ({ children, className = '' }) => (
   <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap ${className}`}>{children}</span>

@@ -10,7 +10,7 @@ const POS_LABELS = { 'goalie': 'Вратарь', 'defense': 'Защитник', 
 const ROLES = [
   { id: 'head_coach', label: 'Главный тренер' },
   { id: 'coach', label: 'Тренер' },
-  { id: 'team_manager', label: 'Менеджер команды' },
+  { id: 'team_manager', label: 'Руководитель' },
   { id: 'team_admin', label: 'Администратор' }
 ];
 

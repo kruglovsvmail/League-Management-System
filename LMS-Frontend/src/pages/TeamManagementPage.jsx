@@ -20,19 +20,35 @@ import dayjs from 'dayjs';
 
 const POSITION_MAP = { 'goalie': 'Вратарь', 'defense': 'Защитник', 'forward': 'Нападающий' };
 
+// Роли внутри команды (team_roles) — их четыре, главный тренер здесь отдельная роль.
+// Используются в блоке «Штат команды».
 const ROLES = [
   { id: 'head_coach', label: 'Главный тренер' },
   { id: 'coach', label: 'Тренер' },
-  { id: 'team_manager', label: 'Менеджер команды' },
+  { id: 'team_manager', label: 'Руководитель' },
   { id: 'team_admin', label: 'Администратор' }
 ];
 
 const STAFF_ROLE_MAP = {
   'head_coach': 'Главный тренер',
   'coach': 'Тренер',
-  'team_manager': 'Менеджер команды',
+  'team_manager': 'Руководитель',
   'team_admin': 'Администратор'
 };
+
+// Роли в турнирной заявке (tournament_team_roles) — их три: главного тренера в заявке нет,
+// оба тренера подаются как «Тренер команды». Один человек может занимать несколько ролей
+// сразу — в заявке это отдельные строки.
+const TOURNAMENT_ROLES = [
+  { id: 'team_manager', label: 'Руководитель команды' },
+  { id: 'coach', label: 'Тренер команды' },
+  { id: 'team_admin', label: 'Администратор команды' }
+];
+
+const TOURNAMENT_ROLE_MAP = Object.fromEntries(TOURNAMENT_ROLES.map(r => [r.id, r.label]));
+
+// Роль в команде -> роль в заявке (главный тренер схлопывается в тренера)
+const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
 
 export function TeamManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -269,7 +285,10 @@ export function TeamManagementPage() {
       }
       else if (typeStr === 'app_staff') {
         const appId = actionArgs?.appId;
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${appId}/staff/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        // С ролью в пути снимается только эта роль — человек остаётся в заявке,
+        // если заявлен ещё и в других ролях. Без роли (запас) убирается целиком.
+        const rolePath = actionArgs?.role ? `/${actionArgs.role}` : '';
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${appId}/staff/${id}${rolePath}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (data.success) { fetchApplications(selectedTeam.id); showToast('Успешно', 'Персонал удален из заявки', 'success'); } else showToast('Ошибка', data.error);
       }
@@ -359,17 +378,23 @@ export function TeamManagementPage() {
     } catch (err) { showToast('Ошибка', 'Не удалось сохранить'); fetchApplications(selectedTeam.id); }
   };
 
-  const handleUpdateAppStaffInline = async (appId, userId, newRole) => {
-    setApplications(prev => prev.map(app => {
-      if (app.id !== appId) return app;
+  // Строка штаба заявки — это пара «человек + роль». Смена роли в строке переносит человека
+  // из одной роли в другую, не трогая остальные его роли: API принимает ПОЛНЫЙ набор ролей.
+  const handleUpdateAppStaffInline = async (appId, userId, oldRole, newRole) => {
+    const app = applications.find(a => a.id === appId);
+    const currentRoles = (app?.staff || []).filter(s => s.user_id === userId).map(s => s.role);
+    const nextRoles = [...new Set([...currentRoles.filter(r => r !== oldRole), newRole])];
+
+    setApplications(prev => prev.map(a => {
+      if (a.id !== appId) return a;
       return {
-        ...app,
-        staff: app.staff.map(s => s.user_id === userId ? { ...s, role: newRole } : s)
+        ...a,
+        staff: a.staff.map(s => (s.user_id === userId && s.role === oldRole) ? { ...s, role: newRole } : s)
       };
     }));
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${appId}/staff`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ userId, roles: [newRole] })
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ userId, roles: nextRoles })
       });
       const data = await res.json();
       if (!data.success) showToast('Ошибка', data.error);
@@ -545,13 +570,13 @@ export function TeamManagementPage() {
                       onSendReview={() => handleSendAppReview(app.id)}
                       onDeleteApp={() => requestRemove(app.id, 'application')}
                       onDeletePlayer={(rosterId) => requestRemove(rosterId, 'app_roster', { appId: app.id })}
-                      onDeleteStaff={(userId) => requestRemove(userId, 'app_staff', { appId: app.id })}
+                      onDeleteStaff={(userId, role) => requestRemove(userId, 'app_staff', { appId: app.id, role })}
                       onOpenDocs={(player) => setAppDocsModalPlayer({ ...player, appStatus: app.status })}
                       onAddPlayer={() => { setAddPlayerModalAppId(app.id); setIsAddPlayerDrawerOpen(true); }}
                       onAddStaff={() => { setAddStaffModalAppId(app.id); setIsAddStaffDrawerOpen(true); }}
                       onOpenProfile={(id) => setProfileModalUserId(id)}
                       onUpdatePlayer={(rosterId, overrides) => handleUpdateAppPlayerInline(app.id, rosterId, overrides)}
-                      onUpdateStaff={(userId, newRole) => handleUpdateAppStaffInline(app.id, userId, newRole)}
+                      onUpdateStaff={(userId, oldRole, newRole) => handleUpdateAppStaffInline(app.id, userId, oldRole, newRole)}
                     />
                   )) : <div className="text-center py-10 text-graphite-light bg-white/40 border border-graphite/10 rounded-md">Заявок не найдено</div>}
                 </div>
@@ -701,12 +726,13 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
     { label: 'ФИО', sortKey: 'last_name', render: (r) => ( <div onClick={() => onOpenProfile(r.user_id)} className="cursor-pointer group"><span className="font-bold text-[14px] leading-tight block truncate group-hover:text-orange">{r.last_name} {r.first_name}</span>{r.middle_name && <span className="text-[12px] text-graphite-light block truncate">{r.middle_name}</span>}</div> )},
     { label: 'ID', sortKey: 'user_id', width: 'w-[60px]', render: (r) => <span className="text-[12px] text-graphite/50 font-mono" title="ID пользователя">{r.user_id}</span> },
     { label: 'Турнирная должность', sortKey: 'role', width: 'w-[250px]', render: (r) => (
-      canEditRoster 
-        ? <Select options={ROLES.map(rl => rl.label)} value={STAFF_ROLE_MAP[r.role] || r.role} onChange={(val) => { const newRole = ROLES.find(rl => rl.label === val)?.id; if (newRole && newRole !== r.role) onUpdateStaff(r.user_id, newRole); }} className="h-8 pl-3 pr-2 bg-white border border-graphite/20" /> 
-        : <span className="text-[13px] font-semibold">{STAFF_ROLE_MAP[r.role] || r.role || '-'}</span>
+      canEditRoster
+        ? <Select options={TOURNAMENT_ROLES.map(rl => rl.label)} value={TOURNAMENT_ROLE_MAP[r.role] || r.role} onChange={(val) => { const newRole = TOURNAMENT_ROLES.find(rl => rl.label === val)?.id; if (newRole && newRole !== r.role) onUpdateStaff(r.user_id, r.role, newRole); }} className="h-8 pl-3 pr-2 bg-white border border-graphite/20" />
+        : <span className="text-[13px] font-semibold">{TOURNAMENT_ROLE_MAP[r.role] || r.role || '-'}</span>
     )}
   ];
-  if (canEditRoster) appStaffColumns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeleteStaff(r.user_id)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
+  // Крестик снимает одну роль: если человек заявлен и в других ролях, он останется в заявке
+  if (canEditRoster) appStaffColumns.push({ label: '', width: 'w-[40px]', align: 'right', render: (r) => ( <button onClick={() => onDeleteStaff(r.user_id, r.role)} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> ) });
 
   return (
     <div className="bg-white/70 border border-graphite/10 rounded-lg shadow-sm hover:shadow-md transition-shadow">
@@ -991,7 +1017,13 @@ function AddAppStaffDrawer({ isOpen, onClose, globalStaff, teamId, appId, curren
 
   useEffect(() => { if (!isOpen) { setQuery(''); setSelectedUsers(new Map()); } }, [isOpen]);
 
-  let availableStaff = globalStaff.filter(s => !currentAppStaff.some(cs => cs.user_id === s.user_id));
+  // Роли, которые человек уже занимает в этой заявке (может быть сразу несколько)
+  const rolesInApp = (userId) => currentAppStaff.filter(cs => cs.user_id === userId).map(cs => cs.role);
+  // Роли, в которые его ещё можно добавить
+  const freeRoles = (userId) => TOURNAMENT_ROLES.filter(tr => !rolesInApp(userId).includes(tr.id));
+
+  // Прячем только тех, кто уже занимает все три роли — остальных можно добавить в свободную
+  let availableStaff = globalStaff.filter(s => freeRoles(s.user_id).length > 0);
   if (query) {
     const q = query.toLowerCase();
     availableStaff = availableStaff.filter(u => u.last_name.toLowerCase().includes(q) || u.first_name.toLowerCase().includes(q));
@@ -1002,9 +1034,11 @@ function AddAppStaffDrawer({ isOpen, onClose, globalStaff, teamId, appId, curren
     if (next.has(user.user_id)) {
       next.delete(user.user_id);
     } else {
-      const globalRoles = user.roles ? user.roles.split(', ') : [];
-      let defaultRole = globalRoles.length > 0 ? globalRoles[0] : 'team_admin';
-      next.set(user.user_id, defaultRole);
+      const free = freeRoles(user.user_id);
+      // Подставляем роль из штата команды (главный тренер -> тренер), если она ещё свободна
+      const fromTeam = (user.roles ? user.roles.split(', ') : []).map(toTournamentRole);
+      const defaultRole = free.find(f => fromTeam.includes(f.id))?.id || free[0]?.id;
+      if (defaultRole) next.set(user.user_id, defaultRole);
     }
     setSelectedUsers(next);
   };
@@ -1014,10 +1048,12 @@ function AddAppStaffDrawer({ isOpen, onClose, globalStaff, teamId, appId, curren
     setIsSaving(true);
     try {
       const promises = Array.from(selectedUsers.entries()).map(([userId, role]) => {
+        // API принимает ПОЛНЫЙ набор ролей человека в заявке — добавляем новую к уже имеющимся
+        const nextRoles = [...new Set([...rolesInApp(userId), role])];
         return fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/applications/${appId}/staff`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-          body: JSON.stringify({ userId, roles: [role] })
+          body: JSON.stringify({ userId, roles: nextRoles })
         }).then(r => r.json());
       });
 
@@ -1052,15 +1088,33 @@ function AddAppStaffDrawer({ isOpen, onClose, globalStaff, teamId, appId, curren
           {availableStaff.map(s => {
             const isSelected = selectedUsers.has(s.user_id);
             return (
-              <div key={s.user_id} onClick={() => toggleUser(s)} className={`flex items-center gap-4 p-4 rounded-md border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
-                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
-                <img src={getImageUrl(s.photo_url || s.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5 shrink-0" alt="avatar" />
-                <div className="flex flex-col min-w-0">
-                  <span className="block font-bold text-graphite text-[14px] truncate">{s.last_name} {s.first_name}</span>
-                  <span className="block text-[11px] text-graphite/50 truncate max-w-[200px]">
-                    {s.roles ? s.roles.split(', ').map(r => STAFF_ROLE_MAP[r] || r).join(', ') : 'Без роли'}
-                  </span>
+              <div key={s.user_id} className={`flex flex-col gap-3 p-4 rounded-md border transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
+                <div onClick={() => toggleUser(s)} className="flex items-center gap-4 cursor-pointer">
+                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
+                  <img src={getImageUrl(s.photo_url || s.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5 shrink-0" alt="avatar" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="block font-bold text-graphite text-[14px] truncate">{s.last_name} {s.first_name}</span>
+                    <span className="block text-[11px] text-graphite/50 truncate max-w-[200px]">
+                      {s.roles ? s.roles.split(', ').map(r => STAFF_ROLE_MAP[r] || r).join(', ') : 'Без роли'}
+                    </span>
+                  </div>
                 </div>
+                {/* Роль в заявке. Показываем только свободные: те, что человек уже занимает,
+                    повторно назначить нельзя — он остаётся в них как есть. */}
+                {isSelected && (
+                  <div className="flex flex-wrap gap-1.5 pl-9">
+                    {freeRoles(s.user_id).map(rl => (
+                      <button
+                        key={rl.id}
+                        type="button"
+                        onClick={() => setSelectedUsers(prev => new Map(prev).set(s.user_id, rl.id))}
+                        className={`px-2.5 py-1.5 rounded text-[10px] font-black uppercase tracking-wider border transition-colors ${selectedUsers.get(s.user_id) === rl.id ? 'border-orange text-orange bg-orange/10' : 'border-graphite/20 text-graphite/60 bg-white'}`}
+                      >
+                        {rl.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}

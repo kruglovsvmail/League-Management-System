@@ -1,52 +1,51 @@
 import React from 'react';
-import { Reveal } from './Reveal';
-import { LowerBand } from './LowerBand';
-import { PinIcon } from './IcePattern';
-import { LeagueMark } from './Frame';
-import { C } from './theme';
+import { getSafeUrl } from '../../../utils/graphicsHelpers';
+import { Cut } from './Cut';
+import { Card } from './Stage';
+import { Bar, Tri } from './Shards';
+import { Split, Cap, Kicker } from './Type';
+import { S } from './theme';
 
-// Арена: лента во всю ширину внизу. Слева — светлая плита с меткой места,
-// по центру — название арены и город, справа — бренд лиги (в дефолте его нет).
+// Арена: графитовая плашка у левой кромки снизу. Название арены набрано словами
+// разного цвета — тот же приём, что у заголовков полноэкранных плашек.
 export default function ArenaOverlay({ game, overlay }) {
   const isVisible = overlay.visible && overlay.type === 'arena';
   if (!game) return null;
 
   const arena = game.arena_name || game.location_text || 'ЛЕДОВАЯ АРЕНА';
   const city = game.arena_city ? game.arena_city.toUpperCase() : null;
-
   const dateObj = game.game_date ? new Date(game.game_date) : null;
-  const dateStr = dateObj
-    ? dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' }).toUpperCase()
-    : null;
+  const dateStr = dateObj ? dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' }).toUpperCase() : null;
+  const leagueLogo = getSafeUrl(game.league_logo);
 
   return (
-    <Reveal isVisible={isVisible} variant="band" className="absolute bottom-0 left-0 z-40">
-      <LowerBand icon={<PinIcon size={52} />} label={'МЕСТО\nПРОВЕДЕНИЯ'}>
-        <div className="flex items-center justify-between w-full min-w-0">
-          <div className="flex flex-col min-w-0 pr-10">
-            <span className="font-black uppercase text-[42px] leading-none tracking-[0.03em] truncate" style={{ color: C.white }}>
-              {arena}
-            </span>
-            <div className="flex items-center gap-4 mt-3">
-              {city && (
-                <span className="font-bold uppercase tracking-[0.24em] text-[16px]" style={{ color: C.blue }}>
-                  {city}
-                </span>
-              )}
-              {city && dateStr && <div className="w-1.5 h-1.5 rotate-45" style={{ backgroundColor: C.steel }} />}
-              {dateStr && (
-                <span className="font-bold uppercase tracking-[0.24em] text-[16px]" style={{ color: C.steel }}>
-                  {dateStr}
-                </span>
-              )}
+    <Cut isVisible={isVisible} variant="slide" className="absolute bottom-16 left-0 z-40">
+      <Card style={{ width: 940 }} seed={31}>
+        <div className="flex items-center gap-10 pl-11 pr-12 py-9">
+          <div className="flex-1 min-w-0">
+            <Kicker size={12} className="mb-5">МЕСТО ПРОВЕДЕНИЯ</Kicker>
+
+            <div className="truncate">
+              <Split text={arena} size={50} colors={[S.white, S.yellow]} />
+            </div>
+
+            <div className="flex items-center gap-4 mt-6">
+              <Bar w={30} h={7} color={S.yellow} />
+              {city && <Cap size={16} color={S.white} tracking="0.2em">{city}</Cap>}
+              {city && dateStr && <Tri size={10} color={S.line} rotate={90} />}
+              {dateStr && <Cap size={16} color={S.ash} tracking="0.2em">{dateStr}</Cap>}
             </div>
           </div>
 
-          <div className="shrink-0 pl-12" style={{ borderLeft: `1px solid ${C.line}` }}>
-            <LeagueMark game={game} tone="dark" compact />
-          </div>
+          {leagueLogo && (
+            <img
+              src={leagueLogo} alt=""
+              className="w-[110px] h-[110px] object-contain shrink-0 relative z-10"
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          )}
         </div>
-      </LowerBand>
-    </Reveal>
+      </Card>
+    </Cut>
   );
 }

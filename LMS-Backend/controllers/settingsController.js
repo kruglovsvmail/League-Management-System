@@ -12,7 +12,7 @@ export const getLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const result = await pool.query(
-      'SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode FROM leagues WHERE id = $1',
+      'SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order FROM leagues WHERE id = $1',
       [leagueId]
     );
     res.json({ success: true, data: result.rows[0] });
@@ -24,15 +24,25 @@ export const getLeaguePreferences = async (req, res) => {
 export const updateLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { sec_access_before_hours, sec_access_after_hours, disqualification_mode } = req.body;
+    const { sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order } = req.body;
 
     if (disqualification_mode && !['light', 'sdk'].includes(disqualification_mode)) {
       return res.status(400).json({ success: false, error: 'Некорректный режим дисквалификаций' });
     }
+    if (arena_sort_order && !['name', 'city', 'added_desc', 'added_asc'].includes(arena_sort_order)) {
+      return res.status(400).json({ success: false, error: 'Некорректный порядок сортировки арен' });
+    }
 
+    // Все поля через COALESCE: вкладка «Арены» шлёт только свою настройку и не должна
+    // затирать параметры доступа секретаря, которые живут на другой вкладке.
     await pool.query(
-      'UPDATE leagues SET sec_access_before_hours = $1, sec_access_after_hours = $2, disqualification_mode = COALESCE($3, disqualification_mode) WHERE id = $4',
-      [sec_access_before_hours, sec_access_after_hours, disqualification_mode, leagueId]
+      `UPDATE leagues SET
+         sec_access_before_hours = COALESCE($1, sec_access_before_hours),
+         sec_access_after_hours = COALESCE($2, sec_access_after_hours),
+         disqualification_mode = COALESCE($3, disqualification_mode),
+         arena_sort_order = COALESCE($4, arena_sort_order)
+       WHERE id = $5`,
+      [sec_access_before_hours ?? null, sec_access_after_hours ?? null, disqualification_mode ?? null, arena_sort_order ?? null, leagueId]
     );
     res.json({ success: true });
   } catch (err) {

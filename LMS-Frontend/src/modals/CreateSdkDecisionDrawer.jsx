@@ -17,7 +17,7 @@ const TARGET_OPTIONS = [
   { key: 'player', label: 'Хоккеист', targetType: 'player', targetIndex: 0, roles: null },
   { key: 'staff_manager', label: 'Руководитель команды (подписант)', targetType: 'staff', targetIndex: 1, roles: ['team_manager'] },
   { key: 'staff_admin', label: 'Администратор команды', targetType: 'staff', targetIndex: 1, roles: ['team_admin'] },
-  { key: 'staff_coach', label: 'Тренер', targetType: 'staff', targetIndex: 1, roles: ['coach', 'head_coach'] },
+  { key: 'staff_coach', label: 'Тренер команды', targetType: 'staff', targetIndex: 1, roles: ['coach'] },
   { key: 'other', label: 'Иное лицо', targetType: 'other', targetIndex: 2, roles: null },
   { key: 'team', label: 'Команда', targetType: 'team', targetIndex: 2, roles: null }
 ];

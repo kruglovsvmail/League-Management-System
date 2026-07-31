@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines, 
   CustomSelect, StylishSelect, StylishInput, 
-  goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, GOAL_STRENGTH_DISPLAY 
+  goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY
 } from './GameDeskShared';
 import { Icon } from '../../ui/Icon';
 
@@ -80,8 +80,22 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
 export const ProtocolSheet = ({ 
   teamId, teamLetter, teamName, teamLogo, roster, teamEvents, oppEvents = [], timerSeconds, 
   onSaveEvent, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving,
-  goalieLog = [], isReadOnly
+  goalieLog = [], isReadOnly,
+  // Справочник причин удаления сезона; если лига его не заполнила, сюда приходит
+  // встроенный список (см. usePenaltyReasons)
+  penaltyReasons = penaltyReasonOptions
 }) => {
+  // Причина уходит в событие снимком: наименование + сокращение + ссылка на пункт.
+  // Пункт справочника потом могут отредактировать или удалить — протокол от этого
+  // меняться не должен.
+  const penaltySnapshot = (violation) => {
+    const opt = penaltyReasons.find(o => String(o.value) === String(violation));
+    return {
+      penalty_violation: violation || null,
+      penalty_violation_code: opt?.shortLabel || getPenaltyReasonCode(violation) || null,
+      penalty_reason_id: opt?.reasonId || null,
+    };
+  };
   const goals = teamEvents.filter(e => e.event_type === 'goal').sort((a, b) => a.time_seconds - b.time_seconds);
   const penalties = teamEvents.filter(e => e.event_type === 'penalty');
   const timeouts = teamEvents.filter(e => e.event_type === 'timeout').sort((a, b) => a.time_seconds - b.time_seconds);
@@ -225,7 +239,8 @@ export const ProtocolSheet = ({
 
     onSaveEvent(teamId, 'penalty', {
       time_seconds: startSecs, penalty_end_time: endSecs, player_id: getPlayerId(newPenalty.player),
-      penalty_minutes: mins, penalty_violation: newPenalty.violation, penalty_class: getPenaltyClass(newPenalty.mins)
+      penalty_minutes: mins, penalty_class: getPenaltyClass(newPenalty.mins),
+      ...penaltySnapshot(newPenalty.violation)
     });
     setNewPenalty({ player: '', mins: '2', violation: '', start: '' });
   };
@@ -245,7 +260,8 @@ export const ProtocolSheet = ({
 
     const success = await onSaveEvent(teamId, 'penalty', {
       time_seconds: startSecs, penalty_end_time: endSecs, player_id: getPlayerId(editPenaltyData.player),
-      penalty_minutes: mins, penalty_violation: editPenaltyData.violation, penalty_class: getPenaltyClass(editPenaltyData.mins)
+      penalty_minutes: mins, penalty_class: getPenaltyClass(editPenaltyData.mins),
+      ...penaltySnapshot(editPenaltyData.violation)
     }, editPenaltyId);
     if (success) setEditPenaltyId(null);
   };
@@ -473,7 +489,7 @@ export const ProtocolSheet = ({
                           hideEmpty
                         />
                       </td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><CustomSelect isEditing title="Причина штрафа" options={penaltyReasonOptions} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
+                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><CustomSelect isEditing title="Причина удаления" options={penaltyReasons} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5">
                         <StylishInput
                           isEditing isTimeField title="Начало штрафа" value={editPenaltyData.start}
@@ -496,7 +512,9 @@ export const ProtocolSheet = ({
                           : (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) ? '5+20'
                           : penalty.penalty_minutes}
                       </td>
-                      <td className="border-r border-graphite/30 text-left px-2 text-[11px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-medium" title={penalty.penalty_violation}>{penalty.penalty_violation}</td>
+                      {/* Показываем сокращение — как в поле выбора и в PDF. Полная формулировка
+                          остаётся в подсказке при наведении. */}
+                      <td className="border-r border-graphite/30 text-center px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation_code || getPenaltyReasonCode(penalty.penalty_violation)}</td>
                       <td className="border-r border-graphite/30 font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
                       <td className={`border-r border-graphite/30 ${endTimeClass}`}>{endTimeDisplay}</td>
                       <td className="border-r-2 border-graphite/25 p-0 text-center">
@@ -518,7 +536,7 @@ export const ProtocolSheet = ({
                           hideEmpty
                         />
                       </td>
-                      <td className="border-r border-graphite/30 p-0.5"><CustomSelect title="Причина штрафа" options={penaltyReasonOptions} value={newPenalty.violation} onChange={e=>setNewPenalty({...newPenalty, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
+                      <td className="border-r border-graphite/30 p-0.5"><CustomSelect title="Причина удаления" options={penaltyReasons} value={newPenalty.violation} onChange={e=>setNewPenalty({...newPenalty, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
                       <td className="border-r border-graphite/30 p-0.5">
                         <StylishInput
                           isTimeField title="Начало штрафа" value={newPenalty.start} placeholder={formatTime(timerSeconds)}

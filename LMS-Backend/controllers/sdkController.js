@@ -196,6 +196,49 @@ export const getSdkViolationTypes = async (req, res) => {
   }
 };
 
+// POST /seasons/:seasonId/sdk/violation-types/copy  { fromSeasonId }
+// Клонирование таблицы штрафов из другого сезона. Разрешаем только в пустой справочник:
+// порядок строк держится на sort_order, и подмешивание чужих секций в уже заполненную
+// таблицу перемешало бы разделы с пунктами.
+export const copySdkViolationTypes = async (req, res) => {
+  try {
+    const { seasonId } = req.params;
+    const { fromSeasonId } = req.body;
+
+    if (!fromSeasonId) return res.status(400).json({ success: false, error: 'Не выбран сезон-источник' });
+    if (String(fromSeasonId) === String(seasonId)) {
+      return res.status(400).json({ success: false, error: 'Нельзя скопировать справочник сезона в него же' });
+    }
+
+    const existing = await pool.query('SELECT 1 FROM sdk_violation_types WHERE season_id = $1 LIMIT 1', [seasonId]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ success: false, error: 'Копирование доступно только в пустой справочник' });
+    }
+
+    const { rows } = await pool.query(`
+      INSERT INTO sdk_violation_types (
+        season_id, row_type, sort_order, code, title,
+        mandatory_games_min, mandatory_games_max, additional_games_min, additional_games_max,
+        additional_amount_min, additional_amount_max,
+        penalty_minutes_note, is_team_penalty, split_among_members
+      )
+      SELECT $1, src.row_type, src.sort_order, src.code, src.title,
+             src.mandatory_games_min, src.mandatory_games_max, src.additional_games_min, src.additional_games_max,
+             src.additional_amount_min, src.additional_amount_max,
+             src.penalty_minutes_note, src.is_team_penalty, src.split_among_members
+      FROM sdk_violation_types src
+      WHERE src.season_id = $2
+      ORDER BY src.sort_order ASC, src.id ASC
+      RETURNING id
+    `, [seasonId, fromSeasonId]);
+
+    res.json({ success: true, copied: rows.length });
+  } catch (err) {
+    console.error('Ошибка копирования справочника нарушений СДК:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
 export const createSdkViolationType = async (req, res) => {
   try {
     const { seasonId } = req.params;

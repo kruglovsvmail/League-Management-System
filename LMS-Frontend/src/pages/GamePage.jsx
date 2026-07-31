@@ -24,12 +24,16 @@ import { ROLES } from '../utils/permissions';
 
 dayjs.locale('ru');
 
-const ROLE_MAP = {
-  'head_coach': 'Главный тренер',
-  'coach': 'Тренер',
-  'team_manager': 'Менеджер команды',
-  'team_admin': 'Администратор'
-};
+// Представители команды в протоколе матча показываются подпунктами по ролям заявки,
+// а не одним списком с колонкой должности. Человек, заявленный в нескольких ролях,
+// попадает в каждый свой подпункт.
+// head_coach — только исторические записи: в новых заявках главного тренера нет,
+// он подаётся тренером, поэтому в подпункт «Тренер» попадают обе роли.
+const STAFF_SECTIONS = [
+  { key: 'team_manager', label: 'Руководитель команды', roles: ['team_manager'] },
+  { key: 'team_admin', label: 'Администратор команды', roles: ['team_admin'] },
+  { key: 'coach', label: 'Тренер команды', roles: ['coach', 'head_coach'] }
+];
 
 const POS_MAP = { 'G': 'Вр.', 'LD': 'Защ.', 'RD': 'Защ.', 'LW': 'Нап.', 'C': 'Нап.', 'RW': 'Нап.' };
 const POS_ORDER = { 'G': 1, 'LD': 2, 'RD': 2, 'LW': 3, 'C': 3, 'RW': 3 };
@@ -37,14 +41,16 @@ const POS_ORDER = { 'G': 1, 'LD': 2, 'RD': 2, 'LW': 3, 'C': 3, 'RW': 3 };
 const renderDsqBadge = (activeDisqualifications) => <DisqualificationBadge activeDisqualifications={activeDisqualifications} />;
 
 // Командный блок вкладки «Статистика» — сравнение хозяева/гости построчно.
+// needsShots — строка считается из бросков по вратарю. Если лига не ведёт броски на этой
+// стадии (divisions.reg_track_shots / playoff_track_shots), строку не показываем вовсе.
 const STATS_COMPARE_ROWS = [
-  { key: 'shots_on_goal', label: 'Броски в створ' },
-  { key: 'shooting_pct', label: '% реализации', isPercentage: true },
+  { key: 'shots_on_goal', label: 'Броски в створ', needsShots: true },
+  { key: 'shooting_pct', label: '% реализации', isPercentage: true, needsShots: true },
   { key: 'pp_goals', label: 'Голы в большинстве' },
   { key: 'sh_goals', label: 'Голы в меньшинстве' },
   { key: 'pim', label: 'Штрафное время' },
-  { key: 'saves', label: 'Отражено бросков' },
-  { key: 'save_pct', label: '% отражённых', isPercentage: true },
+  { key: 'saves', label: 'Отражено бросков', needsShots: true },
+  { key: 'save_pct', label: '% отражённых', isPercentage: true, needsShots: true },
 ];
 
 export function GamePage() {
@@ -322,20 +328,26 @@ export function GamePage() {
 
     const staffColumns = [
       { label: 'Фото', width: 'w-[80px]', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/5" alt="" /> )},
-      { label: 'Представитель', sortKey: 'last_name', render: (r) => (
+      { label: 'Представитель', render: (r) => (
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-semibold text-graphite/85">{r.last_name} {r.first_name}</span>
           {renderDsqBadge(r.active_disqualifications)}
         </div>
       )},
-      { label: 'Должность', sortKey: 'roles', render: (r) => (
-        <div className="flex flex-col gap-1 py-1">
-          {r.roles ? r.roles.split(', ').map((role, i) => (
-            <span key={i} className="text-[9px] font-bold text-graphite/60 uppercase tracking-wider leading-tight">{ROLE_MAP[role] || role}</span>
-          )) : <span className="text-[9px] font-bold text-orange uppercase tracking-wider leading-tight">Представитель</span>}
-        </div>
-      )}
+      { label: 'Должность', align: 'right', render: (r) => (
+        <span className="text-[10px] font-bold text-graphite/60 uppercase tracking-wider leading-tight whitespace-nowrap">{r.role_label}</span>
+      )},
     ];
+
+    // Плоский список «фото — ФИО — должность»: по строке на каждую пару «человек + роль».
+    // Заявленный в нескольких ролях встретится в списке несколько раз — по разу на роль.
+    // Роли без заявленных людей строк не дают.
+    const staffRows = STAFF_SECTIONS.flatMap(section =>
+      staff
+        .filter(s => (s.roles || '').split(',').map(x => x.trim()).some(role => section.roles.includes(role)))
+        .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, 'ru'))
+        .map(s => ({ ...s, id: `${section.key}-${s.user_id}`, role_label: section.label }))
+    );
 
     return (
       <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 pt-5 shadow-sm flex flex-col h-full animate-zoom-in">
@@ -365,7 +377,7 @@ export function GamePage() {
           {staff.length > 0 && (
             <div className="mt-2">
               <h4 className="text-[10px] font-black uppercase text-graphite/40 tracking-wider mb-2 px-2">Тренеры и представители</h4>
-              <div><Table columns={staffColumns} data={staff} hideHeader={true} /></div>
+              <div><Table columns={staffColumns} data={staffRows} hideHeader={true} /></div>
             </div>
           )}
         </div>
@@ -390,48 +402,66 @@ export function GamePage() {
     );
   };
 
+  // Лига может не вести +/- и броски по вратарю на этой стадии турнира
+  // (divisions.reg_track_* / playoff_track_*, приходят в getGameById уже под стадию матча).
+  // Тогда соответствующие столбцы и строки статистики не показываем совсем —
+  // раньше они рисовались с прочерками и выглядели как незаполненные данные.
+  const tracksPlusMinus = game?.track_plus_minus !== false;
+  const tracksShots = game?.track_shots !== false;
+
+  const compareRows = STATS_COMPARE_ROWS.filter(row => tracksShots || !row.needsShots);
+
   // Вкладка «Статистика»: таблица вратарей + полевых одной команды матча.
-  // +/- и вратарские Об/%Об — «—» когда null (лига не ведёт эту статистику на
-  // данной стадии, см. getGameStats/track_plus_minus/track_shots). Фото — то же
-  // приоритет, что у ростера (вкладка 0): team_members.photo_url, потом avatar_url,
-  // потом заглушка.
+  // Фото — тот же приоритет, что у ростера (вкладка 0): team_members.photo_url,
+  // потом avatar_url, потом заглушка.
   const renderTeamStats = (teamName, teamLogo, teamStats) => {
     const skaters = teamStats?.skaters || [];
     const goalies = teamStats?.goalies || [];
     const photoSrc = (r) => getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp');
 
+    // Таблицы в режиме table-fixed: колонка с ФИО ширины не имеет и забирает весь остаток,
+    // поэтому имя усекается только когда места действительно не хватает.
     const goalieColumns = [
-      { label: 'Фото', width: 'w-10 !pr-1', align: 'left', render: (r) => (
+      { label: 'Фото', width: 'w-12 !pl-4 !pr-1', align: 'left', render: (r) => (
         <img src={photoSrc(r)} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" />
       )},
-      { label: 'Вратарь', width: 'w-[150px] !pl-1', align: 'left', render: (r) => (
-        <button onClick={() => setSelectedPlayerId(r.player_id)} className="block max-w-[150px] text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
+      { label: 'Вратарь', width: '!pl-1', align: 'left', headerAlign: 'center', render: (r) => (
+        <button onClick={() => setSelectedPlayerId(r.player_id)} className="block w-full text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
           {r.last_name} {r.first_name}
         </button>
       )},
-      { label: 'ПШ', width: 'w-8', align: 'center', sortKey: 'goals_against', render: (r) => r.goals_against },
-      { label: 'Об', width: 'w-8', align: 'center', sortKey: 'saves', render: (r) => r.saves == null ? <span className="text-graphite/30">—</span> : r.saves },
-      { label: '%Об', width: 'w-12', align: 'center', sortKey: 'save_percent', render: (r) => r.save_percent == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.save_percent}%</span> },
-      { label: 'И"0"', width: 'w-8', align: 'center', sortKey: 'shutouts', render: (r) => r.shutouts > 0 ? <span className="text-status-accepted font-bold">{r.shutouts}</span> : r.shutouts },
+      // Числовые колонки одной ширины — иначе «%ОБ» и «И"0"» расползаются под свои заголовки.
+      // !px-2 вместо дефолтных px-4 из Table2: содержимое в один-два символа, а 32px отступов
+      // на колонку съедали ~150px на таблицу.
+      { label: 'ПШ', width: 'w-14 !px-2', align: 'center', sortKey: 'goals_against', render: (r) => r.goals_against },
+      // Отражённые и % отражённых считаются из бросков — без них столбцы бессмысленны
+      ...(tracksShots ? [
+        { label: 'Об', width: 'w-14 !px-2', align: 'center', sortKey: 'saves', render: (r) => r.saves == null ? <span className="text-graphite/30">—</span> : r.saves },
+        { label: '%Об', width: 'w-14 !px-2', align: 'center', sortKey: 'save_percent', render: (r) => r.save_percent == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.save_percent}%</span> },
+      ] : []),
+      { label: 'И"0"', width: 'w-14 !px-2', align: 'center', sortKey: 'shutouts', render: (r) => r.shutouts > 0 ? <span className="text-status-accepted font-bold">{r.shutouts}</span> : r.shutouts },
     ];
 
     const skaterColumns = [
-      { label: 'Фото', width: 'w-10 !pr-1', align: 'left', render: (r) => (
+      { label: 'Фото', width: 'w-12 !pl-4 !pr-1', align: 'left', render: (r) => (
         <img src={photoSrc(r)} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" />
       )},
-      { label: 'Игрок', width: 'w-[150px] !pl-1', align: 'left', render: (r) => (
-        <button onClick={() => setSelectedPlayerId(r.player_id)} className="block max-w-[150px] text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
+      { label: 'Игрок', width: '!pl-1', align: 'left', headerAlign: 'center', render: (r) => (
+        <button onClick={() => setSelectedPlayerId(r.player_id)} className="block w-full text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
           {r.last_name} {r.first_name}
         </button>
       )},
-      { label: 'Г', width: 'w-4', align: 'center', sortKey: 'goals', render: (r) => r.goals },
-      { label: 'П', width: 'w-4', align: 'center', sortKey: 'assists', render: (r) => r.assists },
-      { label: 'О', width: 'w-4', align: 'center', sortKey: 'points', render: (r) => <span className="font-bold text-orange">{r.points}</span> },
-      { label: '+/-', width: 'w-6', align: 'center', sortKey: 'plus_minus', render: (r) => r.plus_minus == null
-        ? <span className="text-graphite/30">—</span>
-        : <span className={r.plus_minus > 0 ? 'text-status-accepted' : (r.plus_minus < 0 ? 'text-status-rejected' : '')}>{r.plus_minus > 0 ? `+${r.plus_minus}` : r.plus_minus}</span>
-      },
-      { label: 'Штр', width: 'w-6', align: 'center', sortKey: 'penalty_minutes', render: (r) => r.penalty_minutes },
+      // Все числовые колонки одной ширины, включая «Штр» — см. комментарий у таблицы вратарей
+      { label: 'Г', width: 'w-12 !px-2', align: 'center', sortKey: 'goals', render: (r) => r.goals },
+      { label: 'П', width: 'w-12 !px-2', align: 'center', sortKey: 'assists', render: (r) => r.assists },
+      { label: 'О', width: 'w-12 !px-2', align: 'center', sortKey: 'points', render: (r) => <span className="font-bold text-orange">{r.points}</span> },
+      ...(tracksPlusMinus ? [
+        { label: '+/-', width: 'w-12 !px-2', align: 'center', sortKey: 'plus_minus', render: (r) => r.plus_minus == null
+          ? <span className="text-graphite/30">—</span>
+          : <span className={r.plus_minus > 0 ? 'text-status-accepted' : (r.plus_minus < 0 ? 'text-status-rejected' : '')}>{r.plus_minus > 0 ? `+${r.plus_minus}` : r.plus_minus}</span>
+        },
+      ] : []),
+      { label: 'Штр', width: 'w-12 !px-2', align: 'center', sortKey: 'penalty_minutes', render: (r) => r.penalty_minutes },
     ];
 
     return (
@@ -447,8 +477,8 @@ export function GamePage() {
           </div>
         ) : (
           <>
-            {goalies.length > 0 && <div className="mb-6"><Table columns={goalieColumns} data={goalies} /></div>}
-            {skaters.length > 0 && <Table columns={skaterColumns} data={skaters} />}
+            {goalies.length > 0 && <div className="mb-6"><Table columns={goalieColumns} data={goalies} fixedLayout /></div>}
+            {skaters.length > 0 && <Table columns={skaterColumns} data={skaters} fixedLayout />}
           </>
         )}
       </div>
@@ -750,9 +780,9 @@ export function GamePage() {
                     <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Статистика Матча</h3>
                   </div>
 
-                  {(game.status === 'live' || game.status === 'finished') && matchStats && (
+                  {(game.status === 'live' || game.status === 'finished') && matchStats && compareRows.length > 0 && (
                     <div className="mb-10 bg-graphite/5 rounded-lg p-5">
-                      {STATS_COMPARE_ROWS.map(row => {
+                      {compareRows.map(row => {
                         const homeVal = matchStats.home[row.key];
                         const awayVal = matchStats.away[row.key];
                         const fmt = (v) => v == null ? '—' : (row.isPercentage ? `${v}%` : v);

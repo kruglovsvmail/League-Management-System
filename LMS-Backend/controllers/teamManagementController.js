@@ -2,6 +2,21 @@ import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 
+/**
+ * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
+ * дополнительно есть head_coach, но в заявке главный тренер и тренер подаются одной ролью 'coach'.
+ * Один человек может занимать несколько ролей сразу: на каждую заводится своя строка
+ * в tournament_team_roles (уникальность по тройке заявка+человек+роль).
+ */
+export const TOURNAMENT_ROLES = ['team_manager', 'team_admin', 'coach'];
+
+const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
+
+const normalizeTournamentRoles = (roles) => {
+    if (!Array.isArray(roles)) return [];
+    return [...new Set(roles.map(toTournamentRole))].filter(r => TOURNAMENT_ROLES.includes(r));
+};
+
 export const searchTeams = async (req, res) => {
     try {
         const { q } = req.query;
@@ -235,6 +250,7 @@ export const getTeamApplications = async (req, res) => {
                    -- Персонал
                    COALESCE(
                        (SELECT json_agg(json_build_object(
+                           'id', ttr.id,
                            'user_id', ttr.user_id,
                            'role', ttr.tournament_role,
                            'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
@@ -455,35 +471,26 @@ export const addStaffToApplication = async (req, res) => {
 
         await client.query('BEGIN');
 
-        if (!roles || roles.length === 0) {
-            await client.query(`
-                UPDATE tournament_team_roles 
-                SET left_at = NOW() 
-                WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
-            `, [appId, userId]);
-            await client.query('COMMIT');
-            return res.json({ success: true });
-        }
+        // roles — ПОЛНЫЙ набор ролей человека в заявке: он может быть одновременно
+        // руководителем, тренером и администратором (по строке на каждую роль).
+        // Пустой набор = убрать из заявки совсем.
+        const nextRoles = normalizeTournamentRoles(roles);
 
-        const primaryRole = roles[0]; 
-
-        // ИЗМЕНЕНИЕ: Безопасный UPSERT через транзакцию (обходим проблему с ON CONFLICT и индексами)
-        const checkRes = await client.query(`
-            SELECT id FROM tournament_team_roles
+        await client.query(`
+            UPDATE tournament_team_roles
+            SET left_at = NOW()
             WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
-        `, [appId, userId]);
+              AND NOT (tournament_role = ANY($3::varchar[]))
+        `, [appId, userId, nextRoles]);
 
-        if (checkRes.rows.length > 0) {
-            await client.query(`
-                UPDATE tournament_team_roles
-                SET tournament_role = $1
-                WHERE id = $2
-            `, [primaryRole, checkRes.rows[0].id]);
-        } else {
+        if (nextRoles.length > 0) {
+            // Уникальность по тройке заявка+человек+роль: повторное добавление ранее снятой
+            // роли переоткрывает ту же строку вместо создания дубля.
             await client.query(`
                 INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
-                VALUES ($1, $2, $3)
-            `, [appId, userId, primaryRole]);
+                SELECT $1, $2, r FROM unnest($3::varchar[]) AS r
+                ON CONFLICT (tournament_team_id, user_id, tournament_role) DO UPDATE SET left_at = NULL
+            `, [appId, userId, nextRoles]);
         }
 
         await client.query('COMMIT');
@@ -497,14 +504,17 @@ export const addStaffToApplication = async (req, res) => {
     }
 };
 
+// Без :role — человек убирается из заявки целиком, с :role — снимается только эта его роль
 export const removeStaffFromApplication = async (req, res) => {
     try {
-        const { appId, userId } = req.params;
+        const { appId, userId, role } = req.params;
+        const roleFilter = TOURNAMENT_ROLES.includes(role) ? role : null;
         await pool.query(`
-            UPDATE tournament_team_roles 
-            SET left_at = NOW() 
+            UPDATE tournament_team_roles
+            SET left_at = NOW()
             WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
-        `, [appId, userId]);
+              AND ($3::varchar IS NULL OR tournament_role = $3)
+        `, [appId, userId, roleFilter]);
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка удаления персонала из заявки:', err);

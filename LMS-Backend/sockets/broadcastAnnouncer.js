@@ -75,6 +75,7 @@ const EVENTS_QUERY = `
   SELECT
     ge.id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength,
     ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
+    pt.tts_accusative as penalty_accusative,
     t.id as team_id, t.name as team_name, t.logo_url as team_logo, t.pronunciation as team_pronunciation,
     su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
     su.pronunciation as primary_pronunciation, tm_su.photo_url as primary_photo_url,
@@ -84,6 +85,9 @@ const EVENTS_QUERY = `
     a2.last_name as assist2_last_name, a2.first_name as assist2_first_name, a2.pronunciation as assist2_pronunciation,
     gr_a2.jersey_number as assist2_jersey_number
   FROM game_events ge
+  -- Падеж причины для диктора берём из справочника лиги; пункт могли удалить,
+  -- тогда останется NULL и сработает встроенный фолбэк (см. ttsShared.js)
+  LEFT JOIN penalty_types pt ON pt.id = ge.penalty_reason_id
   LEFT JOIN teams t ON ge.team_id = t.id
   LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id
   LEFT JOIN team_members tm_su ON tm_su.user_id = su.id AND tm_su.team_id = ge.team_id
@@ -184,6 +188,7 @@ export default function setupBroadcastAnnouncer(io) {
         penalty_minutes: row.penalty_minutes,
         penalty_class: row.penalty_class,
         penalty_violation: row.penalty_violation,
+        penalty_accusative: row.penalty_accusative || null,
         assist1_last_name: row.assist1_last_name,
         assist1_first_name: row.assist1_first_name,
         assist1_pronunciation: row.assist1_pronunciation || null,

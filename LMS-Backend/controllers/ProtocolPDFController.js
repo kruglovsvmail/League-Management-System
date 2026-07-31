@@ -60,7 +60,7 @@ const fetchRawProtocolData = async (gameId) => {
     });
 
     const eventsQuery = `
-        SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength, ge.penalty_minutes, ge.penalty_class, ge.penalty_violation, ge.penalty_end_time,
+        SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength, ge.penalty_minutes, ge.penalty_class, ge.penalty_violation, ge.penalty_violation_code, ge.penalty_end_time,
             u_scorer.last_name as scorer_last_name, gr_scorer.jersey_number as scorer_number,
             u_a1.last_name as a1_last_name, gr_a1.jersey_number as a1_number,
             u_a2.last_name as a2_last_name, gr_a2.jersey_number as a2_number
@@ -89,20 +89,27 @@ const fetchRawProtocolData = async (gameId) => {
         signatures[sig.role] = { hash: sig.signature_hash, name: displayName, date: sig.created_at, user_id: sig.user_id };
     });
 
+    // Человек может быть заявлен сразу в нескольких ролях (руководитель + тренер + администратор) —
+    // это отдельные строки в tournament_team_roles. Группируем по человеку, иначе он попадёт
+    // в выпадающие списки подписантов по разу на каждую свою роль.
     const signersQuery = `
-        SELECT 'home' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name, ttr.tournament_role as role
+        SELECT 'home' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name,
+               array_agg(DISTINCT ttr.tournament_role) as roles
         FROM tournament_team_roles ttr
         JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
         JOIN users u ON u.id = ttr.user_id
         WHERE tt.team_id = $2 AND tt.division_id = $1 AND ttr.left_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
+        GROUP BY ttr.user_id, u.last_name, u.first_name, u.middle_name
         UNION ALL
-        SELECT 'away' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name, ttr.tournament_role as role
+        SELECT 'away' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name,
+               array_agg(DISTINCT ttr.tournament_role) as roles
         FROM tournament_team_roles ttr
         JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
         JOIN users u ON u.id = ttr.user_id
         WHERE tt.team_id = $3 AND tt.division_id = $1 AND ttr.left_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
+        GROUP BY ttr.user_id, u.last_name, u.first_name, u.middle_name
     `;
     const signersResult = await pool.query(signersQuery, [game.division_id, game.home_team_id, game.away_team_id, game.league_id]);
     
@@ -111,14 +118,18 @@ const fetchRawProtocolData = async (gameId) => {
     
     signersResult.rows.forEach(r => {
         const name = formatName(r);
-        const isCoach = r.role === 'coach' || r.role === 'head_coach';
+        const roles = r.roles || [];
+        // Строку «Тренер» подписывает только заявленный тренер команды. Главного тренера
+        // в турнирной заявке нет — он подаётся ролью 'coach' (см. TOURNAMENT_ROLES).
+        const isCoach = roles.includes('coach');
+        const entry = { id: r.id, name, roles };
         if (r.side === 'home') {
-            eligibleSigners.home.staff.push({ id: r.id, name, role: r.role });
-            if (isCoach) eligibleSigners.home.coaches.push({ id: r.id, name, role: r.role });
+            eligibleSigners.home.staff.push(entry);
+            if (isCoach) eligibleSigners.home.coaches.push(entry);
         }
         if (r.side === 'away') {
-            eligibleSigners.away.staff.push({ id: r.id, name, role: r.role });
-            if (isCoach) eligibleSigners.away.coaches.push({ id: r.id, name, role: r.role });
+            eligibleSigners.away.staff.push(entry);
+            if (isCoach) eligibleSigners.away.coaches.push(entry);
         }
     });
 

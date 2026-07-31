@@ -7,9 +7,12 @@ import { AccessFallback } from '../../ui/AccessFallback';
 import { SdkVenuesSection } from '../Sdk/SdkVenuesSection';
 import { SdkCommissionMembersSection } from '../Sdk/SdkCommissionMembersSection';
 import { SdkViolationTypesSection } from '../Sdk/SdkViolationTypesSection';
+import { PenaltyTypesSection } from '../Sdk/PenaltyTypesSection';
 import { getToken } from '../../utils/helpers';
 
-const SECTIONS = ['Места проведения', 'Члены СДК', 'Таблица штрафов'];
+// «Причины удалений» — причины удаления для протокола матча (их выбирает секретарь).
+// «Таблица штрафов» — пункты регламента и санкции СДК. Разные вещи, не перепутать.
+const SECTIONS = ['Причины удалений', 'Таблица штрафов СДК', 'Члены СДК', 'Места проведения СДК'];
 
 export function SdkReferencesTab({ setToast }) {
   const { selectedLeague } = useOutletContext();
@@ -34,13 +37,13 @@ export function SdkReferencesTab({ setToast }) {
   }, [selectedLeague?.id]);
 
   if (!canView) {
-    return <AccessFallback variant="full" message="У вас нет прав для просмотра справочников СДК." />;
+    return <AccessFallback variant="full" message="У вас нет прав для просмотра справочников лиги." />;
   }
 
   return (
     <div className="flex flex-col gap-6 animate-zoom-in">
       {!canManage && (
-        <AccessFallback variant="readonly" message="У вас нет прав для управления справочниками СДК. Вы находитесь в режиме просмотра." />
+        <AccessFallback variant="readonly" message="У вас нет прав для управления справочниками лиги. Вы находитесь в режиме просмотра." />
       )}
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -48,16 +51,17 @@ export function SdkReferencesTab({ setToast }) {
           options={SECTIONS}
           defaultIndex={activeSection}
           onChange={setActiveSection}
-          className="w-[640px] max-w-full shrink-0"
+          className="w-[760px] max-w-full shrink-0"
         />
         <div className="w-[180px] shrink-0">
           <Select options={seasons.map(s => ({ value: s.id, label: s.name }))} value={seasonId} onChange={setSeasonId} placeholder="Сезон" />
         </div>
       </div>
 
-      {activeSection === 0 && <SdkVenuesSection seasonId={seasonId} setToast={setToast} />}
-      {activeSection === 1 && <SdkCommissionMembersSection seasonId={seasonId} setToast={setToast} />}
-      {activeSection === 2 && <SdkViolationTypesSection seasonId={seasonId} setToast={setToast} />}
+      {activeSection === 0 && <PenaltyTypesSection seasonId={seasonId} seasons={seasons} setToast={setToast} />}
+      {activeSection === 1 && <SdkViolationTypesSection seasonId={seasonId} seasons={seasons} setToast={setToast} />}
+      {activeSection === 2 && <SdkCommissionMembersSection seasonId={seasonId} setToast={setToast} />}
+      {activeSection === 3 && <SdkVenuesSection seasonId={seasonId} setToast={setToast} />}
     </div>
   );
 }

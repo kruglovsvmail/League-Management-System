@@ -355,6 +355,7 @@ export default function setupTimerSockets(io) {
   const GAME_EVENTS_QUERY = `
     SELECT
       ge.id, ge.time_seconds, ge.event_type, ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
+      pt.tts_accusative as penalty_accusative,
       su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
       su.pronunciation as primary_pronunciation,
       gr_su.jersey_number as primary_jersey_number, gr_su.position_in_line as primary_position,
@@ -364,6 +365,8 @@ export default function setupTimerSockets(io) {
       gr_a2.jersey_number as assist2_jersey_number,
       t.name as team_name, t.pronunciation as team_pronunciation
     FROM game_events ge
+    -- Падеж причины для диктора из справочника лиги (NULL -> встроенный фолбэк)
+    LEFT JOIN penalty_types pt ON pt.id = ge.penalty_reason_id
     LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id
     LEFT JOIN game_rosters gr_su ON gr_su.game_id = ge.game_id AND gr_su.player_id = su.id AND gr_su.team_id = ge.team_id
     LEFT JOIN users a1 ON ge.assist1_id = a1.id
@@ -423,6 +426,7 @@ export default function setupTimerSockets(io) {
         penalty_class: row.penalty_class,
         penalty_minutes: row.penalty_minutes,
         penalty_violation: row.penalty_violation,
+        penalty_accusative: row.penalty_accusative || null,
         assist1_last_name: row.assist1_last_name,
         assist1_first_name: row.assist1_first_name,
         assist1_pronunciation: row.assist1_pronunciation || null,

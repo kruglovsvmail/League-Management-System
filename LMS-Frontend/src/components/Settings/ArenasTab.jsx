@@ -7,7 +7,17 @@ import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Loader } from '../../ui/Loader';
 import { AccessFallback } from '../../ui/AccessFallback';
+import { Checkbox } from '../../ui/Checkbox';
 import { getToken } from '../../utils/helpers';
+
+// Порядок арен в выпадающих списках. Значения совпадают с leagues.arena_sort_order,
+// саму сортировку применяет сервер при выдаче списка арен лиги (getArenas).
+const ARENA_SORT_OPTIONS = [
+  { value: 'name', label: 'Название', hint: 'По алфавиту, по названию арены' },
+  { value: 'city', label: 'Город', hint: 'Сначала по городу, внутри города — по названию' },
+  { value: 'added_desc', label: 'Новые сверху', hint: 'По дате добавления в лигу: недавно добавленные в начале списка' },
+  { value: 'added_asc', label: 'Новые снизу', hint: 'По дате добавления в лигу: недавно добавленные в конце списка' },
+];
 
 export function ArenasTab({ setToast }) {
   const { selectedLeague } = useOutletContext();
@@ -21,6 +31,11 @@ export function ArenasTab({ setToast }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Порядок арен в выпадающих списках матчей. Применяется на сервере при выдаче
+  // списка (см. getArenas), поэтому вступает в силу сразу после сохранения.
+  const [sortOrder, setSortOrder] = useState('name');
+  const [isSavingSort, setIsSavingSort] = useState(false);
 
   const loadArenas = async () => {
     setIsLoading(true);
@@ -45,8 +60,43 @@ export function ArenasTab({ setToast }) {
     }
   };
 
+  const loadSortOrder = async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague.id}/preferences`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      const data = await res.json();
+      if (data.success && data.data?.arena_sort_order) setSortOrder(data.data.arena_sort_order);
+    } catch (err) {
+      console.error('Не удалось загрузить порядок сортировки арен', err);
+    }
+  };
+
+  const saveSortOrder = async (value) => {
+    const previous = sortOrder;
+    setSortOrder(value);
+    setIsSavingSort(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague.id}/preferences`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+        body: JSON.stringify({ arena_sort_order: value })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setSortOrder(previous);
+        setToast({ title: 'Ошибка', message: data.error || 'Не удалось сохранить сортировку', type: 'error' });
+      }
+    } catch (err) {
+      setSortOrder(previous);
+      setToast({ title: 'Ошибка', message: 'Не удалось сохранить сортировку', type: 'error' });
+    } finally {
+      setIsSavingSort(false);
+    }
+  };
+
   useEffect(() => {
-    if (canView && selectedLeague?.id) loadArenas();
+    if (canView && selectedLeague?.id) { loadArenas(); loadSortOrder(); }
   }, [selectedLeague?.id, canView]);
 
   const toggleArena = async (arenaId, action) => {
@@ -131,9 +181,10 @@ export function ArenasTab({ setToast }) {
       )}
 
       <div className="flex flex-col lg:flex-row gap-8 items-start">
-        
-        {/* ЛЕВАЯ КОЛОНКА: АРЕНЫ ЛИГИ */}
-        <div className="flex-1 w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[500px] relative">
+
+        {/* ЛЕВАЯ КОЛОНКА: АРЕНЫ ЛИГИ + СОРТИРОВКА */}
+        <div className="flex-1 w-full flex flex-col gap-6">
+        <div className="w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 min-h-[500px] relative">
           {isLoading && (
             <div className="absolute inset-0 z-30 flex pt-20 justify-center backdrop-blur-sm rounded-lg">
               <Loader text="" />
@@ -160,6 +211,43 @@ export function ArenasTab({ setToast }) {
               <span className="text-graphite-light font-medium">Арены еще не добавлены в лигу</span>
             </div>
           )}
+        </div>
+
+        {/* СОРТИРОВКА В ВЫПАДАЮЩИХ СПИСКАХ */}
+        <div className="w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6 flex flex-col gap-4">
+          <div className="flex flex-col">
+            <span className="text-[16px] font-black text-graphite uppercase tracking-wide">Сортировка в выпадающих списках</span>
+            <p className="text-[12px] font-medium text-graphite-light">
+              Порядок арен при назначении арены матчу
+            </p>
+          </div>
+
+          {/* Чекбоксы, но выбор одиночный: порядок может быть только один.
+              Повторный клик по уже выбранному ничего не делает — иначе сортировка
+              осталась бы вообще без значения. */}
+          {/* Ряд с переносом: на узком экране пункты сами сложатся в столбец */}
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+            {ARENA_SORT_OPTIONS.map(option => (
+              <Checkbox
+                key={option.value}
+                className="mb-0"
+                label={option.label}
+                checked={sortOrder === option.value}
+                onChange={() => {
+                  if (!canManage || isSavingSort || sortOrder === option.value) return;
+                  saveSortOrder(option.value);
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Пояснение одно — к выбранному варианту: под каждым пунктом в строку оно не влезает */}
+          <span className="text-[12px] text-graphite-light">
+            {isSavingSort
+              ? 'Сохраняем...'
+              : ARENA_SORT_OPTIONS.find(o => o.value === sortOrder)?.hint}
+          </span>
+        </div>
         </div>
 
         {/* ПРАВАЯ КОЛОНКА: ПОИСК И ДОБАВЛЕНИЕ */}

@@ -39,63 +39,16 @@ export function declineName(lastName, firstName, caseName, order = 'last-first')
     }
 }
 
-// ── Причины штрафов в винительном падеже (для «За ... штрафом наказан») ─────
-// Список причин фиксирован (выпадающий список в панели секретаря), поэтому склонения
-// прописаны вручную для каждой — общей грамматической библиотеки для этого нет.
+// ── Причина штрафа для озвучки ───────────────────────────────────────────────
+// Берётся ТОЛЬКО из справочника лиги (penalty_types.tts_accusative). Если лига падеж
+// не заполнила — причину не произносим вовсе: фраза строится без неё.
+// Подбирать форму самим нельзя: наименование в именительном падеже посреди фразы
+// «наказан за ...» звучит безграмотно («за подножка»), а угадать падеж по любой
+// формулировке лиги невозможно.
 
-const PENALTY_REASON_ACCUSATIVE = {
-    'Агрессор в драке': 'агрессора в драке',
-    'Атака в голову или шею': 'атаку в голову или шею',
-    'Блокировка': 'блокировку',
-    'Бросок клюшки и снаряжения': 'бросок клюшки и снаряжения',
-    'Выброс шайбы': 'выброс шайбы',
-    'Грубость': 'грубость',
-    'Дисциплинарный до конца матча штраф': 'дисциплинарный до конца матча штраф',
-    'Дисциплинарный штраф': 'дисциплинарный штраф',
-    'Драка': 'драку',
-    'Задержка игры': 'задержку игры',
-    'Задержка клюшки соперника': 'задержку клюшки соперника',
-    'Задержка клюшкой': 'задержку клюшкой',
-    'Задержка соперника': 'задержку соперника',
-    'Задержка шайбы руками': 'задержку шайбы руками',
-    'Зачинщик драки': 'зачинщика драки',
-    'Игра высоко поднятой клюшкой': 'игру высоко поднятой клюшкой',
-    'Игра со сломанной клюшкой': 'игру со сломанной клюшкой',
-    'Колющий удар': 'колющий удар',
-    'Малый скамеечный штраф': 'малый скамеечный штраф',
-    'Нарушение численного состава': 'нарушение численного состава',
-    'Неправильная атака': 'неправильную атаку',
-    'Нестандартное снаряжение': 'нестандартное снаряжение',
-    'Опасное снаряжение': 'опасное снаряжение',
-    'Опасные действия': 'опасные действия',
-    'Оскорбление судей и неспортивное поведение': 'оскорбление судей и неспортивное поведение',
-    'Отказ начать игру': 'отказ начать игру',
-    'Отсечение': 'отсечение',
-    'Подножка': 'подножку',
-    'Покид. скамейки штрафников во время конфл.': 'покидание скамейки штрафников во время конфликта',
-    'Покид. скамейки запасных во время конфл.': 'покидание скамейки запасных во время конфликта',
-    'Сдвиг ворот': 'сдвиг ворот',
-    'Симуляция': 'симуляцию',
-    'Толчок клюшкой': 'толчок клюшкой',
-    'Толчок на борт': 'толчок на борт',
-    'Удар головой': 'удар головой',
-    'Удар клюшкой': 'удар клюшкой',
-    'Удар коленом': 'удар коленом',
-    'Удар концом клюшки': 'удар концом клюшки',
-    'Удар локтем': 'удар локтем',
-    'Удар ногой': 'удар ногой',
-    'Физический контакт со зрителем': 'физический контакт со зрителем',
-    'Штр. вр: игра за красной линией': 'игру за красной линией',
-    'Штр. вр: покидание площади ворот в конфликте': 'покидание площади ворот в конфликте',
-    'Штр. вр: помещающий шайбу на сетку ворот': 'помещение шайбы на сетку ворот',
-    'Штр. вр: отправился к скамейке в остановке': 'уход к скамейке в остановке',
-};
-
-export function declinePenaltyReasonAccusative(violation) {
-    if (!violation) return 'нарушение правил';
-    const trimmed = violation.trim();
-    if (PENALTY_REASON_ACCUSATIVE[trimmed]) return PENALTY_REASON_ACCUSATIVE[trimmed];
-    return trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
+export function penaltyReasonAccusative(accusative) {
+    const value = String(accusative || '').trim();
+    return value || null;
 }
 
 // ── Формулировка тяжести штрафа («малым штрафом» / «двойным малым штрафом» и т.д.) ──
@@ -222,7 +175,7 @@ export function buildBroadcastEventText({
     event_type,
     player_last_name, player_first_name, pronunciation, jersey_number, is_goalie,
     team_name, team_pronunciation,
-    penalty_class, penalty_minutes, penalty_violation,
+    penalty_class, penalty_minutes, penalty_violation, penalty_accusative,
     assist1_last_name, assist1_first_name, assist1_pronunciation, assist1_jersey_number,
     assist2_last_name, assist2_first_name, assist2_pronunciation, assist2_jersey_number,
     goal_strength,
@@ -233,17 +186,20 @@ export function buildBroadcastEventText({
     const scorerPhrase = `${playerDisplay}${playerNumWord ? ` номер ${playerNumWord}` : ''}`;
 
     if (event_type === 'penalty') {
-        const reason = declinePenaltyReasonAccusative(penalty_violation);
+        const reason = penaltyReasonAccusative(penalty_accusative);
         const severity = resolveBroadcastPenaltyClassPhrase(penalty_class, penalty_minutes);
         const hasPlayer = !!(player_last_name || player_first_name || pronunciation);
+        // Падеж в справочнике не заполнен — причину опускаем целиком:
+        // «Большим и дисциплинарным штрафом до конца матча, наказана команда Динамо.»
+        const reasonPart = reason ? ` за ${reason}` : '';
 
         if (!hasPlayer) {
-            return `${severity} за ${reason}, наказана команда ${teamDisplay}.`;
+            return `${severity}${reasonPart}, наказана команда ${teamDisplay}.`;
         }
         if (is_goalie) {
-            return `${severity} за ${reason}, наказан вратарь команды ${teamDisplay}, ${scorerPhrase}.`;
+            return `${severity}${reasonPart}, наказан вратарь команды ${teamDisplay}, ${scorerPhrase}.`;
         }
-        return `${severity} за ${reason}, наказан игрок команды ${teamDisplay}, ${scorerPhrase}.`;
+        return `${severity}${reasonPart}, наказан игрок команды ${teamDisplay}, ${scorerPhrase}.`;
     }
 
     if (event_type === 'goal') {
@@ -303,7 +259,7 @@ export function buildEventText({
     event_type,
     player_last_name, player_first_name, pronunciation, jersey_number, is_goalie,
     team_name, team_pronunciation,
-    penalty_class, penalty_minutes, penalty_violation,
+    penalty_class, penalty_minutes, penalty_violation, penalty_accusative,
     assist1_last_name, assist1_first_name, assist1_pronunciation, assist1_jersey_number,
     assist2_last_name, assist2_first_name, assist2_pronunciation, assist2_jersey_number,
 }) {
@@ -335,8 +291,23 @@ export function buildEventText({
     }
 
     if (event_type === 'penalty') {
-        const reason = declinePenaltyReasonAccusative(penalty_violation);
+        const reason = penaltyReasonAccusative(penalty_accusative);
         const severity = resolvePenaltyClassPhrase(penalty_class, penalty_minutes);
+
+        // Падеж в справочнике не заполнен — причину опускаем, и тогда фраза начинается
+        // с тяжести штрафа: «Малым штрафом наказан Иван Петров номер двадцать первый…».
+        // У диктора тяжесть хранится со строчной (она стоит в середине фразы), поэтому
+        // при выносе в начало поднимаем первую букву.
+        if (!reason) {
+            const opening = severity.charAt(0).toUpperCase() + severity.slice(1);
+            if (!hasPlayer) {
+                return `${opening} наказана команда ${teamDisplay}.`;
+            }
+            if (is_goalie) {
+                return `${opening} наказан вратарь команды ${teamDisplay}, ${playerDisplay}${playerNumWord}.`;
+            }
+            return `${opening} наказан ${playerDisplay}${playerNumWord}, команда ${teamDisplay}.`;
+        }
 
         if (!hasPlayer) {
             return `За ${reason}, ${severity} наказана команда ${teamDisplay}.`;

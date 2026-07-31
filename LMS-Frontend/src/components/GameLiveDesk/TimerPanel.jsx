@@ -254,6 +254,7 @@ export const TimerPanel = ({
         autoStopOnEvent={autoStopOnEvent} setAutoStopOnEvent={setAutoStopOnEvent}
         arenaAnnouncer={arenaAnnouncer} setArenaAnnouncer={setArenaAnnouncer}
         gameId={game?.id} setToast={setToast} onResetAnnouncer={onResetAnnouncer}
+        trackTimerLog={game?.track_timer_log}
       />
     </div>
   );

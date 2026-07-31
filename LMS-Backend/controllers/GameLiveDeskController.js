@@ -22,7 +22,8 @@ export const getGameEvents = async (req, res) => {
         const query = `
             SELECT
                 ge.id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength,
-                ge.penalty_violation, ge.penalty_minutes, ge.penalty_class, ge.penalty_end_time,
+                ge.penalty_violation, ge.penalty_violation_code, ge.penalty_reason_id,
+                ge.penalty_minutes, ge.penalty_class, ge.penalty_end_time,
                 ge.against_goalie_id, ge.from_shot,
                 t.id as team_id, t.name as team_name, t.logo_url as team_logo,
                 t.pronunciation as team_pronunciation,
@@ -89,7 +90,8 @@ export const createGameEvent = async (req, res) => {
         const {
             period, time_seconds, event_type, team_id,
             player_id, assist1_id, assist2_id, goal_strength,
-            penalty_violation, penalty_minutes, penalty_class, penalty_end_time,
+            penalty_violation, penalty_violation_code, penalty_reason_id,
+            penalty_minutes, penalty_class, penalty_end_time,
             against_goalie_id, from_shot
         } = req.body;
 
@@ -106,16 +108,20 @@ export const createGameEvent = async (req, res) => {
             INSERT INTO game_events (
                 game_id, period, time_seconds, event_type, team_id,
                 scorer_id, assist1_id, assist2_id, goal_strength,
-                penalty_player_id, penalty_violation, penalty_minutes, penalty_class, penalty_end_time,
+                penalty_player_id, penalty_violation, penalty_violation_code, penalty_reason_id,
+                penalty_minutes, penalty_class, penalty_end_time,
                 against_goalie_id, from_shot
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING id
         `, [
             gameId, period, time_seconds || 0, event_type, team_id || null,
             (isGoalEvent || isShootoutEvent) ? player_id : null,
             assist1_id || null, assist2_id || null, goal_strength || null,
             event_type === 'penalty' ? player_id : null,
-            penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
+            // Причина сохраняется снимком (наименование + сокращение) плюс ссылкой на пункт
+            // справочника: пункт могут удалить, а протокол должен печататься как записан.
+            penalty_violation || null, penalty_violation_code || null, penalty_reason_id || null,
+            penalty_minutes || null, penalty_class || null, penalty_end_time || null,
             against_goalie_id || null, fromShotValue
         ]);
 
@@ -154,7 +160,8 @@ export const updateGameEvent = async (req, res) => {
         const {
             period, time_seconds, event_type, team_id,
             player_id, assist1_id, assist2_id, goal_strength,
-            penalty_violation, penalty_minutes, penalty_class, penalty_end_time,
+            penalty_violation, penalty_violation_code, penalty_reason_id,
+            penalty_minutes, penalty_class, penalty_end_time,
             against_goalie_id, from_shot
         } = req.body;
 
@@ -197,7 +204,8 @@ await client.query(`
         period = $1, time_seconds = $2, team_id = $3,
         scorer_id = $4, assist1_id = $5, assist2_id = $6, goal_strength = $7,
         penalty_player_id = $8, penalty_violation = $9, penalty_minutes = $10, penalty_class = $11, penalty_end_time = $12,
-        against_goalie_id = $13, event_type = $15, from_shot = $16
+        against_goalie_id = $13, event_type = $15, from_shot = $16,
+        penalty_violation_code = $17, penalty_reason_id = $18
     WHERE id = $14
 `, [
     period, time_seconds || 0, team_id || null,
@@ -206,7 +214,8 @@ await client.query(`
     against_goalie_id || null,
     eventId,
     event_type,
-    fromShotValue
+    fromShotValue,
+    penalty_violation_code || null, penalty_reason_id || null
 ]);
 
         await triggerRecalcFlag(client, gameId);

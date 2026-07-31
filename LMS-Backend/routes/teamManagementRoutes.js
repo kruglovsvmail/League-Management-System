@@ -49,6 +49,8 @@ router.delete('/teams-manage/:teamId/applications/:appId/roster/:rosterId', remo
 
 // Управление ПЕРСОНАЛОМ внутри заявки
 router.post('/teams-manage/:teamId/applications/:appId/staff', addStaffToApplication);
+// Без :role — человек убирается из заявки целиком, с :role — снимается только эта его роль
 router.delete('/teams-manage/:teamId/applications/:appId/staff/:userId', removeStaffFromApplication);
+router.delete('/teams-manage/:teamId/applications/:appId/staff/:userId/:role', removeStaffFromApplication);
 
 export default router;

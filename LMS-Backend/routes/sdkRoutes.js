@@ -4,7 +4,7 @@ import upload from '../config/upload.js';
 import {
   getSdkVenues, createSdkVenue, deleteSdkVenue,
   getSdkCommissionMembers, createSdkCommissionMember, setSdkCommissionMemberPermanent, deleteSdkCommissionMember,
-  getSdkViolationTypes, createSdkViolationType, updateSdkViolationType, reorderSdkViolationTypes, deleteSdkViolationType,
+  getSdkViolationTypes, createSdkViolationType, updateSdkViolationType, reorderSdkViolationTypes, deleteSdkViolationType, copySdkViolationTypes,
   getSdkMeetings, getSdkMeeting, createSdkMeeting, updateSdkMeeting, deleteSdkMeeting,
   getSdkMeetingMembers, addSdkMeetingMember, removeSdkMeetingMember,
   getSdkMeetingDocuments, uploadSdkMeetingDocuments, deleteSdkMeetingDocument,
@@ -29,6 +29,7 @@ router.delete('/sdk/commission-members/:id', requirePermission('SDK_REFERENCES_M
 // СПРАВОЧНИК НАРУШЕНИЙ (по сезонам)
 router.get('/seasons/:seasonId/sdk/violation-types', requirePermission('SDK_REFERENCES_VIEW'), getSdkViolationTypes);
 router.post('/seasons/:seasonId/sdk/violation-types', requirePermission('SDK_REFERENCES_MANAGE'), createSdkViolationType);
+router.post('/seasons/:seasonId/sdk/violation-types/copy', requirePermission('SDK_REFERENCES_MANAGE'), copySdkViolationTypes);
 router.put('/seasons/:seasonId/sdk/violation-types/reorder', requirePermission('SDK_REFERENCES_MANAGE'), reorderSdkViolationTypes);
 router.put('/sdk/violation-types/:id', requirePermission('SDK_REFERENCES_MANAGE'), updateSdkViolationType);
 router.delete('/sdk/violation-types/:id', requirePermission('SDK_VIOLATION_TYPES_DELETE'), deleteSdkViolationType);

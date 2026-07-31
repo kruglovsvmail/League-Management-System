@@ -1,6 +1,10 @@
 import React, { useState, useMemo } from 'react';
 
-export function Table({ columns, data, rowClassName, hideHeader = false }) {
+// fixedLayout — table-fixed вместо авто-раскладки: ширины колонок из col.width становятся
+// обязательными, а колонка без width забирает весь остаток. Нужен там, где иначе таблица
+// раздувается под содержимое и вылезает горизонтальный скролл (статистика матча).
+// По умолчанию выключен, поведение остальных таблиц не меняется.
+export function Table({ columns, data, rowClassName, hideHeader = false, fixedLayout = false }) {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const sortedData = useMemo(() => {
@@ -38,18 +42,25 @@ export function Table({ columns, data, rowClassName, hideHeader = false }) {
   };
 
   return (
-    <div className="w-full overflow-x-auto font-sans">
-      <table className="w-full border-collapse">
+    // Авто-раскладке скролл-контейнер нужен: она раздувается под содержимое.
+    // table-fixed по определению вписывается в родителя, и overflow-x-auto там только вредит —
+    // из-за округления дробной ширины браузер рисует полосу прокрутки на пустом месте.
+    <div className={`w-full font-sans ${fixedLayout ? 'overflow-x-hidden' : 'overflow-x-auto'}`}>
+      <table className={`w-full border-collapse ${fixedLayout ? 'table-fixed' : ''}`}>
         {!hideHeader && (
           <thead>
             <tr>
               {columns.map((col, idx) => {
+                // headerAlign позволяет выровнять заголовок иначе, чем содержимое колонки:
+                // например, ФИО в ячейках прижато влево, а шапка стоит по центру.
+                // Без него берётся общий align колонки — прежнее поведение.
+                const headerAlign = col.headerAlign || col.align;
                 let alignClass = 'text-left';
-                if (col.align === 'center') alignClass = 'text-center';
-                else if (col.align === 'right') alignClass = 'text-right';
+                if (headerAlign === 'center') alignClass = 'text-center';
+                else if (headerAlign === 'right') alignClass = 'text-right';
 
                 return (
-                  <th 
+                  <th
                     key={idx} 
                     onClick={() => col.sortKey && requestSort(col.sortKey)}
                     className={`py-4 px-4 text-[12px] uppercase text-black/40 font-semibold tracking-wide border-b border-graphite/20 select-none ${col.width || ''} ${alignClass} ${col.sortKey ? 'cursor-pointer hover:text-orange hover:bg-graphite/0 transition-colors group' : ''}`}

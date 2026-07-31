@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Reveal } from './Reveal';
-import { LowerBand, PersonTile, BandDivider } from './LowerBand';
-import { WhistleIcon } from './IcePattern';
-import { C, pickOfficial } from './theme';
+import { Cut } from './Cut';
+import { Card, PersonTile } from './Stage';
+import { Kicker } from './Type';
+import { S, pickOfficial } from './theme';
 
-// Судейская бригада: лента во всю ширину внизу — четыре судьи В ОДИН РЯД, каждый
-// с фотографией и ролью. Дефолт выводит их в две текстовые колонки без фото.
+// Судейская бригада: графитовая плашка у левой кромки снизу, четыре судьи
+// сеткой 2×2 с портретами со срезанным углом.
 //
 // Ключи ролей в публичном эндпоинте — 'main-1'/'main-2'/'linesman-1'/'linesman-2'
 // (см. getPublicGameById). Дефолтная плашка ищет head_1/linesman_1, которых в
@@ -37,21 +37,27 @@ export default function RefereesOverlay({ game, overlay }) {
   ].filter(x => x.person);
 
   if (crew.length === 0) return null;
+  const twoCols = crew.length > 2;
 
   return (
-    <Reveal isVisible={localVisible} variant="band" className="absolute bottom-0 left-0 z-40">
-      <LowerBand icon={<WhistleIcon size={52} />} label={'СУДЕЙСКАЯ\nБРИГАДА МАТЧА'}>
-        <div className="flex items-center w-full min-w-0" style={{ gap: crew.length > 3 ? 28 : 44 }}>
-          {crew.map((c, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <BandDivider />}
-              <div className="flex-1 min-w-0">
-                <PersonTile person={c.person} role={c.role} />
-              </div>
-            </React.Fragment>
-          ))}
+    <Cut isVisible={localVisible} variant="slide" className="absolute bottom-16 left-0 z-40">
+      <Card style={{ width: twoCols ? 1060 : 740 }} seed={35}>
+        <div className="pl-11 pr-12 py-8">
+          <div className="flex items-center gap-4 mb-7">
+            <Kicker size={12}>СУДЕЙСКАЯ БРИГАДА МАТЧА</Kicker>
+            <div className="flex-1 h-[2px]" style={{ backgroundColor: S.line }} />
+          </div>
+
+          <div
+            className="grid gap-x-12 gap-y-7"
+            style={{ gridTemplateColumns: twoCols ? 'repeat(2, minmax(0, 1fr))' : '1fr' }}
+          >
+            {crew.map((c, i) => (
+              <PersonTile key={i} person={c.person} role={c.role} size={92} nameSize={25} />
+            ))}
+          </div>
         </div>
-      </LowerBand>
-    </Reveal>
+      </Card>
+    </Cut>
   );
 }

@@ -15,11 +15,13 @@ const POSITION_MAP = {
   forward: 'Нап'
 };
 
+// Роли турнирной заявки. head_coach оставлен для исторических записей: в новых заявках
+// главного тренера нет — он подаётся как «Тренер команды».
 const STAFF_ROLE_MAP = {
-  team_manager: 'Менеджер',
-  team_admin: 'Администратор',
-  coach: 'Тренер',
-  head_coach: 'Главный тренер'
+  team_manager: 'Руководитель команды',
+  coach: 'Тренер команды',
+  team_admin: 'Администратор команды',
+  head_coach: 'Тренер команды'
 };
 
 export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, division }) {

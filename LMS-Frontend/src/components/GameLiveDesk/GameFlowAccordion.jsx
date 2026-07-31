@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { ProtocolSheet } from './ProtocolSheet';
 import { getImageUrl } from '../../utils/helpers';
 import { Icon } from '../../ui/Icon';
+import { usePenaltyReasons } from '../../hooks/usePenaltyReasons';
 
 export const GameFlowAccordion = ({
   game,
@@ -20,6 +21,9 @@ export const GameFlowAccordion = ({
   isReadOnly
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+
+  // Справочник причин удаления тянем один раз на обе команды
+  const { penaltyReasons } = usePenaltyReasons(game?.id);
 
   return (
     <div className="bg-white shadow-lg flex flex-col font-sans rounded-md transition-all duration-500 ease-in-out">
@@ -54,6 +58,7 @@ export const GameFlowAccordion = ({
                   isSaving={isSaving}
                   goalieLog={goalieLog}
                   isReadOnly={isReadOnly}
+                  penaltyReasons={penaltyReasons}
                 />
 
                 <ProtocolSheet
@@ -73,6 +78,7 @@ export const GameFlowAccordion = ({
                   isSaving={isSaving}
                   goalieLog={goalieLog}
                   isReadOnly={isReadOnly}
+                  penaltyReasons={penaltyReasons}
                 />
 
              </div>
