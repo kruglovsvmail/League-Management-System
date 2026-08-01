@@ -1,6 +1,6 @@
 import React from 'react';
 
-export function Input({ placeholder, value, defaultValue, onChange, onBlur, label, type = "text", maxLength, disabled, hasError, className }) {
+export function Input({ placeholder, value, defaultValue, onChange, onBlur, onKeyDown, label, type = "text", maxLength, disabled, hasError, className }) {
   const sizeClass = className ? className : "w-full px-3 py-2.5";
   
   return (
@@ -17,6 +17,7 @@ export function Input({ placeholder, value, defaultValue, onChange, onBlur, labe
         defaultValue={defaultValue}
         onChange={onChange}
         onBlur={onBlur}
+        onKeyDown={onKeyDown}
         maxLength={maxLength}
         disabled={disabled}
         className={`${sizeClass} rounded-md font-medium outline-none transition-all duration-300 ${

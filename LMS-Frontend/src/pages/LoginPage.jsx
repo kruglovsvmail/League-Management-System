@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { Checkbox } from '../ui/Checkbox';
+import { ActivateAccountModal } from '../modals/ActivateAccountModal';
+import { PolicySheet } from '../modals/PolicySheet';
 
 export function LoginPage({ onLoginSuccess }) {
   const [loginMode, setLoginMode] = useState('phone'); // 'phone' или 'service'
@@ -14,8 +16,14 @@ export function LoginPage({ onLoginSuccess }) {
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [email, setEmail] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  // Развёрнутые пояснения сервера (виртуальный аккаунт, отказ в доступе) — в отличие
+  // от errorMsg показываются полноценным блоком, а не однострочной подписью под полями
+  const [noticeMsg, setNoticeMsg] = useState('');
   const [emailMsg, setEmailMsg] = useState('');
   const [timer, setTimer] = useState(0);
+
+  const [isActivateOpen, setIsActivateOpen] = useState(false);
+  const [isPolicyOpen, setIsPolicyOpen] = useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -96,14 +104,16 @@ export function LoginPage({ onLoginSuccess }) {
     setServiceLogin('');
     setUserName('');
     setErrorMsg('');
+    setNoticeMsg('');
   };
 
   const handlePhoneChange = async (e) => {
-    const val = e.target.value.replace(/\D/g, ''); 
+    const val = e.target.value.replace(/\D/g, '');
     const truncated = val.slice(0, 10);
     setPhoneRaw(truncated);
     setErrorMsg('');
-    setEmailMsg(''); 
+    setNoticeMsg('');
+    setEmailMsg('');
 
     if (truncated.length === 10) {
       try {
@@ -124,6 +134,7 @@ export function LoginPage({ onLoginSuccess }) {
     const val = e.target.value;
     setServiceLogin(val);
     setErrorMsg('');
+    setNoticeMsg('');
 
     if (val.length >= 3) {
       try {
@@ -151,6 +162,7 @@ export function LoginPage({ onLoginSuccess }) {
 
   const handleLogin = async () => {
     const isPhoneMode = loginMode === 'phone';
+    setNoticeMsg('');
     if (isPhoneMode && (phoneRaw.length !== 10 || !password)) {
       setErrorMsg('Заполните телефон и пароль');
       return;
@@ -177,6 +189,10 @@ export function LoginPage({ onLoginSuccess }) {
         storage.setItem('hockeyeco_user', JSON.stringify(data.user));
         storage.setItem('hockeyeco_token', data.token);
         onLoginSuccess(data.user);
+      } else if (data.message) {
+        // Виртуальный аккаунт, блокировка, отказ в доступе — длинное пояснение
+        setNoticeMsg(data.message);
+        setIsLoading(false);
       } else {
         setErrorMsg(data.error || 'Ошибка входа');
         setIsLoading(false);
@@ -199,6 +215,7 @@ export function LoginPage({ onLoginSuccess }) {
     if (!isEmailValid) return;
     setTimer(30);
     setEmailMsg('');
+    setNoticeMsg('');
     try {
       const fullPhone = `+7${phoneRaw}`;
       const response = await fetch(`${SERVER_URL}/api/reset-password`, {
@@ -208,6 +225,12 @@ export function LoginPage({ onLoginSuccess }) {
       });
       const data = await response.json();
       if (data.success) setEmailMsg(data.message);
+      else if (data.message) {
+        // Восстановление недоступно для виртуального аккаунта — нужна активация
+        setNoticeMsg(data.message);
+        setIsForgotMode(false);
+        setTimer(0);
+      }
       else { setEmailMsg(data.error); setTimer(0); }
     } catch (err) {
       setEmailMsg('Ошибка соединения с сервером');
@@ -247,6 +270,12 @@ export function LoginPage({ onLoginSuccess }) {
           </div>
 
           <div className="space-y-4">
+            {noticeMsg && (
+              <div className="rounded-md border border-status-rejected/20 bg-status-rejected/10 px-4 py-3 text-[12px] font-semibold leading-relaxed text-status-rejected">
+                {noticeMsg}
+              </div>
+            )}
+
             <div className="relative">
               <div className="relative flex items-center w-full border border-graphite/20 rounded-md bg-white/80 focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-colors duration-300">
                 {loginMode === 'phone' ? (
@@ -293,7 +322,7 @@ export function LoginPage({ onLoginSuccess }) {
                   type={showPassword ? "text" : "password"}
                   placeholder="Введите пароль"
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
+                  onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); setNoticeMsg(''); }}
                   onKeyDown={(e) => handleKeyDown(e, handleLogin)}
                   className="w-full pl-4 pr-12 py-3 bg-transparent text-graphite text-base outline-none"
                 />
@@ -364,6 +393,26 @@ export function LoginPage({ onLoginSuccess }) {
                 Войти в систему
               </Button>
             </div>
+
+            {/* Активация аккаунта — только для личных аккаунтов: сервисные заводит лига */}
+            {loginMode === 'phone' && (
+              <div className="flex flex-col items-center gap-3 pt-1 relative z-20">
+                <button
+                  type="button"
+                  onClick={() => setIsActivateOpen(true)}
+                  className="w-full h-11 rounded-md border border-graphite/20 bg-white/50 text-[13px] font-bold uppercase tracking-widest text-graphite-light hover:border-orange hover:text-orange transition-colors"
+                >
+                  Активировать аккаунт
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPolicyOpen(true)}
+                  className="text-[10px] text-graphite/40 font-semibold uppercase underline underline-offset-4 hover:text-graphite-light transition-colors"
+                >
+                  Политика о персональных данных
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -457,6 +506,9 @@ export function LoginPage({ onLoginSuccess }) {
         </div>
 
       </div>
+
+      <ActivateAccountModal isOpen={isActivateOpen} onClose={() => setIsActivateOpen(false)} />
+      <PolicySheet isOpen={isPolicyOpen} onClose={() => setIsPolicyOpen(false)} />
     </div>
   );
 }
