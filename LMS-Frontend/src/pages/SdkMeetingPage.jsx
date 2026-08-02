@@ -8,8 +8,8 @@ import { DatePicker } from '../ui/DatePicker';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
 import { Icon } from '../ui/Icon';
-import { Tabs } from '../ui/Tabs';
 import { Toast } from '../modals/Toast';
+import { Modal } from '../modals/Modal';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { AccessFallback } from '../ui/AccessFallback';
 import { SdkMeetingMembersTab } from '../components/Sdk/SdkMeetingMembersTab';
@@ -42,10 +42,11 @@ export function SdkMeetingPage() {
   const [venues, setVenues] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [tabIndex, setTabIndex] = useState(0);
   const [toast, setToast] = useState(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDocsOpen, setIsDocsOpen] = useState(false);
+  const [isDecisionDrawerOpen, setIsDecisionDrawerOpen] = useState(false);
 
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
 
@@ -158,6 +159,14 @@ export function SdkMeetingPage() {
             <Icon name="chevron_left" className="w-4 h-4" /> К списку заседаний
           </Link>
         }
+        actions={
+          <div className="flex items-center gap-3">
+            <Button onClick={() => setIsDocsOpen(true)} className="bg-white border-graphite/20 text-graphite hover:border-graphite">
+              Сканы/Документы
+            </Button>
+            {canManage && <Button onClick={() => setIsDecisionDrawerOpen(true)}>+ Новое решение</Button>}
+          </div>
+        }
       />
 
       {toast && (
@@ -167,19 +176,22 @@ export function SdkMeetingPage() {
       )}
 
       <div className="px-10 pt-8 flex flex-col lg:flex-row gap-8 relative z-10 items-start">
-        <div className="flex-1 min-w-0 w-full order-2 lg:order-1 flex flex-col gap-8">
-          <Tabs tabs={['Члены СДК', 'Решения', 'Сканы/Документы']} activeTab={tabIndex} onChange={setTabIndex} />
-
-          <div key={tabIndex} className="animate-zoom-in">
-            {tabIndex === 0 && <SdkMeetingMembersTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
-            {tabIndex === 1 && <SdkMeetingDecisionsTab meetingId={meetingId} seasonId={meeting.season_id} canManage={canManage} setToast={setToast} />}
-            {tabIndex === 2 && <SdkMeetingDocumentsTab meetingId={meetingId} canManage={canManage} setToast={setToast} />}
-          </div>
+        <div className="flex-1 min-w-0 w-full order-2 lg:order-1">
+          <SdkMeetingDecisionsTab
+            meetingId={meetingId}
+            seasonId={meeting.season_id}
+            canManage={canManage}
+            setToast={setToast}
+            isDrawerOpen={isDecisionDrawerOpen}
+            setIsDrawerOpen={setIsDecisionDrawerOpen}
+          />
         </div>
 
-        <div className="w-full lg:w-[360px] shrink-0 order-1 lg:order-2 sticky top-[110px] bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 shadow-sm flex flex-col gap-4">
+        <div className="w-full lg:w-[360px] shrink-0 order-1 lg:order-2 sticky top-[110px] flex flex-col gap-6">
+          <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 shadow-sm flex flex-col gap-4">
           <Input label="Сезон" value={meeting.season_name || ''} disabled />
-          <Select label="Тип комиссии" options={MEETING_TYPES} value={meeting.meeting_type} onChange={val => handleChange('meeting_type', val)} disabled={!canManage} />
+          {/* Тип комиссии определяет нумерацию заседаний внутри сезона — менять его у созданного нельзя */}
+          <Select label="Тип комиссии" options={MEETING_TYPES} value={meeting.meeting_type} onChange={() => {}} disabled />
           <Select label="Место проведения" options={[{ value: '', label: 'Не указано' }, ...venues.map(v => ({ value: v.id, label: v.name }))]} value={meeting.venue_id || ''} onChange={val => handleChange('venue_id', val)} disabled={!canManage} />
           <Select label="Статус" options={STATUSES} value={meeting.status} onChange={val => handleChange('status', val)} disabled={!canManage} />
           <div className="flex flex-col gap-1.5">
@@ -208,8 +220,15 @@ export function SdkMeetingPage() {
               </button>
             </div>
           )}
+          </div>
+
+          <SdkMeetingMembersTab meetingId={meetingId} setToast={setToast} />
         </div>
       </div>
+
+      <Modal isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} title="Сканы и документы" size="wide">
+        <SdkMeetingDocumentsTab meetingId={meetingId} canManage={canManage} setToast={setToast} />
+      </Modal>
 
       <ConfirmModal
         isOpen={isDeleteOpen}

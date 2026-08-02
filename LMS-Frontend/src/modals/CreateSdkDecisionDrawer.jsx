@@ -22,16 +22,31 @@ const TARGET_OPTIONS = [
   { key: 'team', label: 'Команда', targetType: 'team', targetIndex: 2, roles: null }
 ];
 
+// Откуда взята квалификация нарушения. Каталог сам приносит формулировку и рекомендации,
+// «положение» и «иное» комиссия описывает словами — их справочник не знает.
+const VIOLATION_SOURCES = [
+  { key: 'catalog', label: 'По таблице штрафов' },
+  { key: 'regulation', label: 'По положению' },
+  { key: 'other', label: 'Иное' }
+];
+
+const HEARING_BASIS_TYPES = [
+  { value: 'referee_report', label: 'Рапорт главного судьи' },
+  { value: 'team_protest', label: 'Протест команды' },
+  { value: 'other', label: 'Иное' }
+];
+
 export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, violationTypes = [], onSuccess }) {
-  const [decisionIndex, setDecisionIndex] = useState(0); // 0 = наказать, 1 = оправдать
+  const [decisionIndex, setDecisionIndex] = useState(0); // 0 = наказать, 1 = не наказывать
   const decisions = ['punish', 'acquit'];
 
   const [games, setGames] = useState([]);
   const [gameId, setGameId] = useState('');
 
+  const [violationSourceIndex, setViolationSourceIndex] = useState(0);
   const [violationTypeId, setViolationTypeId] = useState('');
-  const [isManualViolation, setIsManualViolation] = useState(false);
   const [manualViolationTitle, setManualViolationTitle] = useState('');
+  const [verdictDescription, setVerdictDescription] = useState('');
   const [penaltyMinutes, setPenaltyMinutes] = useState('');
 
   // Каталожный режим: обязательные и дополнительные условия показываются всегда (значения из
@@ -39,10 +54,16 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
   const [mandatoryGamesInput, setMandatoryGamesInput] = useState(0);
   const [additionalGamesInput, setAdditionalGamesInput] = useState(0);
   const [additionalAmountInput, setAdditionalAmountInput] = useState('');
+  const [mandatoryAmountInput, setMandatoryAmountInput] = useState('');
 
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
 
+  const [hearingBasisType, setHearingBasisType] = useState('');
   const [hearingBasis, setHearingBasis] = useState('');
+  const [hearingBasisUserId, setHearingBasisUserId] = useState('');
+  const [hearingBasisTeamId, setHearingBasisTeamId] = useState('');
+  const [referees, setReferees] = useState([]);
+
   const [targetKey, setTargetKey] = useState('player');
   const [otherPersonName, setOtherPersonName] = useState('');
 
@@ -66,10 +87,13 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     if (!isOpen) {
       setDecisionIndex(0);
       setGames([]); setGameId(''); setViolationTypeId(''); setPenaltyMinutes('');
-      setIsManualViolation(false); setManualViolationTitle('');
-      setMandatoryGamesInput(0); setAdditionalGamesInput(0); setAdditionalAmountInput('');
+      setViolationSourceIndex(0); setManualViolationTitle('');
+      setVerdictDescription('');
+      setMandatoryGamesInput(0); setAdditionalGamesInput(0); setAdditionalAmountInput(''); setMandatoryAmountInput('');
       setSelectedMemberIds([]);
-      setHearingBasis(''); setTargetKey('player'); setOtherPersonName(''); setStaffRoleFilter(null);
+      setHearingBasisType(''); setHearingBasis(''); setHearingBasisUserId(''); setHearingBasisTeamId('');
+      setReferees([]);
+      setTargetKey('player'); setOtherPersonName(''); setStaffRoleFilter(null);
       return;
     }
     if (seasonId) {
@@ -82,6 +106,23 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
   useEffect(() => {
     setGameId('');
   }, [tournamentTeamId]);
+
+  // Судьи для рапорта — только те, кто отработал матчи выбранного дивизиона
+  // в период рассмотрения этого заседания
+  useEffect(() => {
+    if (!isOpen || hearingBasisType !== 'referee_report') { setReferees([]); return; }
+    const params = divisionId ? `?divisionId=${divisionId}` : '';
+    fetch(`${SERVER_URL}/api/sdk/meetings/${meetingId}/referees${params}`, { headers: { 'Authorization': `Bearer ${getToken()}` } })
+      .then(res => res.json())
+      .then(data => { if (data.success) setReferees(data.data); });
+  }, [isOpen, meetingId, hearingBasisType, divisionId]);
+
+  const handleSelectHearingBasisType = (value) => {
+    setHearingBasisType(value);
+    setHearingBasisUserId('');
+    setHearingBasisTeamId('');
+    setHearingBasis('');
+  };
 
   const selectedTarget = TARGET_OPTIONS.find(o => o.key === targetKey) || TARGET_OPTIONS[0];
   // Реальная цель решения: три категории представителя схлопываются в одну цель staff,
@@ -110,7 +151,22 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     }
   };
 
-  const selectedViolation = violationTypes.find(v => String(v.id) === String(violationTypeId));
+  const violationSource = VIOLATION_SOURCES[violationSourceIndex].key;
+  const isCatalogSource = violationSource === 'catalog';
+
+  const handleSelectViolationSource = (index) => {
+    setViolationSourceIndex(index);
+    // Каталог и ручные режимы описывают нарушение по-разному, поэтому чужие поля чистим
+    if (VIOLATION_SOURCES[index].key === 'catalog') {
+      setManualViolationTitle('');
+    } else {
+      setViolationTypeId('');
+    }
+  };
+
+  const selectedViolation = isCatalogSource
+    ? violationTypes.find(v => String(v.id) === String(violationTypeId))
+    : null;
 
   // Пункты справочника, кроме заголовков — только их можно выбрать как нарушение
   const violationOptions = violationTypes.map(v => (
@@ -150,15 +206,27 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
       : prev.filter(id => !visibleIds.includes(id)));
   };
 
-  const totalAmount = additionalAmountInput === '' ? 0 : Number(additionalAmountInput);
+  const totalAmount = (Number(mandatoryAmountInput) || 0) + (Number(additionalAmountInput) || 0);
   const shareHint = selectedMemberIds.length > 0 && totalAmount > 0
     ? `${selectedMemberIds.length} чел. × ${Math.round(totalAmount / selectedMemberIds.length).toLocaleString('ru-RU')} ₽`
     : 'Отметьте, между кем делится сумма';
 
-  const penaltyInputs = { targetType: penaltyTargetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput };
-  const isPenaltyValid = decisions[decisionIndex] !== 'punish' || arePenaltyFieldsValid(penaltyInputs);
-  const isViolationValid = isManualViolation ? !!manualViolationTitle.trim() : !!violationTypeId;
-  const isFormValid = tournamentTeamId && isViolationValid && isPenaltyValid && (
+  const isPunish = decisions[decisionIndex] === 'punish';
+
+  const penaltyInputs = { targetType: penaltyTargetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput };
+  const isPenaltyValid = !isPunish || arePenaltyFieldsValid(penaltyInputs);
+  const isViolationValid = isCatalogSource ? !!violationTypeId : !!manualViolationTitle.trim();
+
+  // Основание фиксируем в решении: уточнение обязательно ровно то, которое подразумевает тип
+  const isBasisValid = !hearingBasisType
+    || (hearingBasisType === 'referee_report' && !!hearingBasisUserId)
+    || (hearingBasisType === 'team_protest' && !!hearingBasisTeamId)
+    || (hearingBasisType === 'other' && !!hearingBasis.trim());
+
+  // Отказ наказывать — тоже вердикт, его причину комиссия обязана записать
+  const isVerdictValid = isPunish || !!verdictDescription.trim();
+
+  const isFormValid = tournamentTeamId && isViolationValid && isPenaltyValid && isBasisValid && isVerdictValid && (
     submitTargetType === 'team' ? (!isSplitMode || selectedMemberIds.length > 0) :
     submitTargetType === 'other' ? !!otherPersonName.trim() :
     submitTargetType === 'staff' ? !!selectedTeamRoleId :
@@ -169,28 +237,35 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     if (!isFormValid) return;
     setIsSubmitting(true);
     try {
-      const computed = decisions[decisionIndex] !== 'punish'
-        ? { games: null, amount: null, logic: null, mandatoryGames: null, additionalGames: null }
+      const computed = !isPunish
+        ? { games: null, amount: null, logic: null, mandatoryGames: null, additionalGames: null, mandatoryAmount: null, additionalAmount: null }
         : computePenaltyFromInputs(penaltyInputs);
       const res = await fetch(`${SERVER_URL}/api/sdk/meetings/${meetingId}/decisions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
         body: JSON.stringify({
-          violation_type_id: isManualViolation ? null : violationTypeId,
+          violation_type_id: isCatalogSource ? violationTypeId : null,
           violation_code_manual: null,
-          violation_title_manual: isManualViolation ? manualViolationTitle.trim() : null,
+          violation_title_manual: isCatalogSource ? null : manualViolationTitle.trim(),
+          violation_source: violationSource,
+          verdict_description: verdictDescription.trim() || null,
           game_id: gameId || null,
           tournament_team_id: tournamentTeamId,
           target_type: submitTargetType,
           tournament_roster_id: submitTargetType === 'player' ? selectedRosterId : null,
           tournament_team_role_id: submitTargetType === 'staff' ? selectedTeamRoleId : null,
-          hearing_basis: hearingBasis.trim() || null,
+          hearing_basis_type: hearingBasisType || null,
+          hearing_basis_user_id: hearingBasisUserId || null,
+          hearing_basis_team_id: hearingBasisTeamId || null,
+          hearing_basis: hearingBasisType === 'other' ? hearingBasis.trim() || null : null,
           other_person_name: submitTargetType === 'other' ? otherPersonName.trim() : null,
           decision: decisions[decisionIndex],
           penalty_games: computed.games,
           mandatory_games: computed.mandatoryGames,
           additional_games: computed.additionalGames,
           penalty_amount: computed.amount,
+          mandatory_amount: computed.mandatoryAmount,
+          additional_amount: computed.additionalAmount,
           penalty_minutes: isMoneyOnly ? null : (penaltyMinutes || null),
           penalty_logic: computed.logic,
           team_penalty_mode: teamPenaltyMode,
@@ -224,35 +299,54 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
-          <div className="w-full md:w-[380px] shrink-0 flex flex-col gap-4 border-r border-graphite/10 p-6 overflow-y-auto custom-scrollbar bg-white">
+          <div className="w-full md:w-[25%] shrink-0 flex flex-col gap-4 border-r border-graphite/10 p-6 overflow-y-auto custom-scrollbar bg-white">
             <Select label="Дивизион" options={divisions.map(d => d.name)} value={selectedDivName} onChange={setSelectedDivName} />
             <Select label="Команда" options={teams.map(t => t.name)} value={selectedTeamName} onChange={setSelectedTeamName} />
             <Select label="Матч (опционально)" options={[{ value: '', label: 'Не привязан' }, ...teamGames.map(g => ({ value: g.id, label: `№${g.game_number ?? g.id} от ${g.game_date ? new Date(g.game_date).toLocaleDateString('ru-RU') : '-'}` }))]} value={gameId} onChange={setGameId} />
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Основание для рассмотрения</span>
-              <textarea
-                placeholder="Например: рапорт главного судьи матча"
-                rows={2}
-                value={hearingBasis}
-                onChange={e => setHearingBasis(e.target.value)}
-                className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[13px]"
-              />
-            </div>
-
             <div className="flex flex-col gap-2">
               <Select
-                label="На кого"
-                options={TARGET_OPTIONS.map(o => ({ value: o.key, label: o.label }))}
-                value={targetKey}
-                onChange={handleSelectTarget}
+                label="Основание для рассмотрения"
+                options={[{ value: '', label: 'Не указано' }, ...HEARING_BASIS_TYPES]}
+                value={hearingBasisType}
+                onChange={handleSelectHearingBasisType}
               />
-              {targetKey === 'other' && (
+
+              {hearingBasisType === 'referee_report' && (
                 <div className="animate-zoom-in">
-                  <Input
-                    placeholder="ФИО или кто это (например: зритель, представитель клуба)"
-                    value={otherPersonName}
-                    onChange={e => setOtherPersonName(e.target.value)}
+                  <Select
+                    options={referees.map(r => ({ value: r.user_id, label: [r.last_name, r.first_name, r.middle_name].filter(Boolean).join(' ') }))}
+                    value={hearingBasisUserId}
+                    onChange={setHearingBasisUserId}
+                    placeholder={referees.length ? 'Выберите судью' : 'Судьи в периоде не найдены'}
+                    isSearchable
+                  />
+                  <span className="text-[10px] text-graphite/50 leading-relaxed px-0.5 mt-1 block">
+                    Главные судьи матчей выбранного дивизиона за период рассмотрения заседания.
+                  </span>
+                </div>
+              )}
+
+              {hearingBasisType === 'team_protest' && (
+                <div className="animate-zoom-in">
+                  <Select
+                    options={teams.map(t => ({ value: t.id, label: t.name }))}
+                    value={hearingBasisTeamId}
+                    onChange={setHearingBasisTeamId}
+                    placeholder="Команда, подающая протест"
+                    isSearchable
+                  />
+                </div>
+              )}
+
+              {hearingBasisType === 'other' && (
+                <div className="animate-zoom-in">
+                  <textarea
+                    placeholder="Опишите основание для рассмотрения"
+                    rows={2}
+                    value={hearingBasis}
+                    onChange={e => setHearingBasis(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[13px]"
                   />
                 </div>
               )}
@@ -261,53 +355,27 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
             <DisqualificationHistoryPanel showHistory={showHistory} isLoadingHistory={isLoadingHistory} personHistory={personHistory} />
           </div>
 
-          <div className="w-full flex-1 flex flex-col p-6 overflow-hidden border-r border-graphite/10 bg-white">
-            <RosterPickerPanel
-              targetType={targetType}
-              teamMessage={submitTargetType === 'other'
-                ? 'Иное лицо не заявлено ни за одну команду: выбирать его из состава не нужно, ФИО вписывается слева. Ограничение на матчи такому решению не создаётся — только денежный штраф.'
-                : teamPenaltyMode === 'whole'
-                  ? 'Штраф на всю команду: ограничение получат все участники состава, кроме тренера и главного тренера — до полной оплаты суммы.'
-                  : 'Решение будет вынесено на всю команду — выбирать конкретного человека не нужно.'}
-              divisionId={divisionId}
-              tournamentTeamId={tournamentTeamId}
-              isLoadingPlayers={isLoadingPlayers}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              filteredPlayers={filteredPlayers}
-              filteredStaff={filteredStaff}
-              selectedRosterId={selectedRosterId}
-              setSelectedRosterId={setSelectedRosterId}
-              selectedTeamRoleId={selectedTeamRoleId}
-              setSelectedTeamRoleId={setSelectedTeamRoleId}
-              isMultiSelect={isSplitMode}
-              filteredMembers={filteredMembers}
-              selectedUserIds={selectedMemberIds}
-              onToggleUser={toggleMember}
-              onToggleAll={toggleAllMembers}
-              shareHint={shareHint}
-            />
-          </div>
+          <div className="w-full md:w-[75%] shrink-0 flex flex-col p-6 overflow-hidden">
+            {/* Колонка не скроллится сама: верхние блоки занимают свою высоту,
+                а список состава забирает остаток и прокручивается внутри себя */}
+            <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
+              <div className="flex flex-col gap-2 shrink-0">
+                <SegmentButton
+                  options={VIOLATION_SOURCES.map(s => s.label)}
+                  defaultIndex={violationSourceIndex}
+                  onChange={handleSelectViolationSource}
+                />
 
-          <div className="w-full md:w-[480px] shrink-0 flex flex-col p-6 overflow-hidden">
-            <div className="flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Тип нарушения</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsManualViolation(v => !v)}
-                    className="text-[11px] font-bold text-orange hover:underline"
-                  >
-                    {isManualViolation ? 'Выбрать из справочника' : 'Указать вручную'}
-                  </button>
-                </div>
-                {isManualViolation ? (
-                  <div className="animate-zoom-in">
-                    <Input placeholder="Например: Неспортивное поведение" value={manualViolationTitle} onChange={e => setManualViolationTitle(e.target.value)} />
-                  </div>
-                ) : (
+                {isCatalogSource ? (
                   <Select options={violationOptions} value={violationTypeId} onChange={handleSelectViolation} isSearchable wrapText />
+                ) : (
+                  <textarea
+                    placeholder={violationSource === 'regulation' ? 'Описание нарушения из положения' : 'Описание нарушения'}
+                    rows={2}
+                    value={manualViolationTitle}
+                    onChange={e => setManualViolationTitle(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[13px] animate-zoom-in"
+                  />
                 )}
 
                 {teamPenaltyMode && (
@@ -321,12 +389,13 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                 )}
               </div>
 
-              {decisionIndex === 0 && (
-                <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-md animate-zoom-in">
-                  {!isManualViolation && !selectedViolation ? (
-                    <p className="text-[11px] text-graphite-light leading-relaxed">Выберите тип нарушения из справочника, чтобы увидеть меры наказания.</p>
+              {isPunish && (
+                <div className="flex flex-col gap-4 p-4 bg-status-rejected/5 border border-status-rejected/20 rounded-md animate-zoom-in shrink-0">
+                  {isCatalogSource && !selectedViolation ? (
+                    <p className="text-[11px] text-graphite-light leading-relaxed">Выберите пункт из таблицы штрафов, чтобы увидеть меры наказания.</p>
                   ) : (
                     <PenaltyConditionsCard
+                      horizontal
                       targetType={penaltyTargetType}
                       selectedViolation={selectedViolation}
                       mandatoryGamesInput={mandatoryGamesInput}
@@ -335,21 +404,96 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                       setAdditionalGamesInput={setAdditionalGamesInput}
                       additionalAmountInput={additionalAmountInput}
                       setAdditionalAmountInput={setAdditionalAmountInput}
+                      mandatoryAmountInput={mandatoryAmountInput}
+                      setMandatoryAmountInput={setMandatoryAmountInput}
+                      showMinutes={!isMoneyOnly}
+                      penaltyMinutes={penaltyMinutes}
+                      setPenaltyMinutes={setPenaltyMinutes}
                     />
                   )}
 
-                  {!isMoneyOnly && (
+                  {!isCatalogSource && (
                     <>
                       <div className="h-px bg-graphite/10" />
-                      <Input label="Штраф (минуты)" placeholder="Например: 2+20" value={penaltyMinutes} onChange={e => setPenaltyMinutes(e.target.value)} />
+                      <textarea
+                        placeholder="Описание вердикта — формулировка решения комиссии"
+                        rows={2}
+                        value={verdictDescription}
+                        onChange={e => setVerdictDescription(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[13px]"
+                      />
                     </>
                   )}
                 </div>
               )}
-            </div>
 
-            <div className="flex flex-col gap-2 pt-4 border-t border-graphite/10 shrink-0">
-              <SegmentButton options={['Наказать', 'Оправдать']} defaultIndex={decisionIndex} onChange={setDecisionIndex} />
+              <div className="flex flex-col gap-2 flex-1 min-h-0">
+                {targetKey === 'other' && (
+                  <div className="animate-zoom-in shrink-0">
+                    <Input
+                      placeholder="ФИО или кто это (например: зритель, представитель клуба)"
+                      value={otherPersonName}
+                      onChange={e => setOtherPersonName(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Состав живёт прямо под выбором категории: сначала решаем, кого наказываем,
+                    затем сразу выбираем конкретного человека из подходящего списка.
+                    Забирает всю оставшуюся высоту колонки — свой скролл только здесь */}
+                <div className="flex flex-col flex-1 min-h-0">
+                  <RosterPickerPanel
+                    leadingControl={
+                      <Select
+                        label="На кого"
+                        options={TARGET_OPTIONS.map(o => ({ value: o.key, label: o.label }))}
+                        value={targetKey}
+                        onChange={handleSelectTarget}
+                      />
+                    }
+                    trailingControl={
+                      <div className="flex flex-col gap-3 pt-2">
+                        <SegmentButton options={['Наказать', 'Не наказывать']} defaultIndex={decisionIndex} onChange={setDecisionIndex} />
+                        {!isPunish && (
+                          <div className="flex flex-col gap-1.5 p-4 bg-graphite/5 border border-graphite/10 rounded-md animate-zoom-in">
+                            <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Почему не наказываем</span>
+                            <textarea
+                              placeholder="Причина, по которой комиссия не назначает наказание"
+                              rows={5}
+                              value={verdictDescription}
+                              onChange={e => setVerdictDescription(e.target.value)}
+                              className="w-full px-3 py-2.5 bg-white/70 border border-graphite/40 rounded-md font-medium text-graphite outline-none focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] transition-all resize-none text-[13px]"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    }
+                    targetType={targetType}
+                    teamMessage={submitTargetType === 'other'
+                      ? 'Иное лицо не заявлено ни за одну команду: выбирать его из состава не нужно, ФИО вписывается выше. Ограничение на матчи такому решению не создаётся — только денежный штраф.'
+                      : teamPenaltyMode === 'whole'
+                        ? 'Штраф на всю команду: ограничение получат все участники состава, кроме тренера и главного тренера — до полной оплаты суммы.'
+                        : 'Решение будет вынесено на всю команду — выбирать конкретного человека не нужно.'}
+                    divisionId={divisionId}
+                    tournamentTeamId={tournamentTeamId}
+                    isLoadingPlayers={isLoadingPlayers}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    filteredPlayers={filteredPlayers}
+                    filteredStaff={filteredStaff}
+                    selectedRosterId={selectedRosterId}
+                    setSelectedRosterId={setSelectedRosterId}
+                    selectedTeamRoleId={selectedTeamRoleId}
+                    setSelectedTeamRoleId={setSelectedTeamRoleId}
+                    isMultiSelect={isSplitMode}
+                    filteredMembers={filteredMembers}
+                    selectedUserIds={selectedMemberIds}
+                    onToggleUser={toggleMember}
+                    onToggleAll={toggleAllMembers}
+                    shareHint={shareHint}
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 pt-4 border-t border-graphite/10 shrink-0">

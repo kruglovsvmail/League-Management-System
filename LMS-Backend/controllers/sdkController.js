@@ -427,7 +427,7 @@ const getVenueNameSnapshot = async (venueId) => {
 export const createSdkMeeting = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { season_id, meeting_type, venue_id, held_at, period_start, period_end, status } = req.body;
+    const { season_id, meeting_type, venue_id, held_at, period_start, period_end, status, invited } = req.body;
 
     if (!season_id || !meeting_type || !venue_id || !held_at || !period_start || !period_end) {
       return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
@@ -460,6 +460,22 @@ export const createSdkMeeting = async (req, res) => {
       WHERE cm.season_id = $2 AND cm.is_permanent = true
       ON CONFLICT ON CONSTRAINT sdk_meeting_members_unique DO NOTHING
     `, [result.rows[0].id, season_id]);
+
+    // Приглашённые (судьи, руководители команд) — отмечены в шторке создания заседания.
+    // ФИО фиксируем снимком: человек может позже покинуть команду или лигу.
+    const invitedIds = [...new Set((invited || []).map(i => Number(i.user_id)).filter(Boolean))];
+    if (invitedIds.length > 0) {
+      const roles = new Map((invited || []).map(i => [Number(i.user_id), i.role_snapshot?.trim() || null]));
+      await pool.query(`
+        INSERT INTO sdk_meeting_members (meeting_id, member_kind, user_id, full_name_snapshot, role_snapshot)
+        SELECT $1, 'invited', u.id,
+               concat_ws(' ', u.last_name, u.first_name, u.middle_name),
+               r.role
+        FROM users u
+        JOIN (SELECT * FROM unnest($2::int[], $3::text[]) AS t(user_id, role)) r ON r.user_id = u.id
+        ON CONFLICT DO NOTHING
+      `, [result.rows[0].id, invitedIds, invitedIds.map(uid => roles.get(uid))]);
+    }
 
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) {
@@ -555,14 +571,16 @@ export const getSdkMeetingMembers = async (req, res) => {
   try {
     const { meetingId } = req.params;
     const result = await pool.query(`
-      SELECT mm.id, mm.meeting_id, mm.commission_member_id, mm.created_at,
-             COALESCE(mm.full_name_snapshot, cm.full_name) as full_name, cm.position,
-             u.avatar_url
+      SELECT mm.id, mm.meeting_id, mm.commission_member_id, mm.member_kind, mm.user_id, mm.created_at,
+             COALESCE(mm.full_name_snapshot, cm.full_name) as full_name,
+             COALESCE(mm.role_snapshot, cm.position) as position,
+             COALESCE(u.avatar_url, iu.avatar_url) as avatar_url
       FROM sdk_meeting_members mm
       LEFT JOIN sdk_commission_members cm ON mm.commission_member_id = cm.id
       LEFT JOIN users u ON cm.user_id = u.id
+      LEFT JOIN users iu ON mm.user_id = iu.id
       WHERE mm.meeting_id = $1
-      ORDER BY full_name ASC
+      ORDER BY mm.member_kind ASC, full_name ASC
     `, [meetingId]);
     res.json({ success: true, data: result.rows });
   } catch (err) {
@@ -571,10 +589,89 @@ export const getSdkMeetingMembers = async (req, res) => {
   }
 };
 
+// Главные судьи матчей, попадающих в период рассмотрения заседания — из них выбирают
+// автора рапорта. Дивизион необязателен: без него берём все матчи периода.
+export const getSdkMeetingReferees = async (req, res) => {
+  try {
+    const { meetingId } = req.params;
+    const { divisionId } = req.query;
+
+    const result = await pool.query(`
+      SELECT DISTINCT u.id AS user_id, u.first_name, u.last_name, u.middle_name
+      FROM sdk_meetings m
+      JOIN games g ON g.game_date BETWEEN m.period_start AND m.period_end
+        AND ($2::int IS NULL OR g.division_id = $2)
+      JOIN game_staff gs ON gs.game_id = g.id AND gs.role IN ('main-1', 'main-2')
+      JOIN users u ON u.id = gs.user_id
+      WHERE m.id = $1
+      ORDER BY u.last_name, u.first_name
+    `, [meetingId, divisionId || null]);
+
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    console.error('Ошибка получения судей периода заседания:', err);
+    res.status(500).json({ success: false, error: 'Ошибка загрузки данных' });
+  }
+};
+
+// Кого можно позвать на заседание помимо комиссии: судьи лиги и руководство команд сезона.
+// Список собирается по людям, а не по заявкам — один человек может вести несколько команд.
+export const getSdkInviteeCandidates = async (req, res) => {
+  try {
+    const { seasonId } = req.params;
+    const result = await pool.query(`
+      SELECT u.id AS user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
+             'referee' AS kind, NULL AS roles, NULL AS teams
+      FROM league_staff ls
+      JOIN users u ON u.id = ls.user_id
+      JOIN seasons s ON s.id = $1
+      WHERE ls.league_id = s.league_id AND ls.end_date IS NULL AND ls.role = 'referee'
+
+      UNION ALL
+
+      SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
+             'team_staff' AS kind,
+             string_agg(DISTINCT ttr.tournament_role, ', ') AS roles,
+             string_agg(DISTINCT t.name, ', ') AS teams
+      FROM tournament_team_roles ttr
+      JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
+      JOIN divisions dv ON dv.id = tt.division_id
+      JOIN teams t ON t.id = tt.team_id
+      JOIN users u ON u.id = ttr.user_id
+      WHERE dv.season_id = $1 AND ttr.left_at IS NULL
+      GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+
+      ORDER BY 4, 2
+    `, [seasonId]);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    console.error('Ошибка получения кандидатов в приглашённые СДК:', err);
+    res.status(500).json({ success: false, error: 'Ошибка загрузки данных' });
+  }
+};
+
 export const addSdkMeetingMember = async (req, res) => {
   try {
     const { meetingId } = req.params;
-    const { commission_member_id } = req.body;
+    const { commission_member_id, user_id, role_snapshot } = req.body;
+
+    // Приглашённый — человек вне комиссии (судья или руководитель команды):
+    // у него нет строки в справочнике, поэтому ФИО и роль сохраняем снимком
+    if (!commission_member_id && user_id) {
+      const userRes = await pool.query('SELECT first_name, last_name, middle_name FROM users WHERE id = $1', [user_id]);
+      if (userRes.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Пользователь не найден' });
+      }
+      const u = userRes.rows[0];
+      const fullName = [u.last_name, u.first_name, u.middle_name].filter(Boolean).join(' ');
+
+      const invited = await pool.query(`
+        INSERT INTO sdk_meeting_members (meeting_id, member_kind, user_id, full_name_snapshot, role_snapshot)
+        VALUES ($1, 'invited', $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id
+      `, [meetingId, user_id, fullName, role_snapshot?.trim() || null]);
+
+      return res.json({ success: true, id: invited.rows[0]?.id });
+    }
 
     if (!commission_member_id) {
       return res.status(400).json({ success: false, error: 'Не выбран участник комиссии' });
@@ -709,7 +806,12 @@ export const getSdkMeetingDecisions = async (req, res) => {
              dec.target_type, dec.tournament_roster_id, dec.tournament_team_role_id, dec.decision, dec.penalty_games,
              dec.mandatory_games, dec.additional_games,
              dec.penalty_amount, dec.penalty_minutes, dec.penalty_logic, dec.penalty_amount_paid,
-             dec.status, dec.disqualification_id, dec.team_penalty_mode, dec.hearing_basis, dec.other_person_name, dec.created_at,
+             dec.status, dec.disqualification_id, dec.team_penalty_mode, dec.hearing_basis, dec.other_person_name,
+             dec.hearing_basis_type, dec.hearing_basis_user_id, dec.hearing_basis_team_id,
+             dec.violation_source, dec.verdict_description, dec.mandatory_amount, dec.additional_amount,
+             concat_ws(' ', ru.last_name, ru.first_name, ru.middle_name) as hearing_basis_referee_name,
+             pt.name as hearing_basis_team_name,
+             dec.created_at,
              COALESCE((
                SELECT json_agg(json_build_object(
                    'id', dm.id, 'user_id', dm.user_id, 'full_name', dm.full_name_snapshot,
@@ -744,6 +846,9 @@ export const getSdkMeetingDecisions = async (req, res) => {
       LEFT JOIN users u2 ON ttr.user_id = u2.id
       LEFT JOIN games g ON dec.game_id = g.id
       LEFT JOIN disqualifications dq ON dec.disqualification_id = dq.id
+      LEFT JOIN users ru ON dec.hearing_basis_user_id = ru.id
+      LEFT JOIN tournament_teams ptt ON dec.hearing_basis_team_id = ptt.id
+      LEFT JOIN teams pt ON ptt.team_id = pt.id
       WHERE dec.meeting_id = $1
       ORDER BY dec.created_at DESC
     `, [meetingId]);
@@ -875,9 +980,26 @@ const normalizeDecisionBody = (body) => {
     mandatoryGames: moneyOnly ? null : (body.mandatory_games || null),
     additionalGames: moneyOnly ? null : (body.additional_games || null),
     penaltyAmount: body.penalty_amount || null,
+    // Разбивка денежного штрафа: обязательная часть есть только у командных наказаний,
+    // penalty_amount при этом всегда остаётся итогом (обяз. + доп.), как и у матчей
+    mandatoryAmount: moneyOnly ? (body.mandatory_amount || null) : null,
+    additionalAmount: body.additional_amount || null,
     penaltyLogic: (penaltyGames && body.penalty_amount) ? (body.penalty_logic || 'and') : null,
+    otherPersonName: targetType === 'other' ? (body.other_person_name?.trim() || null) : null,
+
+    // Основание рассмотрения: тип задаёт, какое из уточнений имеет смысл —
+    // судья-автор рапорта, команда-заявитель протеста или свободный текст
+    hearingBasisType: ['referee_report', 'team_protest', 'other'].includes(body.hearing_basis_type)
+      ? body.hearing_basis_type : null,
+    hearingBasisUserId: body.hearing_basis_type === 'referee_report' ? (body.hearing_basis_user_id || null) : null,
+    hearingBasisTeamId: body.hearing_basis_type === 'team_protest' ? (body.hearing_basis_team_id || null) : null,
     hearingBasis: body.hearing_basis?.trim() || null,
-    otherPersonName: targetType === 'other' ? (body.other_person_name?.trim() || null) : null
+
+    // Откуда взято нарушение: справочник, положение или иное. Для двух последних
+    // формулировка и вердикт пишутся руками — справочнику они неизвестны.
+    violationSource: ['catalog', 'regulation', 'other'].includes(body.violation_source)
+      ? body.violation_source : 'catalog',
+    verdictDescription: body.verdict_description?.trim() || null
   };
 };
 
@@ -919,15 +1041,19 @@ export const createSdkMeetingDecision = async (req, res) => {
       INSERT INTO sdk_meeting_decisions
         (meeting_id, violation_type_id, violation_code_snapshot, violation_title_snapshot, game_id, tournament_team_id, target_type,
          tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
-         penalty_amount, penalty_minutes, penalty_logic, team_penalty_mode, hearing_basis, other_person_name, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+         penalty_amount, penalty_minutes, penalty_logic, team_penalty_mode, hearing_basis, other_person_name,
+         hearing_basis_type, hearing_basis_user_id, hearing_basis_team_id,
+         violation_source, verdict_description, mandatory_amount, additional_amount, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       RETURNING id
     `, [
       meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
       v.targetType === 'player' ? tournament_roster_id : null,
       v.targetType === 'staff' ? tournament_team_role_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
-      v.penaltyLogic, v.teamPenaltyMode, v.hearingBasis, v.otherPersonName, req.user.id
+      v.penaltyLogic, v.teamPenaltyMode, v.hearingBasis, v.otherPersonName,
+      v.hearingBasisType, v.hearingBasisUserId, v.hearingBasisTeamId,
+      v.violationSource, v.verdictDescription, v.mandatoryAmount, v.additionalAmount, req.user.id
     ]);
 
     if (v.teamPenaltyMode === 'split' && decision === 'punish') {
@@ -982,15 +1108,19 @@ export const updateSdkMeetingDecision = async (req, res) => {
       SET violation_type_id = $1, violation_code_snapshot = $2, violation_title_snapshot = $3, game_id = $4, tournament_team_id = $5, target_type = $6,
           tournament_roster_id = $7, tournament_team_role_id = $8, decision = $9, penalty_games = $10, mandatory_games = $11, additional_games = $12,
           penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17, team_penalty_mode = $18,
-          hearing_basis = $19, other_person_name = $20
-      WHERE id = $21
+          hearing_basis = $19, other_person_name = $20,
+          hearing_basis_type = $21, hearing_basis_user_id = $22, hearing_basis_team_id = $23,
+          violation_source = $24, verdict_description = $25, mandatory_amount = $26, additional_amount = $27
+      WHERE id = $28
     `, [
       violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
       v.targetType === 'player' ? tournament_roster_id : null,
       v.targetType === 'staff' ? tournament_team_role_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
       v.penaltyLogic, penalty_amount_paid || false, status || 'active', v.teamPenaltyMode,
-      v.hearingBasis, v.otherPersonName, id
+      v.hearingBasis, v.otherPersonName,
+      v.hearingBasisType, v.hearingBasisUserId, v.hearingBasisTeamId,
+      v.violationSource, v.verdictDescription, v.mandatoryAmount, v.additionalAmount, id
     ]);
 
     // Список участников передаём только когда решение действительно делится: в остальных

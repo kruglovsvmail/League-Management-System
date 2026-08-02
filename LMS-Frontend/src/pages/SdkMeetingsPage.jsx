@@ -3,6 +3,8 @@ import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
+import { Input } from '../ui/Input';
+import { SegmentButton } from '../ui/SegmentButton';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
 import { DatePicker } from '../ui/DatePicker';
@@ -16,6 +18,8 @@ const MEETING_TYPES = [
   { value: 'ak', label: 'АК (не действует)' },
   { value: 'ek', label: 'ЭК' }
 ];
+
+const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Менеджер команды', team_admin: 'Администратор' };
 
 const STATUS_PILL = {
   not_specified: { label: 'Не указано', className: 'bg-graphite/10 text-graphite/50 border border-graphite/10' },
@@ -47,6 +51,12 @@ export function SdkMeetingsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({ season_id: '', meeting_type: 'sdk', venue_id: '', held_at: '', period_start: '', period_end: '' });
+
+  const [createTab, setCreateTab] = useState(0);
+  const [inviteeCandidates, setInviteeCandidates] = useState([]);
+  const [isLoadingInvitees, setIsLoadingInvitees] = useState(false);
+  const [inviteeQuery, setInviteeQuery] = useState('');
+  const [selectedInvitees, setSelectedInvitees] = useState([]);
 
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
 
@@ -126,6 +136,40 @@ export function SdkMeetingsPage() {
 
   useEffect(() => { fetchMeetings(); }, [selectedLeague?.id, seasonFilter, typeFilter]);
 
+  // Кандидаты в приглашённые зависят от сезона заседания: судьи лиги и руководство команд этого сезона
+  useEffect(() => {
+    if (!isCreateOpen || !form.season_id) { setInviteeCandidates([]); return; }
+    setIsLoadingInvitees(true);
+    fetch(`${SERVER_URL}/api/seasons/${form.season_id}/sdk/invitee-candidates`, { headers: { 'Authorization': `Bearer ${getToken()}` } })
+      .then(res => res.json())
+      .then(data => { if (data.success) setInviteeCandidates(data.data); })
+      .finally(() => setIsLoadingInvitees(false));
+  }, [isCreateOpen, form.season_id]);
+
+  useEffect(() => {
+    if (!isCreateOpen) { setCreateTab(0); setInviteeQuery(''); setSelectedInvitees([]); }
+  }, [isCreateOpen]);
+
+  useEffect(() => { setSelectedInvitees([]); }, [form.season_id]);
+
+  const inviteeLabel = (c) => c.kind === 'referee'
+    ? 'Судья'
+    : [c.roles?.split(', ').map(r => STAFF_ROLE_LABELS[r] || r).join(', '), c.teams].filter(Boolean).join(' · ');
+
+  const inviteeName = (c) => [c.last_name, c.first_name, c.middle_name].filter(Boolean).join(' ');
+
+  const filteredInvitees = inviteeCandidates.filter(c => {
+    const q = inviteeQuery.trim().toLowerCase();
+    if (!q) return true;
+    return `${inviteeName(c)} ${inviteeLabel(c)}`.toLowerCase().includes(q);
+  });
+
+  const toggleInvitee = (candidate) => {
+    setSelectedInvitees(prev => prev.some(i => i.user_id === candidate.user_id)
+      ? prev.filter(i => i.user_id !== candidate.user_id)
+      : [...prev, { user_id: candidate.user_id, role_snapshot: inviteeLabel(candidate) }]);
+  };
+
   const isCreateFormValid = form.season_id && form.meeting_type && form.venue_id && form.held_at && form.period_start && form.period_end;
 
   const handleCreate = async () => {
@@ -141,7 +185,8 @@ export function SdkMeetingsPage() {
           venue_id: form.venue_id,
           held_at: form.held_at,
           period_start: form.period_start,
-          period_end: form.period_end
+          period_end: form.period_end,
+          invited: selectedInvitees
         })
       });
       const data = await res.json();
@@ -289,23 +334,73 @@ export function SdkMeetingsPage() {
 
       <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Новое заседание" size="normal">
         <div className="flex flex-col gap-5">
-          <Select label="Сезон" options={seasons.map(s => ({ value: s.id, label: s.name }))} value={form.season_id} onChange={val => setForm({ ...form, season_id: val, venue_id: '' })} />
-          <Select label="Тип комиссии" options={MEETING_TYPES} value={form.meeting_type} onChange={val => setForm({ ...form, meeting_type: val })} />
-          <Select label="Место проведения" options={venues.map(v => ({ value: v.id, label: v.name }))} value={form.venue_id} onChange={val => setForm({ ...form, venue_id: val })} placeholder="Выберите место" />
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Дата проведения</span>
-            <DatePicker value={form.held_at} onChange={val => setForm({ ...form, held_at: val })} />
-          </div>
-          <div className="flex gap-3">
-            <div className="flex flex-col gap-1.5 w-full">
-              <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Период рассмотрения — начало</span>
-              <DatePicker value={form.period_start} onChange={val => setForm({ ...form, period_start: val })} />
+          <SegmentButton
+            options={['Основное', selectedInvitees.length > 0 ? `Приглашённые (${selectedInvitees.length})` : 'Приглашённые']}
+            defaultIndex={createTab}
+            onChange={setCreateTab}
+          />
+
+          {createTab === 0 ? (
+            <div className="flex flex-col gap-5 animate-zoom-in">
+              <Select label="Сезон" options={seasons.map(s => ({ value: s.id, label: s.name }))} value={form.season_id} onChange={val => setForm({ ...form, season_id: val, venue_id: '' })} />
+              <Select label="Тип комиссии" options={MEETING_TYPES} value={form.meeting_type} onChange={val => setForm({ ...form, meeting_type: val })} />
+              <Select label="Место проведения" options={venues.map(v => ({ value: v.id, label: v.name }))} value={form.venue_id} onChange={val => setForm({ ...form, venue_id: val })} placeholder="Выберите место" />
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Дата проведения</span>
+                <DatePicker value={form.held_at} onChange={val => setForm({ ...form, held_at: val })} />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex flex-col gap-1.5 w-full">
+                  <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Период рассмотрения — начало</span>
+                  <DatePicker value={form.period_start} onChange={val => setForm({ ...form, period_start: val })} />
+                </div>
+                <div className="flex flex-col gap-1.5 w-full">
+                  <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Период рассмотрения — конец</span>
+                  <DatePicker value={form.period_end} onChange={val => setForm({ ...form, period_end: val })} />
+                </div>
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5 w-full">
-              <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Период рассмотрения — конец</span>
-              <DatePicker value={form.period_end} onChange={val => setForm({ ...form, period_end: val })} />
+          ) : (
+            <div className="flex flex-col gap-3 animate-zoom-in">
+              <span className="text-[10px] text-graphite/50 leading-relaxed">
+                Судьи лиги и руководство команд сезона. Отмеченные попадут в явку заседания рядом с членами комиссии.
+              </span>
+
+              <Input placeholder="Поиск по ФИО, роли или команде" value={inviteeQuery} onChange={e => setInviteeQuery(e.target.value)} />
+
+              {!form.season_id ? (
+                <span className="text-[12px] text-graphite-light py-6 text-center">Сначала выберите сезон на вкладке «Основное»</span>
+              ) : isLoadingInvitees ? (
+                <span className="text-[12px] text-graphite-light py-6 text-center">Загрузка…</span>
+              ) : filteredInvitees.length === 0 ? (
+                <span className="text-[12px] text-graphite-light py-6 text-center">Никого не нашли</span>
+              ) : (
+                <div className="flex flex-col gap-2 max-h-[340px] overflow-y-auto custom-scrollbar pr-1">
+                  {filteredInvitees.map(c => {
+                    const isChecked = selectedInvitees.some(i => i.user_id === c.user_id);
+                    return (
+                      <div
+                        key={`${c.kind}-${c.user_id}`}
+                        onClick={() => toggleInvitee(c)}
+                        className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-all ${
+                          isChecked ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 bg-white hover:border-graphite/30'
+                        }`}
+                      >
+                        <div className="w-[42px] h-[42px] rounded-lg overflow-hidden shrink-0 border border-graphite/10 bg-graphite/5">
+                          <img src={getImageUrl(c.avatar_url || '/default/user_default.webp')} alt="" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex flex-col min-w-0 leading-tight">
+                          <span className="text-[13px] font-bold text-graphite truncate">{inviteeName(c)}</span>
+                          <span className="text-[11px] font-black text-orange truncate mt-0.5">{inviteeLabel(c)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
           <Button onClick={handleCreate} isLoading={isSubmitting} disabled={!isCreateFormValid} className="w-full">Создать заседание</Button>
         </div>
       </Modal>

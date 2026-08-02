@@ -21,6 +21,18 @@ const Pill = ({ children, className = '' }) => (
   <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap ${className}`}>{children}</span>
 );
 
+// Основание рассмотрения человекочитаемо: у рапорта и протеста уточнение лежит
+// в отдельных полях, у "иного" — свободным текстом
+const basisText = (d) => {
+  if (d.hearing_basis_type === 'referee_report') {
+    return `Рапорт главного судьи${d.hearing_basis_referee_name ? ` — ${d.hearing_basis_referee_name}` : ''}`;
+  }
+  if (d.hearing_basis_type === 'team_protest') {
+    return `Протест команды${d.hearing_basis_team_name ? ` — ${d.hearing_basis_team_name}` : ''}`;
+  }
+  return d.hearing_basis || null;
+};
+
 // Склонение "матч" по числу: 1 матч, 2-4 матча, 5+/11-14 матчей
 const pluralizeMatches = (n) => {
   const num = Math.abs(n);
@@ -32,11 +44,11 @@ const pluralizeMatches = (n) => {
   return 'матчей';
 };
 
-export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToast }) {
+// Кнопка "+ Новое решение" живёт в шапке страницы, поэтому состоянием шторки владеет она
+export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToast, isDrawerOpen, setIsDrawerOpen }) {
   const [decisions, setDecisions] = useState([]);
   const [violationTypes, setViolationTypes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [decisionToDelete, setDecisionToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -118,12 +130,6 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
 
   return (
     <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 shadow-sm w-full min-h-[300px]">
-      {canManage && (
-        <div className="mb-6 pb-6 border-b border-graphite/10">
-          <Button onClick={() => setIsDrawerOpen(true)}>+ Новое решение</Button>
-        </div>
-      )}
-
       {decisions.length === 0 ? (
         <div className="text-center py-12 text-graphite-light font-medium">Решений пока нет</div>
       ) : (
@@ -148,7 +154,12 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
               : null;
 
             const gamesText = !hasSplit && d.penalty_games ? `${d.penalty_games} ${pluralizeMatches(d.penalty_games)}` : null;
-            const amountText = d.penalty_amount ? `${d.penalty_amount} ₽` : null;
+            const amountText = d.penalty_amount ? `${Math.round(Number(d.penalty_amount)).toLocaleString('ru-RU')} ₽` : null;
+            // Командный штраф складывается из обязательной и дополнительной частей — показываем состав суммы
+            const hasAmountSplit = Number(d.mandatory_amount) > 0 && Number(d.additional_amount) > 0;
+            const amountSplitText = hasAmountSplit
+              ? `${Math.round(Number(d.mandatory_amount)).toLocaleString('ru-RU')} + ${Math.round(Number(d.additional_amount)).toLocaleString('ru-RU')}`
+              : null;
             const hasSanction = isPunish && (gamesText || amountText || hasSplit);
 
             const gamesRemaining = !hasSplit && d.penalty_games && d.dq_games_assigned != null
@@ -171,7 +182,7 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                   </span>
                   <div className="flex items-center gap-2 shrink-0">
                     <Pill className={isPunish ? 'bg-orange/10 text-orange border border-orange/20' : 'bg-graphite/10 text-graphite/60 border border-graphite/10'}>
-                      {isPunish ? 'Наказан' : 'Оправдан'}
+                      {isPunish ? 'Наказан' : 'Не наказан'}
                     </Pill>
                     <Pill className={STATUS_PILL[d.status] || STATUS_PILL.active}>{STATUS_LABEL[d.status] || d.status}</Pill>
                   </div>
@@ -207,9 +218,18 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                   </div>
                 </div>
 
-                {d.hearing_basis && (
+                {basisText(d) && (
                   <div className="text-[11px] text-graphite/40 font-medium">
-                    Основание: {d.hearing_basis}
+                    Основание: {basisText(d)}
+                  </div>
+                )}
+
+                {d.verdict_description && (
+                  <div className="text-[11px] text-graphite-light font-medium leading-relaxed px-3 py-2 bg-graphite/5 border border-graphite/10 rounded-md">
+                    <span className="font-black uppercase text-[10px] text-graphite/40 block mb-0.5">
+                      {isPunish ? 'Вердикт' : 'Почему не наказан'}
+                    </span>
+                    {d.verdict_description}
                   </div>
                 )}
 
@@ -256,6 +276,9 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                             {amountText} · {d.penalty_amount_paid ? 'оплачен' : 'не оплачен'}
                           </Pill>
                         </button>
+                      )}
+                      {isPunish && amountSplitText && (
+                        <span className="text-[10px] font-bold text-graphite-light/60">обяз. + доп.: {amountSplitText} ₽</span>
                       )}
                       {isPunish && d.team_penalty_mode === 'whole' && (
                         <span className="text-[10px] font-bold text-graphite-light/60 uppercase">на всю команду</span>

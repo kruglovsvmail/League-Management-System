@@ -63,10 +63,8 @@ export function Select({
     if (isOpen && selectRef.current) {
       const rect = selectRef.current.getBoundingClientRect();
 
-      // Ширина списка намеренно не привязана к полю: длинные формулировки в него не влезают
-      const panelWidth = wrapText
-        ? Math.min(Math.max(rect.width * 1.5, 420), window.innerWidth - 40)
-        : rect.width;
+      // Список повторяет ширину поля: длинные формулировки не обрезаются, а переносятся
+      const panelWidth = Math.min(rect.width, window.innerWidth - 40);
 
       // Если справа не хватает места — раскрываемся влево, выравниваясь по правому краю поля
       let calculatedLeft = rect.left;

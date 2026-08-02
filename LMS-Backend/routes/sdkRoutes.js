@@ -6,7 +6,7 @@ import {
   getSdkCommissionMembers, createSdkCommissionMember, setSdkCommissionMemberPermanent, deleteSdkCommissionMember,
   getSdkViolationTypes, createSdkViolationType, updateSdkViolationType, reorderSdkViolationTypes, deleteSdkViolationType, copySdkViolationTypes,
   getSdkMeetings, getSdkMeeting, createSdkMeeting, updateSdkMeeting, deleteSdkMeeting,
-  getSdkMeetingMembers, addSdkMeetingMember, removeSdkMeetingMember,
+  getSdkMeetingMembers, addSdkMeetingMember, removeSdkMeetingMember, getSdkInviteeCandidates, getSdkMeetingReferees,
   getSdkMeetingDocuments, uploadSdkMeetingDocuments, deleteSdkMeetingDocument,
   getSdkMeetingDecisions, createSdkMeetingDecision, updateSdkMeetingDecision, togglePaidSdkMeetingDecision, deleteSdkMeetingDecision,
   togglePaidSdkDecisionMember
@@ -42,6 +42,8 @@ router.put('/sdk/meetings/:id', requirePermission('SDK_MEETINGS_MANAGE'), update
 router.delete('/sdk/meetings/:id', requirePermission('SDK_MEETINGS_MANAGE'), deleteSdkMeeting);
 
 // ЯВКА ЧЛЕНОВ КОМИССИИ
+router.get('/seasons/:seasonId/sdk/invitee-candidates', requirePermission('SDK_MEETINGS_VIEW'), getSdkInviteeCandidates);
+router.get('/sdk/meetings/:meetingId/referees', requirePermission('SDK_MEETINGS_VIEW'), getSdkMeetingReferees);
 router.get('/sdk/meetings/:meetingId/members', requirePermission('SDK_MEETINGS_VIEW'), getSdkMeetingMembers);
 router.post('/sdk/meetings/:meetingId/members', requirePermission('SDK_MEETINGS_MANAGE'), addSdkMeetingMember);
 router.delete('/sdk/meeting-members/:id', requirePermission('SDK_MEETINGS_MANAGE'), removeSdkMeetingMember);
