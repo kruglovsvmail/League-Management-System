@@ -25,14 +25,18 @@ export const SummaryTablesAccordion = ({
   // ── Журнал вратарей ──────────────────────────────────────────────────────
   const [editLogId, setEditLogId] = useState(null);
   const [editLogData, setEditLogData] = useState({});
-  const [newLogData, setNewLogData] = useState({ time: '', home_goalie: '', away_goalie: '' });
+  // Дефолт новой записи — «не указан», а не пустые ворота (''): пока секретарь
+  // сторону не выбрал, про вратаря просто ничего не известно. Пустые ворота —
+  // осознанное действие и выбираются явно. Разница уходит в статистику: гол в
+  // пустые ворота добавляется к броскам соперника, гол «неизвестному» вратарю — нет.
+  const [newLogData, setNewLogData] = useState({ time: '', home_goalie: UNSPECIFIED_GOALIE, away_goalie: UNSPECIFIED_GOALIE });
 
   useEffect(() => {
     const lastLog = goalieLog.length > 0 ? goalieLog[goalieLog.length - 1] : null;
     setNewLogData(prev => ({
       ...prev,
-      home_goalie: lastLog ? (lastLog.home_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastLog.home_goalie_id || '')) : '',
-      away_goalie: lastLog ? (lastLog.away_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastLog.away_goalie_id || '')) : ''
+      home_goalie: lastLog ? (lastLog.home_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastLog.home_goalie_id || '')) : UNSPECIFIED_GOALIE,
+      away_goalie: lastLog ? (lastLog.away_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastLog.away_goalie_id || '')) : UNSPECIFIED_GOALIE
     }));
   }, [goalieLog]);
 
@@ -94,34 +98,47 @@ export const SummaryTablesAccordion = ({
   // ── Броски по вратарю ────────────────────────────────────────────────────
   // Для «не указан» goalie_id в БД тоже NULL — отличаем строки друг от друга
   // по team_id (реальные вратари уникальны по user id, team_id не нужен).
+  // null = ячейку не заполняли (строки в БД нет) → «-». Ноль — полноценный
+  // результат («по вратарю не бросали») и показывается как 0.
   const getGoalieShotsForPeriod = (goalieId, period, teamId) => {
     const record = goaliesShotsSummary.find(s => (
       goalieId === UNSPECIFIED_GOALIE
         ? (s.goalie_id == null && String(s.team_id) === String(teamId) && s.period === period)
         : (String(s.goalie_id) === String(goalieId) && s.period === period)
     ));
-    return record ? parseInt(record.shots_count, 10) : 0;
+    return record ? parseInt(record.shots_count, 10) : null;
   };
 
-  const getGoalieShotsTotal = (goalieId, teamId) =>
-    periods.reduce((sum, p) => sum + getGoalieShotsForPeriod(goalieId, p, teamId), 0);
+  // Итог: null, пока не заполнен ни один период; иначе сумма заполненных.
+  const getGoalieShotsTotal = (goalieId, teamId) => {
+    const vals = periods
+      .map(p => getGoalieShotsForPeriod(goalieId, p, teamId))
+      .filter(v => v != null);
+    return vals.length ? vals.reduce((sum, v) => sum + v, 0) : null;
+  };
 
   const startEditGoalieShots = (goalieId, teamId) => {
     if (!shotsTrackingEnabled) return;
     const key = `${goalieId}_${teamId}`;
     setEditGoalieShotKey(key);
     const data = {};
-    periods.forEach(p => { data[p] = getGoalieShotsForPeriod(goalieId, p, teamId) || ''; });
+    periods.forEach(p => {
+      const v = getGoalieShotsForPeriod(goalieId, p, teamId);
+      data[p] = v == null ? '' : String(v);   // не через `|| ''`: иначе введённый 0 стёрся бы
+    });
     setEditGoalieShotData(data);
   };
 
   const saveEditGoalieShots = (goalieId, teamId) => {
     periods.forEach(p => {
+      const raw = editGoalieShotData[p];
+      const isCleared = raw === '' || raw == null;
       onSaveGoalieShotsSummary({
         goalie_id: goalieId === UNSPECIFIED_GOALIE ? null : goalieId,
         team_id: teamId,
         period: p,
-        shots_count: parseInt(editGoalieShotData[p], 10) || 0
+        // null → бэкенд удалит строку (ячейка снова «не заполнена»)
+        shots_count: isCleared ? null : (parseInt(raw, 10) || 0)
       });
     });
     setEditGoalieShotKey(null);
@@ -384,9 +401,17 @@ export const SummaryTablesAccordion = ({
                             const goalieName = goalieId === UNSPECIFIED_GOALIE
                               ? 'Не указан'
                               : (goalieLabel ? goalieLabel.label : `#${goalieId}`);
-                            const editSum = isEditingGoalie
-                              ? periods.reduce((s, p) => s + (parseInt(editGoalieShotData[p], 10) || 0), 0)
-                              : 0;
+                            // null, пока в правке не заполнено ни одно поле — чтобы итог
+                            // показывал «-», а не 0 (0 = заполненный ноль, это результат).
+                            const editSum = (() => {
+                              if (!isEditingGoalie) return null;
+                              const vals = periods
+                                .map(p => editGoalieShotData[p])
+                                .filter(v => v !== '' && v != null);
+                              return vals.length
+                                ? vals.reduce((s, v) => s + (parseInt(v, 10) || 0), 0)
+                                : null;
+                            })();
 
                             return (
                               <tr
@@ -410,7 +435,7 @@ export const SummaryTablesAccordion = ({
                                     ))}
                                     <td className="border-r border-graphite/30 text-center">
                                       <span className="font-mono font-black text-[13px] text-status-accepted">
-                                        {editSum || '-'}
+                                        {editSum ?? '-'}
                                       </span>
                                     </td>
                                     <td className="p-0 text-center">
@@ -426,11 +451,11 @@ export const SummaryTablesAccordion = ({
                                   <>
                                     {periods.map(p => (
                                       <td key={p} className="font-mono font-semibold text-[13px] text-graphite border-r border-graphite/30">
-                                        {getGoalieShotsForPeriod(goalieId, p, team.id) || '-'}
+                                        {getGoalieShotsForPeriod(goalieId, p, team.id) ?? '-'}
                                       </td>
                                     ))}
                                     <td className="font-mono font-black text-[13px] text-status-accepted border-r border-graphite/30">
-                                      {getGoalieShotsTotal(goalieId, team.id) || '-'}
+                                      {getGoalieShotsTotal(goalieId, team.id) ?? '-'}
                                     </td>
                                     <td className="p-0 text-center">
                                       {!isReadOnly && shotsTrackingEnabled && (

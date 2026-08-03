@@ -12,6 +12,7 @@ import { Pagination } from '../ui/Pagination';
 import { Uploader } from '../ui/Uploader'; 
 import { getImageUrl, getToken } from '../utils/helpers';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
+import { TeamOwnerDrawer } from '../modals/TeamOwnerDrawer';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
@@ -81,6 +82,7 @@ export function TeamManagementPage() {
 
   const setSelectedTeam = (team) => {
     setSelectedTeamState(team);
+    setOwner(undefined);
     if (team) {
       sessionStorage.setItem('tm_selected_team_data', JSON.stringify(team));
     } else {
@@ -98,6 +100,13 @@ export function TeamManagementPage() {
   const [base, setBase] = useState([]);
   const [roster, setRoster] = useState([]);
   const [staff, setStaff] = useState([]);
+
+  // Владелец команды (teams.owner_id) — приходит вместе с составом, но членом
+  // команды не является: у него может не быть записи ни в базе, ни в штабе.
+  // undefined = ещё не загружен, null = загружен и не назначен — различаем, чтобы
+  // при переключении команд не мигало тревожное «Не назначен»
+  const [owner, setOwner] = useState(undefined);
+  const [isOwnerDrawerOpen, setIsOwnerDrawerOpen] = useState(false);
   
   const [applications, setApplications] = useState([]);
   const [isCreateAppDrawerOpen, setIsCreateAppDrawerOpen] = useState(false);
@@ -140,7 +149,7 @@ export function TeamManagementPage() {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/members`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
       const data = await res.json();
-      if (data.success) { setBase(data.base); setRoster(data.roster); setStaff(data.staff); setCacheBuster(Date.now()); }
+      if (data.success) { setBase(data.base); setRoster(data.roster); setStaff(data.staff); setOwner(data.owner || null); setCacheBuster(Date.now()); }
     } catch (err) { console.error(err); }
   };
 
@@ -468,6 +477,28 @@ export function TeamManagementPage() {
               <span className="font-black text-[16px] leading-tight">{selectedTeam.name}</span>
               {selectedTeam.city && <span className="text-[12px] font-bold text-graphite-light mt-1">{selectedTeam.city}</span>}
             </div>
+
+            {/* Владелец команды — свойство самой команды, а не вкладка состава,
+                поэтому живёт рядом с её названием и виден с любой вкладки */}
+            <button
+              onClick={() => setIsOwnerDrawerOpen(true)}
+              className="text-left px-4 py-3 mb-2 rounded-md border border-graphite/10 bg-white/60 hover:border-orange hover:bg-white transition-all group"
+            >
+              <span className="text-[10px] font-black uppercase tracking-wide text-graphite-light block">Владелец команды</span>
+              {owner === undefined ? (
+                <span className="text-[13px] font-bold text-graphite-light block mt-1">Загрузка…</span>
+              ) : owner ? (
+                <span className="text-[13px] font-bold text-graphite block truncate mt-1 group-hover:text-orange">
+                  {owner.last_name} {owner.first_name}
+                </span>
+              ) : (
+                <span className="text-[13px] font-bold text-status-rejected block mt-1">Не назначен</span>
+              )}
+              <span className="text-[11px] font-bold text-orange block mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {owner ? 'Изменить' : 'Назначить'}
+              </span>
+            </button>
+
             {[
               { id: 'base', label: 'База команды', count: base.length },
               { id: 'roster', label: 'Игровой состав', count: roster.length },
@@ -520,6 +551,12 @@ export function TeamManagementPage() {
                           title="Последний визит участника команды в Team-Room"
                         >
                           {t.last_activity ? `Актив: ${dayjs(t.last_activity).format('D MMM')}` : 'Не заходили'}
+                        </span>
+                        <span
+                          className={`text-[11px] font-bold px-2 py-1 rounded ${t.has_owner ? 'bg-status-accepted/10 text-status-accepted' : 'bg-status-rejected/10 text-status-rejected'}`}
+                          title={t.has_owner ? 'Владелец команды назначен' : 'Владелец команды не назначен'}
+                        >
+                          {t.has_owner ? 'Владелец есть' : 'Без владельца'}
                         </span>
                       </div>
                     </div>
@@ -618,6 +655,17 @@ export function TeamManagementPage() {
       </div>
 
       <AddMemberDrawer isOpen={isAddDrawerOpen} onClose={() => setIsAddDrawerOpen(false)} teamId={selectedTeam?.id} type={activeTab} onSuccess={() => fetchMembers(selectedTeam.id)} roster={roster} staff={staff} base={base} />
+      <TeamOwnerDrawer
+        isOpen={isOwnerDrawerOpen}
+        onClose={() => setIsOwnerDrawerOpen(false)}
+        teamId={selectedTeam?.id}
+        teamName={selectedTeam?.name}
+        owner={owner}
+        onSaved={(nextOwner) => {
+          setOwner(nextOwner);
+          showToast('Успешно', nextOwner ? 'Владелец команды назначен' : 'Владелец команды снят', 'success');
+        }}
+      />
       <PlayerAvatarModal isOpen={!!avatarModalUser} onClose={() => setAvatarModalUser(null)} initialAvatar={avatarModalUser ? getRenderPhoto(avatarModalUser) : null} onSave={handlePhotoSave} isSaving={isPhotoSaving} />
       <PlayerProfileModal isOpen={!!profileModalUserId} onClose={() => setProfileModalUserId(null)} playerId={profileModalUserId} />
       <ConfirmModal isOpen={confirmDelete.isOpen} onClose={() => setConfirmDelete({ isOpen: false, id: null, typeStr: null, actionArgs: null })} onConfirm={confirmRemove} isLoading={isDeleting} />

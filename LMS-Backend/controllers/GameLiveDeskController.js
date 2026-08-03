@@ -597,13 +597,25 @@ export const saveGoalieShotsSummary = async (req, res) => {
             return res.status(403).json({ success: false, error: 'Лига не ведёт статистику бросков для этого дивизиона' });
         }
 
-        if (goalie_id) {
+        // Пустое значение (null/'') — это НЕ ноль, а «данные не введены»: строку
+        // удаляем, чтобы агрегаторы статистики видели прочерк, а не результат 0.
+        // Ноль остаётся полноценным значением («по этому вратарю не бросали»).
+        // Зеркалит поведение TR (ShotsSheet: очистка ячейки убирает её из entries).
+        const isCleared = shots_count === null || shots_count === undefined || shots_count === '';
+
+        if (isCleared) {
+            await pool.query(`
+                DELETE FROM game_shots_by_goalie
+                WHERE game_id = $1 AND team_id = $2 AND period = $3
+                  AND goalie_id IS NOT DISTINCT FROM $4
+            `, [gameId, team_id, period, goalie_id || null]);
+        } else if (goalie_id) {
             await pool.query(`
                 INSERT INTO game_shots_by_goalie (game_id, goalie_id, team_id, period, shots_count)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (game_id, goalie_id, period)
                 DO UPDATE SET shots_count = EXCLUDED.shots_count
-            `, [gameId, goalie_id, team_id, period, shots_count ?? 0]);
+            `, [gameId, goalie_id, team_id, period, shots_count]);
         } else {
             // goalie_id = NULL (пустые ворота либо «не указан» — секретарь различает
             // их через team_id/сторону на фронте, здесь это просто «броски без
@@ -614,12 +626,12 @@ export const saveGoalieShotsSummary = async (req, res) => {
                 UPDATE game_shots_by_goalie
                 SET shots_count = $1
                 WHERE game_id = $2 AND goalie_id IS NULL AND team_id = $3 AND period = $4
-            `, [shots_count ?? 0, gameId, team_id, period]);
+            `, [shots_count, gameId, team_id, period]);
             if (upd.rowCount === 0) {
                 await pool.query(`
                     INSERT INTO game_shots_by_goalie (game_id, goalie_id, team_id, period, shots_count)
                     VALUES ($1, NULL, $2, $3, $4)
-                `, [gameId, team_id, period, shots_count ?? 0]);
+                `, [gameId, team_id, period, shots_count]);
             }
         }
 
