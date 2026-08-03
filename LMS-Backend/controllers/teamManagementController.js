@@ -20,6 +20,11 @@ const normalizeTournamentRoles = (roles) => {
 export const searchTeams = async (req, res) => {
     try {
         const { q } = req.query;
+        // Команд в системе больше, чем помещается на экран — отдаём страницами
+        // и вместе с ними общее количество, чтобы фронт нарисовал пагинацию
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const offset = (page - 1) * limit;
         // Помимо базовых полей отдаём счётчики для карточек выбора команды:
         // размер базы/ростера, активные заявки в лиги и последняя активность
         // участников в Team-Room (максимум page_visits.last_visited_at).
@@ -40,14 +45,26 @@ export const searchTeams = async (req, res) => {
             FROM teams t`;
         let values = [];
 
+        let where = '';
         if (q && q !== 'undefined' && q !== 'null') {
-            query += ' WHERE t.name ILIKE $1 OR t.city ILIKE $1';
+            where = ' WHERE t.name ILIKE $1 OR t.city ILIKE $1';
             values.push(`%${q}%`);
         }
-        query += ' ORDER BY t.name ASC LIMIT 20';
+        query += where;
+        query += ` ORDER BY t.name ASC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
 
-        const result = await pool.query(query, values);
-        res.json({ success: true, data: result.rows });
+        const [result, countResult] = await Promise.all([
+            pool.query(query, [...values, limit, offset]),
+            pool.query(`SELECT COUNT(*)::int AS total FROM teams t${where}`, values)
+        ]);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            total: countResult.rows[0].total,
+            page,
+            limit
+        });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 

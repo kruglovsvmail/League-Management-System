@@ -8,6 +8,7 @@ import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge'; 
 import { Loader } from '../ui/Loader';
 import { SegmentButton } from '../ui/SegmentButton';
+import { Pagination } from '../ui/Pagination';
 import { Uploader } from '../ui/Uploader'; 
 import { getImageUrl, getToken } from '../utils/helpers';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
@@ -109,6 +110,9 @@ export function TeamManagementPage() {
   const [cacheBuster, setCacheBuster] = useState(Date.now());
   const [teamsList, setTeamsList] = useState([]);
   const [isSearchingTeams, setIsSearchingTeams] = useState(false);
+  const [teamsPage, setTeamsPage] = useState(1);
+  const [teamsTotal, setTeamsTotal] = useState(0);
+  const TEAMS_PER_PAGE = 20;
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, typeStr: null, actionArgs: null });
   const [isDeleting, setIsDeleting] = useState(false);
   const [toastInfo, setToastInfo] = useState(null);
@@ -152,20 +156,28 @@ export function TeamManagementPage() {
     if (selectedTeam) { fetchMembers(selectedTeam.id); fetchApplications(selectedTeam.id); }
   }, [selectedTeam]);
 
+  // Новый запрос всегда начинается с первой страницы, иначе после сужения поиска
+  // можно оказаться на несуществующей странице и увидеть пустой список
+  useEffect(() => { setTeamsPage(1); }, [teamSearchQuery]);
+
   useEffect(() => {
     if (!selectedTeam) {
       const fetchTeams = async () => {
         setIsSearchingTeams(true);
         try {
-          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/search?q=${teamSearchQuery}`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+          const params = new URLSearchParams({ q: teamSearchQuery || '', page: teamsPage, limit: TEAMS_PER_PAGE });
+          const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/search?${params}`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
           const data = await res.json();
-          if (data.success) setTeamsList(data.data);
+          if (data.success) {
+            setTeamsList(data.data);
+            setTeamsTotal(data.total ?? data.data.length);
+          }
         } catch (err) { console.error(err); } finally { setIsSearchingTeams(false); }
       };
       const timer = setTimeout(fetchTeams, 300);
       return () => clearTimeout(timer);
     }
-  }, [teamSearchQuery, selectedTeam]);
+  }, [teamSearchQuery, teamsPage, selectedTeam]);
 
   const duplicateJerseys = useMemo(() => {
     const counts = {};
@@ -475,9 +487,16 @@ export function TeamManagementPage() {
         <div className="flex-1 relative z-10 min-h-[500px]">
           {!selectedTeam ? (
             <div className="bg-white/40 border border-graphite/10 rounded-lg p-8 animate-zoom-in">
-              <Input placeholder="Поиск команды..." value={teamSearchQuery} onChange={(e) => setTeamSearchQuery(e.target.value)} />
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1">
+                  <Input placeholder="Поиск команды..." value={teamSearchQuery} onChange={(e) => setTeamSearchQuery(e.target.value)} />
+                </div>
+                <span className="shrink-0 bg-graphite/5 text-graphite/60 px-3 py-1.5 rounded-md text-[13px] font-black whitespace-nowrap">
+                  {teamsTotal} команд
+                </span>
+              </div>
               {isSearchingTeams ? <Loader text="Поиск..." /> : (
-                <div className="grid grid-cols-2 xl:grid-cols-3 gap-5 mt-6">
+                <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5 mt-6">
                   {teamsList.map(t => (
                     <div key={t.id} onClick={() => setSelectedTeam(t)} className="flex flex-col gap-3 p-5 bg-white rounded-md border cursor-pointer hover:border-orange shadow-sm group">
                       <div className="flex items-center gap-4">
@@ -507,6 +526,18 @@ export function TeamManagementPage() {
                   ))}
                 </div>
               )}
+
+              {!isSearchingTeams && teamsList.length === 0 && (
+                <div className="text-center py-16 text-graphite-light font-medium">Команды не найдены</div>
+              )}
+
+              <Pagination
+                page={teamsPage}
+                total={teamsTotal}
+                limit={TEAMS_PER_PAGE}
+                onChange={setTeamsPage}
+                className="mt-8"
+              />
             </div>
           ) : (
             <>
