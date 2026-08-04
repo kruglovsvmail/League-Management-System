@@ -422,6 +422,18 @@ export const getGameById = async (req, res) => {
                 gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.auto_stop_on_event, gt.shootout_status, gt.arena_announcer,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots,
+                -- Матчи вне лиг (товарищеские и внешние турниры из Team-Room, см. раздел
+                -- "Матчи вне лиг"): дивизиона нет, поэтому оба флага выше приходят NULL.
+                -- Трактовать это как "лига не ведёт" нельзя — лиги попросту нет, статистику
+                -- ведёт сама команда. Гейт снимаем и опираемся на фактические данные:
+                -- has_plus_minus говорит, вносили ли +/- хоть на одном голе этого матча.
+                -- Та же логика, что в Team-Room/TR-Backend/controllers/MatchController.js.
+                (g.division_id IS NULL) AS is_leagueless,
+                EXISTS (
+                    SELECT 1 FROM game_plus_minus pm
+                    JOIN game_events ge ON ge.id = pm.event_id
+                    WHERE ge.game_id = g.id
+                ) AS has_plus_minus,
                 -- Журнал работы с таймером — контроль административный, поэтому один флаг
                 -- на дивизион, без деления на регулярку и плей-офф
                 COALESCE(d.track_timer_log, false) AS track_timer_log,
@@ -1619,6 +1631,8 @@ export const getGameStats = async (req, res) => {
                     ELSE NULL
                 END::int AS saves,
                 COALESCE(ga.goals_against, 0)::int AS goals_against,
+                -- Броски в створ по вратарю — то, что ввёл секретарь. Не заполняли → «—».
+                s.shots_against::int AS shots_against,
                 -- %ОБ при нуле бросков не определён — тоже «—».
                 CASE
                     WHEN COALESCE(s.shots_against, 0) > 0
@@ -1628,7 +1642,11 @@ export const getGameStats = async (req, res) => {
                     )
                     ELSE NULL
                 END::float AS save_percent,
-                CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts
+                CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts,
+                -- Передачи и штрафные минуты у вратаря считаются ровно так же, как у полевых:
+                -- в протоколе его можно поставить ассистентом и удалить наравне со всеми
+                COALESCE(a.assists, 0)::int AS assists,
+                COALESCE(pen.penalty_minutes, 0)::int AS penalty_minutes
             FROM game_rosters gr
             JOIN users u ON gr.player_id = u.id
             LEFT JOIN team_members tm ON tm.user_id = gr.player_id AND tm.team_id = gr.team_id
@@ -1638,6 +1656,21 @@ export const getGameStats = async (req, res) => {
                 WHERE game_id = $1
                 GROUP BY goalie_id, team_id
             ) s ON s.goalie_id = gr.player_id AND s.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT player_id, team_id, COUNT(*)::int AS assists FROM (
+                    SELECT assist1_id AS player_id, team_id FROM game_events
+                    WHERE game_id = $1 AND event_type = 'goal' AND assist1_id IS NOT NULL
+                    UNION ALL
+                    SELECT assist2_id AS player_id, team_id FROM game_events
+                    WHERE game_id = $1 AND event_type = 'goal' AND assist2_id IS NOT NULL
+                ) sub GROUP BY player_id, team_id
+            ) a ON a.player_id = gr.player_id AND a.team_id = gr.team_id
+            LEFT JOIN (
+                SELECT penalty_player_id, team_id, SUM(penalty_minutes)::int AS penalty_minutes
+                FROM game_events
+                WHERE game_id = $1 AND event_type = 'penalty'
+                GROUP BY penalty_player_id, team_id
+            ) pen ON pen.penalty_player_id = gr.player_id AND pen.team_id = gr.team_id
             LEFT JOIN goals_against_per_goalie ga ON ga.goalie_id = gr.player_id
             LEFT JOIN goals_against_from_shot gfs ON gfs.goalie_id = gr.player_id
             WHERE gr.game_id = $1 AND gr.is_in_lineup = true AND gr.position_in_line = 'G'

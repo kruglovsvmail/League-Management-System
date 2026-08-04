@@ -429,7 +429,9 @@ export const createSdkMeeting = async (req, res) => {
     const { leagueId } = req.params;
     const { season_id, meeting_type, venue_id, held_at, period_start, period_end, status, invited } = req.body;
 
-    if (!season_id || !meeting_type || !venue_id || !held_at || !period_start || !period_end) {
+    // Период рассмотрения необязателен: он лишь сужает выборку судей для рапорта,
+    // а само заседание может быть заведено и без него
+    if (!season_id || !meeting_type || !venue_id || !held_at) {
       return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
     }
 
@@ -448,7 +450,7 @@ export const createSdkMeeting = async (req, res) => {
       RETURNING id
     `, [
       leagueId, season_id, meeting_type, venue_id, venueNameSnapshot, sequenceNumber,
-      held_at, period_start, period_end, status || null, req.user.id
+      held_at, period_start || null, period_end || null, status || null, req.user.id
     ]);
 
     // Штатных членов комиссии сезона сразу отмечаем в явке нового заседания —
@@ -591,6 +593,8 @@ export const getSdkMeetingMembers = async (req, res) => {
 
 // Главные судьи матчей, попадающих в период рассмотрения заседания — из них выбирают
 // автора рапорта. Дивизион необязателен: без него берём все матчи периода.
+// Период рассмотрения тоже необязателен: незаполненная граница просто не сужает выборку,
+// а рамкой в этом случае остаётся сезон заседания.
 export const getSdkMeetingReferees = async (req, res) => {
   try {
     const { meetingId } = req.params;
@@ -599,7 +603,10 @@ export const getSdkMeetingReferees = async (req, res) => {
     const result = await pool.query(`
       SELECT DISTINCT u.id AS user_id, u.first_name, u.last_name, u.middle_name
       FROM sdk_meetings m
-      JOIN games g ON g.game_date BETWEEN m.period_start AND m.period_end
+      JOIN divisions gd ON gd.season_id = m.season_id
+      JOIN games g ON g.division_id = gd.id
+        AND (m.period_start IS NULL OR g.game_date >= m.period_start)
+        AND (m.period_end IS NULL OR g.game_date <= m.period_end)
         AND ($2::int IS NULL OR g.division_id = $2)
       JOIN game_staff gs ON gs.game_id = g.id AND gs.role IN ('main-1', 'main-2')
       JOIN users u ON u.id = gs.user_id
@@ -614,7 +621,7 @@ export const getSdkMeetingReferees = async (req, res) => {
   }
 };
 
-// Кого можно позвать на заседание помимо комиссии: судьи лиги и руководство команд сезона.
+// Кого можно позвать на заседание помимо комиссии: судьи лиги и руководители команд сезона.
 // Список собирается по людям, а не по заявкам — один человек может вести несколько команд.
 export const getSdkInviteeCandidates = async (req, res) => {
   try {
@@ -626,9 +633,17 @@ export const getSdkInviteeCandidates = async (req, res) => {
       JOIN users u ON u.id = ls.user_id
       JOIN seasons s ON s.id = $1
       WHERE ls.league_id = s.league_id AND ls.end_date IS NULL AND ls.role = 'referee'
+        -- Штатные члены комиссии и так попадают в явку каждого заседания автоматически:
+        -- в списке приглашённых они были бы дублем самих себя
+        AND NOT EXISTS (
+          SELECT 1 FROM sdk_commission_members cm
+          WHERE cm.season_id = $1 AND cm.is_permanent = true AND cm.user_id = u.id
+        )
 
       UNION ALL
 
+      -- Из состава команд зовут только руководителей (подписантов заявки) —
+      -- тренеры и администраторы на заседание не приглашаются
       SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
              'team_staff' AS kind,
              string_agg(DISTINCT ttr.tournament_role, ', ') AS roles,
@@ -638,10 +653,10 @@ export const getSdkInviteeCandidates = async (req, res) => {
       JOIN divisions dv ON dv.id = tt.division_id
       JOIN teams t ON t.id = tt.team_id
       JOIN users u ON u.id = ttr.user_id
-      WHERE dv.season_id = $1 AND ttr.left_at IS NULL
+      WHERE dv.season_id = $1 AND ttr.left_at IS NULL AND ttr.tournament_role = 'team_manager'
       GROUP BY u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url
 
-      ORDER BY 4, 2
+      ORDER BY 3, 2
     `, [seasonId]);
     res.json({ success: true, data: result.rows });
   } catch (err) {
@@ -837,9 +852,10 @@ export const getSdkMeetingDecisions = async (req, res) => {
              dq.games_assigned as dq_games_assigned, dq.games_served as dq_games_served
       FROM sdk_meeting_decisions dec
       LEFT JOIN sdk_violation_types vt ON dec.violation_type_id = vt.id
-      JOIN tournament_teams tt ON dec.tournament_team_id = tt.id
-      JOIN teams t ON tt.team_id = t.id
-      JOIN divisions div ON tt.division_id = div.id
+      -- Команда у решения необязательна: наказание "иному лицу" не привязано ни к одной заявке
+      LEFT JOIN tournament_teams tt ON dec.tournament_team_id = tt.id
+      LEFT JOIN teams t ON tt.team_id = t.id
+      LEFT JOIN divisions div ON tt.division_id = div.id
       LEFT JOIN tournament_rosters tr ON dec.tournament_roster_id = tr.id
       LEFT JOIN users u ON tr.player_id = u.id
       LEFT JOIN tournament_team_roles ttr ON dec.tournament_team_role_id = ttr.id
@@ -1012,12 +1028,17 @@ export const createSdkMeetingDecision = async (req, res) => {
       tournament_roster_id, tournament_team_role_id, decision, penalty_minutes, member_user_ids
     } = req.body;
 
-    if ((!violation_type_id && !violation_title_manual) || !tournament_team_id || !decision) {
+    if ((!violation_type_id && !violation_title_manual) || !decision) {
       return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
     }
 
     const v = normalizeDecisionBody(req.body);
 
+    // Команда обязательна для всех целей, кроме "иного лица": оно не заявлено ни за одну
+    // команду, и требовать дивизион с командой только ради сохранения решения незачем
+    if (v.targetType !== 'other' && !tournament_team_id) {
+      return res.status(400).json({ success: false, error: 'Не выбраны дивизион и команда' });
+    }
     if (v.targetType === 'player' && !tournament_roster_id) {
       return res.status(400).json({ success: false, error: 'Не выбран игрок-нарушитель' });
     }
@@ -1047,7 +1068,7 @@ export const createSdkMeetingDecision = async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
       RETURNING id
     `, [
-      meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
+      meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id || null, v.targetType,
       v.targetType === 'player' ? tournament_roster_id : null,
       v.targetType === 'staff' ? tournament_team_role_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
@@ -1088,11 +1109,16 @@ export const updateSdkMeetingDecision = async (req, res) => {
       penalty_amount_paid, status, member_user_ids
     } = req.body;
 
-    if ((!violation_type_id && !violation_title_manual) || !tournament_team_id || !decision) {
+    if ((!violation_type_id && !violation_title_manual) || !decision) {
       return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
     }
 
     const v = normalizeDecisionBody(req.body);
+
+    if (v.targetType !== 'other' && !tournament_team_id) {
+      return res.status(400).json({ success: false, error: 'Не выбраны дивизион и команда' });
+    }
+
     const violationSnapshot = await getViolationSnapshot(violation_type_id, violation_code_manual, violation_title_manual);
 
     await client.query('BEGIN');
@@ -1113,7 +1139,7 @@ export const updateSdkMeetingDecision = async (req, res) => {
           violation_source = $24, verdict_description = $25, mandatory_amount = $26, additional_amount = $27
       WHERE id = $28
     `, [
-      violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id, v.targetType,
+      violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id || null, v.targetType,
       v.targetType === 'player' ? tournament_roster_id : null,
       v.targetType === 'staff' ? tournament_team_role_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,

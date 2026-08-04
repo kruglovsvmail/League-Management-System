@@ -217,16 +217,21 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
   const isPenaltyValid = !isPunish || arePenaltyFieldsValid(penaltyInputs);
   const isViolationValid = isCatalogSource ? !!violationTypeId : !!manualViolationTitle.trim();
 
-  // Основание фиксируем в решении: уточнение обязательно ровно то, которое подразумевает тип
+  // Основание фиксируем в решении: уточнение обязательно ровно то, которое подразумевает тип.
+  // Исключение — рапорт: судью-автора можно не указывать (например, его матч не попал в период).
   const isBasisValid = !hearingBasisType
-    || (hearingBasisType === 'referee_report' && !!hearingBasisUserId)
+    || hearingBasisType === 'referee_report'
     || (hearingBasisType === 'team_protest' && !!hearingBasisTeamId)
     || (hearingBasisType === 'other' && !!hearingBasis.trim());
 
-  // Отказ наказывать — тоже вердикт, его причину комиссия обязана записать
+  // Отказ наказывать — тоже решение, его причину комиссия обязана записать
   const isVerdictValid = isPunish || !!verdictDescription.trim();
 
-  const isFormValid = tournamentTeamId && isViolationValid && isPenaltyValid && isBasisValid && isVerdictValid && (
+  // Дивизион и команду требуем для всех целей, кроме "иного лица": оно не заявлено
+  // ни за одну команду, и привязывать штраф к чужой заявке ради сохранения незачем
+  const isTargetTeamValid = submitTargetType === 'other' || !!tournamentTeamId;
+
+  const isFormValid = isTargetTeamValid && isViolationValid && isPenaltyValid && isBasisValid && isVerdictValid && (
     submitTargetType === 'team' ? (!isSplitMode || selectedMemberIds.length > 0) :
     submitTargetType === 'other' ? !!otherPersonName.trim() :
     submitTargetType === 'staff' ? !!selectedTeamRoleId :
@@ -250,7 +255,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
           violation_source: violationSource,
           verdict_description: verdictDescription.trim() || null,
           game_id: gameId || null,
-          tournament_team_id: tournamentTeamId,
+          tournament_team_id: tournamentTeamId || null,
           target_type: submitTargetType,
           tournament_roster_id: submitTargetType === 'player' ? selectedRosterId : null,
           tournament_team_role_id: submitTargetType === 'staff' ? selectedTeamRoleId : null,
@@ -318,11 +323,11 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                     options={referees.map(r => ({ value: r.user_id, label: [r.last_name, r.first_name, r.middle_name].filter(Boolean).join(' ') }))}
                     value={hearingBasisUserId}
                     onChange={setHearingBasisUserId}
-                    placeholder={referees.length ? 'Выберите судью' : 'Судьи в периоде не найдены'}
+                    placeholder={referees.length ? 'Выберите судью (необязательно)' : 'Судьи в периоде не найдены'}
                     isSearchable
                   />
                   <span className="text-[10px] text-graphite/50 leading-relaxed px-0.5 mt-1 block">
-                    Главные судьи матчей выбранного дивизиона за период рассмотрения заседания.
+                    Главные судьи матчей выбранного дивизиона за период рассмотрения заседания. Указывать необязательно.
                   </span>
                 </div>
               )}
@@ -416,7 +421,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                     <>
                       <div className="h-px bg-graphite/10" />
                       <textarea
-                        placeholder="Описание вердикта — формулировка решения комиссии"
+                        placeholder="Описание решения — формулировка решения комиссии"
                         rows={2}
                         value={verdictDescription}
                         onChange={e => setVerdictDescription(e.target.value)}

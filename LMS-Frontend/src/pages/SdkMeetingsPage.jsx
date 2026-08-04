@@ -8,8 +8,11 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Button } from '../ui/Button';
 import { Loader } from '../ui/Loader';
 import { DatePicker } from '../ui/DatePicker';
+import { Icon } from '../ui/Icon';
 import { AccessFallback } from '../ui/AccessFallback';
 import { Modal } from '../modals/Modal';
+import { ConfirmModal } from '../modals/ConfirmModal';
+import { Toast } from '../modals/Toast';
 import { getToken, getImageUrl } from '../utils/helpers';
 
 const MEETING_TYPES = [
@@ -19,7 +22,14 @@ const MEETING_TYPES = [
   { value: 'ek', label: 'ЭК' }
 ];
 
-const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Менеджер команды', team_admin: 'Администратор' };
+// Заседание заводят по факту: либо вопросы были рассмотрены, либо их не оказалось.
+// "Не указано" остаётся только у старых записей — новым его выбрать нельзя.
+const MEETING_STATUSES = [
+  { value: 'held_with_issues', label: 'Проводилось. Рассмотрены вопросы' },
+  { value: 'held_no_issues', label: 'Проводилось. Нет вопросов к рассмотрению' }
+];
+
+const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Руководитель команды', team_admin: 'Администратор' };
 
 const STATUS_PILL = {
   not_specified: { label: 'Не указано', className: 'bg-graphite/10 text-graphite/50 border border-graphite/10' },
@@ -50,7 +60,11 @@ export function SdkMeetingsPage() {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [form, setForm] = useState({ season_id: '', meeting_type: 'sdk', venue_id: '', held_at: '', period_start: '', period_end: '' });
+  const [form, setForm] = useState({ season_id: '', meeting_type: 'sdk', venue_id: '', held_at: '', period_start: '', period_end: '', status: MEETING_STATUSES[0].value });
+
+  const [meetingToDelete, setMeetingToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const [createTab, setCreateTab] = useState(0);
   const [inviteeCandidates, setInviteeCandidates] = useState([]);
@@ -170,7 +184,8 @@ export function SdkMeetingsPage() {
       : [...prev, { user_id: candidate.user_id, role_snapshot: inviteeLabel(candidate) }]);
   };
 
-  const isCreateFormValid = form.season_id && form.meeting_type && form.venue_id && form.held_at && form.period_start && form.period_end;
+  // Период рассмотрения необязателен: он лишь сужает список судей при выборе основания решения
+  const isCreateFormValid = form.season_id && form.meeting_type && form.venue_id && form.held_at && form.status;
 
   const handleCreate = async () => {
     if (!isCreateFormValid) return;
@@ -184,8 +199,9 @@ export function SdkMeetingsPage() {
           meeting_type: form.meeting_type,
           venue_id: form.venue_id,
           held_at: form.held_at,
-          period_start: form.period_start,
-          period_end: form.period_end,
+          period_start: form.period_start || null,
+          period_end: form.period_end || null,
+          status: form.status,
           invited: selectedInvitees
         })
       });
@@ -198,6 +214,30 @@ export function SdkMeetingsPage() {
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Удаление уносит за собой всё заседание целиком: явку, документы, решения
+  // и назначенные ими наказания — поэтому только через подтверждение
+  const handleDeleteMeeting = async () => {
+    if (!meetingToDelete) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/sdk/meetings/${meetingToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMeetingToDelete(null);
+        fetchMeetings();
+      } else {
+        setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+      }
+    } catch (err) {
+      setToast({ title: 'Ошибка', message: 'Сбой удаления', type: 'error' });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -225,6 +265,12 @@ export function SdkMeetingsPage() {
           <Button onClick={() => setIsCreateOpen(true)}>+ Новое заседание</Button>
         )}
       />
+
+      {toast && (
+        <div className="fixed top-[110px] right-10 z-[9999]">
+          <Toast {...toast} onClose={() => setToast(null)} />
+        </div>
+      )}
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
         <div className="w-[300px] shrink-0 sticky top-[128px] flex flex-col gap-6 z-20">
@@ -316,14 +362,25 @@ export function SdkMeetingsPage() {
                   <div
                     key={m.id}
                     onClick={() => navigate(`/sdk-meetings/${m.id}`)}
-                    className="mb-3 p-4 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-mg hover:border-orange/40 transition-all cursor-pointer grid grid-cols-[140px_1fr_140px_180px_auto_100px] gap-4 items-center"
+                    className="mb-3 p-4 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-mg hover:border-orange/40 transition-all cursor-pointer grid grid-cols-[140px_1fr_140px_180px_auto_100px_auto] gap-4 items-center"
                   >
                     <span className="text-[14px] font-black text-graphite">{typeLabel} №{m.sequence_number ?? '-'}</span>
                     <span className="text-[13px] font-medium text-graphite-light">{m.venue_name || 'Место не указано'}</span>
                     <span className="text-[13px] font-bold text-graphite/60">{formatDate(m.held_at)}</span>
-                    <span className="text-[12px] font-bold text-graphite/60">{formatDate(m.period_start)} – {formatDate(m.period_end)}</span>
+                    <span className="text-[12px] font-bold text-graphite/60">
+                      {m.period_start || m.period_end ? `${formatDate(m.period_start)} – ${formatDate(m.period_end)}` : ''}
+                    </span>
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap ${pill.className}`}>{pill.label}</span>
                     <span className="text-right text-[12px] font-bold text-graphite/50">{m.decisions_count} реш.</span>
+                    {canManage ? (
+                      <button
+                        onClick={e => { e.stopPropagation(); setMeetingToDelete(m); }}
+                        className="p-2 text-graphite-light hover:text-status-rejected hover:bg-status-rejected/10 rounded-lg transition-colors shrink-0"
+                        title="Удалить заседание"
+                      >
+                        <Icon name="delete" className="w-4 h-4" />
+                      </button>
+                    ) : <span />}
                   </div>
                 );
               })
@@ -342,9 +399,16 @@ export function SdkMeetingsPage() {
 
           {createTab === 0 ? (
             <div className="flex flex-col gap-5 animate-zoom-in">
-              <Select label="Сезон" options={seasons.map(s => ({ value: s.id, label: s.name }))} value={form.season_id} onChange={val => setForm({ ...form, season_id: val, venue_id: '' })} />
-              <Select label="Тип комиссии" options={MEETING_TYPES} value={form.meeting_type} onChange={val => setForm({ ...form, meeting_type: val })} />
+              <div className="flex gap-3">
+                <div className="w-full min-w-0">
+                  <Select label="Сезон" options={seasons.map(s => ({ value: s.id, label: s.name }))} value={form.season_id} onChange={val => setForm({ ...form, season_id: val, venue_id: '' })} />
+                </div>
+                <div className="w-full min-w-0">
+                  <Select label="Тип комиссии" options={MEETING_TYPES} value={form.meeting_type} onChange={val => setForm({ ...form, meeting_type: val })} />
+                </div>
+              </div>
               <Select label="Место проведения" options={venues.map(v => ({ value: v.id, label: v.name }))} value={form.venue_id} onChange={val => setForm({ ...form, venue_id: val })} placeholder="Выберите место" />
+              <Select label="Статус" options={MEETING_STATUSES} value={form.status} onChange={val => setForm({ ...form, status: val })} />
               <div className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Дата проведения</span>
                 <DatePicker value={form.held_at} onChange={val => setForm({ ...form, held_at: val })} />
@@ -363,7 +427,7 @@ export function SdkMeetingsPage() {
           ) : (
             <div className="flex flex-col gap-3 animate-zoom-in">
               <span className="text-[10px] text-graphite/50 leading-relaxed">
-                Судьи лиги и руководство команд сезона. Отмеченные попадут в явку заседания рядом с членами комиссии.
+                Судьи лиги и руководители команд сезона.
               </span>
 
               <Input placeholder="Поиск по ФИО, роли или команде" value={inviteeQuery} onChange={e => setInviteeQuery(e.target.value)} />
@@ -404,6 +468,18 @@ export function SdkMeetingsPage() {
           <Button onClick={handleCreate} isLoading={isSubmitting} disabled={!isCreateFormValid} className="w-full">Создать заседание</Button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        isOpen={!!meetingToDelete}
+        onClose={() => setMeetingToDelete(null)}
+        onConfirm={handleDeleteMeeting}
+        isLoading={isDeleting}
+        title="Удаление заседания"
+        message={meetingToDelete
+          ? `${MEETING_TYPES.find(t => t.value === meetingToDelete.meeting_type)?.label || meetingToDelete.meeting_type} №${meetingToDelete.sequence_number ?? '-'} будет удалено вместе со всеми решениями, явкой членов комиссии, документами и назначенными наказаниями. Это действие нельзя отменить.`
+          : ''}
+        confirmLabel="Удалить"
+      />
     </div>
   );
 }

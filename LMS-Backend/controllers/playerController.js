@@ -72,7 +72,10 @@ export const getPlayerProfile = async (req, res) => {
           b.*,
           COALESCE(skater_reg.gp, 0) + COALESCE(skater_po.gp, 0) + COALESCE(goalie_reg.gp, 0) + COALESCE(goalie_po.gp, 0) AS gp,
           COALESCE(skater_reg.g, 0) + COALESCE(skater_po.g, 0) AS g,
-          COALESCE(skater_reg.a, 0) + COALESCE(skater_po.a, 0) AS a,
+          -- Передачи считаем и вратарю: в протоколе его можно поставить ассистентом.
+          -- Голы и очки при этом остаются чисто полевыми — их у вратаря не показываем.
+          COALESCE(skater_reg.a, 0) + COALESCE(skater_po.a, 0)
+            + COALESCE(goalie_reg.a, 0) + COALESCE(goalie_po.a, 0) AS a,
           COALESCE(skater_reg.g, 0) + COALESCE(skater_po.g, 0) + COALESCE(skater_reg.a, 0) + COALESCE(skater_po.a, 0) AS pts,
           (
             CASE WHEN b.reg_track_plus_minus THEN COALESCE(skater_reg.pm, 0) ELSE 0 END
@@ -182,6 +185,11 @@ export const getPlayerProfile = async (req, res) => {
               WHERE gr.player_id = $1 AND gr.team_id = b.team_id AND gr.is_in_lineup = true AND gr.position_in_line = 'G') AS gp,
             (SELECT COALESCE(SUM(ge.penalty_minutes), 0) FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id
               WHERE ge.event_type = 'penalty' AND ge.penalty_player_id = $1 AND ge.team_id = b.team_id) AS pim,
+            (SELECT COUNT(*) FROM (
+                SELECT ge.id FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist1_id = $1 AND ge.team_id = b.team_id
+                UNION ALL
+                SELECT ge.id FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
+              ) sub) AS a,
             COALESCE((SELECT COUNT(*) FROM GoalToGoalie WHERE conceding_goalie_id = $1), 0) AS ga,
             GREATEST(
               COALESCE((SELECT SUM(gsb.shots_count) FROM game_shots_by_goalie gsb JOIN ValidGames vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1), 0)
@@ -242,6 +250,11 @@ export const getPlayerProfile = async (req, res) => {
               WHERE gr.player_id = $1 AND gr.team_id = b.team_id AND gr.is_in_lineup = true AND gr.position_in_line = 'G') AS gp,
             (SELECT COALESCE(SUM(ge.penalty_minutes), 0) FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id
               WHERE ge.event_type = 'penalty' AND ge.penalty_player_id = $1 AND ge.team_id = b.team_id) AS pim,
+            (SELECT COUNT(*) FROM (
+                SELECT ge.id FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist1_id = $1 AND ge.team_id = b.team_id
+                UNION ALL
+                SELECT ge.id FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
+              ) sub) AS a,
             COALESCE((SELECT COUNT(*) FROM GoalToGoalie WHERE conceding_goalie_id = $1), 0) AS ga,
             GREATEST(
               COALESCE((SELECT SUM(gsb.shots_count) FROM game_shots_by_goalie gsb JOIN ValidGames vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1), 0)
@@ -266,6 +279,9 @@ export const getPlayerProfile = async (req, res) => {
         position, qual_name, qual_full_name, qual_description,
         gp, g, a, pts, pm, pim, ga, sho, toi,
         sa, sv,
+        -- Ведёт ли дивизион броски хотя бы на одной стадии: по нему фронт решает,
+        -- показать цифру или прочерк в колонках БР/ОБ/%ОБ (0 там читался бы как результат)
+        (COALESCE(reg_track_shots, false) OR COALESCE(playoff_track_shots, false)) AS tracks_shots,
         CASE WHEN sa > 0 THEN ROUND(sv::numeric / sa * 100, 2) ELSE 0.00 END AS svp,
         CASE WHEN toi > 0 THEN ROUND(ga::numeric / toi * norm_seconds, 2) ELSE 0.00 END AS gaa
       FROM agg

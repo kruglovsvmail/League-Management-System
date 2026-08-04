@@ -164,11 +164,15 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
        </Tooltip>
     ) : <Badge label="Квал." type="empty" /> },
     { label: 'И', width: 'text-center', render: r => <span className="font-bold">{r.gp}</span> },
-    { label: 'Штр', width: 'text-center', render: r => r.pim },
+    { label: 'И"0"', width: 'text-center', render: r => r.sho > 0 ? <span className="text-status-accepted font-bold">{r.sho}</span> : r.sho },
+    { label: 'П', width: 'text-center', render: r => r.a },
     { label: 'ПШ', width: 'text-center', render: r => r.ga },
-    { label: 'Броски', width: 'text-center', render: r => r.sa == null ? <span className="text-graphite/30">—</span> : r.sa },
-    { label: 'Об', width: 'text-center', render: r => r.sv == null ? <span className="text-graphite/30">—</span> : r.sv },
-    { label: '%Об', width: 'text-center', render: r => r.svp == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.svp}%</span> },
+    { label: 'Штр', width: 'text-center', render: r => r.pim },
+    // Броски/отражённые/% показываем всегда: где дивизион броски не ведёт (tracks_shots),
+    // ставим прочерк — ноль в этих колонках читался бы как результат, а не как «не считаем»
+    { label: 'Бр', width: 'text-center', render: r => !r.tracks_shots || r.sa == null ? <span className="text-graphite/30">—</span> : r.sa },
+    { label: 'Об', width: 'text-center', render: r => !r.tracks_shots || r.sv == null ? <span className="text-graphite/30">—</span> : r.sv },
+    { label: '%Об', width: 'text-center', render: r => !r.tracks_shots || r.svp == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.svp}%</span> },
   ];
 
   const matchColumns = [

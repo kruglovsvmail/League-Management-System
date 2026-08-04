@@ -406,8 +406,15 @@ export function GamePage() {
   // (divisions.reg_track_* / playoff_track_*, приходят в getGameById уже под стадию матча).
   // Тогда соответствующие столбцы и строки статистики не показываем совсем —
   // раньше они рисовались с прочерками и выглядели как незаполненные данные.
-  const tracksPlusMinus = game?.track_plus_minus !== false;
-  const tracksShots = game?.track_shots !== false;
+  //
+  // У матчей вне лиг (раздел «Матчи вне лиг», division_id IS NULL) дивизиона нет и оба
+  // флага приходят NULL — считать это за «ведём» нельзя. Броски там разрешаем всегда
+  // (незаполненные ячейки сами приходят как NULL и рисуются прочерком), а +/- показываем,
+  // только если команда действительно проставила его хоть на одном голе: иначе
+  // COALESCE(...,0) в запросе выдал бы колонку нулей на весь состав.
+  const isLeagueless = !!game?.is_leagueless;
+  const tracksPlusMinus = isLeagueless ? !!game?.has_plus_minus : game?.track_plus_minus !== false;
+  const tracksShots = isLeagueless ? true : game?.track_shots !== false;
 
   const compareRows = STATS_COMPARE_ROWS.filter(row => tracksShots || !row.needsShots);
 
@@ -430,16 +437,17 @@ export function GamePage() {
           {r.last_name} {r.first_name}
         </button>
       )},
-      // Числовые колонки одной ширины — иначе «%ОБ» и «И"0"» расползаются под свои заголовки.
+      // Числовые колонки одной ширины — иначе «%ОБ» расползается под свой заголовок.
       // !px-2 вместо дефолтных px-4 из Table2: содержимое в один-два символа, а 32px отступов
       // на колонку съедали ~150px на таблицу.
+      { label: 'П', width: 'w-14 !px-2', align: 'center', sortKey: 'assists', render: (r) => r.assists },
       { label: 'ПШ', width: 'w-14 !px-2', align: 'center', sortKey: 'goals_against', render: (r) => r.goals_against },
-      // Отражённые и % отражённых считаются из бросков — без них столбцы бессмысленны
-      ...(tracksShots ? [
-        { label: 'Об', width: 'w-14 !px-2', align: 'center', sortKey: 'saves', render: (r) => r.saves == null ? <span className="text-graphite/30">—</span> : r.saves },
-        { label: '%Об', width: 'w-14 !px-2', align: 'center', sortKey: 'save_percent', render: (r) => r.save_percent == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.save_percent}%</span> },
-      ] : []),
-      { label: 'И"0"', width: 'w-14 !px-2', align: 'center', sortKey: 'shutouts', render: (r) => r.shutouts > 0 ? <span className="text-status-accepted font-bold">{r.shutouts}</span> : r.shutouts },
+      { label: 'Штр', width: 'w-14 !px-2', align: 'center', sortKey: 'penalty_minutes', render: (r) => r.penalty_minutes },
+      // Броски, отражённые и % отражённых. Колонки показываем всегда: если лига броски
+      // не ведёт — прочерк, чтобы таблица не меняла форму от дивизиона к дивизиону.
+      { label: 'Бр', width: 'w-14 !px-2', align: 'center', sortKey: 'shots_against', render: (r) => !tracksShots || r.shots_against == null ? <span className="text-graphite/30">—</span> : r.shots_against },
+      { label: 'Об', width: 'w-14 !px-2', align: 'center', sortKey: 'saves', render: (r) => !tracksShots || r.saves == null ? <span className="text-graphite/30">—</span> : r.saves },
+      { label: '%Об', width: 'w-14 !px-2', align: 'center', sortKey: 'save_percent', render: (r) => !tracksShots || r.save_percent == null ? <span className="text-graphite/30">—</span> : <span className="font-bold text-orange">{r.save_percent}%</span> },
     ];
 
     const skaterColumns = [
