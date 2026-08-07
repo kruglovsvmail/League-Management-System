@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
 
 /**
  * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
@@ -93,9 +94,13 @@ export const getTeamMembers = async (req, res) => {
         const baseRes = await pool.query(`
             SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone, u.birth_date, u.virtual_code,
                    (u.password_hash IS NULL) as is_virtual,
-                   tm.photo_url, tm.joined_at, tm.id as member_id
+                   tm.photo_url, tm.joined_at, tm.id as member_id,
+                   -- Предлагать ли при исключении убрать человека ещё и из базы клуба.
+                   -- Условие зеркалит canOfferClubExclusion (utils/clubMembership.js).
+                   (${CLUB_EXCLUSION_OFFER_PREDICATE.replaceAll('%USER%', 'u.id')}) AS offer_club_exclusion
             FROM team_members tm
             JOIN users u ON tm.user_id = u.id
+            JOIN teams t ON t.id = tm.team_id
             WHERE tm.team_id = $1 AND tm.left_at IS NULL
             ORDER BY u.last_name ASC
         `, [teamId]);
@@ -192,9 +197,10 @@ export const addTeamMember = async (req, res) => {
     try {
         await client.query('BEGIN');
         const { teamId } = req.params;
-        const { userId, type, position, jerseyNumber, roles, action, isCaptain, isAssistant } = req.body; 
+        const { userId, type, position, jerseyNumber, roles, action, isCaptain, isAssistant, alsoRemoveFromClub } = req.body;
 
         let memberId;
+        let removedFromClub = false;
         const tmRes = await client.query('SELECT id FROM team_members WHERE team_id = $1 AND user_id = $2', [teamId, userId]);
         if (tmRes.rows.length > 0) {
             memberId = tmRes.rows[0].id;
@@ -206,10 +212,26 @@ export const addTeamMember = async (req, res) => {
             memberId = insertTm.rows[0].id;
         }
 
+        // Появление в составе команды (в том числе через ростер или штаб — там членство
+        // создаётся тут же) тянет человека в общую базу клуба, если команда в клубе
+        if (action !== 'remove_club' && action !== 'remove') {
+            await syncClubMembershipOnTeamJoin(teamId, userId, client);
+        }
+
         if (action === 'remove_club') {
             await client.query(`UPDATE team_members SET left_at = NOW() WHERE id = $1`, [memberId]);
             await client.query(`UPDATE team_rosters SET left_at = NOW(), position = NULL, jersey_number = NULL, is_captain = false, is_assistant = false WHERE member_id = $1`, [memberId]);
             await client.query(`UPDATE team_roles SET left_at = NOW() WHERE member_id = $1`, [memberId]);
+
+            // Галочка «убрать и из клуба» — только если команда была единственной
+            // ниточкой человека к клубу. Условие перепроверяем: клиент мог прислать зря.
+            if (alsoRemoveFromClub && await canOfferClubExclusion(teamId, userId, client)) {
+                const { rows: clubRows } = await client.query('SELECT club_id FROM teams WHERE id = $1', [teamId]);
+                if (clubRows[0]?.club_id) {
+                    await removeFromClubOnly(clubRows[0].club_id, userId, client);
+                    removedFromClub = true;
+                }
+            }
         }
         else if (action === 'remove') {
             if (type === 'player') {
@@ -248,7 +270,7 @@ export const addTeamMember = async (req, res) => {
         }
 
         await client.query('COMMIT');
-        res.json({ success: true });
+        res.json({ success: true, removedFromClub });
     } catch (err) {
         await client.query('ROLLBACK');
         res.status(400).json({ success: false, error: err.message });

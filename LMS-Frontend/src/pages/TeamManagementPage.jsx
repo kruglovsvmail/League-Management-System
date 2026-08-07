@@ -6,6 +6,7 @@ import { Table } from '../ui/Table2';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge'; 
+import { Checkbox } from '../ui/Checkbox';
 import { Loader } from '../ui/Loader';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Pagination } from '../ui/Pagination';
@@ -13,6 +14,7 @@ import { Uploader } from '../ui/Uploader';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { TeamOwnerDrawer } from '../modals/TeamOwnerDrawer';
+import { ClubsWorkspace } from '../components/ClubsWorkspace';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
@@ -58,6 +60,18 @@ export function TeamManagementPage() {
   const activeTab = searchParams.get('tab') || 'base';
   const appFilter = searchParams.get('filter') || 'current';
   const teamSearchQuery = searchParams.get('q') || '';
+
+  // Раздел делится на две вкладки: команды и клубы (организации над командами).
+  // Держим выбор в адресе — так он переживает перезагрузку и возврат назад.
+  const section = searchParams.get('section') === 'clubs' ? 'clubs' : 'teams';
+
+  const setSection = (next) => {
+    setSearchParams(prev => {
+      if (next === 'clubs') prev.set('section', 'clubs');
+      else prev.delete('section');
+      return prev;
+    }, { replace: true });
+  };
 
   const setActiveTab = (tab) => {
     setSearchParams(prev => { prev.set('tab', tab); return prev; }, { replace: true });
@@ -124,6 +138,9 @@ export function TeamManagementPage() {
   const TEAMS_PER_PAGE = 20;
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, typeStr: null, actionArgs: null });
   const [isDeleting, setIsDeleting] = useState(false);
+  // Галочка «убрать и из клуба» в окне исключения из базы команды.
+  // Показывается, только если эта команда — единственная ниточка человека к клубу.
+  const [alsoRemoveFromClub, setAlsoRemoveFromClub] = useState(false);
   const [toastInfo, setToastInfo] = useState(null);
 
   const [appDocsModalPlayer, setAppDocsModalPlayer] = useState(null);
@@ -275,7 +292,15 @@ export function TeamManagementPage() {
     fetchMembers(selectedTeam.id);
   };
 
-  const requestRemove = (id, typeStr, extraArgs = null) => setConfirmDelete({ isOpen: true, id, typeStr, actionArgs: extraArgs });
+  const requestRemove = (id, typeStr, extraArgs = null) => {
+    setAlsoRemoveFromClub(false);
+    setConfirmDelete({ isOpen: true, id, typeStr, actionArgs: extraArgs });
+  };
+
+  // Галочку предлагаем только при исключении из базы команды и только тому,
+  // у кого эта команда — единственная связь с клубом (флаг считает бэкенд).
+  const canOfferClubExclusion = confirmDelete.typeStr === 'base'
+    && !!base.find(m => String(m.user_id) === String(confirmDelete.id))?.offer_club_exclusion;
 
   const confirmRemove = async () => {
     const { id, typeStr, actionArgs } = confirmDelete;
@@ -285,13 +310,13 @@ export function TeamManagementPage() {
       const token = getToken();
       if (['base', 'roster', 'staff'].includes(typeStr)) {
         let payload = {};
-        if (typeStr === 'base') payload = { userId: id, type: 'base', action: 'remove_club' };
+        if (typeStr === 'base') payload = { userId: id, type: 'base', action: 'remove_club', alsoRemoveFromClub };
         else if (typeStr === 'roster') payload = { userId: id, type: 'player', action: 'remove' };
         else if (typeStr === 'staff') payload = { userId: id, type: 'staff', action: 'update', roles: [] };
 
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(payload) });
         const data = await res.json();
-        if (data.success) { fetchMembers(selectedTeam.id); showToast('Успешно', 'Участник удален', 'success'); } else showToast('Ошибка', data.error);
+        if (data.success) { fetchMembers(selectedTeam.id); showToast('Успешно', data.removedFromClub ? 'Участник удалён из команды и из клуба' : 'Участник удален', 'success'); } else showToast('Ошибка', data.error);
       } 
       else if (typeStr === 'application') {
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
@@ -467,9 +492,28 @@ export function TeamManagementPage() {
 
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
-      <Header title="Управление командой" subtitle={selectedTeam && ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange">←  Вернуться к выбору команды</button> )} />
+      <Header
+        title={section === 'clubs' ? 'Управление клубами' : 'Управление командой'}
+        subtitle={section === 'teams' && selectedTeam && ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange">←  Вернуться к выбору команды</button> )}
+      />
 
-      <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
+      {/* Переключатель раздела: команды или клубы */}
+      <div className="px-10 pt-8 relative z-10">
+        <div className="w-[320px]">
+          <SegmentButton
+            options={['Команды', 'Клубы']}
+            defaultIndex={section === 'clubs' ? 1 : 0}
+            onChange={(idx) => setSection(idx === 1 ? 'clubs' : 'teams')}
+          />
+        </div>
+      </div>
+
+      {section === 'clubs' ? (
+        <div className="px-10 pt-6 relative z-10">
+          <ClubsWorkspace showToast={showToast} onOpenProfile={(id) => setProfileModalUserId(id)} />
+        </div>
+      ) : (
+      <div className="flex items-start px-10 pt-6 gap-8 relative z-10">
         {selectedTeam && (
           <div className="w-[260px] shrink-0 sticky top-[128px] bg-white/70 backdrop-blur-md rounded-lg p-4 flex flex-col gap-2 shadow-sm border border-white/50 animate-zoom-in">
             <div className="flex flex-col items-center mb-4 text-center">
@@ -653,6 +697,7 @@ export function TeamManagementPage() {
           )}
         </div>
       </div>
+      )}
 
       <AddMemberDrawer isOpen={isAddDrawerOpen} onClose={() => setIsAddDrawerOpen(false)} teamId={selectedTeam?.id} type={activeTab} onSuccess={() => fetchMembers(selectedTeam.id)} roster={roster} staff={staff} base={base} />
       <TeamOwnerDrawer
@@ -668,7 +713,26 @@ export function TeamManagementPage() {
       />
       <PlayerAvatarModal isOpen={!!avatarModalUser} onClose={() => setAvatarModalUser(null)} initialAvatar={avatarModalUser ? getRenderPhoto(avatarModalUser) : null} onSave={handlePhotoSave} isSaving={isPhotoSaving} />
       <PlayerProfileModal isOpen={!!profileModalUserId} onClose={() => setProfileModalUserId(null)} playerId={profileModalUserId} />
-      <ConfirmModal isOpen={confirmDelete.isOpen} onClose={() => setConfirmDelete({ isOpen: false, id: null, typeStr: null, actionArgs: null })} onConfirm={confirmRemove} isLoading={isDeleting} />
+      <ConfirmModal
+        isOpen={confirmDelete.isOpen}
+        onClose={() => setConfirmDelete({ isOpen: false, id: null, typeStr: null, actionArgs: null })}
+        onConfirm={confirmRemove}
+        isLoading={isDeleting}
+        extraContent={canOfferClubExclusion ? (
+          <div className="text-left p-3 bg-graphite/5 border border-graphite/10 rounded-md">
+            <Checkbox
+              className="mb-0"
+              checked={alsoRemoveFromClub}
+              onChange={(e) => setAlsoRemoveFromClub(e.target.checked)}
+              label="Убрать и из состава клуба"
+            />
+            <p className="text-[12px] text-graphite-light leading-tight mt-2 pl-6">
+              Эта команда — единственная в клубе, где он состоит, и клубных ролей у него нет.
+              Без галочки останется в базе клуба как резерв.
+            </p>
+          </div>
+        ) : null}
+      />
       
       <MedicalDocsModal 
         isOpen={!!appDocsModalPlayer} 
