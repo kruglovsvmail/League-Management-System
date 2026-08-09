@@ -4,16 +4,32 @@ import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { getLeagueIdForGame } from '../utils/leagueLookup.js';
 import { ARENA_STATIC_AUDIO_FILES, arenaAudioFileExists } from '../utils/arenaAudioFiles.js';
+import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 
 /**
  * Вспомогательная функция для установки флага необходимости пересчета статистики.
  * Срабатывает только если матч уже находится в статусе 'finished'.
+ *
+ * Здесь же сразу пересчитывается боксскор матча (player_game_statistics): флаг
+ * needs_recalc относится к тяжёлым дивизионным пересчётам, которые ждут нажатия
+ * кнопки, а боксскор стоит десятки строк и должен быть свежим всегда — из него
+ * читают все витрины.
  */
 const triggerRecalcFlag = async (clientOrPool, gameId) => {
-    await clientOrPool.query(
-        `UPDATE games SET needs_recalc = true WHERE id = $1 AND status = 'finished'`, 
+    const res = await clientOrPool.query(
+        `UPDATE games SET needs_recalc = true WHERE id = $1 AND status = 'finished'`,
         [gameId]
     );
+
+    // rowCount = 0 означает, что матч ещё идёт или не начат: в боксскор попадают
+    // только завершённые матчи, писать нечего.
+    if (res.rowCount > 0) {
+        // Клиент в транзакции отличаем от пула по наличию release(): если правка
+        // пришла внутри чужой транзакции, пересчёт должен идти тем же клиентом,
+        // иначе он не увидит ещё не закоммиченное событие.
+        const isClient = typeof clientOrPool.release === 'function';
+        await recalculatePlayerGameStats(gameId, isClient ? clientOrPool : null);
+    }
 };
 
 export const getGameEvents = async (req, res) => {

@@ -3,6 +3,7 @@ import pool from '../config/db.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 import { recalculatePlayerStatistics } from '../utils/playerStatsCalculator.js';
+import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 
 const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
@@ -125,9 +126,45 @@ export const getPublicGameById = async (req, res) => {
         if (result.rows.length > 0) {
             const game = result.rows[0];
 
-            const leaderQuery = `
-                SELECT u.first_name, u.last_name, 
-                       COALESCE(tm.photo_url, u.avatar_url) as avatar_url, 
+            // Статистика для плашек трансляции собирается из боксскора
+            // player_game_statistics. Область выборки зависит от типа матча:
+            //   официальный  — статистика игрока в ЭТОМ турнире (по его заявке),
+            //                  то же, что раньше отдавала player_statistics;
+            //   товарищеский — вся карьера игрока за ЭТУ команду, матчи любого
+            //                  типа. У товарняка нет ни дивизиона, ни заявки, и
+            //                  до перехода на боксскор плашки показывали нули.
+            // Суммы приводим к int: SUM возвращает bigint, а он приезжает в JS
+            // строкой и ломает сортировку на фронте.
+            const isOfficialGame = !!game.division_id;
+
+            const STAT_COLUMNS = `
+                    COUNT(*)::int                              AS games_played,
+                    COALESCE(SUM(pgs.goals), 0)::int           AS goals,
+                    COALESCE(SUM(pgs.assists), 0)::int         AS assists,
+                    COALESCE(SUM(pgs.points), 0)::int          AS points,
+                    COALESCE(SUM(pgs.plus_minus), 0)::int      AS plus_minus,
+                    COALESCE(SUM(pgs.penalty_minutes), 0)::int AS penalty_minutes`;
+
+            const statsLateral = (scope) => `
+                LEFT JOIN LATERAL (
+                    SELECT ${STAT_COLUMNS}
+                    FROM player_game_statistics pgs
+                    WHERE ${scope}
+                ) ps ON true`;
+
+            // Карьера за команду — по паре «игрок + команда» из протокола матча
+            const CAREER_SCOPE = 'pgs.player_id = gr.player_id AND pgs.team_id = gr.team_id';
+
+            const LEADER_ORDER = `
+                ORDER BY ps.points DESC, ps.goals DESC, ps.games_played ASC,
+                         ps.plus_minus DESC, ps.penalty_minutes ASC,
+                         u.last_name ASC, u.first_name ASC
+                LIMIT 1`;
+
+            const leaderQuery = isOfficialGame
+                ? `
+                SELECT u.first_name, u.last_name,
+                       COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
                        gr.jersey_number,
                        ps.games_played, ps.goals, ps.assists, ps.points, ps.plus_minus, ps.penalty_minutes
                 FROM game_rosters gr
@@ -135,21 +172,38 @@ export const getPublicGameById = async (req, res) => {
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
                 JOIN tournament_teams tt ON tt.team_id = gr.team_id AND tt.division_id = $1
                 JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id AND tr.player_id = gr.player_id
-                JOIN player_statistics ps ON tr.id = ps.tournament_roster_id
+                ${statsLateral('pgs.tournament_roster_id = tr.id')}
                 WHERE gr.game_id = $3 AND gr.team_id = $2
                   AND gr.is_in_lineup = true
                   AND tr.application_status = 'approved'
-                ORDER BY ps.points DESC, ps.goals DESC, ps.games_played ASC, ps.plus_minus DESC, ps.penalty_minutes ASC, u.last_name ASC, u.first_name ASC
-                LIMIT 1
+                ${LEADER_ORDER}
+            `
+                : `
+                SELECT u.first_name, u.last_name,
+                       COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+                       gr.jersey_number,
+                       ps.games_played, ps.goals, ps.assists, ps.points, ps.plus_minus, ps.penalty_minutes
+                FROM game_rosters gr
+                JOIN users u ON gr.player_id = u.id
+                LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
+                ${statsLateral(CAREER_SCOPE)}
+                WHERE gr.game_id = $2 AND gr.team_id = $1
+                  AND gr.is_in_lineup = true
+                ${LEADER_ORDER}
             `;
+
+            // Набор параметров разный: неиспользованный $N Postgres не принимает
+            const leaderParams = (teamId) => isOfficialGame
+                ? [game.division_id, teamId, game.id]
+                : [teamId, game.id];
 
             let homeLeaderRes = { rows: [] };
             let awayLeaderRes = { rows: [] };
 
             if (game.home_team_id && game.away_team_id) {
                 [homeLeaderRes, awayLeaderRes] = await Promise.all([
-                    pool.query(leaderQuery, [game.division_id, game.home_team_id, game.id]),
-                    pool.query(leaderQuery, [game.division_id, game.away_team_id, game.id])
+                    pool.query(leaderQuery, leaderParams(game.home_team_id)),
+                    pool.query(leaderQuery, leaderParams(game.away_team_id))
                 ]);
             }
 
@@ -173,10 +227,13 @@ export const getPublicGameById = async (req, res) => {
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
                 LEFT JOIN tournament_teams tt ON tt.team_id = gr.team_id AND tt.division_id = $2
                 LEFT JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id AND tr.player_id = gr.player_id
-                LEFT JOIN player_statistics ps ON tr.id = ps.tournament_roster_id
+                ${statsLateral(isOfficialGame ? 'pgs.tournament_roster_id = tr.id' : CAREER_SCOPE)}
                 WHERE gr.game_id = $1 AND gr.is_in_lineup = true
                 ORDER BY gr.jersey_number ASC, u.last_name ASC
             `;
+            // $2 остаётся в запросе и для товарняка: он нужен join'ам, которые дают
+            // фолбэк капитанства на турнирную заявку. Для товарищеского матча
+            // division_id = NULL, join'ы просто не находят строк.
             const rosterRes = await pool.query(rosterQuery, [game.id, game.division_id]);
             
             game.home_roster = rosterRes.rows.filter(r => r.team_id === game.home_team_id);
@@ -198,11 +255,16 @@ export const getPublicGameById = async (req, res) => {
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
                 JOIN users u ON tr.player_id = u.id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
-                LEFT JOIN player_statistics ps ON tr.id = ps.tournament_roster_id
+                ${statsLateral('pgs.tournament_roster_id = tr.id')}
                 WHERE tt.division_id = $1 AND tt.team_id IN ($2, $3) AND tr.application_status = 'approved'
                 ORDER BY COALESCE(ps.points, 0) DESC, u.last_name ASC
             `;
-            const tournamentRosterRes = await pool.query(tournamentRosterQuery, [game.division_id, game.home_team_id, game.away_team_id]);
+            // Турнирная заявка существует только у официального матча. Для товарняка
+            // запрос заведомо пустой — не гоняем его, а плашки трансляции и так
+            // падают на фолбэк home_roster/away_roster (см. TeamLeadersOverlay).
+            const tournamentRosterRes = isOfficialGame
+                ? await pool.query(tournamentRosterQuery, [game.division_id, game.home_team_id, game.away_team_id])
+                : { rows: [] };
 
             game.home_tournament_roster = tournamentRosterRes.rows.filter(r => r.team_id === game.home_team_id);
             game.away_tournament_roster = tournamentRosterRes.rows.filter(r => r.team_id === game.away_team_id);
@@ -943,6 +1005,18 @@ export const updateGameStatus = async (req, res) => {
 
         await client.query('COMMIT');
 
+        // Боксскор пересчитываем всегда и по одному матчу — в отличие от блока ниже,
+        // который переписывает статистику всего дивизиона. Условия на division_id тут
+        // нет намеренно: у товарищеских и внешних матчей его не бывает, а в
+        // player_game_statistics они попадают наравне с официальными. Пересчёт
+        // идемпотентен: если матч перестал подходить под учёт (отменён, переоткрыт,
+        // получил технический результат), его строки просто удаляются.
+        try {
+            await recalculatePlayerGameStats(gameId);
+        } catch (boxErr) {
+            console.error(`Ошибка пересчёта боксскора матча ${gameId}:`, boxErr);
+        }
+
         if ((status === 'finished' || game.status === 'finished' || isTechnical || game.is_technical) && game.division_id) {
             try {
                 if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
@@ -1349,6 +1423,10 @@ export const recalculateGameStats = async (req, res) => {
                 WHERE id = $4
             `, [finalHomeScore, finalAwayScore, endType, gameId]);
         }
+
+        // Боксскор — вне проверки на division_id: кнопка "Пересчёт" должна чинить
+        // и товарищеские матчи, у которых дивизиона нет
+        await recalculatePlayerGameStats(gameId);
 
         if (game.division_id) {
             if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
