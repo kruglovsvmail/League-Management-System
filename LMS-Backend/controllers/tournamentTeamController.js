@@ -2,7 +2,6 @@ import pool from '../config/db.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
-import { recalculatePlayerStatistics } from '../utils/playerStatsCalculator.js';
 
 export const getTournamentTeamRoster = async (req, res) => {
     try {
@@ -106,11 +105,13 @@ export const updateTournamentTeamStatus = async (req, res) => {
 
         // Смена статуса заявки команды (допуск/отклонение) меняет состав дивизиона,
         // поэтому таблицу нужно пересчитать сразу, а не ждать следующего сыгранного матча.
+        // Личную статистику здесь пересчитывать больше не нужно: прежний кэш заводил
+        // пустые строки под каждую одобренную заявку, а в player_game_statistics строка
+        // появляется только когда игрок реально вышел на матч.
         const divisionId = rows[0]?.division_id;
         if (divisionId) {
             try {
                 await recalculateDivisionStandings(divisionId);
-                await recalculatePlayerStatistics(divisionId);
             } catch (calcErr) {
                 console.error('Ошибка пересчета таблицы после смены статуса команды:', calcErr);
             }

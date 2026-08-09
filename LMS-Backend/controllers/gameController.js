@@ -2,7 +2,6 @@
 import pool from '../config/db.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
-import { recalculatePlayerStatistics } from '../utils/playerStatsCalculator.js';
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 
@@ -1022,8 +1021,6 @@ export const updateGameStatus = async (req, res) => {
                 if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
                 else await recalculateDivisionStandings(game.division_id);
 
-                await recalculatePlayerStatistics(game.division_id);
-
                 const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
                 if (teamsToUpdate.length > 0) {
                     await recalculateTeamStatistics(teamsToUpdate);
@@ -1431,8 +1428,6 @@ export const recalculateGameStats = async (req, res) => {
         if (game.division_id) {
             if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
             else await recalculateDivisionStandings(game.division_id);
-
-            await recalculatePlayerStatistics(game.division_id);
 
             const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
             if (teamsToUpdate.length > 0) {

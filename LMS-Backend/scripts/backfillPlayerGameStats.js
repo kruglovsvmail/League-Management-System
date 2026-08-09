@@ -152,6 +152,14 @@ const FIELDS = [
 ];
 
 const verify = async () => {
+    // Старая таблица переименована в player_statistics_deprecated и однажды
+    // исчезнет совсем. Сверять тогда будет не с чем — это не ошибка.
+    const { rows: exists } = await pool.query(`SELECT to_regclass('public.player_statistics') AS t`);
+    if (!exists[0]?.t) {
+        console.log('\nСверка пропущена: таблицы player_statistics больше нет.');
+        return;
+    }
+
     console.log('\n─── Сверка с player_statistics (только официальные матчи) ───\n');
 
     const { rows } = await pool.query(VERIFY_SQL, [divisionId]);
