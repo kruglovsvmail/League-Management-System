@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 export function Select({ 
@@ -16,6 +16,7 @@ export function Select({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const selectRef = useRef(null);
+  const dropdownRef = useRef(null);
   const [coords, setCoords] = useState({ left: 0, top: 0, width: 0 });
   const [isMobile, setIsMobile] = useState(false);
 
@@ -59,30 +60,45 @@ export function Select({
 
   const maxHeight = wrapText ? 560 : 320;
 
-  useEffect(() => {
-    if (isOpen && selectRef.current) {
-      const rect = selectRef.current.getBoundingClientRect();
+  // Позиционирование выпадающего списка. useLayoutEffect, а не useEffect:
+  // правка координат должна успеть до отрисовки, иначе панель мигнёт не на месте.
+  useLayoutEffect(() => {
+    if (!isOpen || !selectRef.current || !dropdownRef.current) return;
 
-      // Список повторяет ширину поля: длинные формулировки не обрезаются, а переносятся
-      const panelWidth = Math.min(rect.width, window.innerWidth - 40);
+    const rect = selectRef.current.getBoundingClientRect();
+    const panel = dropdownRef.current;
 
-      // Если справа не хватает места — раскрываемся влево, выравниваясь по правому краю поля
-      let calculatedLeft = rect.left;
-      if (calculatedLeft + panelWidth > window.innerWidth - 20) {
-        calculatedLeft = Math.max(20, rect.right - panelWidth);
-      }
+    // Список повторяет ширину поля: длинные формулировки не обрезаются, а переносятся
+    const panelWidth = Math.min(rect.width, window.innerWidth - 40);
 
-      const estimatedHeight = Math.min(filteredOptions.length * (wrapText ? 60 : 40) + 10, maxHeight);
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-
-      let calculatedTop = rect.bottom + window.scrollY + 6;
-      if (spaceBelow < estimatedHeight && spaceAbove > spaceBelow) {
-        calculatedTop = rect.top + window.scrollY - estimatedHeight - 6;
-      }
-
-      setCoords({ left: calculatedLeft, top: calculatedTop, width: panelWidth });
+    // Если справа не хватает места — раскрываемся влево, выравниваясь по правому краю поля
+    let calculatedLeft = rect.left;
+    if (calculatedLeft + panelWidth > window.innerWidth - 20) {
+      calculatedLeft = Math.max(20, rect.right - panelWidth);
     }
+
+    // Ширину проставляем напрямую в DOM до замера: от неё зависит перенос строк,
+    // а значит и высота. Через state не получится — нужно измерить в этом же проходе.
+    if (wrapText) {
+      panel.style.width = `${panelWidth}px`;
+    } else {
+      panel.style.minWidth = `${Math.max(panelWidth, 100)}px`;
+    }
+
+    // Берём фактическую высоту панели вместо оценки по числу пунктов. Оценка
+    // (40px, а при wrapText 60px на пункт) промахивалась на десятки пикселей:
+    // короткие подписи в одну строку ниже расчётных, и при раскрытии вверх
+    // панель повисала с заметным зазором над полем.
+    const panelHeight = panel.offsetHeight;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let calculatedTop = rect.bottom + window.scrollY + 6;
+    if (spaceBelow < panelHeight && spaceAbove > spaceBelow) {
+      calculatedTop = rect.top + window.scrollY - panelHeight - 6;
+    }
+
+    setCoords({ left: calculatedLeft, top: calculatedTop, width: panelWidth });
   }, [isOpen, filteredOptions.length, wrapText]);
 
   useEffect(() => {
@@ -183,7 +199,8 @@ export function Select({
         )}
 
         {isOpen && !disabled && createPortal(
-          <div 
+          <div
+            ref={dropdownRef}
             className={`portal-dropdown absolute bg-white/50 backdrop-blur-[14px] rounded-md border border-white/50 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100005] animate-zoom-in overflow-y-auto ${scrollbarStyles}`}
             style={{
               top: `${coords.top}px`,

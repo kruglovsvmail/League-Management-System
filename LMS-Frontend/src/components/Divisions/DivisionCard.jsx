@@ -4,6 +4,7 @@ import { DivisionTeamsList } from './DivisionTeamsList';
 import { TeamRosterTable } from './TeamRosterTable';
 import { DivisionStandings } from './DivisionStandings';
 import { DivisionPlayoffs } from './DivisionPlayoffs';
+import { DivisionNominations } from './DivisionNominations';
 import { Loader } from '../../ui/Loader';
 import { Tabs } from '../../ui/Tabs';
 import { Icon } from '../../ui/Icon';
@@ -503,6 +504,9 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                 {division.tournament_type !== 'regular' && (
                   <DivisionPlayoffs divisionId={division.id} />
                 )}
+                {/* Номинации показываем при любом типе турнира: их разыгрывают
+                    и в чистой регулярке. Секция сама скрывается, если их нет. */}
+                <DivisionNominations divisionId={division.id} />
               </div>
             </div>
 

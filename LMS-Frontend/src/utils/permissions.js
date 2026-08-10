@@ -71,6 +71,8 @@ export const PERMISSIONS = {                                                    
   SETTINGS_PLAYOFF_CONSTRUCTOR: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],        // Право на доступ к drag-and-drop конструктору сетки плей-офф
   PLAYOFF_DISTRIBUTE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                  // Право на запуск автоматического распределения команд по сетке
   PLAYOFF_RESET: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                       // Право на сброс текущей сетки плей-офф
+  SETTINGS_NOMINATIONS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],           // Право на просмотр наградных номинаций дивизиона
+  SETTINGS_NOMINATIONS_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],         // Право на создание, изменение и удаление номинаций дивизиона
   SETTINGS_ARENAS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                // Право на просмотр списка арен лиги
   SETTINGS_ARENAS_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],              // Право на добавление и удаление арен из лиги
   SETTINGS_SERVICE_ACCOUNTS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],      // Право на просмотр списка сервисных аккаунтов лиги

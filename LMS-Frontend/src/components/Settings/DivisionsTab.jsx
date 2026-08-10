@@ -13,6 +13,7 @@ import { AccessFallback } from '../../ui/AccessFallback';
 import { getToken, getImageUrl } from '../../utils/helpers';
 
 import { PlayoffStructureView } from './PlayoffStructureView';
+import { NominationsSection } from './NominationsSection';
 
 const TYPE_OPTIONS = ['Регулярный чемпионат', 'Плей-офф', 'Регулярный + Плей-офф'];
 const TYPE_MAP = { 'Регулярный чемпионат': 'regular', 'Плей-офф': 'playoff', 'Регулярный + Плей-офф': 'mixed' };
@@ -195,6 +196,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const canEdit = checkAccess('SETTINGS_DIVISIONS_EDIT');
   const canCreate = checkAccess('SETTINGS_DIVISIONS_CREATE');
   const canEditPlayoff = checkAccess('SETTINGS_PLAYOFF_CONSTRUCTOR');
+  const canViewNominations = checkAccess('SETTINGS_NOMINATIONS_VIEW');
+  const canManageNominations = checkAccess('SETTINGS_NOMINATIONS_MANAGE');
 
   const isLocked = !canEdit;
 
@@ -488,6 +491,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   ];
   if (showRegular) menuItems.push({ id: 'regular', label: 'Регулярный чемпионат' });
   if (showPlayoff) menuItems.push({ id: 'playoff', label: 'Плей-офф' });
+  // Номинации не зависят от типа турнира: их разыгрывают и в чистой регулярке
+  if (canViewNominations) menuItems.push({ id: 'nominations', label: 'Номинации' });
 
   if (formData && !menuItems.find(m => m.id === activeSection)) {
     setActiveSection('general');
@@ -590,7 +595,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
             </div>
         )}
 
-        {formData && canEdit && activeSection !== 'playoff' && (
+        {/* У плей-офф и номинаций своё сохранение — общая кнопка формы дивизиона там лишняя */}
+        {formData && canEdit && activeSection !== 'playoff' && activeSection !== 'nominations' && (
             <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-4">
                 <Button 
                     onClick={handleSave} 
@@ -921,6 +927,23 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                             </div>
                         ) : (
                             <PlayoffSummary divisionId={formData.id} canEditPlayoff={canEditPlayoff} />
+                        )}
+                    </div>
+                )}
+
+                {/* РАЗДЕЛ 6: НОМИНАЦИИ */}
+                {activeSection === 'nominations' && canViewNominations && (
+                    <div className="animate-zoom-in w-full h-full">
+                        {isCreatingNew ? (
+                            <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-md text-graphite-light py-12 px-6">
+                                Сначала создайте и сохраните {entityNom}, чтобы настроить для него номинации.
+                            </div>
+                        ) : (
+                            <NominationsSection
+                                divisionId={formData.id}
+                                canManage={canManageNominations}
+                                setToast={setToast}
+                            />
                         )}
                     </div>
                 )}

@@ -20,6 +20,15 @@ import {
     resetPlayoffGrid
 } from '../controllers/divisionController.js';
 
+import {
+    getNominations,
+    getNominationResults,
+    createNomination,
+    updateNomination,
+    deleteNomination,
+    copyNominationsToSeason
+} from '../controllers/nominationController.js';
+
 const router = express.Router();
 
 // Глобальный охранник для всех эндпоинтов дивизионов (пользователь должен быть авторизован)
@@ -57,5 +66,19 @@ router.put('/divisions/:id/playoff/:matchupId', requirePermission('SETTINGS_PLAY
 // Маршруты для распределения и сброса сетки Плеф-офф
 router.post('/divisions/:id/playoff/distribute', requirePermission('PLAYOFF_DISTRIBUTE'), distributePlayoffTeams);
 router.post('/divisions/:id/playoff/reset', requirePermission('PLAYOFF_RESET'), resetPlayoffGrid);
+
+// --- НОМИНАЦИИ ---
+// Параметр назван :divisionId, а не :id — по нему getLeagueIdFromContext находит
+// лигу для RBAC. Изменение и удаление тоже вложены в дивизион: права выдаются
+// на него, и контроллер сверяет, что номинация принадлежит именно ему.
+// Витрина результатов — без отдельного права: кто видит дивизион, тот видит и
+// его номинации. Правом закрыт конструктор, а не награды.
+router.get('/divisions/:divisionId/nominations/results', getNominationResults);
+
+router.get('/divisions/:divisionId/nominations', requirePermission('SETTINGS_NOMINATIONS_VIEW'), getNominations);
+router.post('/divisions/:divisionId/nominations', requirePermission('SETTINGS_NOMINATIONS_MANAGE'), createNomination);
+router.post('/divisions/:divisionId/nominations/copy-to-season', requirePermission('SETTINGS_NOMINATIONS_MANAGE'), copyNominationsToSeason);
+router.put('/divisions/:divisionId/nominations/:nominationId', requirePermission('SETTINGS_NOMINATIONS_MANAGE'), updateNomination);
+router.delete('/divisions/:divisionId/nominations/:nominationId', requirePermission('SETTINGS_NOMINATIONS_MANAGE'), deleteNomination);
 
 export default router;
