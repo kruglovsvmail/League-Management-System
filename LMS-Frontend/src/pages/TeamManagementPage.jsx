@@ -12,6 +12,7 @@ import { SegmentButton } from '../ui/SegmentButton';
 import { Pagination } from '../ui/Pagination';
 import { Uploader } from '../ui/Uploader'; 
 import { getImageUrl, getToken } from '../utils/helpers';
+import { DOCUMENT_ACCEPT, DOCUMENT_ACCEPT_HINT } from '../utils/uploadFormats';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { TeamOwnerDrawer } from '../modals/TeamOwnerDrawer';
 import { ClubsWorkspace } from '../components/ClubsWorkspace';
@@ -1073,8 +1074,8 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
                 Пожалуйста, загрузите скан подписанного заявочного листа. После его проверки Лигой, вы сможете добавить игроков в систему.
               </div>
               <Uploader 
-                label="Скан заявочного листа (PDF, JPG, PNG, DOC)"
-                accept=".pdf,.jpg,.jpeg,.png ,.doc,.docx"
+                label={`Скан заявочного листа (${DOCUMENT_ACCEPT_HINT})`}
+                accept={DOCUMENT_ACCEPT}
                 onFileSelect={(file) => setPaperFile(file)}
                 heightClass="h-[300px]"
               />

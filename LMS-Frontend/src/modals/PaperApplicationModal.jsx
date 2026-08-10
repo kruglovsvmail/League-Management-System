@@ -3,6 +3,7 @@ import { Modal } from './Modal';
 import { Button } from '../ui/Button';
 import { Uploader } from '../ui/Uploader';
 import { getImageUrl } from '../utils/helpers';
+import { DOCUMENT_ACCEPT } from '../utils/uploadFormats';
 
 // Импортируем заглушку
 import { AccessFallback } from '../ui/AccessFallback';
@@ -77,7 +78,7 @@ export function PaperApplicationModal({ isOpen, onClose, app, onSave, isSaving, 
               setIsCleared(cleared);
             }}
             heightClass="h-[232px]"
-            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+            accept={DOCUMENT_ACCEPT}
             disabled={readOnly}
           />
         </div>

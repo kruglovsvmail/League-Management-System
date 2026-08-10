@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Uploader } from '../ui/Uploader';
 import { Calendar } from '../ui/Calendar';
 import { Button } from '../ui/Button';
+import { DOCUMENT_ACCEPT } from '../utils/uploadFormats';
 
 // Импортируем нашу заглушку
 import { AccessFallback } from '../ui/AccessFallback';
@@ -131,7 +132,7 @@ export function MedicalDocsModal({
                   <span className="text-[12px] font-bold text-graphite-light uppercase tracking-wide mb-1">Медицинская справка</span>
                   <Uploader 
                     heightClass="h-[100px]" 
-                    accept=".jpg,.png,.pdf,.doc,.docx" 
+                    accept={DOCUMENT_ACCEPT} 
                     initialUrl={initialMed} 
                     onFileSelect={(file, cleared) => { setMedFile(file); setMedCleared(cleared); }}
                     disabled={readOnly}
@@ -150,7 +151,7 @@ export function MedicalDocsModal({
                   <span className="text-[12px] font-bold text-graphite-light uppercase tracking-wide mb-1">Страховой полис</span>
                   <Uploader 
                     heightClass="h-[100px]" 
-                    accept=".jpg,.png,.pdf,.doc,.docx" 
+                    accept={DOCUMENT_ACCEPT} 
                     initialUrl={initialIns} 
                     onFileSelect={(file, cleared) => { setInsFile(file); setInsCleared(cleared); }}
                     disabled={readOnly}
@@ -169,7 +170,7 @@ export function MedicalDocsModal({
                   <span className="text-[12px] font-bold text-graphite-light uppercase tracking-wide mb-1">Согласие игрока</span>
                   <Uploader 
                     heightClass="h-[100px]" 
-                    accept=".jpg,.png,.pdf,.doc,.docx" 
+                    accept={DOCUMENT_ACCEPT} 
                     initialUrl={initialConsent} 
                     onFileSelect={(file, cleared) => { setConsentFile(file); setConsentCleared(cleared); }}
                     disabled={readOnly}
