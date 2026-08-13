@@ -1,6 +1,6 @@
 import { getToken } from './utils/helpers';
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 
 // Импорт страниц
 import { LoginPage } from './pages/LoginPage';
@@ -29,6 +29,7 @@ import { AdminLayout } from './AdminLayout';
 import { Loader } from './ui/Loader';
 import { PERMISSIONS, ROLES } from './utils/permissions';
 import { OrientationGuard } from './ui/OrientationGuard';
+import { AppUpdater, isObsOverlayPath } from './components/AppUpdater';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -39,6 +40,7 @@ export default function App() {
   const [showGlobalLoader, setShowGlobalLoader] = useState(true);
   
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Локальная функция проверки прав для роутера верхнего уровня
   const hasAccess = (user, league, action) => {
@@ -134,6 +136,10 @@ export default function App() {
 
   return (
     <OrientationGuard>
+      {/* Регистрация сервис-воркера и окно «есть обновление». На оверлее OBS не нужен
+          ни воркер, ни тем более модалка поверх трансляции. */}
+      {!isObsOverlayPath(location.pathname) && <AppUpdater />}
+
       {showGlobalLoader && (
         <div className={`fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-500 ease-in-out ${isInitializing ? 'opacity-100' : 'opacity-0'}`}>
           <Loader text="Запуск HockeyEco Pro..." />

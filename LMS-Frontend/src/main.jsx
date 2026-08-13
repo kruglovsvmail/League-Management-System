@@ -16,7 +16,7 @@ dayjs.extend(timezone);
 dayjs.locale('ru');
 // --------------------------------------
 
-import { registerSW } from 'virtual:pwa-register'
+import { isObsOverlayPath } from './components/AppUpdater'
 
 // Оверлей OBS (/games/:gameId/graphics) — киоск-дисплей, который держат открытым сутками
 // (browser source в OBS почти никогда не перезагружают руками). PWA тут вредна дважды:
@@ -26,10 +26,10 @@ import { registerSW } from 'virtual:pwa-register'
 //    подменяет актуальный счёт/составы вчерашним кэшем.
 // Поэтому для этого маршрута сервис-воркер просто не регистрируем — каждая загрузка идёт
 // напрямую в сеть, как у обычного (не PWA) сайта.
-const isObsOverlayRoute = /^\/games\/[^/]+\/graphics\/?$/.test(window.location.pathname);
-if (!isObsOverlayRoute) {
-  registerSW({ immediate: true })
-} else if ('serviceWorker' in navigator) {
+//
+// Сама регистрация переехала в AppUpdater: он же следит за появлением новой сборки и
+// показывает окно «есть обновление», а без него воркер оставался в waiting до Ctrl+F5.
+if (isObsOverlayPath(window.location.pathname) && 'serviceWorker' in navigator) {
   // На случай, если в этом же браузерном профиле раньше уже открывали панель (и SW успел
   // зарегистрироваться на весь origin) — снимаем его и чистим кэш, чтобы оверлей гарантированно
   // ходил напрямую в сеть, а не через уже активный воркер с чужой вкладки.
