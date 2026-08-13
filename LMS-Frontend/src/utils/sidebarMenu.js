@@ -113,17 +113,19 @@ export const resolveSidebarLayout = (storedLayout, availableItems) => {
 };
 
 /**
- * Готовит раскладку к отрисовке в сайдбаре: убирает скрытые пункты и приводит
- * разделители в порядок — без задвоений, без черты в самом верху и в самом низу.
+ * Готовит раскладку к отрисовке в сайдбаре: убирает скрытые пункты и черту,
+ * повисшую в самом верху или в самом низу списка.
+ *
+ * Разделители, идущие подряд, сохраняются все: два подряд — это осознанный
+ * приём, чтобы развести группы дальше друг от друга, и склеивать их в один
+ * нельзя. Сколько поставил в шторке — столько и нарисуется.
  */
 export const layoutForRender = (entries) => {
   const visible = entries.filter(e => e.type === 'divider' || !e.hidden);
   const result = [];
 
   for (const entry of visible) {
-    if (entry.type !== 'divider') { result.push(entry); continue; }
-    if (result.length === 0) continue;
-    if (result[result.length - 1].type === 'divider') continue;
+    if (entry.type === 'divider' && result.length === 0) continue;
     result.push(entry);
   }
   while (result.length > 0 && result[result.length - 1].type === 'divider') result.pop();
