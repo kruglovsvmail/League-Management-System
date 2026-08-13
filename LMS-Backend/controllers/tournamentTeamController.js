@@ -62,7 +62,17 @@ export const getTournamentTeamRoster = async (req, res) => {
             ) tm_photo ON true
 
             WHERE tr.tournament_team_id = $1
-            ORDER BY u.last_name, u.first_name
+            -- Порядок по умолчанию — как в протоколе: вратари, защитники, нападающие,
+            -- внутри группы по алфавиту ФИО. Игроки без позиции падают в конец.
+            -- Сортировка по клику в шапке таблицы это перебивает.
+            ORDER BY
+                CASE tr.position
+                    WHEN 'goalie'  THEN 1
+                    WHEN 'defense' THEN 2
+                    WHEN 'forward' THEN 3
+                    ELSE 4
+                END,
+                u.last_name, u.first_name, u.middle_name
         `, [id, leagueId]);
 
         // 2. Получаем представителей (staff) команды из ТУРНИРНОЙ заявки (tournament_team_roles)

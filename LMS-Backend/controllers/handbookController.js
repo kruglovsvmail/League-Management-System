@@ -8,12 +8,15 @@ export const getUsers = async (req, res) => {
     const offset = (page - 1) * limit;
     const search = req.query.search || '';
 
-    // Подготавливаем поиск
-    let searchCondition = '';
+    // Справочник — это люди из команд. Сотрудники лиги, судьи и служебные аккаунты
+    // членства в team_members не имеют и в выдачу не попадают.
+    // Членство засчитываем любое, в том числе прошлое (left_at IS NOT NULL): ушедший
+    // из команды игрок остаётся в справочнике вместе со своим профилем и историей.
+    let whereCondition = `WHERE EXISTS (SELECT 1 FROM team_members tm_any WHERE tm_any.user_id = u.id)`;
     let params = [limit, offset];
     if (search) {
       // Ищем по имени, фамилии или отчеству
-      searchCondition = `WHERE u.first_name ILIKE $3 OR u.last_name ILIKE $3 OR u.middle_name ILIKE $3`;
+      whereCondition += ` AND (u.first_name ILIKE $3 OR u.last_name ILIKE $3 OR u.middle_name ILIKE $3)`;
       params.push(`%${search}%`);
     }
 
@@ -37,7 +40,7 @@ export const getUsers = async (req, res) => {
           SELECT DISTINCT ON (user_id) user_id, photo_url
           FROM team_members WHERE photo_url IS NOT NULL ORDER BY user_id, id DESC
       ) tm_latest ON tm_latest.user_id = u.id
-      ${searchCondition}
+      ${whereCondition}
       ORDER BY u.last_name, u.first_name
       LIMIT $1 OFFSET $2
     `, params);

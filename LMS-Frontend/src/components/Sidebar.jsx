@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { LeagueSelectModal } from '../modals/LeagueSelectModal';
 import { ProfileDrawer } from '../modals/ProfileDrawer';
 import { getImageUrl } from '../utils/helpers';
-import { PERMISSIONS, ROLES } from '../utils/permissions'; 
+import { ROLES } from '../utils/permissions';
+import { getAvailableSidebarItems, resolveSidebarLayout, layoutForRender } from '../utils/sidebarMenu';
 
 const ROLE_NAMES = {
   [ROLES.TOP_MANAGER]: 'Руководитель',
@@ -31,26 +32,18 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
   }, [selectedLeague]);
 
   const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN;
-  const userRolesStr = selectedLeague?.role || '';
-  const userRolesArr = userRolesStr.split(',').map(r => r.trim()).filter(Boolean);
 
-  const hasAccess = (action) => {
-    if (isGlobalAdmin) return true;
-    const allowedRoles = PERMISSIONS[action];
-    if (!allowedRoles || allowedRoles.length === 0) return false;
-    return userRolesArr.some(role => allowedRoles.includes(role));
-  };
-
-  const baseMenuItems = [
-    hasAccess('SCHEDULE_VIEW') ? { name: "Расписание", path: "/games", icon: "matches" } : null,
-    hasAccess('DIVISIONS_VIEW') ? { name: "Дивизионы", path: "/divisions", icon: "divisions" } : null,
-    hasAccess('TRANSFERS_VIEW') ? { name: "Трансферы", path: "/transfers", icon: "transfers" } : null,
-    hasAccess('DISQUALIFICATIONS_VIEW') ? { name: "Дисквалификации", path: "/disqualifications", icon: "disqualifications" } : null,
-    (selectedLeague?.disqualification_mode === 'sdk' && hasAccess('SDK_MEETINGS_VIEW'))
-      ? { name: "Заседания СДК", path: "/sdk-meetings", icon: "roster" } : null,
-    { name: "Справочник", path: "/handbook", icon: "handbook" },
-    hasAccess('SETTINGS_STAFF_VIEW') ? { name: "Управление лигой", path: "/settings", icon: "settings" } : null
-  ].filter(Boolean);
+  // Состав меню — доступные по роли пункты, порядок, скрытия и разделители —
+  // берётся из раскладки пользователя (шторка профиля → «Меню»).
+  // Пустая раскладка означает порядок по умолчанию из реестра.
+  const availableItems = useMemo(
+    () => getAvailableSidebarItems(user, selectedLeague),
+    [user, selectedLeague]
+  );
+  const menuEntries = useMemo(
+    () => layoutForRender(resolveSidebarLayout(user?.sidebarLayout, availableItems)),
+    [user?.sidebarLayout, availableItems]
+  );
 
   let displayRole = 'Пользователь';
   if (isGlobalAdmin) {
@@ -121,17 +114,20 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
         <nav className="flex-1 overflow-y-auto px-0 mt-0 custom-scrollbar">
           <div className="space-y-0.5">
-            {baseMenuItems.map(renderNavLink)}
+            {menuEntries.map(entry => (
+              entry.type === 'divider'
+                // Разделитель не только рисует черту, но и разводит группы по воздуху.
+                // Отступ задан паддингом обёртки, а не margin: у списка space-y-0.5,
+                // и собственный margin-top элемента она бы перебила — сверху осталась
+                // бы щель в 2px, а снизу нормальный отступ.
+                ? (
+                  <div key={entry.id} className="py-4">
+                    <div className="mx-3 border-t border-white/10" />
+                  </div>
+                )
+                : renderNavLink(entry.item)
+            ))}
           </div>
-
-          {hasAccess('GLOBAL_REGISTRY_ACCESS') && (
-            <div className="mt-6 pt-4 border-t border-white/10 space-y-1">
-              {renderNavLink({ name: "Реестр", path: "/registry", icon: "registry" })}
-              {renderNavLink({ name: "Команды", path: "/teams", icon: "users" })}
-              {renderNavLink({ name: "Метрика", path: "/metrics", icon: "metrics" })}
-              {renderNavLink({ name: "Товарки", path: "/leagueless-matches", icon: "handshake" })}
-            </div>
-          )}
         </nav>
 
         <div className="mt-auto p-4 bg-black/10 border-t border-white/5">
@@ -179,10 +175,11 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
       />
 
       {/* Шторка профиля будет отрендерена, но вызовется только если не сервисный аккаунт */}
-      <ProfileDrawer 
+      <ProfileDrawer
         isOpen={isProfileDrawerOpen}
         onClose={() => setIsProfileDrawerOpen(false)}
         user={user}
+        availableMenuItems={availableItems}
       />
     </>
   );

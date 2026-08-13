@@ -6,7 +6,10 @@ import { Badge } from '../ui/Badge';
 // Импортируем компонент заглушки для прав доступа
 import { AccessFallback } from '../ui/AccessFallback';
 
-export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQualId, onSelect, isSaving = false, readOnly = false }) {
+// Порядок квалификаций задаётся в настройках лиги (вкладка «Квалификации») и приходит
+// с сервера уже отсортированным — здесь список не пересортировываем.
+// showDescriptions — тумблер оттуда же: при выключении остаются только название и бейдж.
+export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQualId, onSelect, isSaving = false, readOnly = false, showDescriptions = true }) {
   const [selectedId, setSelectedId] = useState(currentQualId);
 
   useEffect(() => {
@@ -78,7 +81,7 @@ export function QualSelectModal({ isOpen, onClose, qualifications = [], currentQ
                     </span>
                   )}
                 </div>
-                {qual.description && (
+                {showDescriptions && qual.description && (
                   <span className="text-[12px] text-graphite-light mt-0.5 whitespace-pre-line">{qual.description}</span>
                 )}
               </div>

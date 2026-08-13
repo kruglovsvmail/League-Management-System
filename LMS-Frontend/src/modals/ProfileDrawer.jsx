@@ -3,9 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { Uploader } from '../ui/Uploader';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken, formatAge } from '../utils/helpers';
+import { resolveSidebarLayout, serializeSidebarLayout, createDividerEntry } from '../utils/sidebarMenu';
 
-export function ProfileDrawer({ isOpen, onClose, user }) {
+export function ProfileDrawer({ isOpen, onClose, user, availableMenuItems = [] }) {
   const [email, setEmail] = useState('');
   const [phoneRaw, setPhoneRaw] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +21,12 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
   const [avatarFile, setAvatarFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Раскладка бокового меню: порядок пунктов, скрытые пункты и разделители.
+  // Правится локально, уезжает на сервер общей кнопкой «Сохранить изменения».
+  const [menuLayout, setMenuLayout] = useState([]);
+  const [dragEntryId, setDragEntryId] = useState(null);
+  const [dragOverEntryId, setDragOverEntryId] = useState(null);
+
   const SERVER_URL = `${import.meta.env.VITE_API_URL}`;
 
   useEffect(() => {
@@ -29,6 +37,51 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
       }
     }
   }, [user]);
+
+  // Пересобираем список при каждом открытии: за время работы могла смениться
+  // лига, а с ней и набор доступных пунктов.
+  useEffect(() => {
+    if (isOpen) {
+      setMenuLayout(resolveSidebarLayout(user?.sidebarLayout, availableMenuItems));
+      setDragEntryId(null);
+      setDragOverEntryId(null);
+    }
+  }, [isOpen, user?.sidebarLayout, availableMenuItems]);
+
+  // У пункта id — это его key, у разделителя — сгенерированный id: перетаскивание
+  // и React работают с ними одинаково.
+  const entryId = (entry) => (entry.type === 'divider' ? entry.id : entry.key);
+
+  const handleMenuDrop = (targetId) => {
+    setDragOverEntryId(null);
+    if (!dragEntryId || dragEntryId === targetId) { setDragEntryId(null); return; }
+
+    const fromIndex = menuLayout.findIndex(e => entryId(e) === dragEntryId);
+    const toIndex = menuLayout.findIndex(e => entryId(e) === targetId);
+    if (fromIndex === -1 || toIndex === -1) { setDragEntryId(null); return; }
+
+    const reordered = [...menuLayout];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    setMenuLayout(reordered);
+    setDragEntryId(null);
+  };
+
+  const toggleMenuItemHidden = (key) => {
+    setMenuLayout(prev => prev.map(e => (
+      e.type === 'item' && e.key === key ? { ...e, hidden: !e.hidden } : e
+    )));
+  };
+
+  const addMenuDivider = () => setMenuLayout(prev => [...prev, createDividerEntry()]);
+
+  const removeMenuDivider = (id) => setMenuLayout(prev => prev.filter(e => entryId(e) !== id));
+
+  // Сброс к порядку из реестра: пустая раскладка и есть «по умолчанию»
+  const resetMenuLayout = () => setMenuLayout(resolveSidebarLayout(null, availableMenuItems));
+
+  const visibleMenuCount = menuLayout.filter(e => e.type === 'item' && !e.hidden).length;
 
   const handlePhoneChange = (e) => {
     const val = e.target.value.replace(/\D/g, ''); 
@@ -87,9 +140,10 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
         body: JSON.stringify({
           email,
           phone: fullPhone,
-          password: password || undefined, 
+          password: password || undefined,
           signPin: signPin || undefined, // Передаем PIN
-          avatarUrl: finalAvatarUrl
+          avatarUrl: finalAvatarUrl,
+          sidebarLayout: serializeSidebarLayout(menuLayout)
         })
       });
 
@@ -110,7 +164,7 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
     <div className={`fixed inset-0 z-[35] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className={`absolute top-0 left-[200px] h-full w-[400px] max-w-[calc(100vw-230px)] bg-white/85 transform transition-transform duration-300 flex flex-col shadow-[24px_0_24px_rgba(0,0,0,0.1)] ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`absolute top-0 left-[200px] h-full w-[780px] max-w-[calc(100vw-230px)] bg-white/85 transform transition-transform duration-300 flex flex-col shadow-[24px_0_24px_rgba(0,0,0,0.1)] ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         
         <div onClick={onClose} className="flex items-center p-5 border-b border-graphite/10 cursor-pointer hover:bg-gray-50 transition-colors group">
           <div className="p-2 -ml-2 text-graphite group-hover:text-orange transition-colors">
@@ -121,89 +175,202 @@ export function ProfileDrawer({ isOpen, onClose, user }) {
           <h2 className="ml-2 font-bold text-lg text-graphite uppercase tracking-wide group-hover:text-orange transition-colors">Настройки профиля</h2>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-7">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-[140px] [&_.gap-4]:!hidden [&_.rounded-md]:!rounded-lg [&_.rounded-md]:!bg-graphite/5">
-              <Uploader heightClass="h-[140px]" initialUrl={user?.avatarUrl ? getImageUrl(user.avatarUrl) : null} onFileSelect={(file) => setAvatarFile(file)} />
+        <div className="flex-1 flex min-h-0">
+          <div className="w-[400px] shrink-0 overflow-y-auto p-6 flex flex-col gap-7 border-r border-graphite/10 custom-scrollbar">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-[140px] [&_.gap-4]:!hidden [&_.rounded-md]:!rounded-lg [&_.rounded-md]:!bg-graphite/5">
+                <Uploader heightClass="h-[140px]" initialUrl={user?.avatarUrl ? getImageUrl(user.avatarUrl) : null} onFileSelect={(file) => setAvatarFile(file)} />
+              </div>
+              <div className="text-center">
+                <h3 className="text-[1.2rem] font-bold text-graphite leading-tight">
+                  {user?.lastName} {user?.firstName} {user?.middleName}
+                </h3>
+                <span className="text-[12px] font-medium text-graphite-light mt-1 inline-block">
+                  {formatDate(user?.birthDate)}
+                </span>
+              </div>
             </div>
-            <div className="text-center">
-              <h3 className="text-[1.2rem] font-bold text-graphite leading-tight">
-                {user?.lastName} {user?.firstName} {user?.middleName}
-              </h3>
-              <span className="text-[12px] font-medium text-graphite-light mt-1 inline-block">
-                {formatDate(user?.birthDate)}
-              </span>
+
+            <div className="h-px w-full bg-graphite/10"></div>
+
+            <div className="space-y-4">
+              <h4 className="text-[11px] font-bold text-graphite-light uppercase tracking-wider mb-3">Контактная информация</h4>
+              {/* Скрыл код телефона и email для экономии места, он остался как у тебя */}
+              <div>
+                <div className="text-[11px] font-bold text-graphite/60 mb-1.5 uppercase tracking-wide">Телефон</div>
+                {!isEditingPhone ? (
+                  <div className="relative flex items-center w-full border border-graphite/30 rounded-md bg-gray-50 group hover:border-graphite/50">
+                    <div className="pl-4 pr-2 text-graphite/60 font-semibold border-r border-graphite/20 py-2.5">+7</div>
+                    <input type="tel" value={formatPhone(phoneRaw)} disabled className="w-full px-3 py-2.5 bg-transparent text-graphite/70 text-[13px] font-medium outline-none cursor-not-allowed" />
+                    <button onClick={() => setIsEditingPhone(true)} className="absolute right-3 text-graphite-light hover:text-orange opacity-0 group-hover:opacity-100"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                  </div>
+                ) : (
+                  <div className="relative flex items-center w-full border border-graphite/40 rounded-md bg-white focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)]">
+                    <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/20 py-2.5">+7</div>
+                    <input type="tel" value={formatPhone(phoneRaw)} onChange={handlePhoneChange} className="w-full px-3 py-2.5 bg-transparent text-[13px] font-medium outline-none" autoFocus />
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-graphite/60 mb-1.5 uppercase tracking-wide">Email</div>
+                {!isEditingEmail ? (
+                  <div className="relative flex items-center w-full border border-graphite/30 rounded-md bg-gray-50 group hover:border-graphite/50">
+                    <input type="email" value={email || ''} placeholder="Не указан" disabled className="w-full px-3 py-2.5 bg-transparent text-graphite/70 text-[13px] outline-none cursor-not-allowed" />
+                    <button onClick={() => setIsEditingEmail(true)} className="absolute right-3 text-graphite-light hover:text-orange opacity-0 group-hover:opacity-100"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                  </div>
+                ) : (<Input value={email} onChange={e => setEmail(e.target.value)} placeholder="Введите email" />)}
+              </div>
             </div>
-          </div>
 
-          <div className="h-px w-full bg-graphite/10"></div>
+            <div className="h-px w-full bg-graphite/10"></div>
 
-          <div className="space-y-4">
-            <h4 className="text-[11px] font-bold text-graphite-light uppercase tracking-wider mb-3">Контактная информация</h4>
-            {/* Скрыл код телефона и email для экономии места, он остался как у тебя */}
-            <div>
-              <div className="text-[11px] font-bold text-graphite/60 mb-1.5 uppercase tracking-wide">Телефон</div>
-              {!isEditingPhone ? (
-                <div className="relative flex items-center w-full border border-graphite/30 rounded-md bg-gray-50 group hover:border-graphite/50">
-                  <div className="pl-4 pr-2 text-graphite/60 font-semibold border-r border-graphite/20 py-2.5">+7</div>
-                  <input type="tel" value={formatPhone(phoneRaw)} disabled className="w-full px-3 py-2.5 bg-transparent text-graphite/70 text-[13px] font-medium outline-none cursor-not-allowed" />
-                  <button onClick={() => setIsEditingPhone(true)} className="absolute right-3 text-graphite-light hover:text-orange opacity-0 group-hover:opacity-100"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
-                </div>
+            <div className="space-y-4 pb-4">
+              <h4 className="text-[11px] font-bold text-graphite-light uppercase tracking-wider mb-3">Безопасность и ЭЦП</h4>
+            
+              {/* Пароль */}
+              {!isEditingPassword ? (
+                <button onClick={() => setIsEditingPassword(true)} className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-graphite/20 rounded-md hover:border-graphite/40 transition-colors group">
+                  <span className="text-[13px] font-medium text-graphite">Сменить пароль входа</span>
+                  <svg className="text-graphite-light group-hover:text-orange" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              ) : (<div className="animate-zoom-in"><Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Введите новый пароль" /></div>)}
+
+              {/* PIN-код для ЭЦП */}
+              {!isEditingPin ? (
+                <button onClick={() => setIsEditingPin(true)} className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-graphite/20 rounded-md hover:border-graphite/40 transition-colors group">
+                  <span className="text-[13px] font-medium text-graphite">
+                    {user?.hasSignPin ? 'Изменить PIN-код (ЭЦП)' : 'Задать PIN-код (ЭЦП)'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {user?.hasSignPin && <span className="w-2 h-2 rounded-full bg-status-accepted"></span>}
+                    <svg className="text-graphite-light group-hover:text-orange" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </div>
+                </button>
               ) : (
-                <div className="relative flex items-center w-full border border-graphite/40 rounded-md bg-white focus-within:border-orange focus-within:shadow-[0_0_0_3px_rgba(255,122,0,0.2)]">
-                  <div className="pl-4 pr-2 text-graphite font-semibold border-r border-graphite/20 py-2.5">+7</div>
-                  <input type="tel" value={formatPhone(phoneRaw)} onChange={handlePhoneChange} className="w-full px-3 py-2.5 bg-transparent text-[13px] font-medium outline-none" autoFocus />
+                <div className="animate-zoom-in relative">
+                  <input 
+                    type="password" 
+                    maxLength={4}
+                    value={signPin} 
+                    onChange={handlePinChange} 
+                    placeholder="4 цифры (Например: 1234)" 
+                    className="w-full border border-graphite/40 rounded-md px-3 py-2.5 text-[13px] outline-none focus:border-orange tracking-[5px] font-bold"
+                  />
+                  <span className="text-[10px] text-graphite-light mt-1 block">PIN нужен для электронной подписи протоколов матча</span>
                 </div>
               )}
             </div>
-            <div>
-              <div className="text-[11px] font-bold text-graphite/60 mb-1.5 uppercase tracking-wide">Email</div>
-              {!isEditingEmail ? (
-                <div className="relative flex items-center w-full border border-graphite/30 rounded-md bg-gray-50 group hover:border-graphite/50">
-                  <input type="email" value={email || ''} placeholder="Не указан" disabled className="w-full px-3 py-2.5 bg-transparent text-graphite/70 text-[13px] outline-none cursor-not-allowed" />
-                  <button onClick={() => setIsEditingEmail(true)} className="absolute right-3 text-graphite-light hover:text-orange opacity-0 group-hover:opacity-100"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
-                </div>
-              ) : (<Input value={email} onChange={e => setEmail(e.target.value)} placeholder="Введите email" />)}
-            </div>
           </div>
 
-          <div className="h-px w-full bg-graphite/10"></div>
+          {/* Вторая колонка: боковое меню под себя */}
+          <div className="flex-1 min-w-0 overflow-y-auto p-6 flex flex-col gap-4 custom-scrollbar">
+            <div>
+              <h4 className="text-[11px] font-bold text-graphite-light uppercase tracking-wider">Меню в боковой панели</h4>
+              <p className="text-[11px] text-graphite-light leading-relaxed mt-1.5">
+                Перетаскивайте пункты за уголок, меняя порядок.
+              </p>
+            </div>
 
-          <div className="space-y-4 pb-4">
-            <h4 className="text-[11px] font-bold text-graphite-light uppercase tracking-wider mb-3">Безопасность и ЭЦП</h4>
-            
-            {/* Пароль */}
-            {!isEditingPassword ? (
-              <button onClick={() => setIsEditingPassword(true)} className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-graphite/20 rounded-md hover:border-graphite/40 transition-colors group">
-                <span className="text-[13px] font-medium text-graphite">Сменить пароль входа</span>
-                <svg className="text-graphite-light group-hover:text-orange" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={addMenuDivider}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-graphite/20 bg-gray-50 text-[12px] font-bold text-graphite hover:border-orange hover:text-orange transition-colors"
+              >
+                <Icon name="plus" className="w-3.5 h-3.5" />
+                Разделитель
               </button>
-            ) : (<div className="animate-zoom-in"><Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Введите новый пароль" /></div>)}
+              <button
+                type="button"
+                onClick={resetMenuLayout}
+                className="px-3 py-2 rounded-md border border-graphite/20 bg-gray-50 text-[12px] font-bold text-graphite-light hover:border-graphite/40 hover:text-graphite transition-colors"
+              >
+                Сбросить
+              </button>
+            </div>
 
-            {/* PIN-код для ЭЦП */}
-            {!isEditingPin ? (
-              <button onClick={() => setIsEditingPin(true)} className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-graphite/20 rounded-md hover:border-graphite/40 transition-colors group">
-                <span className="text-[13px] font-medium text-graphite">
-                  {user?.hasSignPin ? 'Изменить PIN-код (ЭЦП)' : 'Задать PIN-код (ЭЦП)'}
-                </span>
-                <div className="flex items-center gap-2">
-                  {user?.hasSignPin && <span className="w-2 h-2 rounded-full bg-status-accepted"></span>}
-                  <svg className="text-graphite-light group-hover:text-orange" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-              </button>
-            ) : (
-              <div className="animate-zoom-in relative">
-                <input 
-                  type="password" 
-                  maxLength={4}
-                  value={signPin} 
-                  onChange={handlePinChange} 
-                  placeholder="4 цифры (Например: 1234)" 
-                  className="w-full border border-graphite/40 rounded-md px-3 py-2.5 text-[13px] outline-none focus:border-orange tracking-[5px] font-bold"
-                />
-                <span className="text-[10px] text-graphite-light mt-1 block">PIN нужен для электронной подписи протоколов матча</span>
+            {visibleMenuCount === 0 && (
+              <div className="px-3 py-2.5 rounded-md bg-status-rejected/10 border border-status-rejected/20 text-[11px] font-medium text-status-rejected leading-relaxed">
+                Скрыты все пункты — боковая панель останется пустой. Вернуть их можно только отсюда.
               </div>
             )}
+
+            <div className="flex flex-col gap-1.5">
+              {menuLayout.map(entry => {
+                const id = entryId(entry);
+                const isDragged = dragEntryId === id;
+                const isDragOver = dragOverEntryId === id;
+
+                const grip = (
+                  <span
+                    draggable
+                    onDragStart={() => setDragEntryId(id)}
+                    onDragEnd={() => { setDragEntryId(null); setDragOverEntryId(null); }}
+                    title="Перетащите, чтобы изменить порядок"
+                    className="w-5 shrink-0 text-center text-[13px] leading-none text-graphite/25 hover:text-orange cursor-grab active:cursor-grabbing select-none"
+                  >
+                    ⣿
+                  </span>
+                );
+
+                const dropProps = {
+                  onDragOver: (e) => { if (dragEntryId) { e.preventDefault(); setDragOverEntryId(id); } },
+                  onDragLeave: () => setDragOverEntryId(prev => (prev === id ? null : prev)),
+                  onDrop: () => handleMenuDrop(id),
+                };
+
+                if (entry.type === 'divider') {
+                  return (
+                    <div
+                      key={id}
+                      {...dropProps}
+                      className={`flex items-center gap-2.5 pl-1.5 pr-2 py-2 rounded-md border border-dashed transition-colors ${
+                        isDragOver ? 'border-orange bg-orange/5' : 'border-graphite/25 bg-transparent'
+                      } ${isDragged ? 'opacity-40' : ''}`}
+                    >
+                      {grip}
+                      <span className="flex-1 h-px bg-graphite/15" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-graphite/40 shrink-0">Разделитель</span>
+                      <span className="flex-1 h-px bg-graphite/15" />
+                      <button
+                        type="button"
+                        onClick={() => removeMenuDivider(id)}
+                        title="Убрать разделитель"
+                        className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-graphite/30 hover:text-status-rejected hover:bg-status-rejected/10 transition-colors"
+                      >
+                        <Icon name="close" className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={id}
+                    {...dropProps}
+                    className={`flex items-center gap-2.5 pl-1.5 pr-2 py-2 rounded-md border transition-colors ${
+                      isDragOver ? 'border-orange bg-orange/5' : 'border-graphite/15 bg-gray-50'
+                    } ${isDragged ? 'opacity-40' : ''}`}
+                  >
+                    {grip}
+                    <Icon name={entry.item.icon} className={`w-4 h-4 shrink-0 ${entry.hidden ? 'text-graphite/25' : 'text-graphite/50'}`} />
+                    <span className={`flex-1 min-w-0 truncate text-[13px] font-bold ${entry.hidden ? 'text-graphite/35 line-through' : 'text-graphite'}`}>
+                      {entry.item.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleMenuItemHidden(entry.key)}
+                      title={entry.hidden ? 'Показать в панели' : 'Скрыть из панели'}
+                      className={`shrink-0 w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                        entry.hidden ? 'text-graphite/30 hover:text-orange hover:bg-orange/10' : 'text-graphite/50 hover:text-orange hover:bg-orange/10'
+                      }`}
+                    >
+                      <Icon name={entry.hidden ? 'view_off' : 'view'} className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

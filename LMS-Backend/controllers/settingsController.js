@@ -133,16 +133,27 @@ export const updateLeagueStaff = async (req, res) => {
 
 // --- КВАЛИФИКАЦИИ ---
 
+// Порядок квалификаций задаётся вручную перетаскиванием в настройках лиги (sort_order):
+// он смысловой — от новичка к профессионалу, — и алфавитная сортировка его ломала.
+// Флаг qual_show_descriptions отдаём вместе со списком: он нужен тем же потребителям,
+// что и сам список, и второй запрос за настройками лиги им не нужен.
 export const getSettingsQualifications = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const result = await pool.query(
-      `SELECT * FROM league_qualifications 
-       WHERE league_id = $1 AND status = 'active' 
-       ORDER BY name`, 
-      [leagueId]
-    );
-    res.json({ success: true, qualifications: result.rows });
+    const [quals, league] = await Promise.all([
+      pool.query(
+        `SELECT * FROM league_qualifications
+         WHERE league_id = $1 AND status = 'active'
+         ORDER BY sort_order ASC, name ASC`,
+        [leagueId]
+      ),
+      pool.query('SELECT qual_show_descriptions FROM leagues WHERE id = $1', [leagueId])
+    ]);
+    res.json({
+      success: true,
+      qualifications: quals.rows,
+      showDescriptions: league.rows[0]?.qual_show_descriptions ?? true
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -153,12 +164,69 @@ export const createQualification = async (req, res) => {
     const { leagueId } = req.params;
     const { name, shortName, description, fullDescription } = req.body;
 
+    // Новая квалификация всегда встаёт в конец списка — дальше её переносят перетаскиванием
     const query = `
-      INSERT INTO league_qualifications (league_id, name, short_name, description, full_description, status)
-      VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id
+      INSERT INTO league_qualifications (league_id, name, short_name, description, full_description, status, sort_order)
+      VALUES ($1, $2, $3, $4, $5, 'active',
+              (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM league_qualifications WHERE league_id = $1))
+      RETURNING id
     `;
     const result = await pool.query(query, [leagueId, name, shortName, description, fullDescription || null]);
     res.json({ success: true, id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// PUT /leagues/:leagueId/settings-qualifications/reorder  { ids }
+// Новый порядок приходит целиком: позиция в массиве и есть sort_order.
+export const reorderQualifications = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { leagueId } = req.params;
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Не передан порядок квалификаций' });
+    }
+
+    await client.query('BEGIN');
+    // Ограничение по league_id не даёт перетащить квалификацию в чужую лигу подменой id в запросе
+    await client.query(
+      `UPDATE league_qualifications q
+       SET sort_order = v.ord
+       FROM (SELECT * FROM unnest($1::int[]) WITH ORDINALITY AS u(id, ord)) v
+       WHERE q.id = v.id AND q.league_id = $2`,
+      [ids.map(Number), leagueId]
+    );
+    await client.query('COMMIT');
+
+    res.json({ success: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+};
+
+// PUT /leagues/:leagueId/settings-qualifications/display  { showDescriptions }
+// Тумблер вкладки «Квалификации»: при выключении окно выбора квалификации показывает
+// только название и бейдж, без описания критериев.
+export const updateQualificationsDisplay = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const { showDescriptions } = req.body;
+
+    if (typeof showDescriptions !== 'boolean') {
+      return res.status(400).json({ success: false, error: 'Некорректное значение настройки' });
+    }
+
+    await pool.query(
+      'UPDATE leagues SET qual_show_descriptions = $1 WHERE id = $2',
+      [showDescriptions, leagueId]
+    );
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

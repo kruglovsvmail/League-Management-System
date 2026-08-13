@@ -1,7 +1,7 @@
 import express from 'express';
 import { 
   lookupUserByPhone, getLeagueStaff, updateLeagueStaff,
-  getSettingsQualifications, createQualification, deleteQualification,
+  getSettingsQualifications, createQualification, deleteQualification, reorderQualifications, updateQualificationsDisplay,
   getAllSettingsArenas, getLeagueSettingsArenas, toggleLeagueArena,
   getLeagueServiceAccounts, createLeagueServiceAccount, updateLeagueServiceAccount, deleteLeagueServiceAccount,
   getLeaguePreferences, updateLeaguePreferences
@@ -25,6 +25,8 @@ router.post('/leagues/:leagueId/settings-staff', express.json(), requirePermissi
 // КВАЛИФИКАЦИИ
 router.get('/leagues/:leagueId/settings-qualifications', requirePermission('SETTINGS_QUAL_VIEW'), getSettingsQualifications);
 router.post('/leagues/:leagueId/settings-qualifications', express.json(), requirePermission('SETTINGS_QUAL_CREATE'), createQualification);
+router.put('/leagues/:leagueId/settings-qualifications/reorder', express.json(), requirePermission('SETTINGS_QUAL_CREATE'), reorderQualifications);
+router.put('/leagues/:leagueId/settings-qualifications/display', express.json(), requirePermission('SETTINGS_QUAL_CREATE'), updateQualificationsDisplay);
 router.delete('/leagues/:leagueId/settings-qualifications/:id', requirePermission('SETTINGS_QUAL_DELETE'), deleteQualification);
 
 // АРЕНЫ ЛИГИ

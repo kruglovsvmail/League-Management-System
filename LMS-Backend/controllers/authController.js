@@ -82,7 +82,7 @@ export const lookupLogin = async (req, res) => {
 
 const fetchUserProfile = async (userId) => {
   const userResult = await pool.query(
-    'SELECT id, first_name, last_name, middle_name, email, phone, avatar_url, global_role, birth_date, sign_pin_hash FROM users WHERE id = $1', 
+    'SELECT id, first_name, last_name, middle_name, email, phone, avatar_url, global_role, birth_date, sign_pin_hash, lms_sidebar_layout FROM users WHERE id = $1',
     [userId]
   );
 
@@ -157,8 +157,11 @@ const fetchUserProfile = async (userId) => {
     phone: user.phone,
     avatarUrl: user.avatar_url,
     birthDate: user.birth_date, 
-    globalRole: user.global_role, 
+    globalRole: user.global_role,
     hasSignPin: !!user.sign_pin_hash,
+    // Раскладка бокового меню под себя: порядок пунктов, скрытые пункты и разделители.
+    // null — пользователь ничего не настраивал, фронт покажет порядок по умолчанию.
+    sidebarLayout: user.lms_sidebar_layout || null,
     leagues: leaguesResult.rows
   };
 };
@@ -257,12 +260,28 @@ export const getMe = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { email, phone, password, avatarUrl, signPin } = req.body;
+    const { email, phone, password, avatarUrl, signPin, sidebarLayout } = req.body;
 
     await pool.query(
       'UPDATE users SET email = $1, phone = $2, avatar_url = $3 WHERE id = $4',
       [email, phone, avatarUrl, userId]
     );
+
+    // Раскладка бокового меню. Пишем только то, что пришло массивом: шторка профиля
+    // шлёт её всегда, а прочие клиенты поле не знают — им затирать чужую настройку нечем.
+    // Хранится белым списком полей, чтобы в jsonb не уехало содержимое запроса целиком.
+    if (Array.isArray(sidebarLayout)) {
+      const cleaned = sidebarLayout
+        .filter(entry => entry && (entry.type === 'divider' || typeof entry.key === 'string'))
+        .map(entry => (entry.type === 'divider'
+          ? { type: 'divider' }
+          : { type: 'item', key: entry.key, hidden: !!entry.hidden }));
+
+      await pool.query(
+        'UPDATE users SET lms_sidebar_layout = $1 WHERE id = $2',
+        [JSON.stringify(cleaned), userId]
+      );
+    }
 
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);

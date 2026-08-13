@@ -5,6 +5,7 @@ import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
 import { Loader } from '../../ui/Loader';
 import { Badge } from '../../ui/Badge';
+import { Switch } from '../../ui/Switch';
 import { ConfirmModal } from '../../modals/ConfirmModal';
 import { AccessFallback } from '../../ui/AccessFallback';
 import { getToken } from '../../utils/helpers';
@@ -30,6 +31,13 @@ export function QualificationsTab({ setToast }) {
 
   const [expandedQualId, setExpandedQualId] = useState(null);
 
+  // Тумблер живёт на лиге и управляет только окном выбора квалификации у игрока
+  const [showDescriptions, setShowDescriptions] = useState(true);
+  const [isSavingDisplay, setIsSavingDisplay] = useState(false);
+
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+
   useEffect(() => {
     if (selectedLeague?.id && canViewQuals) {
       fetchQualifications();
@@ -43,13 +51,82 @@ export function QualificationsTab({ setToast }) {
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await res.json();
-      if (data.success) setQualifications(data.qualifications);
+      if (data.success) {
+        setQualifications(data.qualifications);
+        setShowDescriptions(data.showDescriptions !== false);
+      }
       else setToast({ title: 'Ошибка', message: data.error, type: 'error' });
     } catch (err) {
       setToast({ title: 'Ошибка', message: 'Сбой загрузки', type: 'error' });
     } finally {
       setIsLoadingQuals(false);
     }
+  };
+
+  const handleToggleDescriptions = async (value) => {
+    const previous = showDescriptions;
+    setShowDescriptions(value);
+    setIsSavingDisplay(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague.id}/settings-qualifications/display`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({ showDescriptions: value })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setShowDescriptions(previous);
+        setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+      }
+    } catch (err) {
+      setShowDescriptions(previous);
+      setToast({ title: 'Ошибка', message: 'Сбой сохранения настройки', type: 'error' });
+    } finally {
+      setIsSavingDisplay(false);
+    }
+  };
+
+  // Порядок карточек — это и есть порядок квалификаций в окне выбора у игрока.
+  // Новый порядок отправляем целиком, позиция в массиве и есть номер.
+  const persistOrder = async (ordered) => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague.id}/settings-qualifications/reorder`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({ ids: ordered.map(q => q.id) })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setToast({ title: 'Ошибка', message: data.error, type: 'error' });
+        fetchQualifications();
+      }
+    } catch (err) {
+      setToast({ title: 'Ошибка', message: 'Сбой сохранения порядка', type: 'error' });
+      fetchQualifications();
+    }
+  };
+
+  const handleDrop = (targetId) => {
+    setDragOverId(null);
+    if (!dragId || dragId === targetId) { setDragId(null); return; }
+
+    const fromIndex = qualifications.findIndex(q => q.id === dragId);
+    const toIndex = qualifications.findIndex(q => q.id === targetId);
+    if (fromIndex === -1 || toIndex === -1) { setDragId(null); return; }
+
+    const reordered = [...qualifications];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    setQualifications(reordered);
+    setDragId(null);
+    persistOrder(reordered);
   };
 
   const handleAddQual = async () => {
@@ -117,39 +194,71 @@ export function QualificationsTab({ setToast }) {
       )}
       
       <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* Левая колонка (Форма) */}
-        {canAddQuals && (
-          <div className="w-full lg:w-[380px] shrink-0 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
-            <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Новая квалификация</span>
-            
-            <div className="flex flex-col gap-4">
-              <Input label="Полное Название" placeholder="Например: Любитель" value={newQual.name} onChange={(e) => setNewQual({...newQual, name: e.target.value})} />
-              <Input label="Короткое название (5 символов)" placeholder="Например: ЛЮБ" value={newQual.shortName} onChange={(e) => setNewQual({...newQual, shortName: e.target.value.substring(0, 5)})} />
-              
-              <div className="flex flex-col w-full mt-1">
-                <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Описание критериев</label>
-                <textarea
-                  placeholder="Опишите, кто подходит под эту квалификацию..."
-                  value={newQual.description}
-                  onChange={(e) => setNewQual({...newQual, description: e.target.value})}
-                  className="w-full h-[110px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none"
+        {/* Левая колонка (Форма + отображение) */}
+        <div className="w-full lg:w-[380px] shrink-0 flex flex-col gap-5">
+          {canAddQuals && (
+            <div className="w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-5">
+              <span className="text-[16px] font-black text-graphite uppercase tracking-wide border-b border-graphite/10 pb-3">Новая квалификация</span>
+
+              <div className="flex flex-col gap-4">
+                <Input label="Полное Название" placeholder="Например: Любитель" value={newQual.name} onChange={(e) => setNewQual({...newQual, name: e.target.value})} />
+                <Input label="Короткое название (5 символов)" placeholder="Например: ЛЮБ" value={newQual.shortName} onChange={(e) => setNewQual({...newQual, shortName: e.target.value.substring(0, 5)})} />
+
+                <div className="flex flex-col w-full mt-1">
+                  <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Описание критериев</label>
+                  <textarea
+                    placeholder="Опишите, кто подходит под эту квалификацию..."
+                    value={newQual.description}
+                    onChange={(e) => setNewQual({...newQual, description: e.target.value})}
+                    className="w-full h-[110px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none"
+                  />
+                </div>
+
+                <div className="flex flex-col w-full mt-1">
+                  <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Полное описание</label>
+                  <textarea
+                    placeholder="Развернутые правила и критерии допуска (необязательно)..."
+                    value={newQual.fullDescription}
+                    onChange={(e) => setNewQual({...newQual, fullDescription: e.target.value})}
+                    className="w-full h-[110px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none"
+                  />
+                </div>
+
+                <Button onClick={handleAddQual} isLoading={isAddingQual} className="w-full mt-2">Добавить в справочник</Button>
+              </div>
+            </div>
+          )}
+
+          {/* Настройка окна выбора квалификации у игрока */}
+          <div className="w-full bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-2 border-b border-graphite/10 pb-3">
+              <Icon name="view" className="w-4 h-4 text-graphite/40" />
+              <span className="text-[16px] font-black text-graphite uppercase tracking-wide">Окно выбора</span>
+              {isSavingDisplay && (
+                <span className="ml-auto flex items-center gap-1.5 text-[10px] font-bold text-orange uppercase tracking-widest animate-pulse">
+                  <span className="w-1.5 h-1.5 bg-orange rounded-full"></span>
+                  Сохранение
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-[13px] font-bold text-graphite leading-tight">Описания квалификаций</span>
+                <p className="text-[11px] text-graphite-light leading-relaxed">
+                  Когда выключено, в окне выбора квалификации остаются только название и бейдж
+                </p>
+              </div>
+              <div className="pt-0.5 shrink-0">
+                <Switch
+                  checked={showDescriptions}
+                  onChange={(e) => handleToggleDescriptions(e.target.checked)}
+                  disabled={!canAddQuals || isSavingDisplay}
                 />
               </div>
-
-              <div className="flex flex-col w-full mt-1">
-                <label className="text-[11px] font-bold text-graphite-light mb-1.5 uppercase tracking-wide">Полное описание</label>
-                <textarea
-                  placeholder="Развернутые правила и критерии допуска (необязательно)..."
-                  value={newQual.fullDescription}
-                  onChange={(e) => setNewQual({...newQual, fullDescription: e.target.value})}
-                  className="w-full h-[110px] px-3 py-2.5 border border-graphite/40 rounded-md bg-white/70 text-graphite text-[13px] font-medium outline-none transition-all duration-300 focus:border-orange focus:bg-white resize-none"
-                />
-              </div>
-
-              <Button onClick={handleAddQual} isLoading={isAddingQual} className="w-full mt-2">Добавить в справочник</Button>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Правая колонка (Сетка квалификаций) */}
         <div className="flex-1 w-full min-h-[400px] relative">
@@ -161,14 +270,39 @@ export function QualificationsTab({ setToast }) {
           <div className={`transition-opacity duration-300 ease-in-out ${isLoadingQuals ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
             {qualifications.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-5">
-                {qualifications.map(qual => {
+                {qualifications.map((qual, index) => {
                   const isExpanded = expandedQualId === qual.id;
                   return (
-                  <div key={qual.id} className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-6 flex flex-col gap-3 relative group transition-all hover:shadow-lg hover:border-orange/30 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+                  <div
+                    key={qual.id}
+                    onDragOver={(e) => { if (dragId) { e.preventDefault(); setDragOverId(qual.id); } }}
+                    onDragLeave={() => setDragOverId(prev => (prev === qual.id ? null : prev))}
+                    onDrop={() => handleDrop(qual.id)}
+                    className={`bg-white/70 backdrop-blur-[12px] border-[1px] rounded-lg p-6 flex flex-col gap-3 relative group transition-all hover:shadow-lg shadow-[4px_0_24px_rgba(0,0,0,0.02)] ${
+                      dragOverId === qual.id ? 'border-orange bg-orange/5' : 'border-white/40 hover:border-orange/30'
+                    } ${dragId === qual.id ? 'opacity-40' : ''}`}
+                  >
                     <div className="flex justify-between items-start">
-                      <div className="flex flex-col gap-2 pr-8">
-                        <span className="font-bold text-[18px] text-graphite leading-tight">{qual.name}</span>
-                        <Badge label={qual.short_name} type="filled" />
+                      <div className="flex items-start gap-3 pr-8">
+                        {/* Номер = позиция в окне выбора квалификации. Он же ручка перетаскивания:
+                            тянуть карточку целиком нельзя, иначе не выделить текст описания */}
+                        <span
+                          draggable={canAddQuals}
+                          onDragStart={() => setDragId(qual.id)}
+                          onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                          title={canAddQuals ? 'Перетащите, чтобы изменить порядок' : undefined}
+                          className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-[12px] font-black select-none transition-colors ${
+                            canAddQuals
+                              ? 'bg-graphite/5 text-graphite-light cursor-grab active:cursor-grabbing hover:bg-orange hover:text-white'
+                              : 'bg-graphite/5 text-graphite-light'
+                          }`}
+                        >
+                          {index + 1}
+                        </span>
+                        <div className="flex flex-col gap-2 items-start">
+                          <span className="font-bold text-[18px] text-graphite leading-tight">{qual.name}</span>
+                          <Badge label={qual.short_name} type="filled" />
+                        </div>
                       </div>
                       {canDeleteQuals && (
                         <button onClick={() => setConfirmDeleteQual(qual)} className="absolute top-5 right-5 w-8 h-8 flex justify-center items-center rounded-lg bg-status-rejected/10 text-status-rejected opacity-0 group-hover:opacity-100 transition-all hover:bg-status-rejected hover:text-white">

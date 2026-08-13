@@ -74,6 +74,8 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const [isPlayerSaving, setIsPlayerSaving] = useState(false);
   const [profileModalPlayerId, setProfileModalPlayerId] = useState(null);
   const [leagueQuals, setLeagueQuals] = useState([]);
+  // Порядок квалификаций и показ описаний настраиваются в лиге и приходят вместе со списком
+  const [qualShowDescriptions, setQualShowDescriptions] = useState(true);
 
   useEffect(() => { setExpiringStorage(`div_${division.id}_teamsTab`, teamsTab); }, [teamsTab, division.id]);
   useEffect(() => { setExpiringStorage(`div_${division.id}_rosterTab`, rosterTab); }, [rosterTab, division.id]);
@@ -82,7 +84,12 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
     if (leagueId && leagueQuals.length === 0) {
       fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${leagueId}/settings-qualifications`, { headers: { 'Authorization': `Bearer ${getToken()}` } })
       .then(res => res.json())
-      .then(data => { if (data.success) setLeagueQuals(data.qualifications); })
+      .then(data => {
+        if (data.success) {
+          setLeagueQuals(data.qualifications);
+          setQualShowDescriptions(data.showDescriptions !== false);
+        }
+      })
       .catch(console.error);
     }
   }, [leagueId]);
@@ -549,10 +556,11 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       <QualSelectModal 
         isOpen={playerModalType === 'qual'} 
         onClose={() => setPlayerModalType(null)} 
-        qualifications={leagueQuals} 
-        currentQualId={activePlayerForModal?.qualification_id} 
-        onSelect={handlePlayerQualSave} 
-        isSaving={isPlayerSaving} 
+        qualifications={leagueQuals}
+        showDescriptions={qualShowDescriptions}
+        currentQualId={activePlayerForModal?.qualification_id}
+        onSelect={handlePlayerQualSave}
+        isSaving={isPlayerSaving}
         readOnly={!checkAccess('DIVISIONS_TEAM_QUAL_MODAL')} 
       />
       <FeeModal 

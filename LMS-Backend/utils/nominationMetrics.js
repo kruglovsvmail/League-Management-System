@@ -26,13 +26,20 @@
 export const METRIC_DEFS = {
     // ── Полевые ──────────────────────────────────────────────────────────
     goals:            { label: 'Заброшенные шайбы',       appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.goals)' },
-    assists:          { label: 'Передачи',                appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.assists)' },
+    // Передачи — общий показатель: вратарь тоже отдаёт результативные, и во вратарских
+    // номинациях они нужны как критерий при равенстве. Место в списке оставлено прежним:
+    // для полевых это ходовой показатель, и уводить его вниз, в блок общих, незачем.
+    assists:          { label: 'Передачи',                appliesTo: 'both',   order: 'desc', requires: null,         expr: 'SUM(s.assists)' },
     points:           { label: 'Очки (гол + пас)',        appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.points)' },
     goals_pp:         { label: 'Голы в большинстве',      appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.goals_pp)' },
     goals_sh:         { label: 'Голы в меньшинстве',      appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.goals_sh)' },
     goals_gw:         { label: 'Победные голы',           appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.goals_gw)' },
     goals_en:         { label: 'Голы в пустые ворота',    appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.goals_en)' },
-    so_goals:         { label: 'Забитые буллиты',         appliesTo: 'skater', order: 'desc', requires: null,         expr: 'SUM(s.so_goals)' },
+    // Два разных буллита, и путать их нельзя:
+    //   goals_ps — назначенный штрафной бросок по ходу матча, это обычная шайба в счёте;
+    //   so_goals — попытка в послематчевой серии, в счёт матча она не идёт.
+    goals_ps:         { label: 'Реализованные штрафные броски',      appliesTo: 'skater', order: 'desc', requires: null, expr: 'SUM(s.goals_ps)' },
+    so_goals:         { label: 'Реализованные послематчевые буллиты', appliesTo: 'skater', order: 'desc', requires: null, expr: 'SUM(s.so_goals)' },
     plus_minus:       { label: 'Показатель полезности',   appliesTo: 'skater', order: 'desc', requires: 'plus_minus', expr: 'SUM(s.plus_minus)' },
 
     // ── Вратари ──────────────────────────────────────────────────────────
