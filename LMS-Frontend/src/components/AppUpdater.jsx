@@ -24,13 +24,44 @@ export function AppUpdater() {
 
   const {
     needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker,
   } = useRegisterSW({
     immediate: true,
     onRegistered(r) {
       registrationRef.current = r || null;
     },
   });
+
+  /**
+   * Обновление по кнопке — то же самое, что Ctrl+F5: снимаем сервис-воркера,
+   * выкидываем все его кэши и перезагружаемся. Свежая сборка зарегистрирует
+   * воркера заново уже сама.
+   *
+   * Через updateServiceWorker(true) перезагрузки можно было не дождаться вовсе:
+   * он лишь отправляет SKIP_WAITING ждущему воркеру, а reload происходит только
+   * по событию controlling. Если к моменту нажатия registration.waiting уже пуст
+   * (окно провисело открытым, воркера подобрала другая вкладка), сообщение уходит
+   * в никуда, события нет — и кнопка крутится бесконечно. Здесь ждать нечего:
+   * воркера больше нет, загрузка идёт прямо в сеть.
+   */
+  const applyUpdate = async () => {
+    setNeedRefresh(false);
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(r => r.unregister()));
+      }
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch (err) {
+      // Чистка не удалась — перезагрузиться всё равно надо, хуже от этого не станет
+      console.error('Не удалось очистить кэш перед обновлением:', err);
+    }
+
+    window.location.reload();
+  };
 
   // Сам браузер проверяет воркер только при загрузке и навигации. В LMS вкладку
   // держат открытой сутками, поэтому спрашиваем сервер сами: раз в 5 минут и
@@ -48,11 +79,5 @@ export function AppUpdater() {
     };
   }, []);
 
-  return (
-    <UpdatePromptModal
-      isOpen={needRefresh}
-      onUpdate={() => updateServiceWorker(true)}
-      onLater={() => setNeedRefresh(false)}
-    />
-  );
+  return <UpdatePromptModal isOpen={needRefresh} onUpdate={applyUpdate} />;
 }
