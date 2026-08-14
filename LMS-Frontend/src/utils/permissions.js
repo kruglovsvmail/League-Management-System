@@ -49,7 +49,10 @@ export const PERMISSIONS = {                                                    
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: СТРАНИЦА МАТЧА                                                     
   // -------------------------------------------------------------------------- 
-  MATCH_PAGE_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA, ROLES.SERVICE_SECRETARY, ROLES.SERVICE_BROADCASTER], // Доступ к странице конкретного матча
+  // Назначенные на матч видят его страницу: они на нём работают. Роли по назначению
+  // раскрываются из game_staff, поэтому право действует только на СВОЙ матч.
+  MATCH_PAGE_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.REFEREE, ROLES.MEDIA, ROLES.SERVICE_SECRETARY, ROLES.SERVICE_BROADCASTER,
+                    ROLES.GAME_MAIN, ROLES.GAME_LINESMAN, ROLES.GAME_SECRETARY, ROLES.GAME_TIMEKEEPER, ROLES.GAME_INFORMANT, ROLES.GAME_BROADCASTER, ROLES.GAME_COMMENTATOR], // Доступ к странице конкретного матча
   MATCH_STATUS_CHANGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_SECRETARY, ROLES.SERVICE_SECRETARY],                              // Право менять статус матча
   MATCH_EDIT_INFO: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                                                                                 // Право редактировать метаданные
   MATCH_WEB_GRAPHICS_PANEL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.GAME_BROADCASTER],                                                // Право на открытие панели управления титрами (сервисный бродкастер попадает сюда только если назначен как GAME_BROADCASTER)

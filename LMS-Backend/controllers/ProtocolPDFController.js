@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import puppeteer from 'puppeteer';
 // Импортируем бэкенд-фабрику для выбора шаблона
 import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
+import { fetchProtocolBack, CHECK_RESULTS } from './protocolBackController.js';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
@@ -60,7 +61,7 @@ const fetchRawProtocolData = async (gameId) => {
     });
 
     const eventsQuery = `
-        SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength, ge.penalty_minutes, ge.penalty_class, ge.penalty_violation, ge.penalty_violation_code, ge.penalty_end_time,
+        SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength, ge.penalty_minutes, ge.penalty_class, ge.penalty_violation, ge.penalty_violation_code, ge.penalty_end_time, ge.against_goalie_id,
             u_scorer.last_name as scorer_last_name, gr_scorer.jersey_number as scorer_number,
             u_a1.last_name as a1_last_name, gr_a1.jersey_number as a1_number,
             u_a2.last_name as a2_last_name, gr_a2.jersey_number as a2_number
@@ -192,6 +193,21 @@ const fetchRawProtocolData = async (gameId) => {
     `, [gameId]);
     const timerResult = await pool.query('SELECT periods_count FROM game_timers WHERE game_id = $1', [gameId]);
 
+    // Справочник причин удаления сезона — для блока «Индексация штрафов» на обороте протокола.
+    // Пустой результат означает, что лига справочник не заполнила: вторая страница
+    // в этом случае печатает встроенный список (PENALTY_INDEX_FALLBACK в шаблоне протокола).
+    const penaltyTypesResult = await pool.query(`
+        SELECT pt.number, pt.code, pt.title
+        FROM penalty_types pt
+        JOIN divisions d ON d.season_id = pt.season_id
+        JOIN games g ON g.division_id = d.id
+        WHERE g.id = $1
+        ORDER BY pt.number ASC, pt.id ASC
+    `, [gameId]);
+
+    // Оборот протокола: проверка игроков и текстовые блоки, которые заполняет секретарь.
+    const protocolBack = await fetchProtocolBack(gameId);
+
     let formattedDate = '';
     let formattedTime = '';
     
@@ -220,7 +236,9 @@ const fetchRawProtocolData = async (gameId) => {
         events: eventsResult.rows,
         signatures, eligibleSigners, prefilledOfficials,
         goalieLog: goalieLogResult.rows, shotsSummary: shotsSummaryResult.rows,
-        timerSettings: timerResult.rows[0] || { periods_count: 3 }
+        timerSettings: timerResult.rows[0] || { periods_count: 3 },
+        penaltyTypes: penaltyTypesResult.rows,
+        protocolBack
     };
 };
 
@@ -353,10 +371,73 @@ const prepareProtocolData = (apiData) => {
         home_jersey: homeGoaliesMap[log.home_goalie_id] || '',
         away_jersey: awayGoaliesMap[log.away_goalie_id] || ''
     }));
-  
+
+    // Серия буллитов для блока «Броски определяющие победителя матча» на обороте протокола.
+    // Строка таблицы — пара попыток: i-й бросок команды «А» и i-й бросок команды «Б»,
+    // «Результат» — счёт серии после этой пары. Порядок попыток внутри команды — по id
+    // события, как в панели секретаря (ShootoutAccordion.jsx).
+    // against_goalie_id указывает на вратаря СОПЕРНИКА бросающего, поэтому номер вратаря
+    // «А» берётся из попытки гостей, а вратаря «Б» — из попытки хозяев.
+    // NULL здесь значит «вратарь не указан» (не пустые ворота) — печатаем пустую ячейку.
+    const shootoutAttempts = isSOFinished
+      ? (apiData.events || [])
+          .filter(e => e.event_type === 'shootout_goal' || e.event_type === 'shootout_miss')
+          .sort((a, b) => a.id - b.id)
+      : [];
+    const homeAttempts = shootoutAttempts.filter(e => String(e.team_id) === homeId);
+    const awayAttempts = shootoutAttempts.filter(e => String(e.team_id) === awayId);
+    // Команда, начавшая серию, помечается звёздочкой у номера первого бросающего.
+    const firstSide = shootoutAttempts.length > 0
+      ? (String(shootoutAttempts[0].team_id) === homeId ? 'home' : 'away')
+      : null;
+
+    let soHome = 0, soAway = 0;
+    const shootout = Array.from({ length: Math.max(homeAttempts.length, awayAttempts.length) }, (_, i) => {
+      const h = homeAttempts[i];
+      const a = awayAttempts[i];
+      if (h?.event_type === 'shootout_goal') soHome++;
+      if (a?.event_type === 'shootout_goal') soAway++;
+      const mark = (side) => (i === 0 && firstSide === side) ? '*' : '';
+      return {
+        a: h ? `${h.scorer_number ?? ''}${mark('home')}` : '',
+        b: a ? `${a.scorer_number ?? ''}${mark('away')}` : '',
+        goalieA: a ? (homeGoaliesMap[a.against_goalie_id] || '') : '',
+        goalieB: h ? (awayGoaliesMap[h.against_goalie_id] || '') : '',
+        scoreA: soHome,
+        scoreB: soAway
+      };
+    });
+
+    // Оборот протокола: то, что секретарь заполняет руками и что не выводится из событий.
+    // Пустые значения отдаём пустыми строками — шаблон в этом случае печатает
+    // линованные строки и пустые ячейки, как в бумажном бланке.
+    const back = apiData.protocolBack || { notes: {}, checks: [] };
+    const teamLabel = (teamId) => {
+      if (String(teamId) === homeId) return `«А» ${apiData.teams.home?.name || ''}`.trim();
+      if (String(teamId) === awayId) return `«Б» ${apiData.teams.away?.name || ''}`.trim();
+      return '';
+    };
+    const flagLabel = (value) => (value === true ? 'Да' : value === false ? 'Нет' : '');
+
+    const playerChecks = (back.checks || []).map(c => ({
+      team: teamLabel(c.team_id),
+      jersey: c.jersey_number ?? '',
+      result: CHECK_RESULTS[c.check_result] || '',
+      checkedRep: c.checked_rep_name || '',
+      checkingRep: c.checking_rep_name || '',
+    }));
+
+    const notes = {
+      referee: back.notes?.referee_notes || '',
+      inspector: back.notes?.inspector_notes || '',
+      medical: back.notes?.medical_notes || '',
+      protestHome: { filed: flagLabel(back.notes?.home_protest_filed), text: back.notes?.home_protest_text || '' },
+      protestAway: { filed: flagLabel(back.notes?.away_protest_filed), text: back.notes?.away_protest_text || '' },
+    };
+
     return {
-      info: apiData.info, 
-      home: processTeam(apiData.teams.home, 'home'), 
+      info: apiData.info,
+      home: processTeam(apiData.teams.home, 'home'),
       away: processTeam(apiData.teams.away, 'away'),
       
       officials: {
@@ -372,7 +453,10 @@ const prepareProtocolData = (apiData) => {
       eligibleSigners: apiData.eligibleSigners || { home: { coaches: [], staff: [] }, away: { coaches: [], staff: [] } },
       prefilledOfficials: apiData.prefilledOfficials || {},
       signatures: apiData.signatures || {},
-      stats, periods, goalieLog
+      stats, periods, goalieLog,
+      // Для оборота протокола (вторая страница шаблона в src/protocols/)
+      penaltyTypes: apiData.penaltyTypes || [],
+      shootout, playerChecks, notes
     };
 };
 

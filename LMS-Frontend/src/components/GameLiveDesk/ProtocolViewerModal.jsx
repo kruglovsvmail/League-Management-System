@@ -5,14 +5,22 @@ import { Button } from '../../ui/Button';
 import { Select } from '../../ui/Select';
 import { Icon } from '../../ui/Icon';
 
+const A4_HEIGHT_MM = 297;
+const PX_PER_MM = 96 / 25.4;
+
 export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
   const [protocolData, setProtocolData] = useState(null);
   const [htmlContent, setHtmlContent] = useState(''); 
   const [isLoading, setIsLoading] = useState(true);
   
   const [formState, setFormState] = useState({});
-  const [isSigning, setIsSigning] = useState(null); 
+  const [isSigning, setIsSigning] = useState(null);
   const [zoom, setZoom] = useState(1.0);
+  // Протокол занимает несколько листов A4 (лицевая сторона + оборот), причём их
+  // количество задаёт шаблон лиги. Реальную высоту документа меряем по загруженному
+  // iframe, а не считаем как «297мм × N», чтобы предпросмотр не ломался, если
+  // в шаблоне появится третья страница.
+  const [sheetHeightMm, setSheetHeightMm] = useState(A4_HEIGHT_MM);
 
   const headers = { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' };
 
@@ -31,22 +39,35 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
           
           // Инъекция стилей для печати:
           // Ставим margin: 0 для самой страницы принтера.
-          // Таким образом принтер не будет добавлять свои поля, 
+          // Таким образом принтер не будет добавлять свои поля,
           // а использует исключительно padding: 16pt, заложенный в protocol-default.js
-          const printStyles = `
+          //
+          // На экране, в отличие от печати, страницы протокола показываем отдельными
+          // листами с зазором: иначе лицевая сторона и оборот сливаются в одну простыню
+          // и непонятно, где проходит граница листа.
+          const viewerStyles = `
             <style>
               @media print {
                 @page { size: A4; margin: 0; }
-                body { 
-                  margin: 0 !important; 
+                body {
+                  margin: 0 !important;
                   box-shadow: none !important;
-                  -webkit-print-color-adjust: exact; 
-                  print-color-adjust: exact; 
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
                 }
+              }
+              @media screen {
+                html, body { background: transparent !important; }
+                /* Прокрутку ведёт контейнер модалки, сам iframe скроллиться не должен:
+                   лист ровно 210мм шириной, и любая полоса прокрутки внутри него
+                   тут же обрезала бы страницу по ширине. */
+                html { overflow: hidden; }
+                .page { background-color: #fff; box-shadow: 0 0 40px rgba(0,0,0,0.45); }
+                .page + .page { margin-top: 8mm; }
               }
             </style>
           `;
-          setHtmlContent(htmlText + printStyles);
+          setHtmlContent(htmlText + viewerStyles);
       }
     } catch (err) { 
       console.error('Ошибка загрузки данных протокола:', err); 
@@ -61,8 +82,9 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
       setFormState({});
       setIsSigning(null);
       setZoom(1.0);
+      setSheetHeightMm(A4_HEIGHT_MM);
     } else {
-      setHtmlContent(''); 
+      setHtmlContent('');
     }
   }, [isOpen, gameId]);
 
@@ -107,6 +129,20 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
       iframe.focus();
       iframe.contentWindow.print();
     }
+  };
+
+  // srcDoc-iframe грузится в том же origin, поэтому высоту документа можно прочитать
+  // напрямую. Шрифт подгружается позже загрузки документа, но высота листов задана
+  // жёстко (.page), так что пересчитывать после загрузки шрифтов не нужно.
+  //
+  // Запас в 2px обязателен: scrollHeight округляет до целых пикселей, а два листа A4
+  // с зазором дают дробную высоту (2275.28px). Без запаса iframe оказывается на доли
+  // пикселя короче содержимого — вылезает вертикальная полоса прокрутки, съедает
+  // ~15px ширины, и следом за ней вылезает горизонтальная.
+  const handleFrameLoad = (e) => {
+    const doc = e.target?.contentDocument;
+    const heightPx = doc?.documentElement?.scrollHeight || 0;
+    if (heightPx > 0) setSheetHeightMm((heightPx + 2) / PX_PER_MM);
   };
 
   const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2.0));
@@ -364,21 +400,24 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
 
               {/* ЦЕНТРИРОВАННЫЙ ЛИСТ А4 */}
               <div className="flex-1 overflow-auto w-full flex justify-center py-20 custom-scrollbar">
-                  <div 
-                      className="bg-white shadow-[0_0_50px_rgba(0,0,0,0.6)] transition-transform duration-200"
-                      style={{ 
-                          width: '210mm', 
-                          height: '297mm',
+                  {/* Тень и белый фон рисует уже сам лист внутри iframe (.page),
+                      поэтому обёртка прозрачная — иначе зазор между страницами был бы белым. */}
+                  <div
+                      className="transition-transform duration-200"
+                      style={{
+                          width: '210mm',
+                          height: `${sheetHeightMm}mm`,
                           transform: `scale(${zoom})`,
                           transformOrigin: 'top center',
                           margin: `0 ${Math.max(0, (zoom - 1) * 210 / 2)}mm`,
-                          marginBottom: `${(zoom - 1) * 297}mm`
+                          marginBottom: `${(zoom - 1) * sheetHeightMm}mm`
                       }}
                   >
-                      <iframe 
+                      <iframe
                          id="protocol-frame"
-                         srcDoc={htmlContent} 
-                         className="w-full h-full border-none pointer-events-none" 
+                         srcDoc={htmlContent}
+                         onLoad={handleFrameLoad}
+                         className="w-full h-full border-none pointer-events-none"
                          title="Официальный протокол матча"
                       />
                   </div>

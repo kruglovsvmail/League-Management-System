@@ -12,6 +12,7 @@ import { TimerPanel } from '../components/GameLiveDesk/TimerPanel';
 import { GameFlowAccordion } from '../components/GameLiveDesk/GameFlowAccordion';
 import { ShootoutAccordion } from '../components/GameLiveDesk/ShootoutAccordion';
 import { SummaryTablesAccordion } from '../components/GameLiveDesk/SummaryTablesAccordion';
+import { ProtocolBackAccordion } from '../components/GameLiveDesk/ProtocolBackAccordion';
 import { 
   getPeriodLimits, 
   calculatePenaltyTimelines, 
@@ -874,6 +875,14 @@ export function GameLiveDesk() {
             onUpdateStatus={handleUpdateShootoutStatus} 
             isSaving={isSaving}
             isReadOnly={isReadOnly}
+          />
+
+          <ProtocolBackAccordion
+            game={game}
+            homeRoster={homeRoster}
+            awayRoster={awayRoster}
+            isReadOnly={isReadOnly}
+            setToast={setToast}
           />
 
           {!isReadOnly && (

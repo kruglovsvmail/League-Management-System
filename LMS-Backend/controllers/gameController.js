@@ -4,70 +4,8 @@ import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
-
-const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
-    if (!userId) return null;
-
-    const userRes = await clientOrPool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-    if (!userRes.rows.length) return null;
-    // Было 'GLOBAL_ADMIN' — реальное значение в БД 'admin' (см. ROLES.GLOBAL_ADMIN
-    // в utils/permissions.js), сравнение никогда не срабатывало.
-    if (userRes.rows[0].global_role === 'admin') return null;
-
-    const gameRes = await clientOrPool.query(`
-        SELECT g.game_date, g.division_id, s.league_id, l.sec_access_before_hours, l.sec_access_after_hours
-        FROM games g
-        LEFT JOIN divisions d ON g.division_id = d.id
-        LEFT JOIN seasons s ON d.season_id = s.id
-        LEFT JOIN leagues l ON s.league_id = l.id
-        WHERE g.id = $1
-    `, [gameId]);
-
-    if (gameRes.rows.length === 0) return 'Матч не найден';
-    const game = gameRes.rows[0];
-
-    // Матчи вне лиг (division_id IS NULL — товарищеские/внешние турниры, которые
-    // команды создают сами в Team-Room) — доступ и правки только у глобального
-    // админа (см. проверку выше). Игровой/лиговый персонал сюда не допускается
-    // вообще, даже если каким-то образом попал в game_staff.
-    if (!game.division_id) return 'Доступ разрешён только глобальному администратору';
-
-    if (game.league_id) {
-        const staffRes = await clientOrPool.query(`
-            SELECT 1 FROM league_staff 
-            WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
-        `, [userId, game.league_id]);
-        if (staffRes.rows.length > 0) return null; 
-    }
-
-    const matchStaffRes = await clientOrPool.query(`
-        SELECT 1 FROM game_staff 
-        WHERE game_id = $1 AND user_id = $2
-        AND role IN ('main-1', 'main-2', 'linesman-1', 'linesman-2', 'secretary', 'timekeeper', 'informant')
-    `, [gameId, userId]);
-
-    const serviceRes = await clientOrPool.query(`
-        SELECT account_type FROM league_service_accounts WHERE user_id = $1 AND is_active = true
-    `, [userId]);
-    const isServiceSec = serviceRes.rows.some(r => r.account_type === 'secretary');
-
-    if (matchStaffRes.rows.length > 0 || isServiceSec) {
-        if (!game.game_date) return 'Доступ закрыт: дата и время матча не назначены.';
-
-        const beforeLimitHours = game.sec_access_before_hours ?? 12;
-        const afterLimitHours = game.sec_access_after_hours ?? 3;
-        
-        const now = new Date();
-        const gameDate = new Date(game.game_date);
-        const beforeLimit = new Date(gameDate.getTime() - (beforeLimitHours * 60 * 60 * 1000));
-        const afterLimit = new Date(gameDate.getTime() + (afterLimitHours * 60 * 60 * 1000));
-        
-        if (now < beforeLimit) return `Управление матчем откроется за ${beforeLimitHours} ч. до начала.`;
-        if (now > afterLimit) return `Время управления матчем истекло (${afterLimitHours} ч. после начала).`;
-    }
-    
-    return null;
-};
+// Временное окно управления матчем — общее для контроллеров и маршрутов.
+import { checkGameEditAccess } from '../utils/gameEditWindow.js';
 
 export const getPublicGameById = async (req, res) => {
     try {
@@ -1282,11 +1220,30 @@ export const updateGameOfficials = async (req, res) => {
             }
         });
 
+        // Нельзя снять с матча самого себя, если ты уже подписал протокол в этой роли:
+        // смена подписывающей роли стирает подпись (см. ниже), и человек мог бы убрать
+        // собственную подпись, просто заменив себя в бригаде. Снять подписавшего может
+        // кто-то другой — это осознанное действие, а не самоочистка.
+        const selfSignedRole = await client.query(`
+            SELECT s.role
+            FROM game_protocol_signatures s
+            WHERE s.game_id = $1 AND s.user_id = $2 AND s.role = ANY($3::text[])
+            LIMIT 1
+        `, [gameId, req.user?.id || null, changedRoles.filter(r => currentStaff[r] === String(req.user?.id))]);
+
+        if (selfSignedRole.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({
+                success: false,
+                error: 'Вы уже подписали протокол этого матча — снять себя с бригады нельзя. Это может сделать другой пользователь с правом назначать бригаду.'
+            });
+        }
+
         if (changedRoles.length > 0) {
-            const signableRolesChanged = changedRoles.filter(r => 
+            const signableRolesChanged = changedRoles.filter(r =>
                 ['main-1', 'main-2', 'linesman-1', 'linesman-2', 'secretary'].includes(r)
             );
-            
+
             if (signableRolesChanged.length > 0) {
                 await client.query(`
                     DELETE FROM game_protocol_signatures 

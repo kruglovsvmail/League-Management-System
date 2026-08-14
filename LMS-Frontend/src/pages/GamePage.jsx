@@ -160,7 +160,11 @@ export function GamePage() {
   const baseCanManageRoster = checkAccess('MATCH_ROSTER_FILL', { gameStaff: gameStaffArray });
   const canManageRoster = baseCanManageRoster && matchEditAccess.hasAccess;
 
-  const canManageOfficials = checkAccess('MATCH_ASSIGN_STAFF');
+  // Окно управления матчем здесь такое же, как у статуса и составов: бэкенд его теперь
+  // проверяет (requireGameEditWindow на PUT /games/:id/officials), и без этой связки
+  // сервисный секретарь видел бы кнопку, а в ответ получал 403.
+  // Руководства лиги это не касается — оно окном не ограничено.
+  const canManageOfficials = checkAccess('MATCH_ASSIGN_STAFF') && matchEditAccess.hasAccess;
   const canManageGraphics = checkAccess('MATCH_WEB_GRAPHICS_PANEL', { gameStaff: gameStaffArray });
 
   const hasProtocolAccess = checkAccess('MATCH_SECRETARY_PANEL_ENTER', { gameStaff: gameStaffArray });
