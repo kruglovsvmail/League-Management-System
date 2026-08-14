@@ -16,6 +16,9 @@ export function RosterPickerPanel({
   filteredPlayers, filteredStaff,
   selectedRosterId, setSelectedRosterId,
   selectedTeamRoleId, setSelectedTeamRoleId,
+  // Резервные вратари выбранного матча: в заявке команды их нет, поэтому идут
+  // отдельным блоком под составом и выбираются парой «игрок + матч»
+  reserveGoalies = [], selectedReservePlayerId = null, onPickReserve,
   // Режим командного штрафа с делением: множественный выбор по всему составу
   isMultiSelect = false, filteredMembers = [], selectedUserIds = [], onToggleUser, onToggleAll, shareHint,
   // Контролы вокруг строки поиска (в шторке СДК — селект "На кого" сверху и вердикт снизу).
@@ -138,27 +141,63 @@ export function RosterPickerPanel({
               </div>
             ))
           )
-        ) : filteredPlayers.length === 0 ? (
+        ) : filteredPlayers.length === 0 && reserveGoalies.length === 0 ? (
           <div className="text-center text-graphite-light py-10 mt-10 text-sm">Подходящих игроков не найдено</div>
         ) : (
-          filteredPlayers.map(p => (
-            <div
-              key={p.tournament_roster_id}
-              onClick={() => setSelectedRosterId(p.tournament_roster_id)}
-              className={`flex items-center gap-4 p-3 rounded-md border cursor-pointer transition-all duration-300 ${selectedRosterId === p.tournament_roster_id ? 'border-status-rejected bg-status-rejected/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}
-            >
-              <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
-                <img src={getImageUrl(p.team_member_photo_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
+          <>
+            {filteredPlayers.map(p => (
+              <div
+                key={p.tournament_roster_id}
+                onClick={() => setSelectedRosterId(p.tournament_roster_id)}
+                className={`flex items-center gap-4 p-3 rounded-md border cursor-pointer transition-all duration-300 ${selectedRosterId === p.tournament_roster_id ? 'border-status-rejected bg-status-rejected/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}
+              >
+                <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
+                  <img src={getImageUrl(p.team_member_photo_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[14px] font-bold text-graphite leading-tight">{p.last_name} {p.first_name} {p.middle_name}</span>
+                  <span className="text-[12px] text-graphite-light mt-0.5">
+                    {POSITION_LABELS[p.position] || 'Игрок'} • №{p.jersey_number || '-'}
+                    {p.period_end && <span className="text-status-rejected"> • выбыл из состава</span>}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[14px] font-bold text-graphite leading-tight">{p.last_name} {p.first_name} {p.middle_name}</span>
-                <span className="text-[12px] text-graphite-light mt-0.5">
-                  {POSITION_LABELS[p.position] || 'Игрок'} • №{p.jersey_number || '-'}
-                  {p.period_end && <span className="text-status-rejected"> • выбыл из состава</span>}
-                </span>
-              </div>
-            </div>
-          ))
+            ))}
+
+            {/* Резервные вратари выбранного матча — через разделитель под составом.
+                Появляются только когда матч указан: без него связать наказание
+                с человеком, у которого нет заявки, не с чем. */}
+            {reserveGoalies.length > 0 && (
+              <>
+                <div className="flex items-center gap-3 pt-3 pb-1">
+                  <div className="h-px flex-1 bg-graphite/15" />
+                  <span className="text-[11px] font-black uppercase tracking-wide text-graphite-light shrink-0">
+                    Резервные вратари матча
+                  </span>
+                  <div className="h-px flex-1 bg-graphite/15" />
+                </div>
+
+                {reserveGoalies.map(g => (
+                  <div
+                    key={`reserve-${g.player_id}`}
+                    onClick={() => onPickReserve?.(g.player_id)}
+                    className={`flex items-center gap-4 p-3 rounded-md border cursor-pointer transition-all duration-300 ${String(selectedReservePlayerId) === String(g.player_id) ? 'border-status-rejected bg-status-rejected/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}
+                  >
+                    <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
+                      <img src={getImageUrl(g.avatar_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[14px] font-bold text-graphite leading-tight truncate">{g.last_name} {g.first_name} {g.middle_name}</span>
+                      <span className="text-[12px] text-graphite-light mt-0.5 truncate">
+                        Вратарь • №{g.jersey_number || '-'}
+                        <span className="text-blue-600"> • резервный за {g.team_name}</span>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
         )}
       </div>
     )

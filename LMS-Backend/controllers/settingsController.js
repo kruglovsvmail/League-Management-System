@@ -12,7 +12,9 @@ export const getLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const result = await pool.query(
-      'SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order FROM leagues WHERE id = $1',
+      `SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order,
+              reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks
+       FROM leagues WHERE id = $1`,
       [leagueId]
     );
     res.json({ success: true, data: result.rows[0] });
@@ -24,7 +26,12 @@ export const getLeaguePreferences = async (req, res) => {
 export const updateLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order } = req.body;
+    const { sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order,
+            reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks } = req.body;
+
+    // Тумблеры: undefined — поле не прислали (вкладка «Арены» шлёт только своё),
+    // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
+    const toggle = (value) => (value === undefined ? null : !!value);
 
     if (disqualification_mode && !['light', 'sdk'].includes(disqualification_mode)) {
       return res.status(400).json({ success: false, error: 'Некорректный режим дисквалификаций' });
@@ -40,9 +47,14 @@ export const updateLeaguePreferences = async (req, res) => {
          sec_access_before_hours = COALESCE($1, sec_access_before_hours),
          sec_access_after_hours = COALESCE($2, sec_access_after_hours),
          disqualification_mode = COALESCE($3, disqualification_mode),
-         arena_sort_order = COALESCE($4, arena_sort_order)
-       WHERE id = $5`,
-      [sec_access_before_hours ?? null, sec_access_after_hours ?? null, disqualification_mode ?? null, arena_sort_order ?? null, leagueId]
+         arena_sort_order = COALESCE($4, arena_sort_order),
+         reserve_goalies_enabled = COALESCE($5, reserve_goalies_enabled),
+         reserve_goalie_dq_games_enabled = COALESCE($6, reserve_goalie_dq_games_enabled),
+         reserve_goalie_own_dq_blocks = COALESCE($7, reserve_goalie_own_dq_blocks)
+       WHERE id = $8`,
+      [sec_access_before_hours ?? null, sec_access_after_hours ?? null, disqualification_mode ?? null, arena_sort_order ?? null,
+       toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
+       leagueId]
     );
     res.json({ success: true });
   } catch (err) {

@@ -17,6 +17,12 @@ export function CreateDisqualificationModal({ isOpen, onClose, seasonId, onSucce
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Матч нужен, чтобы наказать резервного вратаря: своей заявки у него нет, и
+  // связать наказание с человеком можно только через протокол игры, где он вышел.
+  // Для остальных целей поле необязательное и ни на что не влияет.
+  const [games, setGames] = useState([]);
+  const [gameId, setGameId] = useState('');
+
   const {
     targetTypeIndex, setTargetTypeIndex, targetType,
     divisions, selectedDivName, setSelectedDivName, divisionId,
@@ -25,21 +31,37 @@ export function CreateDisqualificationModal({ isOpen, onClose, seasonId, onSucce
     searchQuery, setSearchQuery,
     selectedRosterId, setSelectedRosterId,
     selectedTeamRoleId, setSelectedTeamRoleId,
+    reserveGoalies, selectedReservePlayerId, pickReserveGoalie, pickRosterPlayer,
     isLoadingPlayers,
     personHistory, isLoadingHistory, showHistory
-  } = useDisqualificationTargetPicker({ isOpen, seasonId });
+  } = useDisqualificationTargetPicker({ isOpen, seasonId, gameId });
 
   useEffect(() => {
     if (!isOpen) {
       setReason(''); setMandatoryGamesInput(0); setAdditionalGamesInput(0); setAdditionalAmountInput('');
+      setGames([]); setGameId('');
+      return;
     }
-  }, [isOpen]);
+    if (!seasonId) return;
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/seasons/${seasonId}/games`, { headers: { 'Authorization': `Bearer ${getToken()}` } })
+      .then(res => res.json())
+      .then(data => { if (data.success) setGames(data.data || data.games || []); })
+      .catch(() => setGames([]));
+  }, [isOpen, seasonId]);
+
+  // Смена команды обнуляет матч: он принадлежал прежней
+  useEffect(() => { setGameId(''); }, [selectedTeamName]);
+
+  const selectedTeamId = teams.find(t => t.name === selectedTeamName)?.team_id;
+  const teamGames = games.filter(g => g.home_team_id === selectedTeamId || g.away_team_id === selectedTeamId);
 
   const penaltyInputs = { targetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput };
   const isFormValid = reason.trim() && arePenaltyFieldsValid(penaltyInputs) && (
     targetType === 'team' ? !!tournamentTeamId :
     targetType === 'staff' ? !!selectedTeamRoleId :
-    !!selectedRosterId
+    // Игрок — либо из состава команды, либо резервный вратарь выбранного матча
+    (!!selectedRosterId || !!selectedReservePlayerId)
   );
 
   const handleSubmit = async () => {
@@ -54,6 +76,8 @@ export function CreateDisqualificationModal({ isOpen, onClose, seasonId, onSucce
         body: JSON.stringify({
           target_type: targetType,
           tournament_roster_id: targetType === 'player' ? selectedRosterId : null,
+          reserve_player_id: targetType === 'player' ? selectedReservePlayerId : null,
+          reserve_game_id: targetType === 'player' && selectedReservePlayerId ? gameId : null,
           tournament_team_role_id: targetType === 'staff' ? selectedTeamRoleId : null,
           tournament_team_id: targetType === 'team' ? tournamentTeamId : null,
           reason: reason.trim(),
@@ -91,6 +115,22 @@ export function CreateDisqualificationModal({ isOpen, onClose, seasonId, onSucce
             <Select label="Дивизион" options={divisions.map(d => d.name)} value={selectedDivName} onChange={setSelectedDivName} />
             <Select label="Команда" options={teams.map(t => t.name)} value={selectedTeamName} onChange={setSelectedTeamName} />
 
+            {/* Матч нужен только чтобы добраться до резервного вратаря: он не заявлен
+                за команду и в её составе не значится */}
+            <Select
+              label="Матч (для резервного вратаря)"
+              options={[
+                { value: '', label: 'Не выбран' },
+                ...teamGames.map(g => ({
+                  value: g.id,
+                  label: `№${g.game_number ?? g.id} от ${g.game_date ? new Date(g.game_date).toLocaleDateString('ru-RU') : '-'}`,
+                })),
+              ]}
+              value={gameId}
+              onChange={setGameId}
+              disabled={!selectedTeamName}
+            />
+
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">На кого</span>
               <SegmentButton options={['Игрок', 'Представитель', 'Команда']} defaultIndex={targetTypeIndex} onChange={setTargetTypeIndex} />
@@ -111,9 +151,12 @@ export function CreateDisqualificationModal({ isOpen, onClose, seasonId, onSucce
               filteredPlayers={filteredPlayers}
               filteredStaff={filteredStaff}
               selectedRosterId={selectedRosterId}
-              setSelectedRosterId={setSelectedRosterId}
+              setSelectedRosterId={pickRosterPlayer}
               selectedTeamRoleId={selectedTeamRoleId}
               setSelectedTeamRoleId={setSelectedTeamRoleId}
+              reserveGoalies={reserveGoalies}
+              selectedReservePlayerId={selectedReservePlayerId}
+              onPickReserve={pickReserveGoalie}
             />
           </div>
 

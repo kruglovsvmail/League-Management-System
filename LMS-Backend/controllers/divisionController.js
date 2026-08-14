@@ -145,6 +145,7 @@ export const createDivision = async (req, res) => {
             reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus, reg_auto_stop_on_event,
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
             reg_track_shots, playoff_track_shots, track_timer_log,
+            reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
             req_med_cert, req_insurance, req_consent, digital_applications_only,
             hide_stats_unpaid, individual_fee, is_tournament
         } = req.body;
@@ -167,7 +168,8 @@ export const createDivision = async (req, res) => {
                 playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
                 req_med_cert, req_insurance, req_consent, digital_applications_only, classification,
                 hide_stats_unpaid, individual_fee, is_tournament,
-                reg_track_shots, playoff_track_shots, track_timer_log
+                reg_track_shots, playoff_track_shots, track_timer_log,
+                reserve_goalie_max_per_game, reserve_goalie_block_back_to_back
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, ${dayStartExpr(7)}, ${dayEndExpr(8)}, ${dayStartExpr(9)}, ${dayEndExpr(10)}, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 false,
@@ -175,7 +177,8 @@ export const createDivision = async (req, res) => {
                 $29, $30, $31, $32, $33, $34, $35, $36,
                 $37, $38, $39, $40, $41,
                 $42, $43, $44,
-                $45, $46, $47
+                $45, $46, $47,
+                $48, $49
             )
             RETURNING id
         `, [
@@ -192,7 +195,8 @@ export const createDivision = async (req, res) => {
             req_med_cert ?? true, req_insurance ?? true, req_consent ?? true, digital_applications_only !== undefined ? digital_applications_only : true,
             classification || null,
             hide_stats_unpaid ?? false, individualFeeValue, is_tournament ?? false,
-            reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false
+            reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false,
+            reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false
         ]);
 
         res.json({ success: true, id: result.rows[0].id });
@@ -212,6 +216,7 @@ export const updateDivision = async (req, res) => {
             reg_periods_count, reg_period_length, reg_has_overtime, reg_ot_length, reg_has_shootouts, reg_so_length, reg_track_plus_minus, reg_auto_stop_on_event,
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
             reg_track_shots, playoff_track_shots, track_timer_log,
+            reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
             req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations,
             hide_stats_unpaid, individual_fee, is_tournament
         } = req.body;
@@ -233,7 +238,8 @@ export const updateDivision = async (req, res) => {
                 playoff_periods_count = $29, playoff_period_length = $30, playoff_has_overtime = $31, playoff_ot_length = $32, playoff_has_shootouts = $33, playoff_so_length = $34, playoff_track_plus_minus = $35, playoff_auto_stop_on_event = $36,
                 req_med_cert = $37, req_insurance = $38, req_consent = $39, digital_applications_only = $40, classification = $41,
                 hide_stats_unpaid = $42, individual_fee = $43, is_tournament = $44,
-                reg_track_shots = $45, playoff_track_shots = $46, track_timer_log = $47
+                reg_track_shots = $45, playoff_track_shots = $46, track_timer_log = $47,
+                reserve_goalie_max_per_game = $48, reserve_goalie_block_back_to_back = $49
             WHERE id = $20
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
@@ -245,7 +251,8 @@ export const updateDivision = async (req, res) => {
             req_med_cert, req_insurance, req_consent, digital_applications_only,
             classification || null,
             hide_stats_unpaid ?? false, individualFeeValue, is_tournament ?? false,
-            reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false
+            reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false,
+            reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false
         ]);
 
         if (clear_logo) {

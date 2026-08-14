@@ -6,6 +6,8 @@ import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.j
 import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 // Временное окно управления матчем — общее для контроллеров и маршрутов.
 import { checkGameEditAccess } from '../utils/gameEditWindow.js';
+// Правила резервных вратарей — общие для шторки состава и его сохранения.
+import { loadReserveGoaliesForGame, validateReserveGoalies } from '../utils/reserveGoalies.js';
 
 export const getPublicGameById = async (req, res) => {
     try {
@@ -990,7 +992,9 @@ export const getGameRoster = async (req, res) => {
                 success: true,
                 tournamentRoster: [],
                 gameRoster: [],
-                staffRoster: []
+                staffRoster: [],
+                reserveGoalies: [],
+                reserveSettings: { enabled: false, max_per_game: 0, block_back_to_back: false }
             });
         }
 
@@ -1026,6 +1030,7 @@ export const getGameRoster = async (req, res) => {
 
             pool.query(`
                 SELECT gr.player_id, gr.jersey_number, gr.position_in_line, gr.is_captain, gr.is_assistant,
+                       gr.is_reserve_goalie,
                        u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
                        ${dqSubquery('gr.player_id')}
                 FROM game_rosters gr
@@ -1052,11 +1057,22 @@ export const getGameRoster = async (req, res) => {
             `, [gameId, teamId, leagueId])
         ]);
 
+        // Резервные вратари дивизиона: отдельным списком под заявкой команды.
+        // Причину блокировки считает сервер и отдаёт готовым текстом — шторка её
+        // только показывает, а те же правила заново проверяются при сохранении.
+        const reserve = await loadReserveGoaliesForGame(pool, gameId, teamId);
+
         res.json({
             success: true,
             tournamentRoster: tRosterRes.rows,
             gameRoster: gRosterRes.rows,
-            staffRoster: staffRes.rows
+            staffRoster: staffRes.rows,
+            reserveGoalies: reserve.goalies,
+            reserveSettings: {
+                enabled: reserve.enabled,
+                max_per_game: reserve.maxPerGame,
+                block_back_to_back: reserve.blockBackToBack
+            }
         });
     } catch (err) {
         console.error('Ошибка загрузки ростера:', err);
@@ -1069,9 +1085,11 @@ export const saveGameRoster = async (req, res) => {
     try {
         const { gameId, teamId } = req.params;
 
+        // Ранние выходы клиента не освобождают: это делает finally в конце функции.
+        // Второй release на том же клиенте pg считает ошибкой и бросает исключение
+        // уже после отправки ответа.
         const accessError = await checkGameEditAccess(client, gameId, req.user?.id);
         if (accessError) {
-            client.release();
             return res.status(403).json({ success: false, error: accessError });
         }
 
@@ -1079,6 +1097,23 @@ export const saveGameRoster = async (req, res) => {
 
         if (roster && roster.length > 0) {
             const playerIds = roster.map(p => p.player_id);
+
+            // Один игрок — одна строка протокола. Дубль означал бы, что человека
+            // добавили дважды (например, и из заявки, и из списка резервных
+            // вратарей), а в game_rosters на это нет уникального индекса.
+            if (new Set(playerIds).size !== playerIds.length) {
+                return res.status(400).json({ success: false, error: 'Один и тот же игрок добавлен в состав дважды' });
+            }
+
+            // Резервные вратари в общую проверку не идут: у них своё правило —
+            // дисквалификация, полученная в своей команде, закрывает резервный
+            // выход только при включённом тумблере лиги. Их проверяет
+            // validateReserveGoalies ниже, и строже: там ещё список дивизиона,
+            // лимит на матч и запрет двух матчей подряд.
+            const reservePlayerIds = roster.filter(p => p.is_reserve_goalie).map(p => p.player_id);
+            const reserveIdSet = new Set(reservePlayerIds.map(Number));
+            const regularPlayerIds = playerIds.filter(id => !reserveIdSet.has(Number(id)));
+
             const dqCheck = await client.query(`
                 SELECT u.first_name, u.last_name
                 FROM users u
@@ -1087,12 +1122,17 @@ export const saveGameRoster = async (req, res) => {
                 JOIN seasons s ON div.season_id = s.id
                 WHERE u.id = ANY($2::int[])
                   AND json_array_length(user_active_disqualifications(u.id, s.league_id)) > 0
-            `, [gameId, playerIds]);
+            `, [gameId, regularPlayerIds]);
 
             if (dqCheck.rows.length > 0) {
-                client.release();
                 const names = dqCheck.rows.map(r => `${r.last_name} ${r.first_name}`).join(', ');
                 return res.status(400).json({ success: false, error: `Нельзя включить в протокол дисквалифицированных игроков: ${names}` });
+            }
+
+            // Шторка — подсказка, защита здесь: те же правила проверяются заново
+            const reserveError = await validateReserveGoalies(client, gameId, teamId, reservePlayerIds);
+            if (reserveError) {
+                return res.status(400).json({ success: false, error: reserveError });
             }
         }
 
@@ -1106,22 +1146,29 @@ export const saveGameRoster = async (req, res) => {
             let paramIndex = 1;
 
             roster.forEach(player => {
-                let posInLine = 'C'; 
+                const isReserveGoalie = !!player.is_reserve_goalie;
+
+                let posInLine = 'C';
                 if (player.position === 'goalie') posInLine = 'G';
                 else if (player.position === 'defense') posInLine = 'LD';
                 else if (player.position === 'forward') posInLine = 'C';
+                // Резервный вратарь на то и вратарь: амплуа не зависит от того, что
+                // прислал фронт. От этого зависит, куда уедет его боксскор.
+                if (isReserveGoalie) posInLine = 'G';
 
-                values.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, true, 1, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+                values.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, true, 1, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
                 params.push(
                     gameId, teamId, player.player_id, posInLine,
-                    player.jersey_number || null, player.is_captain || false, player.is_assistant || false
+                    player.jersey_number || null, player.is_captain || false, player.is_assistant || false,
+                    isReserveGoalie
                 );
             });
 
             await client.query(`
                 INSERT INTO game_rosters (
                     game_id, team_id, player_id, is_in_lineup,
-                    line_number, position_in_line, jersey_number, is_captain, is_assistant
+                    line_number, position_in_line, jersey_number, is_captain, is_assistant,
+                    is_reserve_goalie
                 ) VALUES ${values.join(', ')}
             `, params);
         }
@@ -1141,6 +1188,37 @@ export const saveGameRoster = async (req, res) => {
         res.status(500).json({ success: false, error: 'Ошибка сохранения состава' });
     } finally {
         client.release();
+    }
+};
+
+/**
+ * Резервные вратари, фактически вписанные в протокол этого матча.
+ *
+ * Нужен окну назначения дисквалификации: своей заявки у такого вратаря нет, в
+ * составах команд его не найти, и выбрать его как нарушителя можно только через
+ * матч, в котором он играл. Источник — протокол, а не пул дивизиона: наказывают
+ * за то, что произошло в конкретной игре, а состав пула к тому времени мог
+ * измениться.
+ */
+export const getGameReserveGoalies = async (req, res) => {
+    try {
+        const { gameId } = req.params;
+
+        const { rows } = await pool.query(`
+            SELECT gr.player_id, gr.team_id, gr.jersey_number,
+                   u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                   COALESCE(t.short_name, t.name) AS team_name
+            FROM game_rosters gr
+            JOIN users u ON u.id = gr.player_id
+            LEFT JOIN teams t ON t.id = gr.team_id
+            WHERE gr.game_id = $1 AND gr.is_reserve_goalie
+            ORDER BY u.last_name, u.first_name
+        `, [gameId]);
+
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('Ошибка загрузки резервных вратарей матча:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
     }
 };
 

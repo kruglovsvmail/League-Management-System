@@ -79,9 +79,10 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     searchQuery, setSearchQuery,
     selectedRosterId, setSelectedRosterId,
     selectedTeamRoleId, setSelectedTeamRoleId,
+    reserveGoalies, selectedReservePlayerId, pickReserveGoalie, pickRosterPlayer,
     isLoadingPlayers,
     personHistory, isLoadingHistory, showHistory
-  } = useDisqualificationTargetPicker({ isOpen, seasonId });
+  } = useDisqualificationTargetPicker({ isOpen, seasonId, gameId });
 
   useEffect(() => {
     if (!isOpen) {
@@ -235,7 +236,8 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     submitTargetType === 'team' ? (!isSplitMode || selectedMemberIds.length > 0) :
     submitTargetType === 'other' ? !!otherPersonName.trim() :
     submitTargetType === 'staff' ? !!selectedTeamRoleId :
-    !!selectedRosterId
+    // Игрок — либо из состава команды, либо резервный вратарь выбранного матча
+    (!!selectedRosterId || !!selectedReservePlayerId)
   );
 
   const handleSubmit = async () => {
@@ -258,6 +260,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
           tournament_team_id: tournamentTeamId || null,
           target_type: submitTargetType,
           tournament_roster_id: submitTargetType === 'player' ? selectedRosterId : null,
+          reserve_player_id: submitTargetType === 'player' ? selectedReservePlayerId : null,
           tournament_team_role_id: submitTargetType === 'staff' ? selectedTeamRoleId : null,
           hearing_basis_type: hearingBasisType || null,
           hearing_basis_user_id: hearingBasisUserId || null,
@@ -487,9 +490,12 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                     filteredPlayers={filteredPlayers}
                     filteredStaff={filteredStaff}
                     selectedRosterId={selectedRosterId}
-                    setSelectedRosterId={setSelectedRosterId}
+                    setSelectedRosterId={pickRosterPlayer}
                     selectedTeamRoleId={selectedTeamRoleId}
                     setSelectedTeamRoleId={setSelectedTeamRoleId}
+                    reserveGoalies={reserveGoalies}
+                    selectedReservePlayerId={selectedReservePlayerId}
+                    onPickReserve={pickReserveGoalie}
                     isMultiSelect={isSplitMode}
                     filteredMembers={filteredMembers}
                     selectedUserIds={selectedMemberIds}

@@ -22,6 +22,10 @@ const mapDbPositionToUI = (dbPos) => {
 export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onSuccess, readOnly = false }) {
   const [available, setAvailable] = useState([]);
   const [selected, setSelected] = useState([]);
+  // Пул резервных вратарей дивизиона: их нет в заявке команды, поэтому список
+  // приходит отдельно и живёт в шторке отдельным блоком под заявкой.
+  const [reservePool, setReservePool] = useState([]);
+  const [reserveSettings, setReserveSettings] = useState({ enabled: false, max_per_game: 0, block_back_to_back: false });
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -31,6 +35,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       loadData();
     } else {
       setAvailable([]); setSelected([]); setSearch('');
+      setReservePool([]); setReserveSettings({ enabled: false, max_per_game: 0, block_back_to_back: false });
     }
   }, [isOpen, gameId, teamId]);
 
@@ -68,6 +73,23 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
           }
         });
 
+        // Резервные вратари, уже вписанные в этот протокол. Их нет в заявке
+        // команды, поэтому в цикл выше они не попадают — собираем отдельно прямо
+        // из строк протокола: там есть и ФИО, и номер, и фото.
+        data.gameRoster
+          .filter(g => g.is_reserve_goalie)
+          .forEach(g => {
+            newSelected.push({
+              ...g,
+              id: g.player_id,
+              position: 'goalie',
+              jersey_number: g.jersey_number || '',
+              is_captain: g.is_captain,
+              is_assistant: g.is_assistant,
+              is_reserve_goalie: true
+            });
+          });
+
         // Сортируем только при первичной загрузке (Вратарь -> Защитник -> Нападающий)
         const posOrder = { 'goalie': 1, 'defense': 2, 'forward': 3 };
         newSelected.sort((a, b) => {
@@ -78,6 +100,8 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
 
         setAvailable(newAvailable);
         setSelected(newSelected);
+        setReservePool(data.reserveGoalies || []);
+        setReserveSettings(data.reserveSettings || { enabled: false, max_per_game: 0, block_back_to_back: false });
       }
     } catch (err) { console.error(err); }
     finally { setIsLoading(false); }
@@ -89,10 +113,30 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     setSelected(prev => [...prev, { ...player, is_captain: false, is_assistant: false }]);
   };
 
+  // Резервный вратарь приходит из пула дивизиона, а не из заявки: амплуа у него
+  // всегда вратарское, номер подставляется по умолчанию из списка (если задан),
+  // нашивки капитана и ассистента ему не выдаются.
+  const handleAddReserve = (goalie) => {
+    if (readOnly) return;
+    setSelected(prev => [...prev, {
+      ...goalie,
+      id: goalie.player_id,
+      position: 'goalie',
+      jersey_number: goalie.jersey_number || '',
+      is_captain: false,
+      is_assistant: false,
+      is_reserve_goalie: true
+    }]);
+  };
+
   const handleRemove = (player) => {
     if (readOnly) return;
     setSelected(prev => prev.filter(p => p.id !== player.id));
-    setAvailable(prev => [...prev, player]);
+    // Резервного вратаря возвращать в "доступных" не нужно: блок резервных
+    // вычисляется из пула минус состав, и он появится там сам.
+    if (!player.is_reserve_goalie) {
+      setAvailable(prev => [...prev, player]);
+    }
   };
 
   const handleUpdate = (id, field, value) => {
@@ -147,9 +191,37 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     finally { setIsSaving(false); }
   };
 
-  const filteredAvailable = available.filter(p => 
-    `${p.last_name} ${p.first_name} ${p.middle_name || ''}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const matchesSearch = (p) =>
+    `${p.last_name} ${p.first_name} ${p.middle_name || ''}`.toLowerCase().includes(search.toLowerCase());
+
+  const filteredAvailable = available.filter(matchesSearch);
+
+  // Пул минус те, кто уже в составе. Лимит на матч считается здесь же: сервер
+  // отдаёт статичные причины блокировки (дисквалификация, два матча подряд),
+  // а лимит зависит от того, сколько секретарь уже добавил прямо сейчас.
+  const selectedIds = new Set(selected.map(p => p.id));
+  const reserveInLineup = selected.filter(p => p.is_reserve_goalie).length;
+  const limitReached = reserveInLineup >= reserveSettings.max_per_game;
+
+  // Лига может добавить в пул дивизиона игрока, заявленного за одну из его команд.
+  // Для СВОЕЙ команды он не резервный, а обычный игрок заявки — иначе его можно
+  // было бы вписать в протокол дважды, и статистика уехала бы не в ту таблицу.
+  const ownRosterIds = new Set([
+    ...available.map(p => p.id),
+    ...selected.filter(p => !p.is_reserve_goalie).map(p => p.id),
+  ]);
+
+  const filteredReserve = reservePool
+    .filter(g => !selectedIds.has(g.player_id) && !ownRosterIds.has(g.player_id))
+    .filter(matchesSearch)
+    .map(g => ({
+      ...g,
+      block_reason: g.block_reason || (limitReached
+        ? `На матч можно заявить не больше ${reserveSettings.max_per_game} ${reserveSettings.max_per_game === 1 ? 'резервного вратаря' : 'резервных вратарей'}`
+        : null)
+    }));
+
+  const showReserveBlock = reserveSettings.enabled && reservePool.length > 0;
 
   const goalies = selected.filter(p => p.position === 'goalie');
   const defense = selected.filter(p => p.position === 'defense');
@@ -180,26 +252,33 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
             <span className="text-[13px] font-bold text-graphite leading-tight block truncate">{p.last_name} {p.first_name}</span>
             {p.middle_name && <span className="text-[11px] text-graphite-light block truncate mt-[2px]">{p.middle_name}</span>}
           </div>
+          {p.is_reserve_goalie && (
+            <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-blue-500/10 text-blue-600">
+              Резерв
+            </span>
+          )}
           {p.active_disqualifications?.length > 0 && (
             <div className="shrink-0" onClick={(e) => e.stopPropagation()}>{renderDsqBadge(p.active_disqualifications)}</div>
           )}
         </div>
       )
     },
-    { 
-      label: 'Амплуа', 
-      width: 'w-[120px]', 
-      render: (p) => ( 
-        <Select 
-          options={['Вр', 'Защ', 'Нап']} 
-          value={POSITION_MAP[p.position] || 'Вр'} 
-          disabled={readOnly}
+    {
+      label: 'Амплуа',
+      width: 'w-[120px]',
+      render: (p) => (
+        <Select
+          options={['Вр', 'Защ', 'Нап']}
+          value={POSITION_MAP[p.position] || 'Вр'}
+          // Резервный вратарь заявлен именно вратарём: сменить ему амплуа нельзя,
+          // от этого зависит и протокол, и то, куда уйдёт его статистика
+          disabled={readOnly || p.is_reserve_goalie}
           onChange={(val) => {
             const newPos = Object.keys(POSITION_MAP).find(k => POSITION_MAP[k] === val);
             if (newPos) handleUpdate(p.id, 'position', newPos);
-          }} 
-          className="w-full h-8 px-2 text-[11px]" 
-        /> 
+          }}
+          className="w-full h-8 px-2 text-[11px]"
+        />
       )
     },
     { 
@@ -231,27 +310,29 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       width: 'w-[75px]', 
       render: (p) => {
         const canAddA = p.is_assistant || selected.filter(player => player.is_assistant).length < 2;
+        // Приглашённый на один матч вратарь капитаном или ассистентом команды быть не может
+        const lockLetters = readOnly || p.is_reserve_goalie;
         return (
           <div className="flex gap-1.5 shrink-0 justify-center">
-            <button 
+            <button
               onClick={() => handleLetterClick(p.id, 'C')}
-              disabled={readOnly}
+              disabled={lockLetters}
               className={`w-7 h-7 rounded flex items-center justify-center text-[12px] font-black border transition-colors ${
-                p.is_captain 
-                  ? 'bg-orange text-white border-orange' 
+                p.is_captain
+                  ? 'bg-orange text-white border-orange'
                   : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'
-              } ${readOnly && !p.is_captain ? 'opacity-30 cursor-not-allowed' : ''}`}
-              title="Капитан"
+              } ${lockLetters && !p.is_captain ? 'opacity-30 cursor-not-allowed' : ''}`}
+              title={p.is_reserve_goalie ? 'Резервному вратарю нашивки не выдаются' : 'Капитан'}
             >C</button>
-            <button 
+            <button
               onClick={() => handleLetterClick(p.id, 'A')}
-              disabled={readOnly || (!canAddA && !p.is_assistant)}
+              disabled={lockLetters || (!canAddA && !p.is_assistant)}
               className={`w-7 h-7 rounded flex items-center justify-center text-[12px] font-black border transition-colors ${
-                p.is_assistant 
-                  ? 'bg-status-accepted text-white border-status-accepted' 
+                p.is_assistant
+                  ? 'bg-status-accepted text-white border-status-accepted'
                   : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'
-              } ${(readOnly || (!canAddA && !p.is_assistant)) && !p.is_assistant ? 'opacity-30 cursor-not-allowed' : ''}`}
-              title="Ассистент"
+              } ${(lockLetters || (!canAddA && !p.is_assistant)) && !p.is_assistant ? 'opacity-30 cursor-not-allowed' : ''}`}
+              title={p.is_reserve_goalie ? 'Резервному вратарю нашивки не выдаются' : 'Ассистент'}
             >A</button>
           </div>
         );
@@ -350,6 +431,72 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                       )}
                     </div>
                   ))}
+
+                  {/* Резервные вратари дивизиона — через разделитель под заявкой
+                      команды. Недоступных не прячем: секретарю нужно видеть, что
+                      вратарь в списке есть, и понимать, почему его нельзя взять. */}
+                  {showReserveBlock && (
+                    <div className="mt-4 pt-4 border-t-2 border-dashed border-graphite/15">
+                      <div className="px-3 pb-2">
+                        <div className="text-[12px] font-black uppercase text-graphite tracking-wide">
+                          Резервные вратари дивизиона
+                        </div>
+                        <div className="text-[11px] text-graphite-light leading-snug mt-1">
+                          {reserveSettings.max_per_game === 1
+                            ? 'Не более одного на матч.'
+                            : `Не более ${reserveSettings.max_per_game} на матч.`}
+                          {reserveSettings.block_back_to_back && ' Два матча подряд за одну команду запрещены.'}
+                        </div>
+                      </div>
+
+                      {filteredReserve.length === 0 ? (
+                        <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">
+                          {search ? 'По запросу никого нет' : 'Все резервные вратари уже в составе'}
+                        </div>
+                      ) : filteredReserve.map(g => (
+                        <div
+                          key={`reserve-${g.player_id}`}
+                          className={`flex items-start justify-between p-3 rounded-md group transition-colors border border-transparent ${
+                            g.block_reason ? 'opacity-70' : 'hover:bg-blue-500/5 hover:border-blue-500/10'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3 min-w-0 pr-2">
+                            <img src={getImageUrl(g.avatar_url || '/default/user_default.webp')} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
+                            <div className="min-w-0 flex flex-col justify-center">
+                              <span className="block text-[13px] font-bold text-graphite leading-tight truncate">
+                                {g.last_name} {g.first_name}
+                              </span>
+                              <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
+                                {[g.middle_name, 'Вр', g.jersey_number != null ? `№${g.jersey_number}` : null]
+                                  .filter(Boolean).join(' | ')}
+                              </span>
+                              {g.note && (
+                                <span className="block text-[11px] text-graphite-light/80 mt-[2px] truncate">{g.note}</span>
+                              )}
+                              {g.block_reason && (
+                                <span className="block text-[11px] font-semibold text-status-rejected leading-snug mt-1">
+                                  {g.block_reason}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleAddReserve(g)}
+                            disabled={readOnly || !!g.block_reason}
+                            title={g.block_reason || 'Добавить резервного вратаря'}
+                            className={`w-8 h-8 flex items-center justify-center rounded-md shrink-0 transition-colors ${
+                              readOnly || g.block_reason
+                                ? 'bg-graphite/5 text-graphite/20 cursor-not-allowed'
+                                : 'bg-graphite/5 text-graphite hover:bg-blue-600 hover:text-white'
+                            }`}
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -361,6 +508,9 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                     <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">Всего: <span className="text-orange text-[13px]">{selected.length}</span></span>
                     <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">В: {goalies.length}</span>
                     <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">П: {defense.length + forwards.length}</span>
+                    {reserveInLineup > 0 && (
+                      <span className="text-blue-600 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">Резерв: {reserveInLineup}</span>
+                    )}
                   </div>
                 </div>
 

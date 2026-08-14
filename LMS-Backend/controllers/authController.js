@@ -133,18 +133,21 @@ const fetchUserProfile = async (userId) => {
   if (user.global_role === ROLES.GLOBAL_ADMIN) {
     leaguesResult = await pool.query(`
       SELECT id, name, short_name, city, logo_url, 'admin' as role,
-             sec_access_before_hours, sec_access_after_hours, disqualification_mode
+             sec_access_before_hours, sec_access_after_hours, disqualification_mode,
+             reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks
       FROM leagues
     `);
   } else {
     leaguesResult = await pool.query(`
       SELECT l.id, l.name, l.short_name, l.city, l.logo_url,
              l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode,
+             l.reserve_goalies_enabled, l.reserve_goalie_dq_games_enabled, l.reserve_goalie_own_dq_blocks,
              string_agg(ls.role, ', ') as role
       FROM league_staff ls
       JOIN leagues l ON ls.league_id = l.id
       WHERE ls.user_id = $1 AND ls.end_date IS NULL
-      GROUP BY l.id, l.name, l.short_name, l.city, l.logo_url, l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode
+      GROUP BY l.id, l.name, l.short_name, l.city, l.logo_url, l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode,
+               l.reserve_goalies_enabled, l.reserve_goalie_dq_games_enabled, l.reserve_goalie_own_dq_blocks
     `, [user.id]);
   }
 

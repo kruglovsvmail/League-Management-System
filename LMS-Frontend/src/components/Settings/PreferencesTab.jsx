@@ -5,6 +5,7 @@ import { Icon } from '../../ui/Icon';
 import { Loader } from '../../ui/Loader';
 import { Stepper } from '../../ui/Stepper';
 import { SegmentButton } from '../../ui/SegmentButton';
+import { Switch } from '../../ui/Switch';
 import { useAccess } from '../../hooks/useAccess';
 
 const DISQUALIFICATION_MODES = [
@@ -23,7 +24,10 @@ export function PreferencesTab({ setToast }) {
   const [formData, setFormData] = useState({
     sec_access_before_hours: 12,
     sec_access_after_hours: 3,
-    disqualification_mode: 'light'
+    disqualification_mode: 'light',
+    reserve_goalies_enabled: false,
+    reserve_goalie_dq_games_enabled: true,
+    reserve_goalie_own_dq_blocks: true
   });
 
   useEffect(() => {
@@ -40,7 +44,10 @@ export function PreferencesTab({ setToast }) {
           setFormData({
             sec_access_before_hours: data.data.sec_access_before_hours ?? 12,
             sec_access_after_hours: data.data.sec_access_after_hours ?? 3,
-            disqualification_mode: data.data.disqualification_mode ?? 'light'
+            disqualification_mode: data.data.disqualification_mode ?? 'light',
+            reserve_goalies_enabled: data.data.reserve_goalies_enabled ?? false,
+            reserve_goalie_dq_games_enabled: data.data.reserve_goalie_dq_games_enabled ?? true,
+            reserve_goalie_own_dq_blocks: data.data.reserve_goalie_own_dq_blocks ?? true
           });
         }
       } catch (err) {
@@ -72,6 +79,9 @@ export function PreferencesTab({ setToast }) {
             selectedLeague.sec_access_before_hours = updatedData.sec_access_before_hours;
             selectedLeague.sec_access_after_hours = updatedData.sec_access_after_hours;
             selectedLeague.disqualification_mode = updatedData.disqualification_mode;
+            selectedLeague.reserve_goalies_enabled = updatedData.reserve_goalies_enabled;
+            selectedLeague.reserve_goalie_dq_games_enabled = updatedData.reserve_goalie_dq_games_enabled;
+            selectedLeague.reserve_goalie_own_dq_blocks = updatedData.reserve_goalie_own_dq_blocks;
         }
       }
     } catch (err) {
@@ -157,6 +167,68 @@ export function PreferencesTab({ setToast }) {
               onChange={(idx) => handleStepChange('disqualification_mode', DISQUALIFICATION_MODES[idx].value)}
               className={!canEdit ? 'pointer-events-none opacity-50' : ''}
             />
+          </div>
+        </div>
+
+        {/* БЛОК: РЕЗЕРВНЫЕ ВРАТАРИ.
+            Раскладка та же, что у соседних карточек: описание сверху, короткие
+            подписи с контролами снизу. Развёрнутые пояснения — в подсказках,
+            иначе длинный текст растягивает строку и перекашивает тумблер. */}
+        <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px]">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Icon name="swap" className="w-4 h-4 text-graphite/40" />
+              <h4 className="text-[13px] font-black uppercase text-graphite tracking-tight">Резервные вратари</h4>
+            </div>
+            <p className="text-[11px] text-graphite-light leading-relaxed pr-8">
+              Вратари на замену в дивизионе: секретарь вписывает такого в состав, если свой не вышел на матч
+            </p>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] font-bold text-graphite/70">Использовать</span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.reserve_goalies_enabled}
+                  onChange={(e) => handleStepChange('reserve_goalies_enabled', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+
+            {/* Правила дисквалификаций нужны только при включённой механике */}
+            {formData.reserve_goalies_enabled && (
+              <>
+                <div
+                  className="flex items-center justify-between gap-3 animate-zoom-in"
+                  title="Резервному вратарю можно назначить пропуск матчей. Отсчёт идёт по календарю той команды, за которую он выходил и получил наказание. Выключено — остаётся только денежный штраф."
+                >
+                  <span className="text-[11px] font-bold text-graphite/70 leading-snug">Наказывать матчами</span>
+                  <div className="shrink-0">
+                    <Switch
+                      checked={formData.reserve_goalie_dq_games_enabled}
+                      onChange={(e) => handleStepChange('reserve_goalie_dq_games_enabled', e.target.checked)}
+                      disabled={!canEdit}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center justify-between gap-3 animate-zoom-in"
+                  title="Пока вратарь отбывает наказание, полученное в своей команде, его нельзя вписать резервным за другие. Выключено — такие наказания резервным выходам не мешают. Наказание, полученное именно резервным, закрывает его везде в любом случае."
+                >
+                  <span className="text-[11px] font-bold text-graphite/70 leading-snug">Дисквалификация закрывает резерв</span>
+                  <div className="shrink-0">
+                    <Switch
+                      checked={formData.reserve_goalie_own_dq_blocks}
+                      onChange={(e) => handleStepChange('reserve_goalie_own_dq_blocks', e.target.checked)}
+                      disabled={!canEdit}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

@@ -976,6 +976,52 @@ const syncDecisionMembers = async (client, { decisionId, meetingId, tournamentTe
   }
 };
 
+/**
+ * Резервный вратарь как нарушитель.
+ *
+ * Цель остаётся 'player' — в реестре наказание и так хранится парой user_id +
+ * team_id, а не ссылкой на заявку. Отличие в источнике: своей заявки у него нет,
+ * поэтому он приходит из протокола конкретного матча (reserve_player_id + game_id),
+ * а не из состава команды.
+ *
+ * Матчи такому нарушителю лига может отключить тумблером: тогда остаётся только
+ * денежный штраф. Проверяем здесь, а не в normalizeDecisionBody — та функция
+ * чистая и в базу не ходит.
+ */
+const checkReserveGoalieTarget = async (db, { meetingId, decisionId, gameId, reservePlayerId, penaltyGames }) => {
+  if (!gameId) {
+    return 'Для резервного вратаря нужно указать матч, в котором он играл';
+  }
+
+  const { rows } = await db.query(
+    `SELECT 1 FROM game_rosters
+      WHERE game_id = $1 AND player_id = $2 AND is_reserve_goalie`,
+    [gameId, reservePlayerId]
+  );
+  if (rows.length === 0) {
+    return 'В протоколе выбранного матча такой резервный вратарь не значится';
+  }
+
+  if (penaltyGames > 0) {
+    // Лига берётся от заседания (создание) либо от решения (правка)
+    const { rows: leagueRows } = await db.query(
+      meetingId
+        ? 'SELECT l.reserve_goalie_dq_games_enabled FROM sdk_meetings m JOIN leagues l ON l.id = m.league_id WHERE m.id = $1'
+        : `SELECT l.reserve_goalie_dq_games_enabled
+             FROM sdk_meeting_decisions dec
+             JOIN sdk_meetings m ON m.id = dec.meeting_id
+             JOIN leagues l ON l.id = m.league_id
+            WHERE dec.id = $1`,
+      [meetingId || decisionId]
+    );
+    if (!leagueRows[0]?.reserve_goalie_dq_games_enabled) {
+      return 'Лига не назначает резервным вратарям пропуск матчей — оставьте только денежный штраф';
+    }
+  }
+
+  return null;
+};
+
 // Общая нормализация тела решения для create/update: чем является наказание, решает
 // цель (кто наказан) и режим командного штрафа из справочника.
 const normalizeDecisionBody = (body) => {
@@ -1025,7 +1071,7 @@ export const createSdkMeetingDecision = async (req, res) => {
     const { meetingId } = req.params;
     const {
       violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id,
-      tournament_roster_id, tournament_team_role_id, decision, penalty_minutes, member_user_ids
+      tournament_roster_id, tournament_team_role_id, reserve_player_id, decision, penalty_minutes, member_user_ids
     } = req.body;
 
     if ((!violation_type_id && !violation_title_manual) || !decision) {
@@ -1033,14 +1079,21 @@ export const createSdkMeetingDecision = async (req, res) => {
     }
 
     const v = normalizeDecisionBody(req.body);
+    const isReserveTarget = v.targetType === 'player' && !!reserve_player_id;
 
     // Команда обязательна для всех целей, кроме "иного лица": оно не заявлено ни за одну
     // команду, и требовать дивизион с командой только ради сохранения решения незачем
     if (v.targetType !== 'other' && !tournament_team_id) {
       return res.status(400).json({ success: false, error: 'Не выбраны дивизион и команда' });
     }
-    if (v.targetType === 'player' && !tournament_roster_id) {
+    if (v.targetType === 'player' && !tournament_roster_id && !isReserveTarget) {
       return res.status(400).json({ success: false, error: 'Не выбран игрок-нарушитель' });
+    }
+    if (isReserveTarget) {
+      const reserveError = await checkReserveGoalieTarget(pool, {
+        meetingId, gameId: game_id, reservePlayerId: reserve_player_id, penaltyGames: v.penaltyGames,
+      });
+      if (reserveError) return res.status(400).json({ success: false, error: reserveError });
     }
     if (v.targetType === 'staff' && !tournament_team_role_id) {
       return res.status(400).json({ success: false, error: 'Не выбран представитель команды' });
@@ -1061,16 +1114,17 @@ export const createSdkMeetingDecision = async (req, res) => {
     const result = await client.query(`
       INSERT INTO sdk_meeting_decisions
         (meeting_id, violation_type_id, violation_code_snapshot, violation_title_snapshot, game_id, tournament_team_id, target_type,
-         tournament_roster_id, tournament_team_role_id, decision, penalty_games, mandatory_games, additional_games,
+         tournament_roster_id, tournament_team_role_id, reserve_player_id, decision, penalty_games, mandatory_games, additional_games,
          penalty_amount, penalty_minutes, penalty_logic, team_penalty_mode, hearing_basis, other_person_name,
          hearing_basis_type, hearing_basis_user_id, hearing_basis_team_id,
          violation_source, verdict_description, mandatory_amount, additional_amount, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
       RETURNING id
     `, [
       meetingId, violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id || null, v.targetType,
-      v.targetType === 'player' ? tournament_roster_id : null,
+      isReserveTarget ? null : (v.targetType === 'player' ? tournament_roster_id : null),
       v.targetType === 'staff' ? tournament_team_role_id : null,
+      isReserveTarget ? reserve_player_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
       v.penaltyLogic, v.teamPenaltyMode, v.hearingBasis, v.otherPersonName,
       v.hearingBasisType, v.hearingBasisUserId, v.hearingBasisTeamId,
@@ -1105,7 +1159,7 @@ export const updateSdkMeetingDecision = async (req, res) => {
     const { id } = req.params;
     const {
       violation_type_id, violation_code_manual, violation_title_manual, game_id, tournament_team_id,
-      tournament_roster_id, tournament_team_role_id, decision, penalty_minutes,
+      tournament_roster_id, tournament_team_role_id, reserve_player_id, decision, penalty_minutes,
       penalty_amount_paid, status, member_user_ids
     } = req.body;
 
@@ -1114,9 +1168,16 @@ export const updateSdkMeetingDecision = async (req, res) => {
     }
 
     const v = normalizeDecisionBody(req.body);
+    const isReserveTarget = v.targetType === 'player' && !!reserve_player_id;
 
     if (v.targetType !== 'other' && !tournament_team_id) {
       return res.status(400).json({ success: false, error: 'Не выбраны дивизион и команда' });
+    }
+    if (isReserveTarget) {
+      const reserveError = await checkReserveGoalieTarget(pool, {
+        decisionId: id, gameId: game_id, reservePlayerId: reserve_player_id, penaltyGames: v.penaltyGames,
+      });
+      if (reserveError) return res.status(400).json({ success: false, error: reserveError });
     }
 
     const violationSnapshot = await getViolationSnapshot(violation_type_id, violation_code_manual, violation_title_manual);
@@ -1132,16 +1193,18 @@ export const updateSdkMeetingDecision = async (req, res) => {
     await client.query(`
       UPDATE sdk_meeting_decisions
       SET violation_type_id = $1, violation_code_snapshot = $2, violation_title_snapshot = $3, game_id = $4, tournament_team_id = $5, target_type = $6,
-          tournament_roster_id = $7, tournament_team_role_id = $8, decision = $9, penalty_games = $10, mandatory_games = $11, additional_games = $12,
-          penalty_amount = $13, penalty_minutes = $14, penalty_logic = $15, penalty_amount_paid = $16, status = $17, team_penalty_mode = $18,
-          hearing_basis = $19, other_person_name = $20,
-          hearing_basis_type = $21, hearing_basis_user_id = $22, hearing_basis_team_id = $23,
-          violation_source = $24, verdict_description = $25, mandatory_amount = $26, additional_amount = $27
-      WHERE id = $28
+          tournament_roster_id = $7, tournament_team_role_id = $8, reserve_player_id = $9,
+          decision = $10, penalty_games = $11, mandatory_games = $12, additional_games = $13,
+          penalty_amount = $14, penalty_minutes = $15, penalty_logic = $16, penalty_amount_paid = $17, status = $18, team_penalty_mode = $19,
+          hearing_basis = $20, other_person_name = $21,
+          hearing_basis_type = $22, hearing_basis_user_id = $23, hearing_basis_team_id = $24,
+          violation_source = $25, verdict_description = $26, mandatory_amount = $27, additional_amount = $28
+      WHERE id = $29
     `, [
       violation_type_id || null, violationSnapshot.code, violationSnapshot.title, game_id || null, tournament_team_id || null, v.targetType,
-      v.targetType === 'player' ? tournament_roster_id : null,
+      isReserveTarget ? null : (v.targetType === 'player' ? tournament_roster_id : null),
       v.targetType === 'staff' ? tournament_team_role_id : null,
+      isReserveTarget ? reserve_player_id : null,
       decision, v.penaltyGames, v.mandatoryGames, v.additionalGames, v.penaltyAmount, penalty_minutes || null,
       v.penaltyLogic, penalty_amount_paid || false, status || 'active', v.teamPenaltyMode,
       v.hearingBasis, v.otherPersonName,

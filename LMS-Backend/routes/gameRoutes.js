@@ -4,7 +4,7 @@ import {
     getGames, getArenas, createGame, getGameById,
     updateGameInfo, updateGameStatus, getGameRoster, saveGameRoster,
     getGameStaff, updateGameOfficials, deleteGame, recalculateGameStats,
-    getGameStats
+    getGameStats, getGameReserveGoalies
 } from '../controllers/gameController.js';
 import { requireGameEditWindow } from '../utils/gameEditWindow.js';
 
@@ -49,6 +49,10 @@ router.get('/games/:gameId/stats', getGameStats);
 // Работа с составами на матч
 router.get('/games/:gameId/roster/:teamId', getGameRoster);
 router.post('/games/:gameId/roster/:teamId', requirePermission('MATCH_ROSTER_FILL'), saveGameRoster);
+
+// Резервные вратари из протокола матча — для выбора нарушителя при назначении
+// дисквалификации (в составах команд их нет, своей заявки у них не бывает)
+router.get('/games/:gameId/reserve-goalies', getGameReserveGoalies);
 
 // Судейская бригада матча.
 // Окно обязательно: смена подписывающей роли стирает подпись под протоколом

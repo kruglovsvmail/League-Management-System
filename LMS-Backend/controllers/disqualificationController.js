@@ -156,15 +156,22 @@ export const createDisqualification = async (req, res) => {
     try {
         const {
             target_type, tournament_roster_id, tournament_team_role_id, tournament_team_id,
+            reserve_player_id, reserve_game_id,
             reason, penalty_games, mandatory_games, additional_games, penalty_amount, penalty_logic, start_date
         } = req.body;
 
         const targetType = target_type || 'player';
 
+        // Резервный вратарь — тот же target_type 'player' (в реестре наказание и так
+        // хранится парой user_id + team_id, а не ссылкой на заявку), но приходит
+        // не из состава команды, а из протокола конкретного матча: своей заявки
+        // у него нет. Признаком служит пара «игрок + матч».
+        const isReserveTarget = targetType === 'player' && !!reserve_player_id && !!reserve_game_id;
+
         if (!reason || !start_date) {
             return res.status(400).json({ success: false, error: 'Не заполнены обязательные поля' });
         }
-        if (targetType === 'player' && !tournament_roster_id) {
+        if (targetType === 'player' && !tournament_roster_id && !isReserveTarget) {
             return res.status(400).json({ success: false, error: 'Не выбран игрок-нарушитель' });
         }
         if (targetType === 'staff' && !tournament_team_role_id) {
@@ -177,7 +184,24 @@ export const createDisqualification = async (req, res) => {
         // Дисквалификация теперь крепится к user_id + team_id (глобальные) + league_id, а не к сезонной заявке —
         // резолвим их из выбранной в форме сезонной строки состава.
         let resolveRes;
-        if (targetType === 'player') {
+        if (isReserveTarget) {
+            // Команда берётся из протокола матча — та, за которую он в нём выходил.
+            // Именно по её календарю потом тикает счётчик отбытых матчей, поэтому
+            // источником должна быть строка протокола, а не пул дивизиона: пул
+            // может измениться, протокол — нет.
+            resolveRes = await pool.query(`
+                SELECT gr.player_id AS user_id, gr.team_id, s.league_id
+                FROM game_rosters gr
+                JOIN games g ON g.id = gr.game_id
+                JOIN divisions div ON g.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE gr.game_id = $1 AND gr.player_id = $2 AND gr.is_reserve_goalie
+            `, [reserve_game_id, reserve_player_id]);
+
+            if (resolveRes.rows.length === 0) {
+                return res.status(400).json({ success: false, error: 'В протоколе этого матча такой резервный вратарь не значится' });
+            }
+        } else if (targetType === 'player') {
             resolveRes = await pool.query(`
                 SELECT tr.player_id as user_id, tt.team_id, s.league_id
                 FROM tournament_rosters tr
@@ -210,6 +234,21 @@ export const createDisqualification = async (req, res) => {
         }
         const { user_id: resolvedUserId, team_id: resolvedTeamId, league_id: resolvedLeagueId } = resolveRes.rows[0];
 
+        // Матчи резервному вратарю лига может отключить: тогда ему остаётся
+        // только денежный штраф.
+        if (isReserveTarget && (penalty_games || mandatory_games || additional_games)) {
+            const { rows: leagueRows } = await pool.query(
+                'SELECT reserve_goalie_dq_games_enabled FROM leagues WHERE id = $1',
+                [resolvedLeagueId]
+            );
+            if (!leagueRows[0]?.reserve_goalie_dq_games_enabled) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Лига не назначает резервным вратарям пропуск матчей — укажите денежный штраф',
+                });
+            }
+        }
+
         // Для цели "команда" допустим только денежный штраф — счётчик матчей для неё не имеет смысла
         const safePenaltyGames = targetType === 'team' ? null : (penalty_games || null);
         const safeMandatoryGames = targetType === 'team' ? null : (mandatory_games || null);
@@ -225,9 +264,10 @@ export const createDisqualification = async (req, res) => {
         const result = await pool.query(`
             INSERT INTO disqualifications
                 (target_type, user_id, team_id, league_id,
-                 reason, penalty_type, games_assigned, mandatory_games, additional_games, games_served, penalty_amount, penalty_logic, start_date, status)
+                 reason, penalty_type, games_assigned, mandatory_games, additional_games, games_served, penalty_amount, penalty_logic, start_date, status,
+                 is_reserve_goalie)
             VALUES
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12, 'active')
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, $12, 'active', $13)
             RETURNING id
         `, [
             targetType,
@@ -241,7 +281,8 @@ export const createDisqualification = async (req, res) => {
             safeAdditionalGames,
             penalty_amount || null,
             (safePenaltyGames && penalty_amount) ? (penalty_logic || 'and') : null,
-            start_date
+            start_date,
+            isReserveTarget
         ]);
 
         res.json({ success: true, id: result.rows[0].id });
