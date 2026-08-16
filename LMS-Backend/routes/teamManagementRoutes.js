@@ -12,6 +12,7 @@ import {
     deleteMemberPhoto,
     getAvailableLeaguesAndDivisions,
     getTeamApplications,
+    getQualificationEligibility,
     createTeamApplication,
     deleteTeamApplication,
     sendApplicationForReview,
@@ -43,6 +44,7 @@ router.get('/teams-manage/available-divisions', getAvailableLeaguesAndDivisions)
 
 // Управление заявками конкретной команды
 router.get('/teams-manage/:teamId/applications', getTeamApplications);
+router.get('/teams-manage/:teamId/qual-eligibility', getQualificationEligibility);
 router.post('/teams-manage/:teamId/applications', upload.single('file'), createTeamApplication);
 router.delete('/teams-manage/:teamId/applications/:appId', deleteTeamApplication);
 router.post('/teams-manage/:teamId/applications/:appId/send-review', sendApplicationForReview);

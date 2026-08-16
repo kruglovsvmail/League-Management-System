@@ -3,9 +3,8 @@ import upload from '../config/upload.js';
 
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 
-import { 
+import {
     updateTournamentRosterStatus,
-    updateTournamentRosterQualification,
     updateTournamentRosterFee,
     uploadTournamentRosterDocs,
     updateTournamentRosterInline
@@ -16,7 +15,6 @@ const router = express.Router();
 router.use(verifyToken);
 
 router.patch('/tournament-rosters/:id/status', requirePermission('DIVISIONS_PLAYER_ADMIT_TOGGLE'), updateTournamentRosterStatus);
-router.patch('/tournament-rosters/:id/qualification', requirePermission('DIVISIONS_TEAM_QUAL_MODAL'), updateTournamentRosterQualification);
 router.patch('/tournament-rosters/:id/fee', requirePermission('DIVISIONS_TEAM_FEE_MODAL'), updateTournamentRosterFee);
 
 router.post('/tournament-rosters/:id/docs', upload.fields([

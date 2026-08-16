@@ -18,27 +18,9 @@ export const updateTournamentRosterStatus = async (req, res) => {
     }
 };
 
-export const updateTournamentRosterQualification = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { qualification_id } = req.body;
-        
-        await pool.query(
-            'UPDATE tournament_rosters SET qualification_id = $1, updated_at = NOW() WHERE id = $2', 
-            [qualification_id, id]
-        );
-        
-        let short_name = null;
-        if (qualification_id) {
-            const q = await pool.query('SELECT short_name FROM league_qualifications WHERE id = $1', [qualification_id]);
-            short_name = q.rows[0]?.short_name;
-        }
-        res.json({ success: true, qualification_short_name: short_name });
-    } catch (err) {
-        console.error('Ошибка сохранения квалификации:', err);
-        res.status(500).json({ success: false, error: 'Ошибка сохранения квалификации' });
-    }
-};
+// Квалификация больше не хранится в заявке: она принадлежит паре «человек + лига»
+// (user_qualifications) и меняется через PUT /leagues/:leagueId/users/:userId/qualification
+// в qualificationController.
 
 export const updateTournamentRosterFee = async (req, res) => {
     try {

@@ -71,6 +71,7 @@ export const PERMISSIONS = {                                                    
   SETTINGS_QUAL_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                  // Право на просмотр справочника квалификаций
   SETTINGS_QUAL_CREATE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                // Право на создание новой квалификации (например, СПШ или Любитель)
   SETTINGS_QUAL_DELETE: [ROLES.TOP_MANAGER],                                    // Удаление квалификаций
+  QUAL_ASSIGN: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                         // Право присвоить человеку квалификацию в лиге (справочник и состав дивизиона) — действует сразу во всех дивизионах лиги
   SETTINGS_PLAYOFF_CONSTRUCTOR: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],        // Право на доступ к drag-and-drop конструктору сетки плей-офф
   PLAYOFF_DISTRIBUTE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                  // Право на запуск автоматического распределения команд по сетке
   PLAYOFF_RESET: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                       // Право на сброс текущей сетки плей-офф

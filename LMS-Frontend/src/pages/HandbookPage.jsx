@@ -1,17 +1,26 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useOutletContext } from 'react-router-dom';
 import { Header } from '../components/Header';
-import { Table } from '../ui/Table'; 
+import { Table } from '../ui/Table';
 import { Loader } from '../ui/Loader';
 import { Toast } from '../modals/Toast';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
+import { QualSelectModal } from '../modals/QualSelectModal';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Tooltip } from '../ui/Tooltip';
+import { Badge } from '../ui/Badge';
 import { Input } from '../ui/Input';
+import { useAccess } from '../hooks/useAccess';
 import { getImageUrl, getToken } from '../utils/helpers';
 
 export function HandbookPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  // Справочник общий по системе, а квалификация — лиговая. Поэтому колонка «Квал.» и
+  // присвоение работают в ТЕКУЩЕЙ выбранной лиге: человек из чужой лиги показывает прочерк,
+  // и ему можно присвоить квалификацию в своей.
+  const { selectedLeague } = useOutletContext();
+  const { checkAccess } = useAccess();
+  const leagueId = selectedLeague?.id || null;
 
   const activeTab = parseInt(searchParams.get('tab') || '0', 10);
   const matchType = parseInt(searchParams.get('match') || '0', 10);
@@ -72,7 +81,7 @@ export function HandbookPage() {
     }, 400);
 
     return () => clearTimeout(timeout);
-  }, [activeTab, searchQuery]);
+  }, [activeTab, searchQuery, leagueId]);
 
   // Подгрузка при изменении страницы (скролле)
   useEffect(() => {
@@ -92,7 +101,8 @@ export function HandbookPage() {
 
     try {
       const token = getToken();
-      const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}?page=${pageNum}&limit=30&search=${encodeURIComponent(search)}`, {
+      const leagueParam = tabIndex === 0 && leagueId ? `&leagueId=${leagueId}` : '';
+      const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}?page=${pageNum}&limit=30&search=${encodeURIComponent(search)}${leagueParam}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const result = await res.json();
@@ -122,6 +132,39 @@ export function HandbookPage() {
   const openPlayerProfile = (id) => {
     setSelectedPlayerId(id);
     setIsPlayerModalOpen(true);
+  };
+
+  // Справочник квалификаций лиги нужен окну выбора; тянем один раз на страницу
+  const [qualPlayer, setQualPlayer] = useState(null);
+  const [leagueQuals, setLeagueQuals] = useState([]);
+  const [qualShowDescriptions, setQualShowDescriptions] = useState(true);
+  const canViewQuals = checkAccess('SETTINGS_QUAL_VIEW');
+
+  useEffect(() => {
+    if (!leagueId || !canViewQuals) return;
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${leagueId}/settings-qualifications`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setLeagueQuals(data.qualifications);
+          setQualShowDescriptions(data.showDescriptions !== false);
+        }
+      })
+      .catch(console.error);
+  }, [leagueId, canViewQuals]);
+
+  // Квалификация меняется во всей лиге сразу, поэтому строку достаточно обновить локально —
+  // перезагружать весь справочник незачем.
+  const handleQualSaved = ({ qualification_id, qualification_short_name }) => {
+    setData(prev => prev.map(row => (
+      row.id === qualPlayer?.id
+        ? { ...row, qualification: qualification_id ? { id: qualification_id, short_name: qualification_short_name } : null }
+        : row
+    )));
+    setToast({ title: 'Успешно', message: 'Квалификация обновлена', type: 'success' });
   };
 
   // Подготовка данных для таблиц
@@ -162,6 +205,24 @@ export function HandbookPage() {
       </div>
     )},
     { label: 'Дата рождения', sortKey: 'birth_date', width: 'w-[200px] text-center', render: (row) => <span className="text-graphite-light">{row.birth_date ? new Date(row.birth_date).toLocaleDateString('ru-RU') : '-'}</span> },
+    { label: 'Квал.', width: 'w-[110px] text-center', render: (row) => {
+      // Квалификация показана по текущей лиге. Присвоить можно и тому, кто ещё никуда
+      // не заявлен, — она привязана к человеку и лиге, а не к заявке в дивизион.
+      if (!leagueId || !canViewQuals) return <span className="text-graphite-light">-</span>;
+
+      const badge = <Badge label={row.qualification?.short_name || 'Нет'} type={row.qualification ? 'filled' : 'empty'} />;
+
+      return (
+        <div
+          onClick={() => setQualPlayer({ id: row.id, name: `${row.last_name || ''} ${row.first_name || ''}`.trim() })}
+          className="cursor-pointer hover:scale-105 inline-block transition-transform"
+        >
+          {row.qualification?.name
+            ? <Tooltip title={row.qualification.name} subtitle={row.qualification.description || ''}><span>{badge}</span></Tooltip>
+            : badge}
+        </div>
+      );
+    }},
     { label: 'Команды', width: 'w-[260px] text-center', render: (row) => {
       const teams = row.current_teams || [];
       if (teams.length === 0) return <span className="text-graphite-light">-</span>;
@@ -288,6 +349,19 @@ export function HandbookPage() {
 
       {isPlayerModalOpen && selectedPlayerId && (
         <PlayerProfileModal isOpen={isPlayerModalOpen} onClose={() => { setIsPlayerModalOpen(false); setSelectedPlayerId(null); }} playerId={selectedPlayerId} />
+      )}
+
+      {qualPlayer && (
+        <QualSelectModal
+          isOpen={!!qualPlayer}
+          onClose={() => setQualPlayer(null)}
+          leagueId={leagueId}
+          player={qualPlayer}
+          qualifications={leagueQuals}
+          showDescriptions={qualShowDescriptions}
+          onSaved={handleQualSaved}
+          readOnly={!checkAccess('QUAL_ASSIGN')}
+        />
       )}
     </div>
   );

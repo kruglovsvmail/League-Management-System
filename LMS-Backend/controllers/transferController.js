@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { assertPlayersAllowedInDivision } from '../utils/qualificationAccess.js';
 
 // 1. Получение списка всех трансферов
 export const getTransfers = async (req, res) => {
@@ -84,7 +85,11 @@ export const handleTransferAction = async (req, res) => {
             
             if (tr.request_type === 'add') {
                 if (!tr.tournament_team_id) throw new Error('Команда не заявлена в турнир');
-                
+
+                // Переход — это попадание в состав дивизиона, поэтому квалификация
+                // проверяется так же, как при обычной заявке.
+                await assertPlayersAllowedInDivision(client, tr.division_id, [tr.player_id]);
+
                 const checkRoster = await client.query(
                     `SELECT id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`, 
                     [tr.tournament_team_id, tr.player_id]

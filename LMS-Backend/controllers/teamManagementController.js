@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
+import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
 
 /**
  * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
@@ -321,11 +322,52 @@ export const getAvailableLeaguesAndDivisions = async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
+// GET /teams-manage/:teamId/qual-eligibility?divisionId=
+// Кого из состава команды не пропустит квалификация в этот дивизион. Шторки добавления
+// игроков красят таких серым и показывают причину — но это подсказка, а не защита:
+// сохранение проверяет допуск само (assertPlayersAllowedInDivision).
+export const getQualificationEligibility = async (req, res) => {
+    try {
+        const { teamId } = req.params;
+        const divisionId = req.query.divisionId ? Number(req.query.divisionId) : null;
+
+        const rules = await loadDivisionQualificationRules(pool, divisionId);
+        if (!rules || !rules.enabled) {
+            return res.json({ success: true, enabled: false, blocked: {} });
+        }
+
+        const { rows } = await pool.query(`
+            SELECT tm.user_id, lq.short_name
+            FROM team_members tm
+            LEFT JOIN user_qualifications uq
+                   ON uq.user_id = tm.user_id AND uq.league_id = $2 AND uq.ended_at IS NULL
+            LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
+            WHERE tm.team_id = $1 AND tm.left_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM division_qualifications dq
+                  WHERE dq.division_id = $3
+                    AND dq.qualification_id IS NOT DISTINCT FROM uq.qualification_id
+              )
+        `, [teamId, rules.leagueId, divisionId]);
+
+        const blocked = {};
+        rows.forEach(row => {
+            blocked[row.user_id] = `${row.short_name || 'Без квалификации'} — не допущены в этот дивизион`;
+        });
+
+        res.json({ success: true, enabled: true, blocked });
+    } catch (err) {
+        console.error('Ошибка проверки допуска по квалификациям:', err);
+        res.status(500).json({ success: false, error: 'Ошибка проверки допуска по квалификациям' });
+    }
+};
+
 export const getTeamApplications = async (req, res) => {
     try {
         const { teamId } = req.params;
         const result = await pool.query(`
             SELECT tt.id, tt.status, tt.created_at, tt.paper_roster_team_url, tt.paper_roster_league_url,
+                   tt.division_id,
                    d.name as division_name, d.end_date as division_end_date, d.digital_applications_only,
                    s.name as season_name, 
                    l.name as league_name, l.logo_url as league_logo,
@@ -389,6 +431,8 @@ export const createTeamApplication = async (req, res) => {
         const checkApp = await client.query(`SELECT id FROM tournament_teams WHERE team_id = $1 AND division_id = $2`, [teamId, divisionId]);
         if (checkApp.rows.length > 0) throw new Error('Заявка в этот дивизион уже существует');
 
+        await assertPlayersAllowedInDivision(client, divisionId, playerIds);
+
         const status = req.file ? 'pending' : 'draft';
 
         const appRes = await client.query(
@@ -442,9 +486,13 @@ export const sendApplicationForReview = async (req, res) => {
     try {
         const { appId } = req.params;
 
+        // Состав мог быть собран до того, как лига сменила игроку квалификацию или список
+        // допущенных в дивизион — поэтому перед отправкой проверяем заявку целиком.
+        await assertApplicationRosterAllowed(pool, appId);
+
         const checkRes = await pool.query(`
-            SELECT 
-                tt.paper_roster_league_url, 
+            SELECT
+                tt.paper_roster_league_url,
                 d.digital_applications_only,
                 (SELECT COUNT(*) FROM tournament_team_roles WHERE tournament_team_id = tt.id AND left_at IS NULL) as staff_count
             FROM tournament_teams tt
@@ -478,7 +526,7 @@ export const addPlayerToApplication = async (req, res) => {
         const { playerIds } = req.body;
         
         const checkApp = await client.query(`
-            SELECT tt.paper_roster_league_url, d.digital_applications_only 
+            SELECT tt.division_id, tt.paper_roster_league_url, d.digital_applications_only
             FROM tournament_teams tt
             JOIN divisions d ON tt.division_id = d.id
             WHERE tt.id = $1
@@ -489,6 +537,7 @@ export const addPlayerToApplication = async (req, res) => {
             if (!appData.digital_applications_only && !appData.paper_roster_league_url) {
                 throw new Error('Добавление игроков заблокировано: ожидается проверка бумажной заявки лигой');
             }
+            await assertPlayersAllowedInDivision(client, appData.division_id, playerIds);
         }
 
         if (playerIds && playerIds.length > 0) {
@@ -546,9 +595,11 @@ export const addPlayerToApplication = async (req, res) => {
         }
         await client.query('COMMIT');
         res.json({ success: true });
-    } catch (err) { 
+    } catch (err) {
         await client.query('ROLLBACK');
-        res.status(500).json({ success: false, error: err.message }); 
+        // status у ошибки ставят проверки допуска: их текст нужно показать команде как есть,
+        // а не прятать за общей 500-й
+        res.status(err.status || 500).json({ success: false, error: err.message });
     } finally {
         client.release();
     }

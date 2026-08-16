@@ -148,14 +148,34 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         );
       }
     },
-    { 
-      label: 'Квал.', 
+    {
+      label: 'Квал.',
       sortKey: 'qualification_short_name',
       width: 'w-[80px]', align: 'center',
       render: (row) => {
         const hasQual = !!row.qualification_id;
+
+        // Квалификация лиговая: её могли сменить уже после того, как игрока заявили сюда.
+        // Из турнира это никого не выкидывает, но расхождение с допуском дивизиона
+        // подсвечиваем — иначе непонятно, откуда в любительском дивизионе мастер.
+        const conflict = !!row.qualification_conflict;
+        const changedAt = row.qualification_assigned_at
+          ? dayjs(row.qualification_assigned_at).format('DD.MM.YYYY')
+          : null;
+        const conflictTitle = conflict
+          ? `${row.qualification_short_name || 'Без квалификации'} не допущена в этот дивизион.`
+            + (changedAt
+              ? ` Квалификация изменена ${changedAt}${row.qualification_prev_short_name ? ` (было: ${row.qualification_prev_short_name})` : ''}.`
+              : '')
+            + ' Игрок остаётся в турнире — допуск проверяется при заявке.'
+          : '';
+
         return (
-          <div onClick={() => onOpenModal(row, 'qual')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
+          <div
+            onClick={() => onOpenModal(row, 'qual')}
+            title={conflictTitle}
+            className={`cursor-pointer hover:scale-105 inline-block transition-transform ${conflict ? 'ring-2 ring-status-rejected/60 rounded-md' : ''}`}
+          >
             <Badge label={row.qualification_short_name || 'Нет'} type={hasQual ? 'filled' : 'empty'} />
           </div>
         );

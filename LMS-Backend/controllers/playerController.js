@@ -64,7 +64,12 @@ export const getPlayerProfile = async (req, res) => {
         JOIN divisions d ON tt.division_id = d.id
         JOIN seasons s ON d.season_id = s.id
         JOIN leagues l ON s.league_id = l.id
-        LEFT JOIN league_qualifications lq ON tr.qualification_id = lq.id
+        -- Квалификация лиговая, а не турнирная: у всех строк одной лиги она одна и та же —
+        -- текущая. В прошлых сезонах бейдж меняется вместе с ней, история смен лежит
+        -- в user_qualifications.
+        LEFT JOIN user_qualifications uq
+               ON uq.user_id = tr.player_id AND uq.league_id = l.id AND uq.ended_at IS NULL
+        LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
         WHERE tr.player_id = $1
       ),
       agg AS (

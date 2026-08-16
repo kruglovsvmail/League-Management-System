@@ -177,18 +177,12 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
     } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сети', type: 'error' }); }
   };
 
-  const handlePlayerQualSave = async (qualId) => {
-    if (!activePlayerForModal) return;
-    setIsPlayerSaving(true);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-rosters/${activePlayerForModal.tournament_roster_id}/qualification`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ qualification_id: qualId }) });
-      const data = await res.json();
-      if (data.success) {
-        setRosterData(prev => prev.map(p => p.tournament_roster_id === activePlayerForModal.tournament_roster_id ? { ...p, qualification_id: qualId, qualification_short_name: data.qualification_short_name } : p));
-        setGlobalToast({ title: 'Успешно', message: 'Квалификация обновлена', type: 'success' });
-        setPlayerModalType(null);
-      }
-    } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сохранения', type: 'error' }); } finally { setIsPlayerSaving(false); }
+  // Квалификация лиговая: окно само её и сохраняет, здесь остаётся только обновить строку
+  // состава. Перезагружаем весь состав, а не одну строку: смена могла поменять и пометку
+  // о расхождении с допуском дивизиона, которую считает бэкенд.
+  const handlePlayerQualSaved = () => {
+    setGlobalToast({ title: 'Успешно', message: 'Квалификация обновлена', type: 'success' });
+    if (selectedTeam) loadTeamData(selectedTeam.id);
   };
 
   const handlePlayerFeeSave = async (isPaid) => {
@@ -553,15 +547,15 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
         readOnly={!checkAccess('DIVISIONS_TEAM_PHOTO_MODAL')} 
       />
 
-      <QualSelectModal 
-        isOpen={playerModalType === 'qual'} 
-        onClose={() => setPlayerModalType(null)} 
+      <QualSelectModal
+        isOpen={playerModalType === 'qual'}
+        onClose={() => setPlayerModalType(null)}
+        leagueId={leagueId}
+        player={activePlayerForModal ? { id: activePlayerForModal.player_id, name: `${activePlayerForModal.last_name} ${activePlayerForModal.first_name}` } : null}
         qualifications={leagueQuals}
         showDescriptions={qualShowDescriptions}
-        currentQualId={activePlayerForModal?.qualification_id}
-        onSelect={handlePlayerQualSave}
-        isSaving={isPlayerSaving}
-        readOnly={!checkAccess('DIVISIONS_TEAM_QUAL_MODAL')} 
+        onSaved={handlePlayerQualSaved}
+        readOnly={!checkAccess('QUAL_ASSIGN')}
       />
       <FeeModal 
         isOpen={playerModalType === 'fee'} 

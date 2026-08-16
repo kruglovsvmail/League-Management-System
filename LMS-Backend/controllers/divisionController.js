@@ -14,6 +14,35 @@ import { DEFAULT_TIMEZONE } from '../utils/defaultTimezone.js';
 const dayStartExpr = (n) => `($${n}::date)::timestamp AT TIME ZONE '${DEFAULT_TIMEZONE}'`;
 const dayEndExpr = (n) => `(($${n}::date + 1)::timestamp AT TIME ZONE '${DEFAULT_TIMEZONE}') - INTERVAL '1 millisecond'`;
 
+// Список допущенных в дивизион квалификаций приходит с фронта целиком (как он выглядит
+// в форме), поэтому переписывается целиком же. Элемент null — это отдельный пункт списка
+// «Без квалификации»: он разрешает заявлять тех, кому квалификация в лиге не присвоена.
+// undefined (поле не прислали) от пустого массива отличается намеренно: первое — «список
+// не трогаем», второе — «лига осознанно очистила список».
+// Чужие квалификации отсекаем сравнением с лигой самого дивизиона: id приходит с фронта.
+const syncDivisionQualifications = async (divisionId, qualificationIds) => {
+    if (!Array.isArray(qualificationIds)) return;
+
+    await pool.query(`DELETE FROM division_qualifications WHERE division_id = $1`, [divisionId]);
+
+    if (qualificationIds.length === 0) return;
+
+    const ids = qualificationIds.map(value => (value === null || value === undefined || value === '' ? null : Number(value)));
+
+    await pool.query(`
+        INSERT INTO division_qualifications (division_id, qualification_id)
+        SELECT DISTINCT d.id, x.qual_id
+        FROM divisions d
+        JOIN seasons s ON s.id = d.season_id
+        CROSS JOIN unnest($2::int[]) AS x(qual_id)
+        WHERE d.id = $1
+          AND (x.qual_id IS NULL OR EXISTS (
+              SELECT 1 FROM league_qualifications lq
+              WHERE lq.id = x.qual_id AND lq.league_id = s.league_id
+          ))
+    `, [divisionId, ids]);
+};
+
 const checkOverlap = (appStart, appEnd, trStart, trEnd) => {
     if (!appStart || !appEnd || !trStart || !trEnd) return false;
     const as = new Date(appStart);
@@ -117,7 +146,14 @@ export const getDivisions = async (req, res) => {
                 COALESCE(dt.cnt, 0) as approved_teams_count,
                 COALESCE(dp.cnt, 0) as approved_players_count,
                 COALESCE(dg.cnt, 0) as finished_games_count,
-                COALESCE(ts.teams, '[]'::json) as teams
+                COALESCE(ts.teams, '[]'::json) as teams,
+                -- Допущенные квалификации одним массивом, как их показывает форма настроек.
+                -- NULL внутри массива — пункт «Без квалификации».
+                COALESCE((
+                    SELECT array_agg(dq.qualification_id)
+                    FROM division_qualifications dq
+                    WHERE dq.division_id = d.id
+                ), '{}') as qualification_ids
             FROM divisions d
             LEFT JOIN DivTeams dt ON d.id = dt.division_id
             LEFT JOIN DivPlayers dp ON d.id = dp.division_id
@@ -147,7 +183,8 @@ export const createDivision = async (req, res) => {
             reg_track_shots, playoff_track_shots, track_timer_log,
             reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
             req_med_cert, req_insurance, req_consent, digital_applications_only,
-            hide_stats_unpaid, individual_fee, is_tournament
+            hide_stats_unpaid, individual_fee, is_tournament,
+            qualification_ids
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
@@ -199,6 +236,8 @@ export const createDivision = async (req, res) => {
             reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false
         ]);
 
+        await syncDivisionQualifications(result.rows[0].id, qualification_ids);
+
         res.json({ success: true, id: result.rows[0].id });
     } catch (err) {
         console.error('Ошибка создания дивизиона:', err);
@@ -218,7 +257,8 @@ export const updateDivision = async (req, res) => {
             reg_track_shots, playoff_track_shots, track_timer_log,
             reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
             req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations,
-            hide_stats_unpaid, individual_fee, is_tournament
+            hide_stats_unpaid, individual_fee, is_tournament,
+            qualification_ids
         } = req.body;
 
         if (checkOverlap(application_start, application_end, transfer_start, transfer_end)) {
@@ -254,6 +294,8 @@ export const updateDivision = async (req, res) => {
             reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false,
             reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false
         ]);
+
+        await syncDivisionQualifications(id, qualification_ids);
 
         if (clear_logo) {
             await pool.query(`UPDATE divisions SET logo_url = NULL WHERE id = $1`, [id]);

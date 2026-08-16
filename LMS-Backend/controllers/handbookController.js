@@ -7,16 +7,20 @@ export const getUsers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 30;
     const offset = (page - 1) * limit;
     const search = req.query.search || '';
+    // Квалификация лиговая, а справочник — общий по системе. Поэтому колонка показывает
+    // квалификацию в ТЕКУЩЕЙ выбранной лиге: её id фронт передаёт параметром. Без него
+    // (или у человека из чужой лиги) в колонке просто прочерк.
+    const leagueId = req.query.leagueId ? Number(req.query.leagueId) : null;
 
     // Справочник — это люди из команд. Сотрудники лиги, судьи и служебные аккаунты
     // членства в team_members не имеют и в выдачу не попадают.
     // Членство засчитываем любое, в том числе прошлое (left_at IS NOT NULL): ушедший
     // из команды игрок остаётся в справочнике вместе со своим профилем и историей.
     let whereCondition = `WHERE EXISTS (SELECT 1 FROM team_members tm_any WHERE tm_any.user_id = u.id)`;
-    let params = [limit, offset];
+    let params = [limit, offset, leagueId];
     if (search) {
       // Ищем по имени, фамилии или отчеству
-      whereCondition += ` AND (u.first_name ILIKE $3 OR u.last_name ILIKE $3 OR u.middle_name ILIKE $3)`;
+      whereCondition += ` AND (u.first_name ILIKE $4 OR u.last_name ILIKE $4 OR u.middle_name ILIKE $4)`;
       params.push(`%${search}%`);
     }
 
@@ -34,7 +38,11 @@ export const getUsers = async (req, res) => {
           (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'city', t.city, 'logo_url', t.logo_url) ORDER BY t.name)
            FROM team_members tm
            JOIN teams t ON t.id = tm.team_id
-           WHERE tm.user_id = u.id AND tm.left_at IS NULL) as current_teams
+           WHERE tm.user_id = u.id AND tm.left_at IS NULL) as current_teams,
+          (SELECT json_build_object('id', lq.id, 'name', lq.name, 'short_name', lq.short_name, 'description', lq.description)
+           FROM user_qualifications uq
+           JOIN league_qualifications lq ON lq.id = uq.qualification_id
+           WHERE uq.user_id = u.id AND uq.league_id = $3::int AND uq.ended_at IS NULL) as qualification
       FROM users u
       LEFT JOIN (
           SELECT DISTINCT ON (user_id) user_id, photo_url

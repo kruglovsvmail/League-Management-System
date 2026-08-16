@@ -754,7 +754,7 @@ export function TeamManagementPage() {
       <CreateApplicationDrawer isOpen={isCreateAppDrawerOpen} onClose={() => setIsCreateAppDrawerOpen(false)} leagues={availableLeagues} roster={roster} teamId={selectedTeam?.id} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsCreateAppDrawerOpen(false); showToast('Успешно', 'Заявка создана', 'success'); }} showToast={showToast} />
       
       {/* Модалки добавления в заявку */}
-      <AddAppPlayerDrawer isOpen={isAddPlayerDrawerOpen} onClose={() => { setIsAddPlayerDrawerOpen(false); setAddPlayerModalAppId(null); }} roster={roster} teamId={selectedTeam?.id} appId={addPlayerModalAppId} currentAppRoster={applications.find(a => a.id === addPlayerModalAppId)?.roster || []} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsAddPlayerDrawerOpen(false); showToast('Успешно', 'Игроки добавлены', 'success'); }} showToast={showToast} />
+      <AddAppPlayerDrawer isOpen={isAddPlayerDrawerOpen} onClose={() => { setIsAddPlayerDrawerOpen(false); setAddPlayerModalAppId(null); }} roster={roster} teamId={selectedTeam?.id} appId={addPlayerModalAppId} divisionId={applications.find(a => a.id === addPlayerModalAppId)?.division_id} currentAppRoster={applications.find(a => a.id === addPlayerModalAppId)?.roster || []} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsAddPlayerDrawerOpen(false); showToast('Успешно', 'Игроки добавлены', 'success'); }} showToast={showToast} />
       <AddAppStaffDrawer isOpen={isAddStaffDrawerOpen} onClose={() => { setIsAddStaffDrawerOpen(false); setAddStaffModalAppId(null); }} globalStaff={staff} teamId={selectedTeam?.id} appId={addStaffModalAppId} currentAppStaff={applications.find(a => a.id === addStaffModalAppId)?.staff || []} onSuccess={() => { fetchApplications(selectedTeam?.id); setIsAddStaffDrawerOpen(false); showToast('Успешно', 'Персонал добавлен', 'success'); }} showToast={showToast} />
 
     </div>
@@ -1010,24 +1010,42 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
   const [selectedLeagueId, setSelectedLeagueId] = useState(null);
   const [selectedDivisionId, setSelectedDivisionId] = useState(null);
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
-  const [paperFile, setPaperFile] = useState(null); 
+  const [paperFile, setPaperFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [blockedPlayers, setBlockedPlayers] = useState({});
 
-  useEffect(() => { 
-    if (!isOpen) { 
-      setSelectedLeagueId(null); 
-      setSelectedDivisionId(null); 
-      setSelectedPlayers(new Set()); 
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedLeagueId(null);
+      setSelectedDivisionId(null);
+      setSelectedPlayers(new Set());
       setPaperFile(null);
-    } 
+    }
   }, [isOpen]);
+
+  // Кого не пропустит квалификация в выбранный дивизион. Уже отмеченных таких убираем
+  // из заявки: дивизион могли переключить после того, как состав набрали.
+  useEffect(() => {
+    if (!isOpen || !teamId || !selectedDivisionId) { setBlockedPlayers({}); return; }
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/qual-eligibility?divisionId=${selectedDivisionId}`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        const blocked = data.success ? data.blocked : {};
+        setBlockedPlayers(blocked);
+        setSelectedPlayers(prev => new Set([...prev].filter(id => !blocked[id])));
+      })
+      .catch(() => setBlockedPlayers({}));
+  }, [isOpen, teamId, selectedDivisionId]);
 
   const activeLeague = leagues.find(l => l.league_id === selectedLeagueId);
   const divisions = activeLeague ? activeLeague.divisions : [];
   const currentDiv = divisions.find(d => d.id === selectedDivisionId);
   const isPaperFirst = currentDiv && !currentDiv.digital_applications_only;
-  
-  const togglePlayer = (id) => { const next = new Set(selectedPlayers); if (next.has(id)) next.delete(id); else next.add(id); setSelectedPlayers(next); };
+
+  const togglePlayer = (id) => { if (blockedPlayers[id]) return; const next = new Set(selectedPlayers); if (next.has(id)) next.delete(id); else next.add(id); setSelectedPlayers(next); };
 
   const handleSave = async () => {
     if (!selectedDivisionId || isSaving) return;
@@ -1082,7 +1100,26 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
             </div>
           ) : (
             <div className="flex-1 flex gap-6 overflow-hidden animate-zoom-in">
-              <div className="flex-1 flex flex-col bg-white border border-graphite/10 rounded-2xl overflow-hidden"><div className="p-4 bg-graphite/5 border-b border-graphite/10 font-bold text-[13px] text-graphite-light">Игровой состав ({roster.length})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5 hover:bg-orange/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div>{!selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white">→</button>}</div>))}</div></div>
+              <div className="flex-1 flex flex-col bg-white border border-graphite/10 rounded-2xl overflow-hidden">
+                <div className="p-4 bg-graphite/5 border-b border-graphite/10 font-bold text-[13px] text-graphite-light">Игровой состав ({roster.length})</div>
+                <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                  {roster.map(r => {
+                    const blockReason = blockedPlayers[r.user_id];
+                    return (
+                      <div key={r.user_id} className={`flex items-center justify-between p-3 border-b border-graphite/5 ${blockReason ? 'opacity-60' : 'hover:bg-orange/5'}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span>
+                            {blockReason && <span className="text-[11px] text-status-rejected leading-tight">{blockReason}</span>}
+                          </div>
+                        </div>
+                        {!blockReason && !selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white shrink-0">→</button>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="flex-1 flex flex-col bg-white border border-orange/30 rounded-2xl overflow-hidden shadow-[0_0_15px_rgba(255,122,0,0.05)]"><div className="p-4 bg-orange/10 border-b border-orange/20 font-bold text-[13px] text-orange">В заявку ({selectedPlayers.size})</div><div className="flex-1 overflow-y-auto p-2 custom-scrollbar">{roster.filter(r => selectedPlayers.has(r.user_id)).map(r => (<div key={r.user_id} className="flex items-center justify-between p-3 border-b border-graphite/5"><div className="flex items-center gap-3"><img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover" /><span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span></div><button onClick={() => togglePlayer(r.user_id)} className="text-status-rejected font-bold text-[12px] bg-status-rejected/10 px-3 py-1 rounded hover:bg-status-rejected hover:text-white">✕</button></div>))}</div></div>
             </div>
           )}
@@ -1094,12 +1131,26 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
   );
 }
 
-function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, currentAppRoster, onSuccess, showToast }) {
+function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, divisionId, currentAppRoster, onSuccess, showToast }) {
   const [query, setQuery] = useState('');
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [blockedPlayers, setBlockedPlayers] = useState({});
 
   useEffect(() => { if (!isOpen) { setQuery(''); setSelectedPlayers(new Set()); } }, [isOpen]);
+
+  // Кого не пропустит квалификация в дивизион этой заявки — шторка красит их серым.
+  // Сохранение проверяет допуск само, поэтому это только подсказка.
+  useEffect(() => {
+    if (!isOpen || !teamId || !divisionId) { setBlockedPlayers({}); return; }
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/qual-eligibility?divisionId=${divisionId}`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    })
+      .then(res => res.json())
+      .then(data => setBlockedPlayers(data.success ? data.blocked : {}))
+      .catch(() => setBlockedPlayers({}));
+  }, [isOpen, teamId, divisionId]);
 
   let availableRoster = roster.filter(r => !currentAppRoster.some(cr => cr.player_id === r.user_id));
   if (query) {
@@ -1135,11 +1186,19 @@ function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, currentApp
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-2">
           {availableRoster.map(r => {
             const isSelected = selectedPlayers.has(r.user_id);
+            const blockReason = blockedPlayers[r.user_id];
             return (
-              <div key={r.user_id} onClick={() => { const s = new Set(selectedPlayers); if(s.has(r.user_id)) s.delete(r.user_id); else s.add(r.user_id); setSelectedPlayers(s); }} className={`flex items-center gap-4 p-4 rounded-md border cursor-pointer transition-all ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}>
+              <div
+                key={r.user_id}
+                onClick={() => { if (blockReason) return; const s = new Set(selectedPlayers); if(s.has(r.user_id)) s.delete(r.user_id); else s.add(r.user_id); setSelectedPlayers(s); }}
+                className={`flex items-center gap-4 p-4 rounded-md border transition-all ${blockReason ? 'bg-white border-graphite/10 opacity-60 cursor-not-allowed' : `cursor-pointer ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}`}
+              >
                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
                 <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5" alt="avatar" />
-                <span className="block font-bold text-graphite text-[14px]">{r.last_name} {r.first_name}</span>
+                <div className="flex flex-col min-w-0">
+                  <span className="block font-bold text-graphite text-[14px]">{r.last_name} {r.first_name}</span>
+                  {blockReason && <span className="text-[11px] text-status-rejected leading-tight">{blockReason}</span>}
+                </div>
               </div>
             );
           })}

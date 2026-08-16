@@ -5,6 +5,7 @@ import { Select } from '../../ui/Select';
 import { Input } from '../../ui/Input';
 import { Stepper } from '../../ui/Stepper';
 import { Switch } from '../../ui/Switch';
+import { Checkbox } from '../../ui/Checkbox';
 import { Button } from '../../ui/Button';
 import { Loader } from '../../ui/Loader';
 import { DatePicker } from '../../ui/DatePicker';
@@ -105,6 +106,9 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       reserve_goalie_block_back_to_back: div.reserve_goalie_block_back_to_back ?? false,
 
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
+      // null в массиве — пункт «Без квалификации» (тем, кому квалификация в лиге не присвоена).
+      // Пустой массив = допуск по квалификациям не ограничен.
+      qualification_ids: Array.isArray(div.qualification_ids) ? div.qualification_ids : [],
       hide_stats_unpaid: div.hide_stats_unpaid ?? false, individual_fee: div.individual_fee ?? '',
       is_tournament: div.is_tournament ?? false,
       points_win_reg: div.points_win_reg ?? 2, points_win_ot: div.points_win_ot ?? 2, points_draw: div.points_draw ?? 1, points_loss_ot: div.points_loss_ot ?? 1, points_loss_reg: div.points_loss_reg ?? 0,
@@ -122,6 +126,7 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     reserve_goalie_max_per_game: 1, reserve_goalie_block_back_to_back: false,
 
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
+    qualification_ids: [],
     hide_stats_unpaid: false, individual_fee: '',
     is_tournament: isTournamentDefault,
     points_win_reg: 2, points_win_ot: 2, points_draw: 1, points_loss_ot: 1, points_loss_reg: 0,
@@ -238,6 +243,22 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
 
   useEffect(() => { if (selectedLeague?.id && canView) fetchSeasons(); }, [selectedLeague, canView]);
 
+  // Справочник квалификаций лиги — из него собирается список допущенных в дивизион.
+  // Архивные не показываем: отметить их заново нельзя, а уже отмеченные и так лежат
+  // в qualification_ids и на проверку допуска влияют.
+  const [leagueQuals, setLeagueQuals] = useState([]);
+
+  useEffect(() => {
+    if (!selectedLeague?.id || !canView) return;
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague.id}/settings-qualifications`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` }
+    })
+      .then(res => res.json())
+      .then(data => { if (data.success) setLeagueQuals(data.qualifications); })
+      .catch(console.error);
+  }, [selectedLeague, canView]);
+
   const fetchSeasons = async () => {
     setIsLoading(true);
     try {
@@ -330,6 +351,13 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   }, [setHeaderActions, canCreate, selectedSeasonId, selectedDivisionId, divisions]);
 
   const handleChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
+
+  // Отметка/снятие квалификации в списке допущенных. qualId === null — пункт «Без квалификации».
+  const toggleQualification = (qualId) => {
+    const list = formData?.qualification_ids || [];
+    const has = list.some(id => id === qualId);
+    handleChange('qualification_ids', has ? list.filter(id => id !== qualId) : [...list, qualId]);
+  };
 
   // ---- УНИВЕРСАЛЬНАЯ ЛОГИКА DRAG-AND-DROP МЕЖДУ ДВУМЯ ЗОНАМИ (Mouse + Touch) ----
   // "Активные" — formData.ranking_criteria (упорядоченный массив id).
@@ -755,6 +783,48 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                     />
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-bold text-graphite-light pointer-events-none">₽</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Квалификация принадлежит человеку в лиге целиком, а дивизион решает,
+                            кого из них к себе допускает. Отдельного тумблера нет: пустой список
+                            и означает «без ограничений», отмеченный — «пускаем только этих».
+                            «Без квалификации» — такой же пункт списка, как МАСТЕР или ЛЮБИТЕЛЬ. */}
+                        <div className="bg-white/70 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
+                            <div>
+                                <div className="font-bold text-graphite uppercase text-[14px]">Допуск по квалификациям</div>
+                                <div className="text-[11px] text-graphite-light mt-1 leading-tight max-w-[620px]">
+                                    Отметьте, кого можно заявить в этот {entityNom}. Если не отмечено ничего — ограничений нет, проходит любой игрок. Проверка срабатывает при добавлении игрока, отправке заявки и её одобрении: уже заявленных смена настроек из турнира не выкидывает.
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 pt-3 border-t border-graphite/10">
+                                {leagueQuals.length === 0 && (
+                                    <span className="text-[12px] text-graphite-light">В лиге пока не создано ни одной квалификации — добавьте их на вкладке «Квалификации».</span>
+                                )}
+
+                                <Checkbox
+                                    className="mb-0"
+                                    label="Без квалификации (кому ещё не присвоена)"
+                                    checked={(formData.qualification_ids || []).some(id => id === null)}
+                                    onChange={() => !isLocked && toggleQualification(null)}
+                                />
+
+                                {leagueQuals.map(qual => (
+                                    <Checkbox
+                                        key={qual.id}
+                                        className="mb-0"
+                                        label={`${qual.name}${qual.short_name ? ` (${qual.short_name})` : ''}`}
+                                        checked={(formData.qualification_ids || []).some(id => id === qual.id)}
+                                        onChange={() => !isLocked && toggleQualification(qual.id)}
+                                    />
+                                ))}
+
+                                <span className="text-[11px] text-graphite-light mt-1 leading-tight">
+                                    {(formData.qualification_ids || []).length === 0
+                                        ? 'Сейчас ограничений нет — заявить можно любого игрока.'
+                                        : 'Игроки с неотмеченными квалификациями в заявку не пройдут.'}
+                                </span>
                             </div>
                         </div>
                     </div>
