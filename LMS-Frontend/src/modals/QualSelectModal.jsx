@@ -135,10 +135,12 @@ export function QualSelectModal({ isOpen, onClose, leagueId, player, qualificati
     >
       <div className="flex flex-col flex-1 min-w-0">
         <div className="flex items-center gap-2">
+          {/* Пустой бейдж «Нет» — тот же, что стоит в составе дивизиона у игрока
+              без квалификации, чтобы строки читались одинаково */}
+          {badge && <Badge label={badge} type={id === null || isArchived ? 'empty' : 'filled'} />}
           <span className={`font-bold text-[14px] leading-[1.3] ${isArchived ? 'text-graphite-light line-through' : 'text-graphite'}`}>
             {title}
           </span>
-          {badge && <Badge label={badge} type={isArchived ? 'empty' : 'filled'} />}
           {isArchived && (
             <span className="text-[10px] font-bold uppercase tracking-wider text-status-rejected bg-status-rejected/10 px-2 py-0.5 rounded-md">
               В архиве
@@ -185,7 +187,7 @@ export function QualSelectModal({ isOpen, onClose, leagueId, player, qualificati
           {/* ЛЕВАЯ КОЛОНКА — выбор квалификации */}
           <div className="flex-1 min-w-0 flex flex-col min-h-0">
             <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar">
-              {renderOption(null, 'Без квалификации', null, null, false)}
+              {renderOption(null, 'Без квалификации', 'Нет', null, false)}
               {visibleQualifications.map(qual =>
                 renderOption(qual.id, qual.name, qual.short_name, qual.description, qual.status !== 'active')
               )}
