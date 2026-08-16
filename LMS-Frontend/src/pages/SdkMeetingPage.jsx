@@ -69,6 +69,33 @@ export function SdkMeetingPage() {
 
   const typeLabel = MEETING_TYPES.find(t => t.value === meeting.meeting_type)?.label || meeting.meeting_type;
 
+  // Из списка в такое заседание не попасть, но остаются прямая ссылка, закладка
+  // и кнопка "назад" браузера — заслон нужен и здесь, иначе запрет обходится
+  if (meeting.status === 'held_no_issues') {
+    return (
+      <div className="flex flex-col flex-1 animate-zoom-in">
+        <Header
+          title={`${typeLabel} №${meeting.sequence_number ?? '-'}`}
+          subtitle={
+            <Link to="/sdk-meetings" className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
+              <Icon name="chevron_left" className="w-4 h-4" /> К списку заседаний
+            </Link>
+          }
+        />
+        <main className="p-10 flex flex-1 items-start justify-center">
+          <div className="mt-10 max-w-[520px] text-center flex flex-col gap-3">
+            <span className="text-[18px] font-black text-graphite">Вопросов к рассмотрению не было</span>
+            <span className="text-[14px] font-medium text-graphite-light leading-relaxed">
+              Заседание заведено со статусом «Проводилось. Нет вопросов к рассмотрению»:
+              решений в нём нет и добавить их нельзя. Если статус выбран по ошибке,
+              удалите заседание в списке и создайте заново.
+            </span>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
       <Header

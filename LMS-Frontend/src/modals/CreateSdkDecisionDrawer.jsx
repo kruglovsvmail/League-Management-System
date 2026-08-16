@@ -218,10 +218,11 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
   const isPenaltyValid = !isPunish || arePenaltyFieldsValid(penaltyInputs);
   const isViolationValid = isCatalogSource ? !!violationTypeId : !!manualViolationTitle.trim();
 
-  // Основание фиксируем в решении: уточнение обязательно ровно то, которое подразумевает тип.
-  // Исключение — рапорт: судью-автора можно не указывать (например, его матч не попал в период).
-  const isBasisValid = !hearingBasisType
-    || hearingBasisType === 'referee_report'
+  // Основание обязательно: без него в протоколе нечего писать в «Основания для
+  // рассмотрения», а комиссия не рассматривает вопросы по своей инициативе.
+  // Уточнение требуется ровно то, которое подразумевает тип. Исключение — рапорт:
+  // судью-автора можно не указывать (например, его матч не попал в период).
+  const isBasisValid = hearingBasisType === 'referee_report'
     || (hearingBasisType === 'team_protest' && !!hearingBasisTeamId)
     || (hearingBasisType === 'other' && !!hearingBasis.trim());
 
@@ -313,11 +314,14 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
             <Select label="Матч (опционально)" options={[{ value: '', label: 'Не привязан' }, ...teamGames.map(g => ({ value: g.id, label: `№${g.game_number ?? g.id} от ${g.game_date ? new Date(g.game_date).toLocaleDateString('ru-RU') : '-'}` }))]} value={gameId} onChange={setGameId} />
 
             <div className="flex flex-col gap-2">
+              {/* Пустого варианта нет: основание обязательно, и «Не указано» в списке
+                  читалось бы как разрешённый выбор */}
               <Select
                 label="Основание для рассмотрения"
-                options={[{ value: '', label: 'Не указано' }, ...HEARING_BASIS_TYPES]}
+                options={HEARING_BASIS_TYPES}
                 value={hearingBasisType}
                 onChange={handleSelectHearingBasisType}
+                placeholder="Выберите основание"
               />
 
               {hearingBasisType === 'referee_report' && (

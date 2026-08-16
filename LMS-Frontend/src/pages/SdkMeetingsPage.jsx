@@ -29,6 +29,11 @@ const MEETING_STATUSES = [
   { value: 'held_no_issues', label: 'Проводилось. Нет вопросов к рассмотрению' }
 ];
 
+// Заседание без вопросов не открывается: внутри только решения и документы к ним,
+// а их там нет и быть не может. Явку такому заседанию проставляют штатные члены
+// комиссии сезона — автоматически при создании.
+const NO_ISSUES_STATUS = 'held_no_issues';
+
 const STAFF_ROLE_LABELS = { head_coach: 'Главный тренер', coach: 'Тренер', team_manager: 'Руководитель команды', team_admin: 'Администратор' };
 
 const STATUS_PILL = {
@@ -208,7 +213,10 @@ export function SdkMeetingsPage() {
       const data = await res.json();
       if (data.success) {
         setIsCreateOpen(false);
-        navigate(`/sdk-meetings/${data.id}`);
+        // В заседание без вопросов не проваливаемся — заводить там нечего,
+        // возвращаемся к обновлённому списку
+        if (form.status === NO_ISSUES_STATUS) fetchMeetings();
+        else navigate(`/sdk-meetings/${data.id}`);
       }
     } catch (err) {
       console.error(err);
@@ -358,11 +366,15 @@ export function SdkMeetingsPage() {
               meetings.map(m => {
                 const pill = STATUS_PILL[m.status] || STATUS_PILL.not_specified;
                 const typeLabel = MEETING_TYPES.find(t => t.value === m.meeting_type)?.label || m.meeting_type;
+                const isOpenable = m.status !== NO_ISSUES_STATUS;
                 return (
                   <div
                     key={m.id}
-                    onClick={() => navigate(`/sdk-meetings/${m.id}`)}
-                    className="mb-3 p-4 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-mg hover:border-orange/40 transition-all cursor-pointer grid grid-cols-[140px_1fr_140px_180px_auto_100px_auto] gap-4 items-center"
+                    onClick={() => { if (isOpenable) navigate(`/sdk-meetings/${m.id}`); }}
+                    title={isOpenable ? undefined : 'В этом заседании вопросов к рассмотрению не было — открывать нечего'}
+                    className={`mb-3 p-4 bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-mg transition-all grid grid-cols-[140px_1fr_140px_180px_auto_100px_auto] gap-4 items-center ${
+                      isOpenable ? 'hover:border-orange/40 cursor-pointer' : 'cursor-default'
+                    }`}
                   >
                     <span className="text-[14px] font-black text-graphite">{typeLabel} №{m.sequence_number ?? '-'}</span>
                     <span className="text-[13px] font-medium text-graphite-light">{m.venue_name || 'Место не указано'}</span>
