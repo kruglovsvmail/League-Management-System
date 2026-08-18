@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { useWebGraphics } from '../components/WebGraphics/useWebGraphics';
 
 const scoreboards = import.meta.glob('../components/WebGraphics/*/Scoreboard.jsx');
+const scoreBarOverlays = import.meta.glob('../components/WebGraphics/*/ScoreBarOverlay.jsx');
+const bumperOverlays = import.meta.glob('../components/WebGraphics/*/BumperOverlay.jsx');
 const eventOverlays = import.meta.glob('../components/WebGraphics/*/EventOverlay.jsx');
 const arenaOverlays = import.meta.glob('../components/WebGraphics/*/ArenaOverlay.jsx');
 const preMatchOverlays = import.meta.glob('../components/WebGraphics/*/PreMatchOverlay.jsx');
@@ -42,6 +44,24 @@ export function WebGraphics() {
     const targetPath = `../components/WebGraphics/Graphics_${leagueId}/Scoreboard.jsx`;
     const defaultPath = '../components/WebGraphics/defaultGraphics/Scoreboard.jsx';
     const importFn = scoreboards[targetPath] || scoreboards[defaultPath];
+    return importFn ? React.lazy(importFn) : () => null;
+  }, [game?.league_id]);
+
+  const ScoreBarOverlayComponent = useMemo(() => {
+    if (!game) return null;
+    const leagueId = game.league_id;
+    const targetPath = `../components/WebGraphics/Graphics_${leagueId}/ScoreBarOverlay.jsx`;
+    const defaultPath = '../components/WebGraphics/defaultGraphics/ScoreBarOverlay.jsx';
+    const importFn = scoreBarOverlays[targetPath] || scoreBarOverlays[defaultPath];
+    return importFn ? React.lazy(importFn) : () => null;
+  }, [game?.league_id]);
+
+  const BumperOverlayComponent = useMemo(() => {
+    if (!game) return null;
+    const leagueId = game.league_id;
+    const targetPath = `../components/WebGraphics/Graphics_${leagueId}/BumperOverlay.jsx`;
+    const defaultPath = '../components/WebGraphics/defaultGraphics/BumperOverlay.jsx';
+    const importFn = bumperOverlays[targetPath] || bumperOverlays[defaultPath];
     return importFn ? React.lazy(importFn) : () => null;
   }, [game?.league_id]);
 
@@ -143,6 +163,26 @@ export function WebGraphics() {
             />
           )}
           
+          {/* Табло по центру — тот же набор данных, что у углового табло:
+              оно и есть его развёрнутая версия, показываются взаимоисключающе */}
+          {ScoreBarOverlayComponent && (
+            <ScoreBarOverlayComponent
+              game={game}
+              timerSeconds={timerSeconds}
+              currentPeriod={currentPeriod}
+              isTimerRunning={isTimerRunning}
+              activePenalties={activePenalties}
+              periodLength={periodLength}
+              otLength={otLength}
+              overlay={overlay}
+            />
+          )}
+
+          {/* Заставка монтируется всегда: её скрытые <video preload="auto">
+              держат ролики лиги в кэше с самого запуска оверлея, чтобы между
+              шторкой и роликом не было паузы на загрузку */}
+          {BumperOverlayComponent && <BumperOverlayComponent game={game} overlay={overlay} />}
+
           {EventOverlayComponent && <EventOverlayComponent game={game} overlay={overlay} />}
           {ArenaOverlayComponent && <ArenaOverlayComponent game={game} overlay={overlay} />}
           {PreMatchOverlayComponent && <PreMatchOverlayComponent game={game} overlay={overlay} />}

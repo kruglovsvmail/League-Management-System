@@ -8,6 +8,8 @@ import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 import { checkGameEditAccess } from '../utils/gameEditWindow.js';
 // Правила резервных вратарей — общие для шторки состава и его сохранения.
 import { loadReserveGoaliesForGame, validateReserveGoalies } from '../utils/reserveGoalies.js';
+// Заставки трансляции: слоты лиги со ссылками на S3 для оверлея в OBS.
+import { buildPublicBumpers, findGameTransitionUrl } from './broadcastAssetsController.js';
 
 export const getPublicGameById = async (req, res) => {
     try {
@@ -30,6 +32,7 @@ export const getPublicGameById = async (req, res) => {
                    COALESCE(tt_away.custom_jersey_dark_url,  t2.jersey_dark_url)  as away_jersey_dark_url,
                    COALESCE(tt_away.custom_jersey_light_url, t2.jersey_light_url) as away_jersey_light_url,
                    l.id as league_id, l.logo_url as league_logo, l.name as league_name,
+                   l.broadcast_bumpers,
                    d.logo_url as division_logo, d.name as division_name, d.short_name as division_short_name,
                    a.name as arena_name, a.city as arena_city,
                    gt.periods_count, gt.auto_stop_on_event, gt.shootout_status,
@@ -334,6 +337,18 @@ export const getPublicGameById = async (req, res) => {
 
             game.officials = officials;
 
+            // Заставки лиги: слоты со ссылками на S3. Наличие файла здесь не
+            // проверяется — этот эндпоинт дёргается на каждое обновление счёта,
+            // и три запроса в S3 на каждый вызов были бы лишней задержкой в
+            // эфире. Пустой слот отработает на клиенте через onerror у <video>.
+            game.league_bumpers = buildPublicBumpers(game.league_id, game.broadcast_bumpers);
+            delete game.broadcast_bumpers;
+
+            // Переход заставки — готовый файл с прозрачностью, собранный в
+            // панели один раз (см. broadcastAssetsController). Оверлей его
+            // предзагружает и проигрывает; сам он переход больше не рисует.
+            game.transition_url = await findGameTransitionUrl(game.id);
+
             res.json({ success: true, data: game });
         } else {
             res.status(404).json({ success: false, error: 'Матч не найден' });
@@ -443,6 +458,10 @@ export const getGameById = async (req, res) => {
                 ht.name as home_team_name, ht.logo_url as home_team_logo, 
                 at.name as away_team_name, at.logo_url as away_team_logo,
                 d.name as division_name,
+                -- Сезон дивизиона нужен странице матча: по ссылке «К списку матчей»
+                -- надо вернуться к тому же дивизиону того же сезона, а не к тому,
+                -- что список выберет по умолчанию.
+                d.season_id,
                 s.league_id,
                 COALESCE(tt_home.custom_jersey_dark_url,  ht.jersey_dark_url)  as home_jersey_dark_url,
                 COALESCE(tt_home.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light_url,

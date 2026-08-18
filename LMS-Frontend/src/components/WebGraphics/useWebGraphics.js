@@ -6,7 +6,7 @@ import { startAudioReactive, stopAudioReactive } from './audioReactive';
 
 // Типы, которые режиссёр «нажимает» в панели и которые должны совпадать с тем, что OBS реально
 // показывает. События (goal/penalty) — временные наложения, мисматч-детектор их игнорирует.
-const STATIC_OVERLAY_TYPES = new Set(['prematch', 'intermission', 'team_roster', 'team_leaders', 'arena', 'commentator', 'referees']);
+const STATIC_OVERLAY_TYPES = new Set(['prematch', 'scorebar', 'bumper', 'intermission', 'team_roster', 'team_leaders', 'arena', 'commentator', 'referees']);
 
 export function useWebGraphics(gameId) {
   const [game, setGame] = useState(null);
@@ -49,7 +49,6 @@ export function useWebGraphics(gameId) {
   const sfxCtxRef = useRef(null);
   const sfxGainRef = useRef(null);
   const sfxBuffersRef = useRef({ appearance: null, disappearance: null });
-  const sfxVolumeRef = useRef(0.4);
   const sfxLastPlayRef = useRef({ appearance: 0, disappearance: 0 });
 
   useEffect(() => {
@@ -63,7 +62,9 @@ export function useWebGraphics(gameId) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       const ctx = new Ctx();
       const gain = ctx.createGain();
-      gain.gain.value = sfxVolumeRef.current;
+      // Регулятора громкости в панели нет: всё звучит на своём уровне, а общий
+      // уровень режиссёр держит в OBS. Узел оставлен как точка сведения графа.
+      gain.gain.value = 1;
       gain.connect(ctx.destination);
       sfxCtxRef.current = ctx;
       sfxGainRef.current = gain;
@@ -119,6 +120,8 @@ export function useWebGraphics(gameId) {
   // Плавно меняет audio.volume к targetVolume за durationMs (30 шагов). Только для интро —
   // резкий старт/обрыв цикличной подложки под трансляцией звучит грубо, короткие фразы
   // (состав/событие) в этом не нуждаются. Отменяет предыдущий незавершённый фейд, если есть.
+  //
+  // Это НЕ регулятор громкости: цель фейда всегда 1, меняется только путь к ней.
   const INTRO_FADE_MS = 1200;
   const fadeAudioVolume = (audio, targetVolume, durationMs, onDone) => {
     if (audioFadeIntervalRef.current) {
@@ -326,12 +329,6 @@ export function useWebGraphics(gameId) {
 
           if (payload.type === 'audio_ended') return;
 
-          if (payload.type === 'sfx_volume') {
-              sfxVolumeRef.current = payload.volume ?? 0.4;
-              if (sfxGainRef.current) sfxGainRef.current.gain.value = payload.volume ?? 0.4;
-              return;
-          }
-
           if (payload.type === 'audio') {
               if (payload.action === 'play' && payload.data?.url) {
                   const isIntro = payload.source === 'intro';
@@ -344,13 +341,12 @@ export function useWebGraphics(gameId) {
                           introAudioRef.current = a;
                       }
                       const intro = introAudioRef.current;
-                      const targetVolume = payload.data?.volume ?? 0.8;
                       if (intro.src !== payload.data.url) intro.src = payload.data.url;
                       intro.loop = true;
                       intro.volume = 0;
                       introIsPlayingRef.current = true;
                       intro.play().then(() => {
-                          fadeAudioVolume(intro, targetVolume, INTRO_FADE_MS);
+                          fadeAudioVolume(intro, 1, INTRO_FADE_MS);
                           ensureAudioGraph(intro);
                       }).catch(e => console.error('Intro play error:', e));
                   } else {
@@ -362,10 +358,9 @@ export function useWebGraphics(gameId) {
                       }
                       const audio = audioRef.current;
                       currentAudioSourceRef.current = payload.source || null;
-                      const targetVolume = payload.data?.volume ?? 0.8;
                       if (audio.src !== payload.data.url) audio.src = payload.data.url;
                       audio.loop = false;
-                      audio.volume = targetVolume;
+                      audio.volume = 1;
                       audio.playbackRate = 1.05;
                       audio.play().catch(e => console.error('Audio play error:', e));
                       audio.onended = () => {
@@ -392,11 +387,6 @@ export function useWebGraphics(gameId) {
                       audioRef.current.currentTime = 0;
                       currentAudioSourceRef.current = null;
                   }
-              } else if (payload.action === 'volume' && payload.data?.volume !== undefined) {
-                  // Ручная громкость — применяем на оба канала; фейд интро отменяем.
-                  if (audioFadeIntervalRef.current) { clearInterval(audioFadeIntervalRef.current); audioFadeIntervalRef.current = null; }
-                  if (introAudioRef.current && !introAudioRef.current.paused) introAudioRef.current.volume = payload.data.volume;
-                  if (audioRef.current) audioRef.current.volume = payload.data.volume;
               }
               return;
           }
@@ -523,17 +513,14 @@ export function useWebGraphics(gameId) {
             introAudioRef.current = a;
           }
           const intro = introAudioRef.current;
-          const targetVolume = typeof ov.audioVolume === 'number' ? ov.audioVolume / 100 : 0.8;
           intro.src = ov.params.introUrl;
           intro.loop = true;
           intro.volume = 0;
           introIsPlayingRef.current = true;
           intro.play().then(() => {
-            fadeAudioVolume(intro, targetVolume, INTRO_FADE_MS);
+            fadeAudioVolume(intro, 1, INTRO_FADE_MS);
             ensureAudioGraph(intro); // после F5 граф пуст — без этого нет ни реверба, ни реакции графики
           }).catch(() => {});
-        } else if (typeof ov.audioVolume === 'number' && audioRef.current) {
-          audioRef.current.volume = ov.audioVolume / 100;
         }
       } catch (e) {
         console.error('Ошибка восстановления overlay_state в оверлее:', e);

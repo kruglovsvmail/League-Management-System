@@ -80,6 +80,8 @@ export function Icon({ name, className = "w-6 h-6" }) {
 
     // Универсальная иконка трансляции (антенна + сигнал)
     live_stream: <svg {...baseProps}><rect x="1" y="5" width="15" height="15" rx="2"/><polygon points="16,8 22,5 22,20 16,17"/></svg>,
+    // Ролик в кадре, по бокам — проходы шторки: переход до и после заставки
+    transition: <svg {...baseProps}><rect x="9" y="5" width="6" height="14" rx="1.5"/><path d="M4.5 4.5v15M19.5 4.5v15"/></svg>,
 
     // Иконка поделиться (системный шер)
     share: <svg {...baseProps}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,

@@ -4,7 +4,7 @@ import { Icon } from '../../ui/Icon';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
-export function AudioPlayerWidget({ gameId, socket, volume, setVolume, audioPlaying, audioSource, introPlaying, setIntroPlaying, persistParams }) {
+export function AudioPlayerWidget({ gameId, socket, audioPlaying, audioSource, introPlaying, setIntroPlaying, persistParams }) {
   const [audioUrl, setAudioUrl] = useState(null);
   const [rosterLoading, setRosterLoading] = useState(false);
   const rosterPlaying = audioSource === 'roster';
@@ -24,14 +24,6 @@ export function AudioPlayerWidget({ gameId, socket, volume, setVolume, audioPlay
     fetchAudioUrl();
   }, [gameId]);
 
-  const handleVolumeChange = (newVol) => {
-    setVolume(newVol);
-    socket?.emit('trigger_obs_overlay', {
-      type: 'audio', gameId, action: 'volume',
-      data: { volume: newVol / 100 }
-    });
-  };
-
   const introToggle = () => {
     if (isIntroActive) {
       socket?.emit('trigger_obs_overlay', { type: 'audio', gameId, action: 'stop', source: 'intro' });
@@ -40,7 +32,7 @@ export function AudioPlayerWidget({ gameId, socket, volume, setVolume, audioPlay
       if (!audioUrl) return;
       socket?.emit('trigger_obs_overlay', {
         type: 'audio', gameId, action: 'play', source: 'intro',
-        data: { url: audioUrl, volume: volume / 100, loop: true }
+        data: { url: audioUrl, loop: true }
       });
       // Сохраняем URL интро в params (БД), чтобы при реконнекте/перезагрузке OBS-оверлей
       // мог сам восстановить воспроизведение — иначе он знает только "intro_playing=true",
@@ -66,7 +58,7 @@ export function AudioPlayerWidget({ gameId, socket, volume, setVolume, audioPlay
       if (data.success && data.url) {
         socket?.emit('trigger_obs_overlay', {
           type: 'audio', gameId, action: 'play', source: 'roster',
-          data: { url: data.url, volume: volume / 100, loop: false }
+          data: { url: data.url, loop: false }
         });
       }
     } catch (e) {
@@ -99,9 +91,9 @@ export function AudioPlayerWidget({ gameId, socket, volume, setVolume, audioPlay
 
       <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="overflow-hidden">
-          <div className="flex gap-6 px-4 py-2 border-t border-graphite/5 bg-graphite/[0.02]">
+          <div className="px-4 py-2 border-t border-graphite/5 bg-graphite/[0.02]">
 
-            <div className="flex-1 flex flex-col gap-4 justify-center min-w-0">
+            <div className="flex flex-col gap-4 justify-center min-w-0">
               <button
                 onClick={introToggle}
                 disabled={!audioUrl}
@@ -125,19 +117,6 @@ export function AudioPlayerWidget({ gameId, socket, volume, setVolume, audioPlay
               </button>
             </div>
 
-            {/* Вертикальный регулятор громкости — справа от кнопок */}
-            <div className="flex flex-col items-center gap-1.5 shrink-0 pt-2">
-              <span className="text-[10px] font-bold text-graphite/40 tabular-nums leading-none">{volume}%</span>
-              <div className="relative" style={{ width: '40px', height: '64px' }}>
-                <input
-                  type="range" min="0" max="100" value={volume}
-                  onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
-                  className="absolute top-1/2 left-1/2 h-1 bg-graphite/10 rounded-lg appearance-none cursor-pointer accent-graphite/50"
-                  style={{ width: '64px', transform: 'translate(-50%, -50%) rotate(-90deg)' }}
-                />
-              </div>
-              <svg className="w-3 h-3 text-graphite/30 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/></svg>
-            </div>
           </div>
         </div>
       </div>

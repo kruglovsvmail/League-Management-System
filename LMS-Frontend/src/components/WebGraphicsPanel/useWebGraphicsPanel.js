@@ -36,9 +36,11 @@ export function useWebGraphicsPanel(gameId) {
   const [broadcastedEvents, setBroadcastedEvents] = useState([]);
 
   const [activeStaticOverlay, setActiveStaticOverlay] = useState(null);
+  // Данные активной плашки (slot и startedAt заставки): нужны странице, чтобы
+  // после перезагрузки панели подхватить титр, а не запустить его заново.
+  const [activeStaticOverlayData, setActiveStaticOverlayData] = useState(null);
   const [activeEventOverlay, setActiveEventOverlay] = useState(null);
   const [isScoreboardVisible, setIsScoreboardVisible] = useState(true);
-  const [audioVolume, setAudioVolume] = useState(40);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioSource, setAudioSource] = useState(null);   // какой именно источник сейчас играет: 'intro' | 'roster' | 'event' | null — синхронно у всех режиссёров (мьютекс: ровно один слот звука)
   const [introPlaying, setIntroPlaying] = useState(false); // зацикленное интро вкл/выкл (persistent)
@@ -187,7 +189,6 @@ export function useWebGraphicsPanel(gameId) {
         if (!ov) { overlayHydratedRef.current = true; return; }
 
         // Поля, синхронизируемые между панелями вживую (идемпотентны — повторное применение безвредно).
-        if (typeof ov.audioVolume === 'number') setAudioVolume(ov.audioVolume);
         if (typeof ov.scoreboardVisible === 'boolean') setIsScoreboardVisible(ov.scoreboardVisible);
         if (typeof ov.introPlaying === 'boolean') {
             setIntroPlaying(ov.introPlaying);
@@ -198,6 +199,7 @@ export function useWebGraphicsPanel(gameId) {
         if ('staticOverlay' in ov) {
             staticOverlayRef.current = ov.staticOverlay || null;
             setActiveStaticOverlay(ov.staticOverlay?.type ?? null);
+            setActiveStaticOverlayData(ov.staticOverlay?.data ?? null);
         }
 
         // Параметры плашек/отсчёты — отдаём странице (она применит к своим стейтам).
@@ -292,13 +294,6 @@ export function useWebGraphicsPanel(gameId) {
 
   const ttsEventsRef = useRef(ttsEvents);
   useEffect(() => { ttsEventsRef.current = ttsEvents; }, [ttsEvents]);
-  const audioVolumeRef = useRef(audioVolume);
-  useEffect(() => {
-    audioVolumeRef.current = audioVolume;
-    const v = audioVolume / 100;
-    socket?.emit('trigger_obs_overlay', { type: 'sfx_volume', gameId, volume: v });
-    socket?.emit('trigger_obs_overlay', { type: 'audio', gameId, action: 'volume', data: { volume: v } });
-  }, [audioVolume, socket, gameId]);
   const audioPlayingRef = useRef(audioPlaying);
   useEffect(() => { audioPlayingRef.current = audioPlaying; }, [audioPlaying]);
   const audioSourceRef = useRef(audioSource);
@@ -407,7 +402,7 @@ export function useWebGraphicsPanel(gameId) {
     if (ttsEventsRef.current && ['goal', 'penalty'].includes(type) && data?.id && !voicePlaying) {
       const cached = ttsCacheRef.current[data.id];
       if (cached?.url) {
-        socket?.emit('trigger_obs_overlay', { type: 'audio', gameId, action: 'play', source: 'event', data: { url: cached.url, volume: audioVolumeRef.current / 100, loop: false } });
+        socket?.emit('trigger_obs_overlay', { type: 'audio', gameId, action: 'play', source: 'event', data: { url: cached.url, loop: false } });
       }
     }
   }, [socket, gameId, persistParams]);
@@ -426,6 +421,7 @@ export function useWebGraphicsPanel(gameId) {
           if (forceUpdate) {
               socket?.emit('trigger_obs_overlay', { action: 'show', type, gameId, duration: 'infinite', data });
               staticOverlayRef.current = { type, data };
+              setActiveStaticOverlayData(data);
               // activeStaticOverlay не меняется → persist-эффект не сработает → шлём вручную,
               // чтобы OBS при реконнекте получил свежий data (endTime таймера, а не старый).
               socket?.emit('update_overlay_state', { gameId, staticOverlay: { type, data } });
@@ -433,11 +429,13 @@ export function useWebGraphicsPanel(gameId) {
           } else {
               socket?.emit('trigger_obs_overlay', { action: 'hide', type, gameId });
               staticOverlayRef.current = null;
+              setActiveStaticOverlayData(null);
               return null;
           }
       } else {
           socket?.emit('trigger_obs_overlay', { action: 'show', type, gameId, duration: 'infinite', data });
           staticOverlayRef.current = { type, data };
+          setActiveStaticOverlayData(data);
           return type;
       }
     });
@@ -451,7 +449,7 @@ export function useWebGraphicsPanel(gameId) {
     });
   }, [socket, gameId]);
 
-  // Персист 1: синхронизируемые поля (громкость/интро/табло/плашка). Шлём ТОЛЬКО их — сервер
+  // Персист 1: синхронизируемые поля (интро/табло/плашка). Шлём ТОЛЬКО их — сервер
   // частичным upsert'ом не трогает автопилот, и рассылает снимок другим панелям. Не пишем до гидрации.
   useEffect(() => {
     if (!overlayHydratedRef.current || !socket) return;
@@ -459,14 +457,13 @@ export function useWebGraphicsPanel(gameId) {
     syncedPersistTimerRef.current = setTimeout(() => {
       socket.emit('update_overlay_state', {
         gameId,
-        audioVolume,
         introPlaying,
         scoreboardVisible: isScoreboardVisible,
         staticOverlay: staticOverlayRef.current,
       });
     }, 250);
     return () => { if (syncedPersistTimerRef.current) clearTimeout(syncedPersistTimerRef.current); };
-  }, [audioVolume, introPlaying, isScoreboardVisible, activeStaticOverlay, socket, gameId]);
+  }, [introPlaying, isScoreboardVisible, activeStaticOverlay, socket, gameId]);
 
   // Персист 2: ТОЛЬКО конфиг автопилота (плейлист/длительность/loop). running и current_index пишет
   // серверный цикл, поэтому панель их не шлёт. Сервер мержит jsonb, так что current_index не затирается.
@@ -526,11 +523,10 @@ export function useWebGraphicsPanel(gameId) {
   return {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
     periodLength, otLength, socket, broadcastedEvents,
-    triggerOverlay, toggleStaticOverlay, activeStaticOverlay,
+    triggerOverlay, toggleStaticOverlay, activeStaticOverlay, activeStaticOverlayData,
     isScoreboardVisible, toggleScoreboard, activeEventOverlay,
     autoShowSettings, updateAutoShowSettings, getEventSignature,
     ttsEvents, updateTtsEvents,
-    audioVolume, setAudioVolume,
     audioPlaying, audioSource,
     introPlaying, setIntroPlaying,
     // Автопилот (серверный: running/index приходят с сервера, конфиг — локально+БД)

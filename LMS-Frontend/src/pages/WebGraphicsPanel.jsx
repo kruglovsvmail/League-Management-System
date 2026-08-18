@@ -19,12 +19,14 @@ import { useWebGraphicsPanel } from '../components/WebGraphicsPanel/useWebGraphi
 import { ScoreboardBroadcastButton } from '../components/WebGraphicsPanel/ScoreboardBroadcastButton';
 import { GameEventsWidget } from '../components/WebGraphicsPanel/GameEventsWidget';
 import { StaticBroadcastButton } from '../components/WebGraphicsPanel/StaticBroadcastButton';
+import { BumperBroadcastButton } from '../components/WebGraphicsPanel/BumperBroadcastButton';
 import { AutoPlaylistWidget } from '../components/WebGraphicsPanel/AutoPlaylistWidget';
 import { AudioPlayerWidget } from '../components/WebGraphicsPanel/AudioPlayerWidget';
 import { useAccess } from '../hooks/useAccess';
 import { AccessFallback } from '../ui/AccessFallback';
 import { Icon } from '../ui/Icon';
 import { getToken } from '../utils/helpers';
+import { exportBumperWebm, checkBumperExportSupport, getBumperTiming } from '../utils/exportBumperWebm';
 
 export function WebGraphicsPanel() {
   const { gameId } = useParams();
@@ -38,11 +40,10 @@ export function WebGraphicsPanel() {
   const {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
     periodLength, otLength, socket, broadcastedEvents,
-    triggerOverlay, toggleStaticOverlay, activeStaticOverlay,
+    triggerOverlay, toggleStaticOverlay, activeStaticOverlay, activeStaticOverlayData,
     isScoreboardVisible, toggleScoreboard, activeEventOverlay,
     autoShowSettings, updateAutoShowSettings, getEventSignature,
     ttsEvents, updateTtsEvents,
-    audioVolume, setAudioVolume,
     audioPlaying, audioSource,
     introPlaying, setIntroPlaying,
     playlistSteps, setPlaylistSteps,
@@ -82,6 +83,7 @@ export function WebGraphicsPanel() {
     if (typeof p.arenaDuration === 'number') setArenaDurationSecs(p.arenaDuration);
     if (typeof p.commentatorDuration === 'number') setcommentatorDurationSecs(p.commentatorDuration);
     if (typeof p.refereesDuration === 'number') setRefereesDurationSecs(p.refereesDuration);
+    if (typeof p.bumperOutro === 'boolean') setBumperOutro(p.bumperOutro);
 
     // Отсчёты: running → считаем остаток из endTime; пауза → берём замороженный timeLeft.
     if (p.prematch) {
@@ -184,6 +186,236 @@ export function WebGraphicsPanel() {
   const handlePrematchStepper = (newMins) => { setPrematchMins(newMins); const newTime = newMins * 60; setIsPrematchRunning(false); setPrematchTimeLeft(newTime); prematchEndTimeRef.current = null; syncPrematchToObs(false, newTime); persistParams({ prematch: { running: false, timeLeft: newTime, mins: newMins } }); };
   const handlePrematchToggle = () => { if (activeStaticOverlay !== 'prematch') toggleStaticOverlay('prematch', { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null }); else toggleStaticOverlay('prematch'); };
 
+  // Табло по центру: параметров нет, живёт до повторного нажатия — как предматч
+  // и перерыв, а не как арена с автоснятием по таймеру.
+  const handleScoreBarToggle = () => { toggleStaticOverlay('scorebar'); };
+
+  // --- ЗАСТАВКИ ---
+  // Слоты приходят с сервера: названия, длительности и признак «файл залит».
+  const [bumperSlots, setBumperSlots] = useState([]);
+  const [bumperSlot, setBumperSlot] = useState(null);
+
+  useEffect(() => {
+    if (!gameId) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/broadcast/bumpers`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (!d.success) return;
+        setBumperSlots(d.bumpers || []);
+        // Встаём на первый залитый слот. Не нашлось ни одного — остаёмся на
+        // null: кнопка всё равно рабочая и отыграет чистый переход.
+        const first = (d.bumpers || []).find(b => b.uploaded);
+        setBumperSlot(first ? first.slot : null);
+      })
+      .catch(() => {});
+  }, [gameId]);
+
+  // Титр в эфире восстанавливаем из состояния плашки, а не из локального выбора:
+  // после перезагрузки панели слот и момент запуска приходят из БД, и таймер
+  // подсветки должен досчитать остаток, а не начать отсчёт заново.
+  const liveBumper = activeStaticOverlay === 'bumper' ? activeStaticOverlayData : null;
+  const liveSlot = Number(liveBumper?.slot) || null;
+
+  useEffect(() => {
+    if (liveSlot) setBumperSlot(liveSlot);
+  }, [liveSlot]);
+
+  const currentBumper = bumperSlots.find(b => b.slot === bumperSlot);
+  // Ролика может не быть: слот не выбран или файл в него не залит. Тогда титр
+  // вырождается в один проход шторки — это обычный переход, которым режиссёр
+  // прикрывает переключение сцены в OBS.
+  const bumperHasVideo = !!currentBumper?.uploaded;
+
+  // Закрывать ли ролик переходом на выходе. Вход переходом — всегда: без него
+  // склейка на рекламу видна в эфире. Выключают именно хвост, когда возврат в
+  // игру нужен мгновенный или переключение сцены в OBS уже сделано тем же
+  // Stinger-переходом.
+  const [bumperOutro, setBumperOutro] = useState(true);
+
+  const handleBumperOutroToggle = () => {
+    const next = !bumperOutro;
+    setBumperOutro(next);
+    persistParams({ bumperOutro: next });
+    // Переключение прямо в эфире перезапускает титр — иначе уже запущенный
+    // ролик доиграл бы по старому расчёту.
+    if (activeStaticOverlay === 'bumper') {
+      toggleStaticOverlay('bumper', { slot: bumperHasVideo ? bumperSlot : null, outro: next, startedAt: Date.now() }, true);
+    }
+  };
+
+  // Длительность перехода берём у самой графики лиги: сценарий там правится, и
+  // константа в панели с ним разъезжалась. До загрузки модуля — прежние 2,4 с.
+  const [bumperSweep, setBumperSweep] = useState(2.4);
+  const [bumperCover, setBumperCover] = useState(1.2);
+
+  useEffect(() => {
+    let alive = true;
+    getBumperTiming(game?.league_id)
+      .then(t => { if (alive) { setBumperSweep(t.sweepMs / 1000); setBumperCover(t.coverMs / 1000); } })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [game?.league_id]);
+
+  // Сколько держать плитку зажатой.
+  //
+  // Ролик стартует под открывающим переходом в момент перекрытия кадра. Дальше
+  // либо заходит закрывающий (и титр живёт длину ролика плюс весь переход),
+  // либо картинка возвращается сразу по концу ролика. Без ролика остаётся один
+  // проход — иначе кнопка с пустым выбором не делала бы ничего.
+  const bumperFullSecs = !bumperHasVideo
+    ? bumperSweep
+    : Math.round((currentBumper.duration || 15) + (bumperOutro ? bumperSweep : bumperCover));
+
+  // Остаток от уже идущего титра: при перезагрузке панели плитка должна
+  // погаснуть тогда же, когда картинка вернётся в эфир, а не через полный цикл.
+  const bumperElapsed = liveBumper?.startedAt ? (Date.now() - Number(liveBumper.startedAt)) / 1000 : 0;
+  const bumperTotalSecs = Math.max(0.5, bumperFullSecs - bumperElapsed);
+
+  const handleBumperToggle = () => {
+    if (activeStaticOverlay === 'bumper') { toggleStaticOverlay('bumper'); return; }
+    if (!bumperTransition?.url) return;   // переход ещё не собран — играть нечего
+    toggleStaticOverlay('bumper', {
+      slot: bumperHasVideo ? bumperSlot : null,
+      outro: bumperOutro,
+      // Отметка старта: по ней оверлей подхватывает титр с нужной точки, если
+      // его перезагрузили в OBS посреди рекламы.
+      startedAt: Date.now(),
+    });
+  };
+
+  // --- ВЫГРУЗКА ПЕРЕХОДА В WEBM ---
+  // Файл кладётся в OBS как Stinger-переход, поэтому нужен с прозрачным фоном и
+  // с данными этого матча. Эмблемы берём через сервер как data-URI: картинка с
+  // чужого домена «портит» холст, и кодировщик отказался бы с ним работать.
+  const [bumperExporting, setBumperExporting] = useState(false);
+  const [bumperExportProgress, setBumperExportProgress] = useState(0);
+  // null — ещё не проверяли; иначе { supported, reason }. Прозрачность в WebM
+  // умеет только запись canvas в VP8 через MediaRecorder — см. утилиту.
+  const [bumperExportSupport, setBumperExportSupport] = useState(null);
+
+  useEffect(() => { setBumperExportSupport(checkBumperExportSupport()); }, []);
+
+  // Готовый переход матча: собран он или нет. Пока не собран, эфирная кнопка
+  // заставки заблокирована — играть было бы нечего.
+  const [bumperTransition, setBumperTransition] = useState(null);
+
+  const loadTransition = () => {
+    if (!gameId) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/broadcast/transition`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+      .then(r => r.json())
+      .then(d => { if (d.success) setBumperTransition(d.transition); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { loadTransition(); }, [gameId]);
+
+  // Сборка перехода: кадры рисуются на canvas данными ЭТОГО матча, кодируются
+  // в WebM с прозрачностью и уходят в S3. Дальше эфир только проигрывает файл,
+  // поэтому операция разовая — повторять её нужно, лишь если поменялись
+  // эмблемы, дивизион или название слота.
+  const buildTransitionBlob = async () => {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/broadcast/logos`, {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    });
+    const data = await res.json();
+
+    return exportBumperWebm({
+      leagueId: game?.league_id,
+      logos: data?.logos || {},
+      division: game?.division_name || game?.division_short_name,
+      homeName: game?.home_team_name,
+      awayName: game?.away_team_name,
+      title: currentBumper?.title,
+      homeColor: game?.home_color_1,
+      awayColor: game?.away_color_1,
+      onProgress: setBumperExportProgress,
+    });
+  };
+
+  const handleBumperGenerate = async () => {
+    if (bumperExporting || !bumperExportSupport?.supported) return;
+    setBumperExporting(true);
+    setBumperExportProgress(0);
+    try {
+      const blob = await buildTransitionBlob();
+
+      const form = new FormData();
+      form.append('file', new File([blob], 'transition.webm', { type: 'video/webm' }));
+
+      const up = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/broadcast/transition`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: form,
+      });
+      const json = await up.json();
+      if (!json.success) throw new Error(json.error || 'сервер отклонил файл');
+
+      loadTransition();
+      // Оверлеи в OBS перечитывают данные матча и подхватывают новый файл —
+      // без этого они продолжали бы играть переход прошлой сборки.
+      forceResyncOverlay();
+    } catch (e) {
+      console.error('Ошибка сборки перехода:', e);
+      alert(`Не удалось собрать переход: ${e.message || e}`);
+    } finally {
+      setBumperExporting(false);
+      setBumperExportProgress(0);
+    }
+  };
+
+  // Скачивание не пересобирает файл — забирает уже собранный, чтобы в OBS лёг
+  // ровно тот переход, который идёт в эфире.
+  //
+  // Идём через свой сервер, а не по ссылке на S3: атрибут download браузер
+  // игнорирует для чужого домена, и файл просто открывался бы в новой вкладке.
+  // Сервер отдаёт его с Content-Disposition: attachment, а blob здесь нужен
+  // потому, что запрос требует заголовка авторизации — простой ссылкой его не
+  // передать.
+  const [bumperDownloading, setBumperDownloading] = useState(false);
+
+  const handleBumperDownload = async () => {
+    if (!bumperTransition?.url || bumperDownloading) return;
+    setBumperDownloading(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/broadcast/transition/download`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error('файл недоступен');
+      const blob = await res.blob();
+
+      const teams = [game?.home_short_name, game?.away_short_name].filter(Boolean).join('-') || gameId;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `perehod-${teams}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Отзываем не сразу: если освободить ссылку в том же кадре, файл иногда
+      // приходит нулевого размера.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      console.error('Ошибка скачивания перехода:', e);
+      alert(`Не удалось скачать переход: ${e.message || e}`);
+    } finally {
+      setBumperDownloading(false);
+    }
+  };
+
+  const handleBumperSlotSelect = (slot) => {
+    // Повторный клик по выбранному слоту снимает выбор — остаётся чистый переход.
+    const next = slot === bumperSlot ? null : slot;
+    setBumperSlot(next);
+    // Переключение прямо в эфире перезапускает титр с новым содержимым.
+    if (activeStaticOverlay === 'bumper') {
+      toggleStaticOverlay('bumper', { slot: next, outro: bumperOutro, startedAt: Date.now() }, true);
+    }
+  };
+
   const [rosterSwitchSecs, setRosterSwitchSecs] = useState(8);
   const handleRosterStepper = (newSecs) => { setRosterSwitchSecs(newSecs); persistParams({ rosterSwitch: newSecs }); if (activeStaticOverlay === 'team_roster') toggleStaticOverlay('team_roster', { switchDuration: newSecs }, true); };
   const handleRosterToggle = () => { activeStaticOverlay !== 'team_roster' ? toggleStaticOverlay('team_roster', { switchDuration: rosterSwitchSecs }) : toggleStaticOverlay('team_roster'); };
@@ -209,10 +441,15 @@ export function WebGraphicsPanel() {
     if (activeStaticOverlay === 'arena') timer = setTimeout(() => toggleStaticOverlay('arena'), arenaDurationSecs * 1000);
     else if (activeStaticOverlay === 'commentator') timer = setTimeout(() => toggleStaticOverlay('commentator'), commentatorDurationSecs * 1000);
     else if (activeStaticOverlay === 'referees') timer = setTimeout(() => toggleStaticOverlay('referees'), refereesDurationSecs * 1000);
+    // Заставка снимается сама: длительность считается от ролика, а не задаётся
+    // руками — режиссёр загрузил файл, панель знает его длину.
+    else if (activeStaticOverlay === 'bumper') timer = setTimeout(() => toggleStaticOverlay('bumper'), bumperTotalSecs * 1000);
     return () => clearTimeout(timer);
-  }, [activeStaticOverlay, arenaDurationSecs, commentatorDurationSecs, refereesDurationSecs, toggleStaticOverlay]);
+  }, [activeStaticOverlay, arenaDurationSecs, commentatorDurationSecs, refereesDurationSecs, bumperTotalSecs, toggleStaticOverlay]);
 
   const getOverlayPayload = (type) => {
+    // scorebar сюда не попадает намеренно: у табло по центру нет настраиваемых
+    // параметров, все данные оно берёт из живого состояния матча.
     if (type === 'prematch') return { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null };
     if (type === 'intermission') return { isPaused: !isIntermissionRunning, timeLeft: intermissionTimeLeft, endTime: isIntermissionRunning ? Date.now() + intermissionTimeLeft * 1000 : null };
     if (type === 'team_roster') return { switchDuration: rosterSwitchSecs };
@@ -220,6 +457,7 @@ export function WebGraphicsPanel() {
     if (type === 'arena') return { displayDuration: arenaDurationSecs };
     if (type === 'commentator') return { displayDuration: commentatorDurationSecs };
     if (type === 'referees') return { displayDuration: refereesDurationSecs };
+    if (type === 'bumper') return { slot: bumperHasVideo ? bumperSlot : null, outro: bumperOutro, startedAt: Date.now() };
     return null;
   };
 
@@ -321,6 +559,10 @@ export function WebGraphicsPanel() {
 
                 <ScoreboardBroadcastButton game={game} currentPeriod={currentPeriod} isTimerRunning={isTimerRunning} activePenalties={activePenalties} timerSeconds={timerSeconds} periodLength={periodLength} otLength={otLength} isActive={isScoreboardVisible} onClick={toggleScoreboard} />
                 <StaticBroadcastButton title="Предматчевая" dragType="prematch" isActive={activeStaticOverlay === 'prematch'} onClick={handlePrematchToggle} hasTimer={true} timerValue={prematchMins} onTimerChange={handlePrematchStepper} timerDisplay={formatTime(prematchTimeLeft)} isTimerCritical={isPrematchRunning && prematchTimeLeft <= 60} isTimerRunning={isPrematchRunning} onTimerStart={handlePrematchStart} onTimerPause={handlePrematchPause} />
+                {/* Развёрнутое табло внизу кадра. Пока оно в эфире, компактное
+                    табло в углу прячется само — счёт не дублируется. */}
+                <StaticBroadcastButton title="Табло по центру" description="Широкий счёт внизу кадра" dragType="scorebar" isActive={activeStaticOverlay === 'scorebar'} onClick={handleScoreBarToggle} />
+                <BumperBroadcastButton slots={bumperSlots} activeSlot={bumperSlot} onSelectSlot={handleBumperSlotSelect} isActive={activeStaticOverlay === 'bumper'} onClick={handleBumperToggle} progressDuration={bumperTotalSecs} runId={liveBumper?.startedAt || 0} onGenerate={handleBumperGenerate} onDownload={handleBumperDownload} transition={bumperTransition} exporting={bumperExporting} exportProgress={bumperExportProgress} downloading={bumperDownloading} exportSupport={bumperExportSupport} outro={bumperOutro} onOutroChange={handleBumperOutroToggle} />
                 <StaticBroadcastButton title="Перерыв" dragType="intermission" isActive={activeStaticOverlay === 'intermission'} onClick={handleIntermissionToggle} hasTimer={true} timerValue={intermissionMins} onTimerChange={handleIntermissionStepper} timerDisplay={formatTime(intermissionTimeLeft)} isTimerCritical={isIntermissionRunning && intermissionTimeLeft <= 60} isTimerRunning={isIntermissionRunning} onTimerStart={handleIntermissionStart} onTimerPause={handleIntermissionPause} />
                 <StaticBroadcastButton title="Лидеры" dragType="team_leaders" isActive={activeStaticOverlay === 'team_leaders'} onClick={handleLeadersToggle} hasStepper={true} stepperLabel="Смена (сек)" stepperValue={leadersSwitchSecs} stepperMin={3} stepperMax={30} onStepperChange={handleLeadersStepper} />
                 <StaticBroadcastButton title="Составы" dragType="team_roster" isActive={activeStaticOverlay === 'team_roster'} onClick={handleRosterToggle} hasStepper={true} stepperLabel="Смена (сек)" stepperValue={rosterSwitchSecs} stepperMin={3} stepperMax={30} onStepperChange={handleRosterStepper} />
@@ -379,7 +621,7 @@ export function WebGraphicsPanel() {
               onStop={stopAutopilotServer}
             />
 
-            <AudioPlayerWidget gameId={gameId} socket={socket} volume={audioVolume} setVolume={setAudioVolume} audioPlaying={audioPlaying} audioSource={audioSource} introPlaying={introPlaying} setIntroPlaying={setIntroPlaying} persistParams={persistParams} />
+            <AudioPlayerWidget gameId={gameId} socket={socket} audioPlaying={audioPlaying} audioSource={audioSource} introPlaying={introPlaying} setIntroPlaying={setIntroPlaying} persistParams={persistParams} />
 
             <div className="flex-1 min-h-0">
               <GameEventsWidget

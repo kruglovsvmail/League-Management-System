@@ -513,7 +513,6 @@ export default function setupTimerSockets(io) {
         const ovRes = await pool.query('SELECT * FROM game_overlay_state WHERE game_id = $1', [gameId]);
         const ov = ovRes.rows[0] || null;
         socket.emit('overlay_state', ov ? {
-          audioVolume:       ov.audio_volume,
           introPlaying:      ov.intro_playing,
           scoreboardVisible: ov.scoreboard_visible,
           staticOverlay:     ov.static_overlay,      // { type, data } | null
@@ -543,7 +542,6 @@ export default function setupTimerSockets(io) {
     socket.on('update_overlay_state', async (data) => {
       if (!data?.gameId) return;
       const fieldMap = {
-        audioVolume:       'audio_volume',
         introPlaying:      'intro_playing',
         scoreboardVisible: 'scoreboard_visible',
         staticOverlay:     'static_overlay',
@@ -585,7 +583,6 @@ export default function setupTimerSockets(io) {
         const ov = fresh.rows[0];
         if (ov) {
           socket.to(`game_${data.gameId}`).emit('overlay_state', {
-            audioVolume:       ov.audio_volume,
             introPlaying:      ov.intro_playing,
             scoreboardVisible: ov.scoreboard_visible,
             staticOverlay:     ov.static_overlay,

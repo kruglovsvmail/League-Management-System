@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { AnimationWrapper } from './AnimationWrapper';
-import { InfoPlate } from './InfoPlate';
-import { TFH } from './theme';
+import { Reveal } from './Reveal';
+import { InfoCard, PlateIcon, Portrait, PersonName } from './Frost';
+import { Label } from './Type';
+import { T, pickOfficial } from './theme';
 
-// Свисток из прямых граней — плоская геометрия паттерна лиги.
-const WhistleIcon = () => (
-  <svg width="46" height="46" viewBox="0 0 48 48" fill="none">
-    <path d="M6 16 L26 16 L26 32 L14 32 L6 24 Z" fill={TFH.blue} />
-    <path d="M26 20 L42 12 L42 22 L26 22 Z" stroke={TFH.blue} strokeWidth="3" strokeLinejoin="miter" />
-    <path d="M14 20 L20 26" stroke={TFH.navy} strokeWidth="3" />
-  </svg>
-);
+// Судейская бригада: светлая плашка у левой кромки снизу, до четырёх судей
+// сеткой 2×2 с круглыми портретами.
+//
+// Ключи ролей в публичном эндпоинте — 'main-1'/'main-2'/'linesman-1'/'linesman-2'
+// (см. getPublicGameById). Прежняя версия искала head_1/linesman_1, которых в
+// ответе нет, из-за чего плашка не появлялась в эфире вообще.
 
 export default function RefereesOverlay({ game, overlay }) {
   const isGlobalVisible = overlay.visible && overlay.type === 'referees';
@@ -21,59 +20,44 @@ export default function RefereesOverlay({ game, overlay }) {
     let timer;
     if (isGlobalVisible) {
       setLocalVisible(true);
-      timer = setTimeout(() => {
-        setLocalVisible(false);
-      }, displayDuration * 1000);
+      timer = setTimeout(() => setLocalVisible(false), displayDuration * 1000);
     } else {
       setLocalVisible(false);
     }
     return () => clearTimeout(timer);
   }, [isGlobalVisible, displayDuration, overlay.data]);
 
-  if (!game || !game.officials) return null;
+  if (!game?.officials) return null;
 
-  const heads = [game.officials.head_1, game.officials.head_2].filter(Boolean);
-  const linesmen = [game.officials.linesman_1, game.officials.linesman_2].filter(Boolean);
+  const o = game.officials;
+  const crew = [
+    { person: pickOfficial(o, 'main-1', 'head_1'), role: 'ГЛАВНЫЙ СУДЬЯ' },
+    { person: pickOfficial(o, 'main-2', 'head_2'), role: 'ГЛАВНЫЙ СУДЬЯ' },
+    { person: pickOfficial(o, 'linesman-1', 'linesman_1'), role: 'ЛИНЕЙНЫЙ СУДЬЯ' },
+    { person: pickOfficial(o, 'linesman-2', 'linesman_2'), role: 'ЛИНЕЙНЫЙ СУДЬЯ' },
+  ].filter(x => x.person);
 
-  if (heads.length === 0 && linesmen.length === 0) return null;
-
-  const Column = ({ title, people }) => (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-2.5 h-2.5 rotate-45 shrink-0" style={{ backgroundColor: TFH.blue }} />
-        <span className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: TFH.blue }}>
-          {title}
-        </span>
-      </div>
-      <div className="h-px w-full mb-4" style={{ backgroundColor: TFH.navyLine }} />
-      {people.map((p, i) => (
-        <div key={i} className="flex items-baseline gap-2.5 mb-2.5 last:mb-0">
-          <span className="text-[24px] font-black uppercase tracking-[0.04em] leading-none" style={{ color: TFH.white }}>
-            {p.last_name}
-          </span>
-          <span className="text-[15px] font-bold uppercase tracking-[0.14em] leading-none" style={{ color: TFH.iceDim }}>
-            {p.first_name}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
+  if (crew.length === 0) return null;
+  const twoCols = crew.length > 2;
 
   return (
-    <AnimationWrapper
-      type="referees"
-      isVisible={localVisible}
-      className="absolute bottom-16 left-12 z-40"
-    >
-      <InfoPlate icon={<WhistleIcon />} minWidth={520}>
-        <div className="flex gap-14 px-12 py-8">
-          {heads.length > 0 && <Column title="ГЛАВНЫЕ СУДЬИ" people={heads} />}
-          {heads.length > 0 && linesmen.length > 0 && (
-            <div className="w-px self-stretch" style={{ backgroundColor: TFH.navyLine }} />
-          )}
-          {linesmen.length > 0 && <Column title="ЛИНЕЙНЫЕ СУДЬИ" people={linesmen} />}
+    <Reveal isVisible={localVisible} variant="slide" className="absolute bottom-16 left-12 z-40">
+      <InfoCard icon={<PlateIcon name="whistle" />} label="СУДЕЙСКАЯ БРИГАДА МАТЧА" style={{ width: twoCols ? 880 : 570 }}>
+        <div
+          className="grid gap-x-11 gap-y-5"
+          style={{ gridTemplateColumns: twoCols ? 'repeat(2, minmax(0, 1fr))' : '1fr' }}
+        >
+          {crew.map((c, i) => (
+            <div key={i} className="flex items-center gap-5 min-w-0">
+              <Portrait person={c.person} size={76} ring={4} />
+              <div className="flex flex-col min-w-0">
+                <Label size={9} color={T.acc} tracking="0.26em" weight={800} className="mb-2">{c.role}</Label>
+                <PersonName person={c.person} size={22} />
+              </div>
+            </div>
+          ))}
         </div>
-      </InfoPlate>
-    </AnimationWrapper>
+      </InfoCard>
+    </Reveal>
   );
 }

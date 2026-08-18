@@ -111,7 +111,9 @@ export default function Scoreboard({
   // =======================================================================
   // УМНАЯ ЛОГИКА СКРЫТИЯ ТАБЛО (ЗАЩИТА ОТ МИГАНИЯ ПРИ ТРАНЗИШЕНАХ)
   // =======================================================================
-  const fullScreenOverlays = ['prematch', 'intermission', 'team_leaders', 'team_roster'];
+  // scorebar — не полноэкранная плашка, но это РАЗВЁРНУТОЕ табло внизу кадра:
+  // вместе с компактным счёт висел бы в кадре дважды, поэтому прячемся так же.
+  const fullScreenOverlays = ['prematch', 'scorebar', 'bumper', 'intermission', 'team_leaders', 'team_roster'];
   const isFullScreenActive = overlay?.visible && fullScreenOverlays.includes(overlay?.type);
 
   const [hideForOverlay, setHideForOverlay] = useState(false);

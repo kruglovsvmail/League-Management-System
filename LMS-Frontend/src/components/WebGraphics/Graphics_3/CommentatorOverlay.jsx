@@ -1,17 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { AnimationWrapper } from './AnimationWrapper';
-import { InfoPlate } from './InfoPlate';
-import { TFH } from './theme';
+import { Reveal } from './Reveal';
+import { InfoCard, PlateIcon, Portrait, PersonName, Rule } from './Frost';
+import { Label } from './Type';
+import { T, pickOfficial } from './theme';
 
-// Микрофон, собранный из прямых граней — та же плоская геометрия, что у фигур паттерна.
-const MicIcon = () => (
-  <svg width="46" height="46" viewBox="0 0 48 48" fill="none">
-    <path d="M24 5 L31 12 L31 24 L24 31 L17 24 L17 12 Z" fill={TFH.blue} />
-    <path d="M11 22 L11 26 L24 39 L37 26 L37 22" stroke={TFH.blue} strokeWidth="3" strokeLinejoin="miter" />
-    <path d="M24 39 L24 45" stroke={TFH.blue} strokeWidth="3" />
-    <path d="M15 45 L33 45" stroke={TFH.blue} strokeWidth="3" />
-  </svg>
-);
+// Комментаторы: светлая плашка у левой кромки снизу, круглые портреты в
+// серебряных кольцах.
+//
+// Ключи ролей в публичном эндпоинте — 'commentator-1' / 'commentator-2'
+// (см. getPublicGameById). Прежняя версия этой плашки искала officials.media,
+// которого в ответе нет, из-за чего она не появлялась в эфире вообще.
+
+// На уровне модуля, а не внутри плашки: вложенный компонент React считал бы
+// новым типом на каждом рендере и перемонтировал бы поддерево.
+function LiveTag() {
+  return (
+    <div
+      className="flex items-center gap-2 px-3.5 py-1.5 rounded-full shrink-0"
+      style={{ backgroundColor: T.danger }}
+    >
+      <div className="rounded-full g3-breathe" style={{ width: 8, height: 8, backgroundColor: T.white }} />
+      <Label size={11} color={T.white} tracking="0.22em" weight={800}>В ЭФИРЕ</Label>
+    </div>
+  );
+}
 
 export default function CommentatorOverlay({ game, overlay }) {
   const isGlobalVisible = overlay.visible && overlay.type === 'commentator';
@@ -22,35 +34,46 @@ export default function CommentatorOverlay({ game, overlay }) {
     let timer;
     if (isGlobalVisible) {
       setLocalVisible(true);
-      timer = setTimeout(() => {
-        setLocalVisible(false);
-      }, displayDuration * 1000);
+      timer = setTimeout(() => setLocalVisible(false), displayDuration * 1000);
     } else {
       setLocalVisible(false);
     }
     return () => clearTimeout(timer);
   }, [isGlobalVisible, displayDuration, overlay.data]);
 
-  if (!game || !game.officials?.media) return null;
+  if (!game?.officials) return null;
 
-  const media = game.officials.media;
+  const first = pickOfficial(game.officials, 'commentator-1', 'media');
+  const second = pickOfficial(game.officials, 'commentator-2');
+  const people = [first, second].filter(Boolean);
+  if (people.length === 0) return null;
+
+  const wide = people.length > 1;
 
   return (
-    <AnimationWrapper
-      type="commentator"
-      isVisible={localVisible}
-      className="absolute bottom-16 left-12 z-40"
-    >
-      <InfoPlate icon={<MicIcon />} label="КОММЕНТАТОР МАТЧА" minWidth={420}>
-        <div className="flex items-end gap-4 px-10 pt-10 pb-7">
-          <span className="text-[36px] font-black uppercase tracking-[0.04em] leading-none" style={{ color: TFH.white }}>
-            {media.last_name}
-          </span>
-          <span className="text-[20px] font-bold uppercase tracking-[0.16em] leading-none pb-1" style={{ color: TFH.blueSoft }}>
-            {media.first_name}
-          </span>
+    <Reveal isVisible={localVisible} variant="slide" className="absolute bottom-16 left-12 z-40">
+      <InfoCard
+        icon={<PlateIcon name="mic" />}
+        label={wide ? 'КОММЕНТАТОРЫ МАТЧА' : 'КОММЕНТАТОР МАТЧА'}
+        right={<LiveTag />}
+        style={{ width: wide ? 800 : 570 }}
+      >
+        <div className="flex items-center gap-8 min-w-0">
+          <div className="flex items-center gap-5 min-w-0">
+            <Portrait person={first} size={86} ring={4} />
+            <PersonName person={first} size={25} />
+          </div>
+
+          {second && <Rule vertical tone="silver" style={{ height: 70 }} />}
+
+          {second && (
+            <div className="flex items-center gap-5 min-w-0">
+              <Portrait person={second} size={86} ring={4} />
+              <PersonName person={second} size={25} />
+            </div>
+          )}
         </div>
-      </InfoPlate>
-    </AnimationWrapper>
+      </InfoCard>
+    </Reveal>
   );
 }

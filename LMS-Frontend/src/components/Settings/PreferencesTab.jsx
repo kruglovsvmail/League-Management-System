@@ -7,6 +7,7 @@ import { Stepper } from '../../ui/Stepper';
 import { SegmentButton } from '../../ui/SegmentButton';
 import { Switch } from '../../ui/Switch';
 import { useAccess } from '../../hooks/useAccess';
+import { BroadcastAssetsSection } from './BroadcastAssetsSection';
 
 const DISQUALIFICATION_MODES = [
   { value: 'light', label: 'Лайт' },
@@ -231,6 +232,9 @@ export function PreferencesTab({ setToast }) {
             )}
           </div>
         </div>
+
+        {/* БЛОК: ТРАНСЛЯЦИИ — эфирные файлы лиги: аудио-интро и три видео-заставки. */}
+        <BroadcastAssetsSection leagueId={selectedLeague?.id} canEdit={canEdit} setToast={setToast} />
 
       </div>
     </div>

@@ -1,4 +1,6 @@
 import express from 'express';
+import { getGameBumpers, getGameLogos, uploadGameTransition, getGameTransition, downloadGameTransition } from '../controllers/broadcastAssetsController.js';
+import uploadBroadcast from '../config/uploadBroadcast.js';
 import rateLimit from 'express-rate-limit';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import {
@@ -97,6 +99,17 @@ router.get('/tts/test', testPronunciation);
 
 // === TTS: КОММЕНТАТОР (панель трансляции) ===
 // Вызывается из WebGraphicsPanel — право то же, что открывает саму панель титров.
+// Заставки лиги для панели: названия слотов, длительности и признак «файл залит».
+router.get('/games/:gameId/broadcast/bumpers', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), getGameBumpers);
+// Эмблемы матча как data-URI — для выгрузки перехода в WebM (см. контроллер).
+router.get('/games/:gameId/broadcast/logos', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), getGameLogos);
+
+// Переход заставки: собирается в браузере режиссёра один раз и живёт файлом в
+// S3, эфир его только проигрывает (см. контроллер).
+router.get('/games/:gameId/broadcast/transition', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), getGameTransition);
+router.post('/games/:gameId/broadcast/transition', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), uploadBroadcast.single('file'), uploadGameTransition);
+router.get('/games/:gameId/broadcast/transition/download', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), downloadGameTransition);
+
 router.post('/games/:gameId/broadcast/tts/roster', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), broadcastRosterAnnouncement);
 router.post('/games/:gameId/broadcast/tts/event', express.json(), requirePermission('MATCH_WEB_GRAPHICS_PANEL'), broadcastEventAnnouncement);
 

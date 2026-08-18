@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import { getToken } from '../utils/helpers';
 import { Header } from '../components/Header';
 import { Select } from '../ui/Select';
@@ -20,7 +20,17 @@ dayjs.locale('ru');
 export function GamesPage() {
     const { selectedLeague } = useOutletContext();
     const { checkAccess } = useAccess();
-  
+
+    // Куда возвращаемся со страницы матча: ссылка «К списку матчей» приносит
+    // сезон и дивизион того матча. Читаем их ОДИН раз — дальше выбор в
+    // выпадашках важнее адреса, поэтому после применения ref обнуляется, а
+    // параметры уходят из адресной строки.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const wantedRef = useRef({
+        season: Number(searchParams.get('season')) || null,
+        division: Number(searchParams.get('division')) || null,
+    });
+
     const [seasons, setSeasons] = useState([]);
     const [selectedSeasonId, setSelectedSeasonId] = useState(null);
     
@@ -75,7 +85,10 @@ export function GamesPage() {
             const data = await res.json();
             if (data.success && data.data.length > 0) {
                 setSeasons(data.data);
-                const active = data.data.find(s => s.is_active) || data.data[0];
+                const wanted = wantedRef.current.season;
+                const active = (wanted && data.data.find(s => s.id === wanted))
+                    || data.data.find(s => s.is_active)
+                    || data.data[0];
                 setSelectedSeasonId(active ? active.id : null);
             } else {
                 setSeasons([]); setSelectedSeasonId(null);
@@ -93,7 +106,16 @@ export function GamesPage() {
             const data = await res.json();
             if (data.success && data.data.length > 0) {
                 setDivisions(data.data);
-                setSelectedDivisionId(data.data[0].id);
+                const wanted = wantedRef.current.division;
+                const target = (wanted && data.data.find(d => d.id === wanted)) || data.data[0];
+                setSelectedDivisionId(target.id);
+
+                // Параметры одноразовые: подсказка сработала, дальше страница
+                // живёт своим выбором.
+                if (wantedRef.current.season || wantedRef.current.division) {
+                    wantedRef.current = { season: null, division: null };
+                    setSearchParams({}, { replace: true });
+                }
             } else {
                 setDivisions([]);
                 setSelectedDivisionId(null);

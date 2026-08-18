@@ -149,6 +149,16 @@ export function GamePage() {
   // даже на просмотр. Судьи/секретари/медиа лиги сюда вообще не должны попадать.
   const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN;
   const isLeaguelessGame = !!game && !game.division_id;
+
+  // Возврат к списку матчей — именно к тому дивизиону и сезону, из которого сюда
+  // зашли. Без параметров список открывает активный сезон и первый дивизион в
+  // нём, и режиссёр после каждого матча заново выбирал бы свой дивизион.
+  const backToListUrl = isLeaguelessGame
+    ? '/leagueless-matches'
+    : (game?.division_id
+      ? `/games?division=${game.division_id}${game.season_id ? `&season=${game.season_id}` : ''}`
+      : '/games');
+
   const canView = isLeaguelessGame
     ? isGlobalAdmin
     : checkAccess('MATCH_PAGE_VIEW', { gameStaff: gameStaffArray });
@@ -574,7 +584,7 @@ export function GamePage() {
       <Header 
         title="Матч" 
         subtitle={
-          <Link to={isLeaguelessGame ? "/leagueless-matches" : "/games"} className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
+          <Link to={backToListUrl} className="flex items-center gap-1.5 text-[14px] font-bold text-graphite-light hover:text-orange transition-colors">
             <Icon name="chevron_left" className="w-4 h-4" /> К списку матчей
           </Link>
         } 

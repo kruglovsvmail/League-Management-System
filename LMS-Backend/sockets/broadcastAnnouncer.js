@@ -102,18 +102,17 @@ const EVENTS_QUERY = `
 
 const readOverlayParams = async (gameId) => {
   try {
-    const res = await pool.query('SELECT audio_volume, params FROM game_overlay_state WHERE game_id = $1', [gameId]);
+    const res = await pool.query('SELECT params FROM game_overlay_state WHERE game_id = $1', [gameId]);
     const row = res.rows[0];
     const params = row?.params || {};
     return {
-      audioVolume: typeof row?.audio_volume === 'number' ? row.audio_volume : 40,
       ttsEvents: !!params.ttsEvents,
       autoShowSettings: { ...AUTO_SHOW_DEFAULTS, ...(params.autoShowSettings || {}) },
       broadcastedEvents: Array.isArray(params.broadcastedEvents) ? params.broadcastedEvents : [],
     };
   } catch (e) {
     console.error('[BroadcastAnnouncer] Ошибка чтения params:', e);
-    return { audioVolume: 40, ttsEvents: false, autoShowSettings: AUTO_SHOW_DEFAULTS, broadcastedEvents: [] };
+    return { ttsEvents: false, autoShowSettings: AUTO_SHOW_DEFAULTS, broadcastedEvents: [] };
   }
 };
 
@@ -156,7 +155,7 @@ export default function setupBroadcastAnnouncer(io) {
   const dispatchEvent = async (gameId, row) => {
     const s = getState(gameId);
 
-    const { audioVolume, ttsEvents, autoShowSettings, broadcastedEvents } = await readOverlayParams(gameId);
+    const { ttsEvents, autoShowSettings, broadcastedEvents } = await readOverlayParams(gameId);
     if (!autoShowSettings.enabled) return; // за время ожидания автопоказ выключили — молчим
 
     // Перепроверяем "актуальность" ещё раз на момент фактического показа (не только на момент
@@ -207,7 +206,7 @@ export default function setupBroadcastAnnouncer(io) {
       s.audioBusySource = 'event';
       io.to(`game_${gameId}`).emit('trigger_obs_overlay', {
         type: 'audio', gameId, action: 'play', source: 'event',
-        data: { url, volume: audioVolume / 100, loop: false },
+        data: { url, loop: false },
       });
       // Предохранитель: обычно мьютекс снимает 'audio_ended' от OBS, когда фраза доиграла.
       // Но если именно в этот момент OBS выпал из комнаты (см. фикс реконнекта) и 'audio_ended'

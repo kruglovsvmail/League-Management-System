@@ -6,8 +6,12 @@ import {
   getLeagueServiceAccounts, createLeagueServiceAccount, updateLeagueServiceAccount, deleteLeagueServiceAccount,
   getLeaguePreferences, updateLeaguePreferences
 } from '../controllers/settingsController.js';
+import {
+  getBroadcastAssets, uploadBroadcastAsset, deleteBroadcastAsset, updateBumperTitles
+} from '../controllers/broadcastAssetsController.js';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import upload from '../config/upload.js'; // ИМПОРТИРУЕМ НАШ UPLOAD
+import uploadBroadcast from '../config/uploadBroadcast.js';
 
 const router = express.Router();
 router.use(verifyToken);
@@ -17,6 +21,13 @@ router.get('/users/lookup', lookupUserByPhone);
 // ОБЩИЕ ПАРАМЕТРЫ ЛИГИ
 router.get('/leagues/:leagueId/preferences', requirePermission('SETTINGS_DIVISIONS_VIEW'), getLeaguePreferences);
 router.put('/leagues/:leagueId/preferences', express.json(), requirePermission('SETTINGS_DIVISIONS_EDIT'), updateLeaguePreferences);
+
+// ЭФИРНЫЕ ФАЙЛЫ ЛИГИ (Параметры → Трансляции): интро и три видео-заставки.
+// Права те же, что у остальных параметров лиги — это её общая настройка.
+router.get('/leagues/:leagueId/broadcast-assets', requirePermission('SETTINGS_DIVISIONS_VIEW'), getBroadcastAssets);
+router.post('/leagues/:leagueId/broadcast-assets/:kind', requirePermission('SETTINGS_DIVISIONS_EDIT'), uploadBroadcast.single('file'), uploadBroadcastAsset);
+router.delete('/leagues/:leagueId/broadcast-assets/:kind', requirePermission('SETTINGS_DIVISIONS_EDIT'), deleteBroadcastAsset);
+router.put('/leagues/:leagueId/broadcast-assets/titles', express.json(), requirePermission('SETTINGS_DIVISIONS_EDIT'), updateBumperTitles);
 
 // ПЕРСОНАЛ
 router.get('/leagues/:leagueId/settings-staff', requirePermission('SETTINGS_STAFF_VIEW'), getLeagueStaff);
