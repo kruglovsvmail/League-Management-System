@@ -2,26 +2,29 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 // DND Kit импорты
-import { 
-  DndContext, 
-  TouchSensor, 
-  MouseSensor, 
-  useSensor, 
-  useSensors, 
-  DragOverlay, 
-  pointerWithin 
+import {
+  DndContext,
+  TouchSensor,
+  MouseSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  pointerWithin,
+  MeasuringStrategy
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 // ТОТ САМЫЙ ИМПОРТ, КОТОРЫЙ ВЫЗВАЛ ОШИБКУ:
 import { snapCenterToCursor } from '@dnd-kit/modifiers';
 
 import { useWebGraphicsPanel } from '../components/WebGraphicsPanel/useWebGraphicsPanel';
-import { ScoreboardBroadcastButton } from '../components/WebGraphicsPanel/ScoreboardBroadcastButton';
+import { BroadcastTile } from '../components/WebGraphicsPanel/BroadcastTile';
+import { ScoreboardFace } from '../components/WebGraphicsPanel/ScoreboardFace';
+import { BumperFront, BumperBack } from '../components/WebGraphicsPanel/BumperFaces';
+import { TileHint, TileTimerFace, TileTimerSettings, TileStepperSetting } from '../components/WebGraphicsPanel/TileParts';
 import { GameEventsWidget } from '../components/WebGraphicsPanel/GameEventsWidget';
-import { StaticBroadcastButton } from '../components/WebGraphicsPanel/StaticBroadcastButton';
-import { BumperBroadcastButton } from '../components/WebGraphicsPanel/BumperBroadcastButton';
 import { AutoPlaylistWidget } from '../components/WebGraphicsPanel/AutoPlaylistWidget';
 import { AudioPlayerWidget } from '../components/WebGraphicsPanel/AudioPlayerWidget';
+import { PanelTabs } from '../components/WebGraphicsPanel/PanelTabs';
 import { useAccess } from '../hooks/useAccess';
 import { AccessFallback } from '../ui/AccessFallback';
 import { Icon } from '../ui/Icon';
@@ -55,7 +58,42 @@ export function WebGraphicsPanel() {
     overlayParams, persistParams,
     overlayCount,
     overlayMismatch,
+    bumperWarmup,
   } = useWebGraphicsPanel(gameId);
+
+  // Вкладка правой колонки. Запоминаем на матч: режиссёр возвращается в панель
+  // (перезагрузка, вторая вкладка) к тому же виджету, с которым работал.
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem(`graphics_tab_${gameId}`) || 'events');
+  useEffect(() => { localStorage.setItem(`graphics_tab_${gameId}`, activeTab); }, [activeTab, gameId]);
+
+  // Правая колонка убирается: во втором периоде она не нужна, а плиткам достаётся
+  // весь экран. Тоже запоминаем — иначе после перезагрузки она возвращалась бы.
+  const [asideOpen, setAsideOpen] = useState(() => localStorage.getItem(`graphics_aside_${gameId}`) !== '0');
+  useEffect(() => { localStorage.setItem(`graphics_aside_${gameId}`, asideOpen ? '1' : '0'); }, [asideOpen, gameId]);
+
+  // Полноэкранный режим. Состояние держим не своё, а браузерное: из него выходят
+  // и клавишей Esc, мимо нашей кнопки.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const sync = () => setIsFullscreen(!!document.fullscreenElement);
+    sync();
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  };
+
+  // Что работает за убранной колонкой. Пустая строка — всё тихо, тревожить нечем.
+  // Озвучку события сюда не берём: она длится несколько секунд и погаснет раньше,
+  // чем на неё посмотрят (тот же критерий, что у подсветки вкладки «Аудио»).
+  const asideHiddenActivity = !asideOpen ? [
+    autopilotRunning && 'крутится автопилот',
+    introPlaying && 'играет интро',
+    audioSource === 'roster' && 'идёт озвучка составов',
+  ].filter(Boolean).join(', ') : '';
 
   const [resyncSent, setResyncSent] = useState(false);
   const handleForceResync = () => {
@@ -118,6 +156,15 @@ export function WebGraphicsPanel() {
   const handleStartAutopilot = () => {
     const resolved = playlistSteps.map(s => ({ id: s.id, type: s.type, label: s.label, data: getOverlayPayload(s.type) }));
     startAutopilotServer(resolved, autopilotDuration, autopilotLoop && playlistSteps.length > 1);
+  };
+
+  // Ручное нажатие по плашке — это перехват эфира у автопилота: иначе он через
+  // несколько секунд подменил бы то, что режиссёр только что выбрал. Стоп идёт
+  // «с перехватом» (keepOverlay): гасит цикл, но не трогает плашку — её прямо
+  // сейчас выставляет сама панель.
+  const takeAir = (fn) => () => {
+    if (autopilotRunning) stopAutopilotServer(true);
+    fn();
   };
 
   // --- ЛОГИКА АВТОРИЗАЦИИ ---
@@ -270,8 +317,27 @@ export function WebGraphicsPanel() {
 
   // Остаток от уже идущего титра: при перезагрузке панели плитка должна
   // погаснуть тогда же, когда картинка вернётся в эфир, а не через полный цикл.
+  //
+  // Он пересчитывается на КАЖДЫЙ рендер (панель перерисовывается вместе с
+  // таймером матча, четырежды в секунду), поэтому годится только для таймера
+  // автоснятия. Полосе показа нужна неизменная длина и точка старта — иначе
+  // браузер каждый раз заново раскладывает уже идущую анимацию.
   const bumperElapsed = liveBumper?.startedAt ? (Date.now() - Number(liveBumper.startedAt)) / 1000 : 0;
   const bumperTotalSecs = Math.max(0.5, bumperFullSecs - bumperElapsed);
+
+  // Прогрев выбранного слота в оверлеях. Пока файл не доехал, эфир придерживаем:
+  // в кадре был бы стоп-кадр вместо ролика. Оверлеи молчат (никто не подключён,
+  // старая версия оверлея) — не мешаем работать: bumperWarmup остаётся null.
+  // Ждём и выбранный ролик, и сам переход: переход играет первым, и холодный он
+  // означает видимую склейку. Процент показываем по тому, что отстаёт.
+  const bumperWarmParts = [
+    bumperSlot ? bumperWarmup?.[bumperSlot] : null,
+    bumperWarmup?.transition,
+  ].filter(Boolean);
+  const bumperWarming = bumperWarmParts.some(w => !w.ready);
+  const bumperWarm = bumperWarmParts.length
+    ? bumperWarmParts.reduce((a, b) => ((a.progress ?? 1) <= (b.progress ?? 1) ? a : b))
+    : null;
 
   const handleBumperToggle = () => {
     if (activeStaticOverlay === 'bumper') { toggleStaticOverlay('bumper'); return; }
@@ -407,11 +473,22 @@ export function WebGraphicsPanel() {
   };
 
   const handleBumperSlotSelect = (slot) => {
-    // Повторный клик по выбранному слоту снимает выбор — остаётся чистый переход.
+    const live = activeStaticOverlay === 'bumper';
+
+    // В эфире клик по уже играющему слоту не делает ничего. Снимать выбор прямо
+    // во время рекламы означало бы оборвать ролик и уйти в голый переход — а
+    // жест «ткнул в то, что и так идёт» такого не подразумевает. Чтобы убрать
+    // заставку из эфира, есть сама плитка.
+    if (live && slot === bumperSlot) return;
+
+    // Вне эфира повторный клик по выбранному слоту снимает выбор — остаётся
+    // чистый переход, которым режиссёр прикрывает переключение сцены в OBS.
     const next = slot === bumperSlot ? null : slot;
     setBumperSlot(next);
-    // Переключение прямо в эфире перезапускает титр с новым содержимым.
-    if (activeStaticOverlay === 'bumper') {
+
+    // Переключение прямо в эфире перезапускает титр с новым содержимым: ролик
+    // прошлого слота останавливается, новый заходит своим переходом.
+    if (live) {
       toggleStaticOverlay('bumper', { slot: next, outro: bumperOutro, startedAt: Date.now() }, true);
     }
   };
@@ -479,6 +556,9 @@ export function WebGraphicsPanel() {
     if (navigator.vibrate) navigator.vibrate(50);
     setActiveDragId(e.active.id);
     setActiveDragData(e.active.data.current);
+    // Плашку тащат в плейлист — сразу открываем вкладку автопилота (и саму колонку,
+    // если она убрана), иначе ронять её некуда: зоны дропа на экране нет.
+    if (e.active.data.current?.isSource) { setAsideOpen(true); setActiveTab('autopilot'); }
   };
 
   const handleDragEnd = (e) => {
@@ -530,54 +610,274 @@ export function WebGraphicsPanel() {
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${('0' + (s % 60)).slice(-2)}`;
 
+  // Живой счёт на лице плитки «Табло». Один и тот же в обоих режимах: счёт нужен
+  // режиссёру постоянно и не зависит от того, какое табло выбрано для эфира.
+  const scoreFace = (
+    <ScoreboardFace
+      game={game}
+      currentPeriod={currentPeriod}
+      isTimerRunning={isTimerRunning}
+      activePenalties={activePenalties}
+      timerSeconds={timerSeconds}
+      periodLength={periodLength}
+      otLength={otLength}
+    />
+  );
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      // Плейлист появляется на экране уже ПОСЛЕ начала перетаскивания (вкладка
+      // автопилота открывается в onDragStart), поэтому зоны дропа нужно мерить
+      // всё время: измеренные один раз, они остались бы нулевыми.
+      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
     >
       <div className="h-screen w-full bg-gray-bg-light text-graphite font-sans flex flex-col overflow-hidden relative">
         <main className="flex-1 flex w-full h-full min-h-0">
 
-          <section className="relative flex-1 h-full flex flex-col min-h-0 bg-[#f8f9fa]">
-            {/* Панель занимает весь экран и своей шапки не имеет — выхода из неё не было вовсе.
-                Кнопка плавающая, а не в полосе сверху: высота здесь дороже, плитки и так
-                скроллятся. Угол первой плитки пустой (её содержимое отцентровано),
-                поэтому кнопка ничего не перекрывает. */}
+          {/* Рейка панели. Шапки у панели нет — плитки держат весь экран без
+              прокрутки, и полоса сверху съела бы их высоту. Рейка забирает 48 px
+              ширины, которых у плиток в избытке, и даёт кнопкам постоянное место:
+              раньше «назад» висела прямо над углом первой карточки. */}
+          <nav className="w-12 shrink-0 h-full flex flex-col items-center py-3 border-r border-graphite/10 bg-[#d3d7dc]">
             <button
               onClick={() => navigate(`/games/${gameId}`)}
               title="Вернуться на страницу матча"
               aria-label="Вернуться на страницу матча"
-              className="absolute top-3 left-3 z-20 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm border border-graphite/15 shadow-md flex items-center justify-center text-graphite-light hover:text-orange hover:border-orange/40 transition-colors"
+              className="w-9 h-9 rounded-full bg-white border border-graphite/10 shadow-sm flex items-center justify-center text-graphite-light hover:text-orange hover:border-orange/40 transition-colors"
             >
               <Icon name="chevron_left" className="w-4 h-4" />
             </button>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-3 auto-rows-[260px] w-full border-t border-l border-graphite/10 bg-white">
+            {/* Выход из панели и настройки вида разведены пустотой: уходить со
+                страницы матча случайно, целясь в полноэкранный режим, незачем. */}
+            <div className="h-14 shrink-0" />
 
-                <ScoreboardBroadcastButton game={game} currentPeriod={currentPeriod} isTimerRunning={isTimerRunning} activePenalties={activePenalties} timerSeconds={timerSeconds} periodLength={periodLength} otLength={otLength} isActive={isScoreboardVisible} onClick={toggleScoreboard} />
-                <StaticBroadcastButton title="Предматчевая" dragType="prematch" isActive={activeStaticOverlay === 'prematch'} onClick={handlePrematchToggle} hasTimer={true} timerValue={prematchMins} onTimerChange={handlePrematchStepper} timerDisplay={formatTime(prematchTimeLeft)} isTimerCritical={isPrematchRunning && prematchTimeLeft <= 60} isTimerRunning={isPrematchRunning} onTimerStart={handlePrematchStart} onTimerPause={handlePrematchPause} />
-                {/* Развёрнутое табло внизу кадра. Пока оно в эфире, компактное
-                    табло в углу прячется само — счёт не дублируется. */}
-                <StaticBroadcastButton title="Табло по центру" description="Широкий счёт внизу кадра" dragType="scorebar" isActive={activeStaticOverlay === 'scorebar'} onClick={handleScoreBarToggle} />
-                <BumperBroadcastButton slots={bumperSlots} activeSlot={bumperSlot} onSelectSlot={handleBumperSlotSelect} isActive={activeStaticOverlay === 'bumper'} onClick={handleBumperToggle} progressDuration={bumperTotalSecs} runId={liveBumper?.startedAt || 0} onGenerate={handleBumperGenerate} onDownload={handleBumperDownload} transition={bumperTransition} exporting={bumperExporting} exportProgress={bumperExportProgress} downloading={bumperDownloading} exportSupport={bumperExportSupport} outro={bumperOutro} onOutroChange={handleBumperOutroToggle} />
-                <StaticBroadcastButton title="Перерыв" dragType="intermission" isActive={activeStaticOverlay === 'intermission'} onClick={handleIntermissionToggle} hasTimer={true} timerValue={intermissionMins} onTimerChange={handleIntermissionStepper} timerDisplay={formatTime(intermissionTimeLeft)} isTimerCritical={isIntermissionRunning && intermissionTimeLeft <= 60} isTimerRunning={isIntermissionRunning} onTimerStart={handleIntermissionStart} onTimerPause={handleIntermissionPause} />
-                <StaticBroadcastButton title="Лидеры" dragType="team_leaders" isActive={activeStaticOverlay === 'team_leaders'} onClick={handleLeadersToggle} hasStepper={true} stepperLabel="Смена (сек)" stepperValue={leadersSwitchSecs} stepperMin={3} stepperMax={30} onStepperChange={handleLeadersStepper} />
-                <StaticBroadcastButton title="Составы" dragType="team_roster" isActive={activeStaticOverlay === 'team_roster'} onClick={handleRosterToggle} hasStepper={true} stepperLabel="Смена (сек)" stepperValue={rosterSwitchSecs} stepperMin={3} stepperMax={30} onStepperChange={handleRosterStepper} />
-                <StaticBroadcastButton title="Арена" dragType="arena" isActive={activeStaticOverlay === 'arena'} onClick={handleArenaToggle} hasStepper={true} stepperLabel="Показ (сек)" stepperValue={arenaDurationSecs} stepperMin={3} stepperMax={60} onStepperChange={handleArenaStepper} progressType="once" progressDuration={arenaDurationSecs} />
-                <StaticBroadcastButton title="Комментатор" dragType="commentator" isActive={activeStaticOverlay === 'commentator'} onClick={handleCommentatorToggle} hasStepper={true} stepperLabel="Показ (сек)" stepperValue={commentatorDurationSecs} stepperMin={3} stepperMax={60} onStepperChange={handleCommentatorStepper} progressType="once" progressDuration={commentatorDurationSecs} />
-                <StaticBroadcastButton title="Судьи" dragType="referees" isActive={activeStaticOverlay === 'referees'} onClick={handleRefereesToggle} hasStepper={true} stepperLabel="Показ (сек)" stepperValue={refereesDurationSecs} stepperMin={3} stepperMax={60} onStepperChange={handleRefereesStepper} progressType="once" progressDuration={refereesDurationSecs} />
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
+              aria-pressed={isFullscreen}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
+                isFullscreen ? 'bg-white text-orange shadow-sm' : 'text-graphite/45 hover:text-orange hover:bg-white/70'
+              }`}
+            >
+              <Icon name={isFullscreen ? 'fullscreen_exit' : 'fullscreen'} className="w-5 h-5" />
+            </button>
+
+            {/* Убранная колонка не должна прятать то, что идёт в эфир: пока за ней
+                крутится автопилот или играет звук, вместо иконки панели горит
+                восклицательный знак. Иначе режиссёр просто не видит, что музыка
+                играет, а плашки сменяют друг друга сами. */}
+            <button
+              onClick={() => setAsideOpen(o => !o)}
+              title={asideHiddenActivity
+                ? `Показать правую колонку — там ${asideHiddenActivity}`
+                : asideOpen ? 'Скрыть правую колонку' : 'Показать правую колонку'}
+              aria-pressed={asideOpen}
+              className={`mt-2 w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
+                asideHiddenActivity ? 'bg-orange/15 text-orange animate-pulse'
+                  : asideOpen ? 'text-graphite/45 hover:text-orange hover:bg-white/70'
+                  : 'bg-white text-orange shadow-sm'
+              }`}
+            >
+              <Icon name={asideHiddenActivity ? 'alert' : 'panel_right'} className="w-5 h-5" />
+            </button>
+          </nav>
+
+          <section className="relative flex-1 h-full flex flex-col min-h-0 bg-[#dcdfe3]">
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-3 grid-rows-2 gap-4 p-4 h-full min-h-[560px] w-full">
+
+                {/* ТАБЛО: компактное в углу кадра и широкое по центру — две
+                    независимые кнопки. Пока широкое в эфире, компактное прячется
+                    само, счёт не дублируется. Изнанки у плитки нет: счёт, период и
+                    штрафы берутся из матча, настраивать нечего — поэтому и
+                    шестерёнка на полосах не появляется. */}
+                <BroadcastTile
+                  modes={[
+                    {
+                      key: 'scoreboard',
+                      title: 'Табло',
+                      dragType: null,               // компактное табло — не плашка, автопилот его не крутит
+                      isLive: isScoreboardVisible,
+                      grow: 1.6,                    // полосе шире: в ней живой счёт, а не одна строка
+                      onAir: toggleScoreboard,
+                      airTitle: isScoreboardVisible ? 'Нажмите, чтобы убрать табло из угла кадра' : 'Нажмите, чтобы вернуть табло в угол кадра',
+                      front: scoreFace,
+                    },
+                    {
+                      key: 'scorebar',
+                      title: 'Табло по центру',
+                      dragType: 'scorebar',
+                      isLive: activeStaticOverlay === 'scorebar',
+                      onAir: takeAir(handleScoreBarToggle),
+                      front: <TileHint>Широкий счёт внизу кадра</TileHint>,
+                    },
+                  ]}
+                />
+
+                {/* ОТСЧЁТЫ до матча и до конца перерыва. Минуты и старт — на изнанке,
+                    у каждого свои: 10 минут предматчевой и 2 минуты перерыва. */}
+                <BroadcastTile
+                  modes={[
+                    {
+                      key: 'prematch',
+                      title: 'До матча',
+                      dragType: 'prematch',
+                      isLive: activeStaticOverlay === 'prematch',
+                      onAir: takeAir(handlePrematchToggle),
+                      front: <TileTimerFace display={formatTime(prematchTimeLeft)} isRunning={isPrematchRunning} isCritical={isPrematchRunning && prematchTimeLeft <= 60} />,
+                      back: (
+                        <TileTimerSettings
+                          display={formatTime(prematchTimeLeft)}
+                          isRunning={isPrematchRunning}
+                          isCritical={isPrematchRunning && prematchTimeLeft <= 60}
+                          onStart={handlePrematchStart}
+                          onPause={handlePrematchPause}
+                          mins={prematchMins}
+                          onMinsChange={handlePrematchStepper}
+                        />
+                      ),
+                    },
+                    {
+                      key: 'intermission',
+                      title: 'Перерыв',
+                      dragType: 'intermission',
+                      isLive: activeStaticOverlay === 'intermission',
+                      onAir: takeAir(handleIntermissionToggle),
+                      front: <TileTimerFace display={formatTime(intermissionTimeLeft)} isRunning={isIntermissionRunning} isCritical={isIntermissionRunning && intermissionTimeLeft <= 60} />,
+                      back: (
+                        <TileTimerSettings
+                          display={formatTime(intermissionTimeLeft)}
+                          isRunning={isIntermissionRunning}
+                          isCritical={isIntermissionRunning && intermissionTimeLeft <= 60}
+                          onStart={handleIntermissionStart}
+                          onPause={handleIntermissionPause}
+                          mins={intermissionMins}
+                          onMinsChange={handleIntermissionStepper}
+                        />
+                      ),
+                    },
+                  ]}
+                />
+
+                {/* ПРЕДСТАВЛЕНИЯ: арена, комментатор и судьи. Все трое снимаются
+                    сами по своему таймеру, поэтому у каждого свой «показ». */}
+                <BroadcastTile
+                  modes={[
+                    {
+                      key: 'arena',
+                      title: 'Арена',
+                      dragType: 'arena',
+                      isLive: activeStaticOverlay === 'arena',
+                      onAir: takeAir(handleArenaToggle),
+                      progress: { duration: arenaDurationSecs },
+                      front: <TileHint>Показ: {arenaDurationSecs} с</TileHint>,
+                      back: <TileStepperSetting label="Показ (сек)" value={arenaDurationSecs} min={3} max={60} onChange={handleArenaStepper} />,
+                    },
+                    {
+                      key: 'commentator',
+                      title: 'Комментаторы',
+                      dragType: 'commentator',
+                      isLive: activeStaticOverlay === 'commentator',
+                      onAir: takeAir(handleCommentatorToggle),
+                      progress: { duration: commentatorDurationSecs },
+                      front: <TileHint>Показ: {commentatorDurationSecs} с</TileHint>,
+                      back: <TileStepperSetting label="Показ (сек)" value={commentatorDurationSecs} min={3} max={60} onChange={handleCommentatorStepper} />,
+                    },
+                    {
+                      key: 'referees',
+                      title: 'Судьи',
+                      dragType: 'referees',
+                      isLive: activeStaticOverlay === 'referees',
+                      onAir: takeAir(handleRefereesToggle),
+                      progress: { duration: refereesDurationSecs },
+                      front: <TileHint>Показ: {refereesDurationSecs} с</TileHint>,
+                      back: <TileStepperSetting label="Показ (сек)" value={refereesDurationSecs} min={3} max={60} onChange={handleRefereesStepper} />,
+                    },
+                  ]}
+                />
+
+                <BroadcastTile
+                  modes={[
+                    {
+                      key: 'team_leaders',
+                      title: 'Лидеры',
+                      dragType: 'team_leaders',
+                      isLive: activeStaticOverlay === 'team_leaders',
+                      onAir: takeAir(handleLeadersToggle),
+                      front: <TileHint>Показатель меняется каждые {leadersSwitchSecs} с</TileHint>,
+                      back: <TileStepperSetting label="Смена показателя (сек)" value={leadersSwitchSecs} min={3} max={30} onChange={handleLeadersStepper} />,
+                    },
+                  ]}
+                />
+
+                <BroadcastTile
+                  modes={[
+                    {
+                      key: 'team_roster',
+                      title: 'Составы',
+                      dragType: 'team_roster',
+                      isLive: activeStaticOverlay === 'team_roster',
+                      onAir: takeAir(handleRosterToggle),
+                      front: <TileHint>Команда меняется каждые {rosterSwitchSecs} с</TileHint>,
+                      back: <TileStepperSetting label="Смена команды (сек)" value={rosterSwitchSecs} min={3} max={30} onChange={handleRosterStepper} />,
+                    },
+                  ]}
+                />
+
+                {/* ЗАСТАВКА: ролики, сборка перехода и обрамление — на изнанке,
+                    на лице только то, что уйдёт в эфир по нажатию. */}
+                <BroadcastTile
+                  modes={[
+                    {
+                      key: 'bumper',
+                      title: 'Заставка',
+                      dragType: bumperTransition ? 'bumper' : null,
+                      isLive: activeStaticOverlay === 'bumper',
+                      onAir: takeAir(handleBumperToggle),
+                      airDisabled: !bumperTransition || (activeStaticOverlay !== 'bumper' && bumperWarming),
+                      airTitle: !bumperTransition
+                        ? 'Соберите переход в настройках плитки, чтобы заставка стала доступна'
+                        : activeStaticOverlay === 'bumper' ? 'Заставка в эфире — нажмите, чтобы убрать'
+                        : bumperWarming ? `Ролик ещё качается в оверлей — ${Math.round((bumperWarm.progress || 0) * 100)} %`
+                        : 'Нажмите, чтобы вывести в эфир',
+                      progress: { duration: bumperFullSecs, startedAt: liveBumper?.startedAt || 0, runId: liveBumper?.startedAt || 0 },
+                      front: <BumperFront ready={!!bumperTransition} slots={bumperSlots} activeSlot={bumperSlot} outro={bumperOutro} warmup={bumperWarmup} />,
+                      back: (
+                        <BumperBack
+                          ready={!!bumperTransition}
+                          canBuild={!!bumperExportSupport?.supported}
+                          isLive={activeStaticOverlay === 'bumper'}
+                          warmup={bumperWarmup}
+                          slots={bumperSlots}
+                          activeSlot={bumperSlot}
+                          onSelectSlot={handleBumperSlotSelect}
+                          onGenerate={handleBumperGenerate}
+                          onDownload={handleBumperDownload}
+                          exporting={bumperExporting}
+                          exportProgress={bumperExportProgress}
+                          downloading={bumperDownloading}
+                          outro={bumperOutro}
+                          onOutroChange={handleBumperOutroToggle}
+                        />
+                      ),
+                    },
+                  ]}
+                />
 
               </div>
             </div>
           </section>
 
-          <aside className="w-[28%] h-full flex flex-col min-h-0 overflow-y-auto custom-scrollbar border-l border-graphite/5 bg-[#e8e8e8ff]">
+          {asideOpen && (
+          <aside className="w-[28%] h-full flex flex-col min-h-0 overflow-hidden border-l border-graphite/5 bg-[#e8e8e8ff]">
             <button
               onClick={handleForceResync}
-              className={`shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 border-b border-graphite/10 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+              className={`shrink-0 flex items-center justify-center gap-2 px-4 py-4 border-b border-graphite/10 text-[11px] font-bold uppercase tracking-wider transition-colors ${
                 overlayMismatch && !resyncSent ? 'bg-amber-400/10 hover:bg-amber-400/20' : 'bg-white hover:bg-graphite/5'
               }`}
               title="Заставить все OBS-оверлеи заново подключиться и перечитать состояние с сервера"
@@ -608,37 +908,56 @@ export function WebGraphicsPanel() {
                 </>
               )}
             </button>
-            <AutoPlaylistWidget
-              steps={playlistSteps}
-              setSteps={setPlaylistSteps}
-              duration={autopilotDuration}
-              setDuration={setAutopilotDuration}
-              isLoop={autopilotLoop}
-              setIsLoop={setAutopilotLoop}
-              isRunning={autopilotRunning}
-              currentIndex={autopilotIndex}
-              onStart={handleStartAutopilot}
-              onStop={stopAutopilotServer}
+            <PanelTabs
+              active={activeTab}
+              onChange={setActiveTab}
+              tabs={[
+                { key: 'autopilot', label: 'Автопилот', title: 'Автопилот графики', indicator: autopilotRunning },
+                // Вкладка горит, пока интро или озвучка составов идут в эфир:
+                // свёрнутый виджет раньше прятал включённое интро от режиссёра.
+                { key: 'audio', label: 'Аудио', title: 'Интро и озвучка составов', indicator: introPlaying || audioSource === 'roster' },
+                { key: 'events', label: 'События', title: 'События матча' },
+              ]}
             />
 
-            <AudioPlayerWidget gameId={gameId} socket={socket} audioPlaying={audioPlaying} audioSource={audioSource} introPlaying={introPlaying} setIntroPlaying={setIntroPlaying} persistParams={persistParams} />
-
             <div className="flex-1 min-h-0">
-              <GameEventsWidget
-                events={events}
-                game={game}
-                periodLength={periodLength}
-                broadcastedEvents={broadcastedEvents}
-                activeEventOverlay={activeEventOverlay}
-                triggerOverlay={triggerOverlay}
-                getEventSignature={getEventSignature}
-                autoShowSettings={autoShowSettings}
-                updateAutoShowSettings={updateAutoShowSettings}
-                ttsEvents={ttsEvents}
-                updateTtsEvents={updateTtsEvents}
-              />
+              {activeTab === 'autopilot' && (
+                <AutoPlaylistWidget
+                  steps={playlistSteps}
+                  setSteps={setPlaylistSteps}
+                  duration={autopilotDuration}
+                  setDuration={setAutopilotDuration}
+                  isLoop={autopilotLoop}
+                  setIsLoop={setAutopilotLoop}
+                  isRunning={autopilotRunning}
+                  currentIndex={autopilotIndex}
+                  onStart={handleStartAutopilot}
+                  onStop={stopAutopilotServer}
+                />
+              )}
+
+              {activeTab === 'audio' && (
+                <AudioPlayerWidget gameId={gameId} socket={socket} audioPlaying={audioPlaying} audioSource={audioSource} introPlaying={introPlaying} setIntroPlaying={setIntroPlaying} persistParams={persistParams} />
+              )}
+
+              {activeTab === 'events' && (
+                <GameEventsWidget
+                  events={events}
+                  game={game}
+                  periodLength={periodLength}
+                  broadcastedEvents={broadcastedEvents}
+                  activeEventOverlay={activeEventOverlay}
+                  triggerOverlay={triggerOverlay}
+                  getEventSignature={getEventSignature}
+                  autoShowSettings={autoShowSettings}
+                  updateAutoShowSettings={updateAutoShowSettings}
+                  ttsEvents={ttsEvents}
+                  updateTtsEvents={updateTtsEvents}
+                />
+              )}
             </div>
           </aside>
+          )}
         </main>
       </div>
 

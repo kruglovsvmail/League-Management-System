@@ -1,14 +1,16 @@
 // src/components/WebGraphics/useWebGraphics.js
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { calculatePenaltyTimelines } from '../GameLiveDesk/GameDeskShared';
 import { startAudioReactive, stopAudioReactive } from './audioReactive';
+import { useBumperWarmup } from './bumperWarmup';
 
 // Типы, которые режиссёр «нажимает» в панели и которые должны совпадать с тем, что OBS реально
 // показывает. События (goal/penalty) — временные наложения, мисматч-детектор их игнорирует.
 const STATIC_OVERLAY_TYPES = new Set(['prematch', 'scorebar', 'bumper', 'intermission', 'team_roster', 'team_leaders', 'arena', 'commentator', 'referees']);
 
 export function useWebGraphics(gameId) {
+  const socketRef = useRef(null);   // нужен прогреву заставок, чтобы слать отчёт в панель
   const [game, setGame] = useState(null);
   const [events, setEvents] = useState([]); 
   
@@ -271,6 +273,7 @@ export function useWebGraphics(gameId) {
 
   useEffect(() => {
     const socket = io(import.meta.env.VITE_API_URL);
+    socketRef.current = socket;
 
     // join_game шлём на первом connect и на КАЖДОМ реконнекте (сон ноутбука с панелью не
     // единственный сценарий — сам OBS тоже может на секунду моргнуть сетью). Без этого
@@ -534,9 +537,33 @@ export function useWebGraphics(gameId) {
       if (introAudioRef.current) { introAudioRef.current.pause(); introAudioRef.current = null; }
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       stopAudioReactive();
+      socketRef.current = null;
       socket.disconnect();
     };
   }, [gameId]);
+
+  // ПРОГРЕВ РОЛИКОВ ЗАСТАВКИ. Тянем файлы в память сразу после загрузки данных
+  // матча, чтобы к нажатию кнопки играть было уже нечего ждать. Отчёт уходит в
+  // панель: режиссёр видит готовность слотов и не жмёт эфир раньше времени.
+  //
+  // hold — пока заставка в кадре, готовые адреса не подставляем: подмена src
+  // посреди рекламы перезапустила бы ролик с нуля.
+  const reportWarmup = useCallback((slots) => {
+    socketRef.current?.emit('bumper_warmup', { gameId, slots });
+  }, [gameId]);
+
+  // Переход греем вместе с роликами: он играет первым, и холодный файл означает
+  // видимую в эфире склейку. Адрес у него постоянный (?v=время сборки), так что
+  // перезагрузка данных матча повторную закачку не вызывает.
+  const warmList = [
+    ...(game?.league_bumpers || []),
+    ...(game?.transition_url ? [{ slot: 'transition', url: game.transition_url }] : []),
+  ];
+
+  const { sources: bumperSources } = useBumperWarmup(warmList, {
+    hold: overlay.visible && overlay.type === 'bumper',
+    onReport: reportWarmup,
+  });
 
   // === ВЫСОКОЧАСТОТНЫЙ ЦИКЛ РАСЧЕТА ВРЕМЕНИ ДЛЯ OBS ===
   useEffect(() => {
@@ -570,6 +597,7 @@ export function useWebGraphics(gameId) {
 
   return {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
-    periodLength, otLength, soLength, overlay, isScoreboardVisible, playOverlaySound
+    periodLength, otLength, soLength, overlay, isScoreboardVisible, playOverlaySound,
+    bumperSources
   };
 }

@@ -136,18 +136,21 @@ export function GameEventsWidget({
   const homeShortName = game?.home_short_name || game?.home_team_name?.substring(0, 3).toUpperCase() || 'ХОЗ';
   const awayShortName = game?.away_short_name || game?.away_team_name?.substring(0, 3).toUpperCase() || 'ГОС';
 
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  // Настройки свёрнуты по умолчанию: вкладка открывается ради списка событий, а
+  // автопоказ и озвучку трогают редко — их состояние и так видно по иконкам справа.
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div className="flex flex-col h-full bg-white border-l border-graphite/5">
-      {/* Шапка — заголовок + переключатель настроек (клик по всей шапке) */}
+      {/* Шапка — переключатель настроек (клик по всей шапке). Названия виджета
+          здесь нет: его роль играет вкладка. */}
       <div
         onClick={() => setSettingsOpen(o => !o)}
         className="flex items-center gap-2 px-4 py-2.5 border-b border-graphite/10 shrink-0 cursor-pointer select-none hover:bg-graphite/5 transition-colors"
         title={settingsOpen ? 'Скрыть настройки' : 'Показать настройки'}
       >
-        <svg className="w-4 h-4 text-graphite/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-        <h3 className="text-[11px] font-black uppercase tracking-widest text-graphite/80 leading-none mt-0.5">События матча</h3>
+        <Icon name="gear" className="w-4 h-4 text-graphite/50" />
+        <h3 className="text-[11px] font-black uppercase tracking-widest text-graphite/80 leading-none mt-0.5">Настройки показа</h3>
         <div className="ml-auto flex items-center gap-1.5">
           <span className={`w-6 h-6 flex items-center justify-center rounded ${autoShowSettings.enabled ? 'text-status-accepted bg-status-accepted/10' : 'text-graphite/25'}`} title={autoShowSettings.enabled ? 'Автопоказ включён' : 'Автопоказ выключен'}>
             <Icon name="view" className="w-3.5 h-3.5" />

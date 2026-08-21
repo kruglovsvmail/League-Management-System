@@ -89,6 +89,19 @@ export function Icon({ name, className = "w-6 h-6" }) {
 
     // Иконка раздела "Метрика" (столбчатый график с трендом)
     metrics: <svg {...baseProps}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+
+    // Хваталка: за неё плашку тащат в плейлист автопилота
+    grip: <svg {...baseProps} strokeWidth="2.5"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>,
+
+    // Полноэкранный режим: развернуть и свернуть
+    fullscreen: <svg {...baseProps}><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M15 4h4a1 1 0 0 1 1 1v4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><path d="M9 20H5a1 1 0 0 1-1-1v-4"/></svg>,
+    fullscreen_exit: <svg {...baseProps}><path d="M9 4v4a1 1 0 0 1-1 1H4"/><path d="M20 9h-4a1 1 0 0 1-1-1V4"/><path d="M15 20v-4a1 1 0 0 1 1-1h4"/><path d="M4 15h4a1 1 0 0 1 1 1v4"/></svg>,
+
+    // Боковая панель справа: показать/скрыть колонку с вкладками
+    panel_right: <svg {...baseProps}><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/></svg>,
+
+    // Восклицательный знак: что-то работает там, куда сейчас не смотрят
+    alert: <svg {...baseProps}><circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="12.5"/><line x1="12" y1="16.2" x2="12" y2="16.2" strokeWidth="2.5"/></svg>,
   };
 
   return icons[name] || null;

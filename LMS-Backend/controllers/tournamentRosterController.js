@@ -1,6 +1,27 @@
 import pool from '../config/db.js';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
+
+const DOCS_BUCKET = 'hockeyeco-uploads';
+
+// Прежний файл документа в S3 после замены или очистки. Раньше он оставался в бакете
+// навсегда: «очистить документ» обнуляло только ссылку в базе, а новый скан ложился
+// рядом, если у него другое расширение — или если согласие до этого подписали на сайте
+// лиги, где в имя файла добавляется случайный хвост.
+//
+// Вызывать строго ПОСЛЕ успешной записи в БД: иначе сбой на UPDATE оставил бы заявку
+// со ссылкой на уже удалённый файл.
+const deleteReplacedDoc = async (previousUrl, newUrl, rosterId, type) => {
+    const key = (previousUrl || '').replace(/^\//, '');
+    if (!key || `/${key}` === newUrl) return;
+    // Трогаем только «свои» файлы этой заявки: в колонке теоретически может оказаться
+    // ссылка на что-то постороннее, и удалять её вслепую нельзя.
+    if (!key.startsWith(`uploads/tournament_rosters_${rosterId}_${type}`)) return;
+
+    await s3
+        .send(new DeleteObjectCommand({ Bucket: DOCS_BUCKET, Key: key }))
+        .catch((err) => console.error(`Не удалось удалить прежний файл (${type}):`, err.message));
+};
 
 export const updateTournamentRosterStatus = async (req, res) => {
     try {
@@ -49,6 +70,14 @@ export const uploadTournamentRosterDocs = async (req, res) => {
         
         if (!player_id) return res.status(400).json({ success: false, error: 'Не передан player_id' });
 
+        // Ссылки на текущие файлы читаем до записи: после UPDATE узнать, что лежало
+        // раньше, уже неоткуда, а старые объекты надо убрать из бакета.
+        const previousRes = await pool.query(
+            'SELECT insurance_url, medical_url, consent_url FROM tournament_rosters WHERE id = $1',
+            [id]
+        );
+        const previous = previousRes.rows[0] || {};
+
         let insuranceUrl = undefined;
         let medicalUrl = undefined;
         let consentUrl = undefined;
@@ -57,9 +86,9 @@ export const uploadTournamentRosterDocs = async (req, res) => {
             const ext = file.originalname.split('.').pop();
             const rawFileName = `tournament_rosters_${id}_${type}.${ext}`;
             const s3Key = `uploads/${rawFileName}`;
-            await s3.send(new PutObjectCommand({ 
-                Bucket: 'hockeyeco-uploads', 
-                Key: s3Key, 
+            await s3.send(new PutObjectCommand({
+                Bucket: DOCS_BUCKET,
+                Key: s3Key,
                 Body: file.buffer, 
                 ContentType: file.mimetype 
             }));
@@ -93,6 +122,10 @@ export const uploadTournamentRosterDocs = async (req, res) => {
         if (updates.length > 1) {
             values.push(id);
             await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')} WHERE id = $${counter}`, values);
+
+            if (insuranceUrl !== undefined) await deleteReplacedDoc(previous.insurance_url, insuranceUrl, id, 'insurance');
+            if (medicalUrl !== undefined) await deleteReplacedDoc(previous.medical_url, medicalUrl, id, 'medical');
+            if (consentUrl !== undefined) await deleteReplacedDoc(previous.consent_url, consentUrl, id, 'consent');
         }
         res.json({ success: true, insurance_url: insuranceUrl, medical_url: medicalUrl, consent_url: consentUrl });
     } catch (err) { 

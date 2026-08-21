@@ -20,7 +20,7 @@ export function WebGraphics() {
   const {
     game, events, timerSeconds, currentPeriod, isTimerRunning,
     activePenalties, periodLength, otLength, soLength, overlay,
-    isScoreboardVisible, playOverlaySound
+    isScoreboardVisible, playOverlaySound, bumperSources
   } = useWebGraphics(gameId);
 
   const [scale, setScale] = useState(1);
@@ -181,7 +181,8 @@ export function WebGraphics() {
           {/* Заставка монтируется всегда: её скрытые <video preload="auto">
               держат ролики лиги в кэше с самого запуска оверлея, чтобы между
               шторкой и роликом не было паузы на загрузку */}
-          {BumperOverlayComponent && <BumperOverlayComponent game={game} overlay={overlay} />}
+          {/* sources — прогретые ролики: панель нажала кнопку, а файл уже в памяти. */}
+          {BumperOverlayComponent && <BumperOverlayComponent game={game} overlay={overlay} sources={bumperSources} />}
 
           {EventOverlayComponent && <EventOverlayComponent game={game} overlay={overlay} />}
           {ArenaOverlayComponent && <ArenaOverlayComponent game={game} overlay={overlay} />}

@@ -29,7 +29,7 @@ const durationMs = (el, meta) => {
   return (fromEl || Number(meta?.duration) || 15) * 1000;
 };
 
-export default function BumperOverlay({ game, overlay }) {
+export default function BumperOverlay({ game, overlay, sources }) {
   const isVisible = overlay.visible && overlay.type === 'bumper';
 
   // slot === null — режиссёр ничего не выбрал: играет только переход.
@@ -56,15 +56,37 @@ export default function BumperOverlay({ game, overlay }) {
   const transitionRef = useRef(null);
   const videoRefs = useRef({});
   const timersRef = useRef([]);
+  const waitersRef = useRef([]);   // подписки «дождаться готовности ролика»
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
+    // Ожидание готовности ролика — такой же отложенный запуск, как таймер: снимать
+    // его нужно везде, где снимаются таймеры, иначе дозагрузившийся файл вылезет в
+    // эфир после того, как заставку уже убрали.
+    waitersRef.current.forEach(([el, fn]) => el.removeEventListener('canplay', fn));
+    waitersRef.current = [];
   };
   const later = (fn, ms) => { timersRef.current.push(setTimeout(fn, Math.max(0, ms))); };
 
+  // Останавливаем ВСЕ ролики, а не только текущий слот. Режиссёр может
+  // переключить слот прямо в эфире: к этому моменту overlay.data.slot указывает
+  // уже на новый ролик, и прежний остался бы играть — невидимым, но слышимым, и
+  // снять его было бы нечем до перезагрузки оверлея.
+  const stopAllVideos = () => {
+    Object.values(videoRefs.current).forEach((el) => {
+      if (!el) return;
+      el.pause();
+      el.currentTime = 0;
+      // Мьют мог включиться при отказе автозапуска — снимаем, иначе следующая
+      // реклама тоже уйдёт в эфир немой.
+      el.muted = false;
+    });
+  };
+
   const finish = () => {
     clearTimers();
+    stopAllVideos();
     setVideoOn(false);
     setPhase('idle');
     const t = transitionRef.current;
@@ -79,15 +101,15 @@ export default function BumperOverlay({ game, overlay }) {
 
   useEffect(() => {
     if (!isVisible) {
-      if (phase !== 'idle') {
-        const el = videoRefs.current[slot];
-        if (el) el.pause();
-        finish();
-      }
+      finish();
       return clearTimers;
     }
 
     clearTimers();
+    // Любой новый сценарий начинаем с чистого листа: эффект перезапускается и
+    // при смене слота, и при повторном пуске, а играть в этот момент может
+    // ролик прошлого слота.
+    stopAllVideos();
 
     const elapsed = startedAt ? Date.now() - startedAt : 0;
     const el = videoRefs.current[slot];
@@ -96,9 +118,46 @@ export default function BumperOverlay({ game, overlay }) {
       const t = transitionRef.current;
       if (t) { t.currentTime = Math.max(0, fromMs) / 1000; t.play().catch(() => {}); }
     };
+    // Ролик может быть ещё не готов: прогрев не успел или не прошёл вовсе, и у
+    // элемента есть только первый кадр. Ждём canplay, а не суём в эфир стоп-кадр.
+    // Стартуем со сдвигом на время ожидания — закрывающий переход и таймер плашки
+    // в панели считаются от нажатия кнопки и подвинуться уже не могут.
     const runVideo = (fromMs = 0) => {
       setVideoOn(true);
-      if (el) { el.currentTime = Math.max(0, fromMs) / 1000; el.play().catch(() => {}); }
+      if (!el) return;
+
+      const waitStart = Date.now();
+      const start = () => {
+        el.currentTime = Math.max(0, fromMs + (Date.now() - waitStart)) / 1000;
+        console.info('[Заставка] пуск ролика', {
+          slot,
+          источник: String(el.currentSrc || el.src).startsWith('blob:') ? 'из памяти (прогрет)' : 'из сети',
+          readyState: el.readyState,
+          длительность: el.duration,
+          ждали: Date.now() - waitStart,
+        });
+        // play() отказывает МОЛЧА — и тогда в кадре висит первый кадр вместо
+        // рекламы. Самая частая причина — политика автозапуска: страницу открыли
+        // и не трогали, а у ролика есть звук. В OBS её нет (браузерный источник
+        // запускается с разрешением), но в обычной вкладке она рубит запуск.
+        // Лучше отдать рекламу без звука, чем стоп-кадр, — и обязательно сказать
+        // об этом в консоль.
+        el.play().catch((err) => {
+          console.warn('[Заставка] ролик не запустился:', err?.name, err?.message);
+          if (err?.name === 'NotAllowedError') {
+            el.muted = true;
+            el.play()
+              .then(() => console.warn('[Заставка] играем БЕЗ ЗВУКА — браузер запретил автозапуск со звуком'))
+              .catch(() => {});
+          }
+        });
+      };
+
+      if (el.readyState >= 3) { start(); return; }   // HAVE_FUTURE_DATA — данных хватает
+
+      const onReady = () => { el.removeEventListener('canplay', onReady); start(); };
+      el.addEventListener('canplay', onReady);
+      waitersRef.current.push([el, onReady]);
     };
 
     // --- ТОЛЬКО ПЕРЕХОД: ролик не выбран или файла в слоте нет ---------------
@@ -182,14 +241,20 @@ export default function BumperOverlay({ game, overlay }) {
           <video
             key={b.slot}
             ref={el => { videoRefs.current[b.slot] = el; }}
-            src={b.url}
+            // Прогретый ролик лежит в памяти (blob:), непрогретый играется прямо
+            // из сети — так же, как раньше.
+            src={sources?.[b.slot] || b.url}
             preload="auto"
             playsInline
             // С хвостом конец ролика — штатный момент, его закрывает проход, и
             // снимать титр здесь нельзя. Без хвоста возвращать картинку больше
             // нечем, поэтому уходим сразу.
             onEnded={() => { if (b.slot === slot && !withOutro) finish(); }}
-            onError={() => { if (b.slot === slot && videoOn) finish(); }}
+            onError={(e) => {
+              const err = e?.target?.error;
+              console.warn('[Заставка] ошибка ролика', b.slot, err?.code, err?.message);
+              if (b.slot === slot && videoOn) finish();
+            }}
             className="absolute inset-0 w-full h-full object-cover bg-black"
             style={{
               zIndex: 10,
@@ -210,7 +275,9 @@ export default function BumperOverlay({ game, overlay }) {
       {transitionUrl && (
         <video
           ref={transitionRef}
-          src={transitionUrl}
+          // Переход играет ПЕРВЫМ, поэтому его тоже прогреваем: холодный файл
+          // означает, что кадр не перекроется вовремя и склейка будет видна.
+          src={sources?.transition || transitionUrl}
           preload="auto"
           muted
           playsInline

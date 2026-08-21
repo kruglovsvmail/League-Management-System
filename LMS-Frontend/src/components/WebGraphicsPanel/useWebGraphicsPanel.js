@@ -46,6 +46,7 @@ export function useWebGraphicsPanel(gameId) {
   const [introPlaying, setIntroPlaying] = useState(false); // зацикленное интро вкл/выкл (persistent)
   const [overlayParams, setOverlayParams] = useState(null); // параметры плашек/отсчёты (синхронны между панелями)
   const [overlayCount, setOverlayCount] = useState(null);  // кол-во подключённых OBS-оверлеев (null = ещё не получили)
+  const [bumperWarmup, setBumperWarmup] = useState(null);  // прогрев роликов заставки в оверлеях: { slot: { progress, ready } } | null (оверлеи молчат)
   const [confirmedOverlayType, setConfirmedOverlayType] = useState(undefined); // тип плашки, которую OBS реально показывает (undefined = ещё не получено)
   const [overlayMismatch, setOverlayMismatch] = useState(false); // true = нажатая плашка ≠ то, что OBS реально показывает в эфире
 
@@ -74,7 +75,7 @@ export function useWebGraphicsPanel(gameId) {
   // Состояние автопилота графики — централизовано в хуке (раньше было размазано по странице/виджету,
   // жило в памяти/localStorage). Теперь хранится в БД и восстанавливается при переоткрытии панели.
   const [playlistSteps, setPlaylistSteps] = useState([
-    { id: 'init-1', type: 'prematch',     label: 'Предматчевая' },
+    { id: 'init-1', type: 'prematch',     label: 'До матча' },
     { id: 'init-2', type: 'team_leaders', label: 'Лидеры' },
     { id: 'init-3', type: 'team_roster',  label: 'Составы' }
   ]);
@@ -247,6 +248,14 @@ export function useWebGraphicsPanel(gameId) {
     newSocket.on('overlay_count', (data) => {
       if (String(data?.gameId) !== String(gameId)) return;
       setOverlayCount(data.count);
+    });
+
+    // Прогрев роликов заставки: оверлеи качают файлы себе в память и докладывают
+    // готовность. Пока слот не прогрет, панель не пускает его в эфир — иначе в
+    // кадре повиснет стоп-кадр вместо ролика. Сведено по худшему оверлею.
+    newSocket.on('bumper_warmup', (data) => {
+      if (String(data?.gameId) !== String(gameId)) return;
+      setBumperWarmup(data.slots || null);
     });
     // OBS-оверлей подтверждает, что реально отображается в эфире после каждого перехода.
     // Панель сравнивает это с activeStaticOverlay и при расхождении показывает предупреждение.
@@ -508,8 +517,11 @@ export function useWebGraphicsPanel(gameId) {
   const startAutopilotServer = useCallback((resolvedSteps, duration, loop) => {
     socket?.emit('autopilot_start', { gameId, steps: resolvedSteps, duration, loop });
   }, [socket, gameId]);
-  const stopAutopilotServer = useCallback(() => {
-    socket?.emit('autopilot_stop', { gameId });
+  // keepOverlay — стоп «с перехватом»: режиссёр нажал плашку руками, панель прямо
+  // сейчас выставляет её сама. Обычный стоп в этот момент погасил бы как раз её
+  // (сервер шлёт hide последнего шага и обнуляет плашку в БД).
+  const stopAutopilotServer = useCallback((keepOverlay = false) => {
+    socket?.emit('autopilot_stop', { gameId, keepOverlay });
   }, [socket, gameId]);
 
   // Ручной предохранитель: заставляет OBS-оверлей заново join_game и перечитать состояние
@@ -540,5 +552,6 @@ export function useWebGraphicsPanel(gameId) {
     overlayParams, persistParams,
     overlayCount,
     overlayMismatch,
+    bumperWarmup,
   };
 }

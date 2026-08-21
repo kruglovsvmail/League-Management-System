@@ -69,6 +69,7 @@ export default function setupTimerSockets(io) {
   // Крутится на сервере (не в панели) → работает независимо от режиссёров, синхронен для всех,
   // переживает закрытие панели и перезапуск сервера (возобновляется из БД при заходе).
   const autopilotTimers = {}; // gameId -> { steps, duration, loop, index, interval }
+  const bumperWarmup = {};    // gameId -> Map(socketId оверлея -> { slot: { progress, ready } })
 
   const persistAutopilotRuntime = async (gameId, running) => {
     const ap = autopilotTimers[gameId];
@@ -112,24 +113,34 @@ export default function setupTimerSockets(io) {
   // не помогал: при running=false он не трогал static_overlay в БД, оставляя там
   // "запечённые" данные последнего шага — поэтому и переоткрытие/реконнект оверлея не
   // спасали.
-  const stopAutopilot = async (gameId) => {
+  //
+  // keepOverlay — остановка «с перехватом»: режиссёр нажал плашку руками, и панель
+  // прямо сейчас выставляет её сама. Гасить и обнулять плашку здесь нельзя — погасили
+  // бы как раз ту, которую он только что дал в эфир. Поле staticOverlay в рассылке
+  // тоже не трогаем: панели применяют его, только если оно реально пришло.
+  const stopAutopilot = async (gameId, keepOverlay = false) => {
     const ap = autopilotTimers[gameId];
     if (ap?.interval) clearInterval(ap.interval);
     const lastStep = ap?.steps?.[ap.index] || null;
     delete autopilotTimers[gameId];
 
-    if (lastStep) {
+    if (lastStep && !keepOverlay) {
       io.to(`game_${gameId}`).emit('trigger_obs_overlay', { action: 'hide', type: lastStep.type, gameId });
     }
 
     try {
-      await pool.query(`
+      await pool.query(keepOverlay ? `
+        UPDATE game_overlay_state SET autopilot_running = false, updated_at = NOW()
+        WHERE game_id = $1
+      ` : `
         UPDATE game_overlay_state SET autopilot_running = false, static_overlay = NULL, updated_at = NOW()
         WHERE game_id = $1
       `, [gameId]);
     } catch (e) { console.error('persistAutopilotStopped:', e); }
 
-    io.to(`game_${gameId}`).emit('overlay_state', { autopilotRunning: false, staticOverlay: null });
+    io.to(`game_${gameId}`).emit('overlay_state', keepOverlay
+      ? { autopilotRunning: false }
+      : { autopilotRunning: false, staticOverlay: null });
   };
 
   const advanceAutopilot = (gameId) => {
@@ -623,6 +634,43 @@ export default function setupTimerSockets(io) {
       if (data?.gameId) io.to(`game_${data.gameId}`).emit('overlay_confirmed', { gameId: data.gameId, type: data.type ?? null });
     });
 
+    // ПРОГРЕВ РОЛИКОВ ЗАСТАВКИ. Каждый оверлей качает файлы себе и докладывает,
+    // насколько прогрелся. Панель показывает это в слотах и не пускает в эфир
+    // недокачанный ролик — иначе в кадре висел бы стоп-кадр.
+    //
+    // Оверлеев может быть несколько (основной OBS и резервный), и готовность у них
+    // разная. Сводим по худшему: слот считается готовым, только когда его докачали
+    // ВСЕ, а процент показываем минимальный. Иначе панель разрешила бы эфир по
+    // самому быстрому оверлею, а в кадр второго ушёл бы стоп-кадр.
+    const mergeWarmup = (gameId) => {
+      const byOverlay = bumperWarmup[gameId];
+      if (!byOverlay || byOverlay.size === 0) return null;
+
+      const merged = {};
+      for (const slots of byOverlay.values()) {
+        for (const [slot, st] of Object.entries(slots || {})) {
+          const prev = merged[slot];
+          const progress = Number(st?.progress) || 0;
+          merged[slot] = prev
+            ? { progress: Math.min(prev.progress, progress), ready: prev.ready && !!st?.ready }
+            : { progress, ready: !!st?.ready };
+        }
+      }
+      return merged;
+    };
+
+    const emitWarmup = (gameId) => {
+      io.to(`game_${gameId}`).emit('bumper_warmup', { gameId, slots: mergeWarmup(gameId) });
+    };
+
+    socket.on('bumper_warmup', (data) => {
+      const gameId = data?.gameId;
+      if (!gameId || !data.slots) return;
+      if (!bumperWarmup[gameId]) bumperWarmup[gameId] = new Map();
+      bumperWarmup[gameId].set(socket.id, data.slots);
+      emitWarmup(gameId);
+    });
+
     // OBS-оверлей регистрируется в отдельной комнате — панель видит точный счётчик подключённых оверлеев.
     const emitOverlayCount = (gameId) => {
       const count = io.sockets.adapter.rooms.get(`obs_${gameId}`)?.size ?? 0;
@@ -639,7 +687,7 @@ export default function setupTimerSockets(io) {
       if (data?.gameId) startAutopilot(data.gameId, data.steps, data.duration, data.loop, 0);
     });
     socket.on('autopilot_stop', (data) => {
-      if (data?.gameId) stopAutopilot(data.gameId);
+      if (data?.gameId) stopAutopilot(data.gameId, !!data.keepOverlay);
     });
 
     socket.on('timer_action', async (payload) => {
@@ -760,7 +808,15 @@ export default function setupTimerSockets(io) {
         }
         if (typeof room === 'string' && room.startsWith('obs_')) {
           const gameId = room.slice(4);
+          // Отчёт о прогреве уходит вместе с оверлеем: иначе панель считала бы
+          // готовым слот у оверлея, которого уже нет.
+          const byOverlay = bumperWarmup[gameId];
+          if (byOverlay) {
+            byOverlay.delete(socket.id);
+            if (byOverlay.size === 0) delete bumperWarmup[gameId];
+          }
           setTimeout(() => emitOverlayCount(gameId), 50);
+          setTimeout(() => emitWarmup(gameId), 50);
         }
       }
     });
