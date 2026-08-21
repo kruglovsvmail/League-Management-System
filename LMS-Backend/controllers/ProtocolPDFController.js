@@ -66,8 +66,11 @@ const fetchRawProtocolData = async (gameId) => {
             u_a1.last_name as a1_last_name, gr_a1.jersey_number as a1_number,
             u_a2.last_name as a2_last_name, gr_a2.jersey_number as a2_number
         FROM game_events ge
-        LEFT JOIN users u_scorer ON ge.scorer_id = u_scorer.id
-        LEFT JOIN game_rosters gr_scorer ON ge.scorer_id = gr_scorer.player_id AND gr_scorer.game_id = $1
+        -- COALESCE обязателен: у штрафа автора нет, нарушитель лежит в
+        -- penalty_player_id, и без него в графе «№» блока «Удаление» печаталась
+        -- пустая ячейка. Та же подстановка, что и в getGameEvents.
+        LEFT JOIN users u_scorer ON COALESCE(ge.scorer_id, ge.penalty_player_id) = u_scorer.id
+        LEFT JOIN game_rosters gr_scorer ON COALESCE(ge.scorer_id, ge.penalty_player_id) = gr_scorer.player_id AND gr_scorer.game_id = $1
         LEFT JOIN users u_a1 ON ge.assist1_id = u_a1.id
         LEFT JOIN game_rosters gr_a1 ON ge.assist1_id = gr_a1.player_id AND gr_a1.game_id = $1
         LEFT JOIN users u_a2 ON ge.assist2_id = u_a2.id
@@ -174,7 +177,6 @@ const fetchRawProtocolData = async (gameId) => {
              AND gl.time_seconds <= ge.time_seconds
             WHERE ge.game_id = $1
               AND ge.event_type = 'goal'
-              AND COALESCE(ge.goal_strength, '') <> 'ps'
             ORDER BY ge.id, gl.time_seconds DESC
         ),
         empty_net_goals AS (
@@ -348,7 +350,14 @@ const prepareProtocolData = (apiData) => {
   
       return {
         id: teamData.id, name: teamData.name || '', goalies, fieldPlayers,
-        goals: teamEvents.filter(e => e.event_type === 'goal'),
+        // Во «Взятии ворот» печатаются и голы, и штрафные броски: реализованный ШБ
+        // это обычный гол с ИС «ШБ», нереализованный — отдельная строка без автора
+        // шайбы. Порядок общий, по времени, как в панели секретаря.
+        // pending_ps здесь появиться не может: при завершении матча такие броски
+        // переписываются в failed_ps, а незавершённый матч не печатают.
+        goals: teamEvents
+          .filter(e => e.event_type === 'goal' || e.event_type === 'failed_ps' || e.event_type === 'pending_ps')
+          .sort((a, b) => a.time_seconds - b.time_seconds),
         penalties: teamEvents.filter(e => e.event_type === 'penalty'),
         timeout: teamEvents.find(e => e.event_type === 'timeout')?.time_seconds,
         coachSig: getSig(`${prefix}_coach`), off1Sig: getSig(`${prefix}_off1`), off2Sig: getSig(`${prefix}_off2`),

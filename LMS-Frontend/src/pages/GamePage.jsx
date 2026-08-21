@@ -519,7 +519,11 @@ export function GamePage() {
     if (periodOrder[a.period] !== periodOrder[b.period]) {
       return periodOrder[a.period] - periodOrder[b.period];
     }
-    return a.time_seconds - b.time_seconds;
+    if (a.time_seconds !== b.time_seconds) return a.time_seconds - b.time_seconds;
+    // На одной секунде порядок задаёт очерёдность ввода: штраф вида «ШБ» заведён
+    // раньше порождённой им строки броска, и в ленте сначала должно идти
+    // нарушение, а уже потом его исход.
+    return a.id - b.id;
   });
 
   let currentHomeScore = 0;
@@ -748,11 +752,17 @@ export function GamePage() {
                               const isGoal = ev.event_type === 'goal';
                               const isSOGoal = ev.event_type === 'shootout_goal';
                               const isSOMiss = ev.event_type === 'shootout_miss';
+                              // Нереализованный штрафной бросок — событие матча, но не шайба:
+                              // счёт рядом с ним не показываем, как и у промаха в серии.
+                              const isFailedPS = ev.event_type === 'failed_ps' || ev.event_type === 'pending_ps';
                               const isHome = ev.team_id === game.home_team_id;
 
                               let badgeBg = 'bg-orange text-white';
                               let iconName = 'whistle';
-                              if (isGoal) {
+                              if (isFailedPS) {
+                                badgeBg = 'bg-status-rejected text-white';
+                                iconName = 'shootout_miss';
+                              } else if (isGoal) {
                                 badgeBg = 'bg-status-accepted text-white';
                                 iconName = 'puck';
                               } else if (isSOGoal) {
@@ -988,6 +998,7 @@ const EventCard = ({ ev, isHome }) => {
   const isPenalty = ev.event_type === 'penalty';
   const isSOGoal = ev.event_type === 'shootout_goal';
   const isSOMiss = ev.event_type === 'shootout_miss';
+  const isFailedPS = ev.event_type === 'failed_ps' || ev.event_type === 'pending_ps';
 
   let borderClass = 'border-orange/20';
   let bgClass = 'from-white to-orange/5';
@@ -995,7 +1006,7 @@ const EventCard = ({ ev, isHome }) => {
   if (isGoal || isSOGoal) {
     borderClass = 'border-status-accepted/20';
     bgClass = 'from-white to-status-accepted/5';
-  } else if (isSOMiss) {
+  } else if (isSOMiss || isFailedPS) {
     borderClass = 'border-status-rejected/20';
     bgClass = 'from-white to-status-rejected/5';
   }
@@ -1019,12 +1030,17 @@ const EventCard = ({ ev, isHome }) => {
           )}
           {isPenalty && (
              <span className="text-[9px] font-bold text-orange uppercase bg-orange/10 px-1.5 py-0.5 rounded shadow-sm">
-               {ev.penalty_minutes} мин
+               {ev.penalty_class === 'penalty_shot' ? 'Штрафной бросок' : `${ev.penalty_minutes} мин`}
              </span>
           )}
           {(isSOGoal || isSOMiss) && (
              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shadow-sm ${isSOGoal ? 'text-status-accepted bg-status-accepted/10' : 'text-status-rejected bg-status-rejected/10'}`}>
                Буллит
+             </span>
+          )}
+          {isFailedPS && (
+             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shadow-sm text-status-rejected bg-status-rejected/10">
+               Штрафной бросок не реализован
              </span>
           )}
         </div>

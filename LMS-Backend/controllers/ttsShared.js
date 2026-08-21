@@ -60,7 +60,13 @@ const PENALTY_CLASS_PHRASE = {
     double_minor: 'двойным малым штрафом',
     major: 'большим штрафом',
     match: 'большим и дисциплинарным штрафом до конца игры',
+    // Штрафной бросок назначается ПРОТИВ КОМАНДЫ: нарушитель на скамейку не
+    // садится, минут не получает, и называть его в объявлении нечего. Плашка
+    // оверлея игрока при этом показывает — там он уместен, в озвучке нет.
+    penalty_shot: 'штрафным броском',
 };
+
+export const isTeamOnlyPenalty = (penaltyClass) => penaltyClass === 'penalty_shot';
 
 export function resolvePenaltyClassPhrase(penaltyClass, penaltyMinutes) {
     let cls = penaltyClass;
@@ -156,6 +162,7 @@ const BROADCAST_PENALTY_CLASS_PHRASE = {
     double_minor: 'Двойным малым штрафом',
     major: 'Большим штрафом',
     match: 'Большим и дисциплинарным штрафом до конца матча',
+    penalty_shot: 'Штрафным броском',
 };
 
 function resolveBroadcastPenaltyClassPhrase(penaltyClass, penaltyMinutes) {
@@ -188,7 +195,9 @@ export function buildBroadcastEventText({
     if (event_type === 'penalty') {
         const reason = penaltyReasonAccusative(penalty_accusative);
         const severity = resolveBroadcastPenaltyClassPhrase(penalty_class, penalty_minutes);
-        const hasPlayer = !!(player_last_name || player_first_name || pronunciation);
+        // При штрафном броске игрока не называем, даже если он в протоколе есть.
+        const hasPlayer = !isTeamOnlyPenalty(penalty_class)
+            && !!(player_last_name || player_first_name || pronunciation);
         // Падеж в справочнике не заполнен — причину опускаем целиком:
         // «Большим и дисциплинарным штрафом до конца матча, наказана команда Динамо.»
         const reasonPart = reason ? ` за ${reason}` : '';
@@ -264,7 +273,10 @@ export function buildEventText({
     assist2_last_name, assist2_first_name, assist2_pronunciation, assist2_jersey_number,
 }) {
     const teamDisplay = team_pronunciation || team_name || '';
-    const hasPlayer = !!(player_last_name || player_first_name || pronunciation);
+    // При штрафном броске наказана команда, а не игрок: фамилию нарушителя
+    // диктор не называет, хотя в протоколе она записана.
+    const hasPlayer = !(event_type === 'penalty' && isTeamOnlyPenalty(penalty_class))
+        && !!(player_last_name || player_first_name || pronunciation);
     const playerDisplay = pronunciation || `${player_first_name || ''} ${player_last_name || ''}`.trim();
     const playerNumWord = jersey_number ? ` номер ${numberToWords(jersey_number)}` : '';
 

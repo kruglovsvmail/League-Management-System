@@ -170,22 +170,53 @@ export const GOAL_STRENGTH_DISPLAY = {
   'ps': 'ШБ' 
 };
 
+// ШБ здесь намеренно НЕТ: реализованный штрафной бросок — это не ситуация,
+// которую секретарь выбирает руками, а исход строки ШБ во «Взятии ворот».
+// Оставь его в списке — и появится второй путь ввода, мимо штрафа и мимо
+// счётчика назначенных бросков, после чего «% реализации ШБ» начнёт врать.
+// Показывать ШБ в уже сохранённой строке всё равно надо, поэтому в
+// GOAL_STRENGTH_DISPLAY выше он остаётся.
 export const goalStrengthOptions = [
-  { value: 'equal', label: 'РС' }, 
-  { value: 'pp1', label: '+1' }, 
-  { value: 'pp2', label: '+2' }, 
-  { value: 'sh1', label: '-1' }, 
-  { value: 'sh2', label: '-2' }, 
-  { value: 'en', label: 'ПВ' }, 
-  { value: 'ps', label: 'ШБ' }
+  { value: 'equal', label: 'РС' },
+  { value: 'pp1', label: '+1' },
+  { value: 'pp2', label: '+2' },
+  { value: 'sh1', label: '-1' },
+  { value: 'sh2', label: '-2' },
+  { value: 'en', label: 'ПВ' }
 ];
+
+// PENALTY_SHOT_MINS — псевдозначение поля «Шт»: штрафной бросок вместо минут.
+// Игрок на скамейку не садится, команда в меньшинстве не остаётся; если по тому
+// же эпизоду назначено ещё и удаление, секретарь заводит его отдельной строкой.
+export const PENALTY_SHOT_MINS = 'ps';
 
 export const penaltyMinsOptions = [
   { value: '2', label: '2' },
   { value: '4', label: '2+2' },
   { value: '5', label: '5' },
-  { value: 'match', label: '5+20' }
+  { value: 'match', label: '5+20' },
+  { value: PENALTY_SHOT_MINS, label: 'ШБ' }
 ];
+
+// ─── ШТРАФНОЙ БРОСОК ПО ХОДУ МАТЧА ───────────────────────────────────────────
+// Три состояния одной строки во «Взятии ворот», и все три — разные типы события:
+//   pending_ps — бросок назначен, но ещё не пробит (или секретарь не отметил исход);
+//   goal + goal_strength='ps' — реализован, шайба идёт в счёт матча;
+//   failed_ps — не реализован, счёт не меняется.
+// Неисполненные переписываются в нереализованные при завершении матча —
+// висящий pending_ps в статистику уйти не должен.
+export const PS_PENDING = 'pending_ps';
+export const PS_FAILED  = 'failed_ps';
+
+export const isPenaltyShotEvent = (ev) =>
+  !!ev && (ev.event_type === PS_PENDING
+        || ev.event_type === PS_FAILED
+        || (ev.event_type === 'goal' && ev.goal_strength === 'ps'));
+
+// Гол с назначенного буллита не отменяет чужое удаление и не даёт +/-:
+// эпизод разыгрывается один на один, остальные на льду к нему отношения не имеют.
+export const isScoredFromPlay = (ev) =>
+  !!ev && ev.event_type === 'goal' && ev.goal_strength !== 'ps';
 
 // value — полное наименование (именно оно уходит в БД), label — оно же для модалки,
 // shortLabel — сокращение для поля секретаря, num — номер для модалки и поиска.

@@ -393,6 +393,7 @@ export function WebGraphicsPanel() {
       leagueId: game?.league_id,
       logos: data?.logos || {},
       division: game?.division_name || game?.division_short_name,
+      leagueName: game?.league_name,
       homeName: game?.home_team_name,
       awayName: game?.away_team_name,
       title: currentBumper?.title,

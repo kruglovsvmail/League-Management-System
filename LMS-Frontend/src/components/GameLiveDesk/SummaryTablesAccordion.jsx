@@ -344,13 +344,22 @@ export const SummaryTablesAccordion = ({
 
             {/* Карточка: БРОСКИ В СТВОР ВРАТАРЮ
                 Секретарь вводит ВСЕ броски в створ на конкретного вратаря за период.
-                Отражённые броски (saves) и командные SOG считаются на лету. */}
+                Отражённые броски (saves) и командные SOG считаются на лету.
+                Штрафные броски по ходу матча сюда ВХОДЯТ — и отражённые, и
+                реализованные: реализованный пишется вратарю в пропущенные, поэтому
+                без него броски окажутся меньше пропущенных, и сейвы занизятся.
+                Послематчевая серия — нет, она учитывается отдельными событиями. */}
             <div className="bg-white border border-graphite/20 shadow-sm rounded-md relative flex flex-col">
               <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center justify-start gap-3 px-5 py-3 bg-white rounded-t-md">
                 <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center rounded-sm shrink-0">
                   <Icon name="shootout_goal" className="w-5 h-5" />
                 </span>
                 <span className="truncate">Броски в створ вратарю</span>
+              </div>
+
+              <div className="mx-5 mt-3 px-3 py-2 bg-graphite/5 border border-graphite/15 rounded-md text-[11px] font-semibold text-graphite-light leading-tight mb-2">
+                Штрафные броски, назначенные по ходу матча, входят в это число — и отражённые, и реализованные.
+                Послематчевые буллиты не входят: они учитываются отдельно.
               </div>
 
               {!shotsTrackingEnabled && (

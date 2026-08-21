@@ -7,6 +7,55 @@ import { ARENA_STATIC_AUDIO_FILES, arenaAudioFileExists } from '../utils/arenaAu
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 
 /**
+ * ─── ШТРАФНОЙ БРОСОК ПО ХОДУ МАТЧА ───────────────────────────────────────────
+ *
+ * Одна строка во «Взятии ворот», три возможных типа события:
+ *   pending_ps — назначен, исход ещё не отмечен;
+ *   goal + goal_strength='ps' — реализован, шайба идёт в счёт матча;
+ *   failed_ps  — не реализован, счёт не меняется.
+ *
+ * Строка не самостоятельна: её порождает штраф вида «ШБ» (penalty_class =
+ * 'penalty_shot') у команды-нарушителя, и linked_event_id хранит ссылку на него.
+ * Правка времени штрафа двигает строку, удаление штрафа удаляет строку — иначе
+ * во «Взятии ворот» останется бросок, которого никто не назначал.
+ */
+const PENALTY_SHOT_ROW_TYPES = ['pending_ps', 'failed_ps'];
+
+/** Заводит строку броска у соперника нарушителя — вторую половину пары. */
+const createPenaltyShotRow = async (client, gameId, penaltyEventId, penalizedTeamId, period, timeSeconds) => {
+    const gameRes = await client.query('SELECT home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+    if (gameRes.rows.length === 0) return;
+
+    // Бросок пробивает соперник нарушителя. Время берётся из штрафа, а не с
+    // таймера: секретарь имеет право завести удаление задним числом.
+    const { home_team_id, away_team_id } = gameRes.rows[0];
+    const shootingTeamId = parseInt(penalizedTeamId, 10) === home_team_id ? away_team_id : home_team_id;
+
+    await client.query(`
+        INSERT INTO game_events (game_id, period, time_seconds, event_type, team_id, goal_strength, linked_event_id)
+        VALUES ($1, $2, $3, 'pending_ps', $4, 'ps', $5)
+    `, [gameId, period, timeSeconds || 0, shootingTeamId, penaltyEventId]);
+};
+
+/**
+ * Правка счёта матча на ±1. Вынесено отдельно, потому что дёргается из трёх мест:
+ * создание гола, удаление гола и смена исхода штрафного броска (не реализован ↔
+ * реализован — это гол, появляющийся и исчезающий без создания события).
+ */
+const shiftGameScore = async (client, gameId, teamId, delta) => {
+    const gameRes = await client.query('SELECT home_team_id FROM games WHERE id = $1', [gameId]);
+    if (gameRes.rows.length === 0) return;
+
+    const isHome = gameRes.rows[0].home_team_id === parseInt(teamId, 10);
+    const column = isHome ? 'home_score' : 'away_score';
+    // GREATEST не даёт уйти в минус, если счёт и событие успели разъехаться.
+    await client.query(
+        `UPDATE games SET ${column} = GREATEST(${column} + $2, 0) WHERE id = $1`,
+        [gameId, delta]
+    );
+};
+
+/**
  * Вспомогательная функция для установки флага необходимости пересчета статистики.
  * Срабатывает только если матч уже находится в статусе 'finished'.
  *
@@ -40,7 +89,7 @@ export const getGameEvents = async (req, res) => {
                 ge.id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength,
                 ge.penalty_violation, ge.penalty_violation_code, ge.penalty_reason_id,
                 ge.penalty_minutes, ge.penalty_class, ge.penalty_end_time,
-                ge.against_goalie_id, ge.from_shot,
+                ge.against_goalie_id, ge.from_shot, ge.linked_event_id,
                 t.id as team_id, t.name as team_name, t.logo_url as team_logo,
                 t.pronunciation as team_pronunciation,
 
@@ -89,7 +138,12 @@ export const getGameEvents = async (req, res) => {
                      WHEN ge.period = '5' THEN 5
                      WHEN ge.period = 'OT' THEN 99 
                      WHEN ge.period = 'SO' THEN 100 ELSE 101 END ASC,
-                ge.time_seconds ASC
+                ge.time_seconds ASC,
+                -- При равном времени порядок задаёт id — то есть очерёдность ввода.
+                -- Ради этого и нужен: штраф вида «ШБ» и порождённая им строка броска
+                -- стоят на одной секунде, и без id пара выпадала бы в произвольном
+                -- порядке, показывая исход броска раньше самого нарушения.
+                ge.id ASC
         `;
         const result = await pool.query(query, [gameId]);
         res.json({ success: true, data: result.rows });
@@ -108,13 +162,17 @@ export const createGameEvent = async (req, res) => {
             player_id, assist1_id, assist2_id, goal_strength,
             penalty_violation, penalty_violation_code, penalty_reason_id,
             penalty_minutes, penalty_class, penalty_end_time,
-            against_goalie_id, from_shot
+            against_goalie_id, from_shot, linked_event_id
         } = req.body;
 
         await client.query('BEGIN');
 
         const isGoalEvent = (event_type === 'goal');
         const isShootoutEvent = (event_type === 'shootout_goal' || event_type === 'shootout_miss');
+        // Штрафной бросок по ходу матча: бьющий хранится в scorer_id так же, как
+        // автор гола — реализованный бросок становится обычным голом с ИС «ШБ»,
+        // и игрок при смене типа события никуда переезжать не должен.
+        const isPenaltyShotRow = PENALTY_SHOT_ROW_TYPES.includes(event_type);
 
         // from_shot имеет смысл только для голов в основное время;
         // для прочих типов оставляем default БД (true).
@@ -126,33 +184,32 @@ export const createGameEvent = async (req, res) => {
                 scorer_id, assist1_id, assist2_id, goal_strength,
                 penalty_player_id, penalty_violation, penalty_violation_code, penalty_reason_id,
                 penalty_minutes, penalty_class, penalty_end_time,
-                against_goalie_id, from_shot
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                against_goalie_id, from_shot, linked_event_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             RETURNING id
         `, [
             gameId, period, time_seconds || 0, event_type, team_id || null,
-            (isGoalEvent || isShootoutEvent) ? player_id : null,
+            (isGoalEvent || isShootoutEvent || isPenaltyShotRow) ? player_id : null,
             assist1_id || null, assist2_id || null, goal_strength || null,
             event_type === 'penalty' ? player_id : null,
             // Причина сохраняется снимком (наименование + сокращение) плюс ссылкой на пункт
             // справочника: пункт могут удалить, а протокол должен печататься как записан.
             penalty_violation || null, penalty_violation_code || null, penalty_reason_id || null,
             penalty_minutes || null, penalty_class || null, penalty_end_time || null,
-            against_goalie_id || null, fromShotValue
+            against_goalie_id || null, fromShotValue, linked_event_id || null
         ]);
 
         const eventId = eventRes.rows[0].id;
 
         if (event_type === 'goal') {
-            const gameRes = await client.query('SELECT home_team_id FROM games WHERE id = $1', [gameId]);
-            if (gameRes.rows.length > 0) {
-                const isHome = gameRes.rows[0].home_team_id === parseInt(team_id);
-                if (isHome) {
-                    await client.query('UPDATE games SET home_score = home_score + 1 WHERE id = $1', [gameId]);
-                } else {
-                    await client.query('UPDATE games SET away_score = away_score + 1 WHERE id = $1', [gameId]);
-                }
-            }
+            await shiftGameScore(client, gameId, team_id, 1);
+        }
+
+        // Штраф вида «ШБ» сам по себе неполон: назначенный бросок обязан появиться
+        // строкой во «Взятии ворот» у соперника. Заводим её здесь, в одной
+        // транзакции со штрафом, — состояния «штраф есть, броска нет» быть не должно.
+        if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
+            await createPenaltyShotRow(client, gameId, eventId, team_id, period, time_seconds);
         }
 
         // Если матч завершен, помечаем, что нужен пересчет
@@ -188,28 +245,20 @@ export const updateGameEvent = async (req, res) => {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Событие не найдено' });
         }
-        
+
         const oldEvent = oldEvRes.rows[0];
 
-        if (oldEvent.event_type === 'goal' && event_type === 'goal' && oldEvent.team_id !== parseInt(team_id)) {
-            const gameRes = await client.query('SELECT home_team_id FROM games WHERE id = $1', [gameId]);
-            if (gameRes.rows.length > 0) {
-                const homeTeamId = gameRes.rows[0].home_team_id;
-                if (oldEvent.team_id === homeTeamId) {
-                    await client.query('UPDATE games SET home_score = GREATEST(home_score - 1, 0) WHERE id = $1', [gameId]);
-                } else {
-                    await client.query('UPDATE games SET away_score = GREATEST(away_score - 1, 0) WHERE id = $1', [gameId]);
-                }
-                if (parseInt(team_id) === homeTeamId) {
-                    await client.query('UPDATE games SET home_score = home_score + 1 WHERE id = $1', [gameId]);
-                } else {
-                    await client.query('UPDATE games SET away_score = away_score + 1 WHERE id = $1', [gameId]);
-                }
-            }
-        }
-
+        // Счёт правится по фактическому изменению «был гол / стал гол». Одним
+        // правилом закрываются оба случая: перенос гола другой команде и смена
+        // исхода штрафного броска (pending_ps/failed_ps ↔ goal), где событие
+        // остаётся тем же, а шайба в счёте появляется или пропадает.
+        const wasGoal = oldEvent.event_type === 'goal';
         const isGoalEvent = (event_type === 'goal');
+        if (wasGoal) await shiftGameScore(client, gameId, oldEvent.team_id, -1);
+        if (isGoalEvent) await shiftGameScore(client, gameId, team_id, 1);
+
         const isShootoutEvent = (event_type === 'shootout_goal' || event_type === 'shootout_miss');
+        const isPenaltyShotRow = PENALTY_SHOT_ROW_TYPES.includes(event_type);
 
         // from_shot имеет смысл только для голов в основное время;
         // для прочих типов оставляем true (default БД).
@@ -225,7 +274,7 @@ await client.query(`
     WHERE id = $14
 `, [
     period, time_seconds || 0, team_id || null,
-    (isGoalEvent || isShootoutEvent) ? player_id : null, assist1_id || null, assist2_id || null, goal_strength || null,
+    (isGoalEvent || isShootoutEvent || isPenaltyShotRow) ? player_id : null, assist1_id || null, assist2_id || null, goal_strength || null,
     event_type === 'penalty' ? player_id : null, penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
     against_goalie_id || null,
     eventId,
@@ -233,6 +282,15 @@ await client.query(`
     fromShotValue,
     penalty_violation_code || null, penalty_reason_id || null
 ]);
+
+        // Секретарь поправил время штрафа «ШБ» — строка броска обязана поехать
+        // следом, иначе бросок окажется в другом периоде, чем нарушение.
+        if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
+            await client.query(
+                `UPDATE game_events SET period = $1, time_seconds = $2 WHERE linked_event_id = $3`,
+                [period, time_seconds || 0, eventId]
+            );
+        }
 
         await triggerRecalcFlag(client, gameId);
 
@@ -254,24 +312,32 @@ export const deleteGameEvent = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const evRes = await client.query('SELECT event_type, team_id FROM game_events WHERE id = $1', [eventId]);
-        
+        const evRes = await client.query('SELECT event_type, team_id, penalty_class FROM game_events WHERE id = $1', [eventId]);
+
         if (evRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Событие не найдено' });
         }
 
-        const { event_type, team_id } = evRes.rows[0];
+        const { event_type, team_id, penalty_class } = evRes.rows[0];
 
         if (event_type === 'goal') {
-            const gameRes = await client.query('SELECT home_team_id FROM games WHERE id = $1', [gameId]);
-            if (gameRes.rows.length > 0) {
-                const isHome = gameRes.rows[0].home_team_id === team_id;
-                if (isHome) {
-                    await client.query('UPDATE games SET home_score = GREATEST(home_score - 1, 0) WHERE id = $1', [gameId]);
-                } else {
-                    await client.query('UPDATE games SET away_score = GREATEST(away_score - 1, 0) WHERE id = $1', [gameId]);
+            await shiftGameScore(client, gameId, team_id, -1);
+        }
+
+        // Штраф вида «ШБ» уносит с собой строку броска: без назначения бросок
+        // не существует. Удаляем явно, а не каскадом БД, — реализованный бросок
+        // это гол, и счёт матча надо уменьшить.
+        if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
+            const linkedRes = await client.query(
+                'SELECT id, event_type, team_id FROM game_events WHERE linked_event_id = $1',
+                [eventId]
+            );
+            for (const linked of linkedRes.rows) {
+                if (linked.event_type === 'goal') {
+                    await shiftGameScore(client, gameId, linked.team_id, -1);
                 }
+                await client.query('DELETE FROM game_events WHERE id = $1', [linked.id]);
             }
         }
 

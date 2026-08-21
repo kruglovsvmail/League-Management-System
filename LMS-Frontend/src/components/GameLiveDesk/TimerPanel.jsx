@@ -233,12 +233,23 @@ export const TimerPanel = ({
                    Пересчёт статистики
                </Button>
           ) : (
-               <Button
-                   disabled
-                   className="w-full text-[9px] uppercase tracking-[2px] !bg-white/5 !text-white/40"
+               // Гашение объясняем: иначе неотличимо от «кнопка сломалась».
+               // Причин ровно три — матч ещё не завершён, пересчитывать нечего,
+               // либо идёт серия буллитов и её итог ещё не зафиксирован.
+               <div
+                 title={
+                   game?.status !== 'finished' ? 'Пересчёт доступен только для завершённого матча'
+                   : game?.shootout_status === 'active' ? 'Идёт серия буллитов — сначала зафиксируйте её итог'
+                   : 'Статистика уже актуальна: с последнего пересчёта протокол не менялся'
+                 }
                >
-                   Пересчёт статистики
-               </Button>
+                 <Button
+                     disabled
+                     className="w-full text-[9px] uppercase tracking-[2px] !bg-white/5 !text-white/40"
+                 >
+                     Пересчёт статистики
+                 </Button>
+               </div>
           )}
         </div>
       </div>

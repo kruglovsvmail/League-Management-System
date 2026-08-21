@@ -40,7 +40,9 @@ export default function EventOverlay({ game, overlay }) {
     <AnimationWrapper
       type="event"
       isVisible={isVisible}
-      className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center transform-gpu"
+      // inset-x-0 + items-center вместо -translate-x-1/2 — см. AnimationWrapper:
+      // анимация задаёт transform и перенос по X не переживает первый же кадр.
+      className="absolute bottom-16 inset-x-0 z-50 flex flex-col items-center transform-gpu"
     >
       {/* ГЛАВНЫЙ КОНТЕЙНЕР ПЛАШКИ (Теперь со скосом) */}
       <div className="flex items-stretch h-[150px] bg-zinc-950 skew-x-[-10deg] overflow-hidden rounded-lg shadow-2xl min-w-[1000px] relative">

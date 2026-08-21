@@ -159,7 +159,11 @@ export default function ScoreBarOverlay({
     <AnimationWrapper
       type="scorebar"
       isVisible={isVisible}
-      className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 drop-shadow-2xl"
+      // Центруем растяжкой на всю ширину плюс flex, а НЕ через -translate-x-1/2:
+      // AnimationWrapper держит анимацию на этом же элементе, а её кадры задают
+      // собственный transform и затирают переносом. С forwards последний кадр
+      // остаётся навсегда — титр так и уезжал вправо на половину своей ширины.
+      className="absolute bottom-16 inset-x-0 z-50 flex justify-center drop-shadow-2xl"
     >
       <div style={{ width: BAR_W }}>
 

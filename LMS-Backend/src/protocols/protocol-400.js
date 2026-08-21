@@ -9,10 +9,23 @@ const formatTime = (totalSeconds) => {
 
 const formatPenaltyMinutes = (penalty) => {
     if (!penalty) return '';
+    // Штрафной бросок минут не даёт — в графе «Шт.» печатаем сам вид наказания.
+    if (penalty.penalty_class === 'penalty_shot') return 'ШБ';
     if (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) return '2+2';
     if (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) return '5+20';
     return penalty.penalty_minutes || '';
 };
+
+// Штрафной бросок по ходу матча печатается строкой во «Взятии ворот»: время,
+// номер бьющего и исход вместо передач. Поле ИС при этом остаётся и показывает
+// «ШБ» — по нему бросок и отличается от обычной шайбы.
+// pending_ps сюда не доходит: при завершении матча такие броски переписываются
+// в failed_ps, а незавершённый протокол не печатают.
+const isPenaltyShotRow = (goal) => goal?.event_type === 'failed_ps'
+                                || goal?.event_type === 'pending_ps'
+                                || (goal?.event_type === 'goal' && goal?.goal_strength === 'ps');
+
+const penaltyShotOutcome = (goal) => (goal?.event_type === 'goal' ? 'Реализован' : 'Не реализован');
 
 const GOAL_STRENGTH_MAP = { "equal": "РС", "pp": "+1", "pp1": "+1", "pp2": "+2", "sh": "-1", "sh1": "-1", "sh2": "-2", "en": "ПВ", "ps": "ШБ" };
 // Причина удаления печатается в протоколе сокращением из справочника (номер / сокращение /
@@ -136,14 +149,16 @@ export const getHtml = (data) => {
                 <div class="gridCell" style="width: 3%;"><span class="dataText">${goal ? (index + 1) : ''}</span></div>
                 <div class="gridCell" style="width: 6%;"><span class="dataText">${formatTime(goal?.time_seconds)}</span></div>
                 <div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.scorer_number || ''}</span></div>
-                <div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.a1_number || ''}</span></div>
-                <div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.a2_number || ''}</span></div>
+                ${isPenaltyShotRow(goal)
+                  ? `<div class="gridCell" style="width: 10%;"><span class="dataText">${t(penaltyShotOutcome(goal))}</span></div>`
+                  : `<div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.a1_number || ''}</span></div>
+                <div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.a2_number || ''}</span></div>`}
                 <div class="gridCell" style="width: 4%;"><span class="dataText">${t(goalStrength)}</span></div>
                 <div class="gridCell" style="width: 4%;"><span class="dataText">${penalty?.scorer_number || ''}</span></div>
                 <div class="gridCell" style="width: 4%;"><span class="dataText">${formatPenaltyMinutes(penalty)}</span></div>
                 <div class="gridCell" style="width: 20%;"><span class="dataText">${t(penaltyReason)}</span></div>
                 <div class="gridCell" style="width: 6%;"><span class="dataText">${formatTime(penalty?.time_seconds)}</span></div>
-                <div class="gridCell" style="width: 6%;"><span class="dataText">${formatTime(penalty?.penalty_end_time)}</span></div>
+                <div class="gridCell" style="width: 6%;"><span class="dataText">${penalty?.penalty_class === 'penalty_shot' ? '—' : formatTime(penalty?.penalty_end_time)}</span></div>
               </div>
             `);
         }

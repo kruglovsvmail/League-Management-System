@@ -285,7 +285,6 @@ export const getPublicGameById = async (req, res) => {
                      AND gl.time_seconds <= ge.time_seconds
                     WHERE ge.game_id = $1
                       AND ge.event_type = 'goal'
-                      AND COALESCE(ge.goal_strength, '') <> 'ps'
                     ORDER BY ge.id, gl.time_seconds DESC
                 ),
                 empty_net_goals AS (
@@ -463,6 +462,9 @@ export const getGameById = async (req, res) => {
                 -- что список выберет по умолчанию.
                 d.season_id,
                 s.league_id,
+                -- Название лиги нужно панели трансляции: оно уходит в бегущую
+                -- строку перехода-заставки (defaultGraphics/bumperFrame.js).
+                l.name as league_name,
                 COALESCE(tt_home.custom_jersey_dark_url,  ht.jersey_dark_url)  as home_jersey_dark_url,
                 COALESCE(tt_home.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light_url,
                 COALESCE(tt_away.custom_jersey_dark_url,  at.jersey_dark_url)  as away_jersey_dark_url,
@@ -490,6 +492,7 @@ export const getGameById = async (req, res) => {
             LEFT JOIN teams at ON g.away_team_id = at.id
             LEFT JOIN divisions d ON g.division_id = d.id
             LEFT JOIN seasons s ON d.season_id = s.id
+            LEFT JOIN leagues l ON l.id = s.league_id
             LEFT JOIN arenas a ON g.arena_id = a.id
             LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
             LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
@@ -536,7 +539,6 @@ export const getGameById = async (req, res) => {
                  AND gl.time_seconds <= ge.time_seconds
                 WHERE ge.game_id = $1
                   AND ge.event_type = 'goal'
-                  AND COALESCE(ge.goal_strength, '') <> 'ps'
                 ORDER BY ge.id, gl.time_seconds DESC
             ),
             empty_net_goals AS (
@@ -879,6 +881,18 @@ export const updateGameStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: 'Матч не найден' });
         }
         const game = gameRes.rows[0];
+
+        // Штрафной бросок, у которого секретарь так и не отметил исход, к моменту
+        // завершения матча трактуется как нереализованный: назначенный бросок был,
+        // шайбы не было. Переписываем физически, а не «на лету» — в статистику и в
+        // печатный протокол не должно уходить состояние «ещё не исполнен».
+        // Счёт при этом не меняется: pending_ps в него и не входил.
+        if (status === 'finished') {
+            await client.query(
+                `UPDATE game_events SET event_type = 'failed_ps' WHERE game_id = $1 AND event_type = 'pending_ps'`,
+                [gameId]
+            );
+        }
 
         let finalHomeScore = game.home_score;
         let finalAwayScore = game.away_score;
@@ -1477,15 +1491,31 @@ export const recalculateGameStats = async (req, res) => {
 
         // Боксскор — вне проверки на division_id: кнопка "Пересчёт" должна чинить
         // и товарищеские матчи, у которых дивизиона нет
-        await recalculatePlayerGameStats(gameId);
+        try {
+            await recalculatePlayerGameStats(gameId);
+        } catch (boxErr) {
+            console.error(`Ошибка пересчёта боксскора матча ${gameId}:`, boxErr);
+            return res.status(500).json({ success: false, error: 'Не удалось пересчитать боксскор матча' });
+        }
 
+        // Сводные таблицы дивизиона — отдельной обёрткой. Боксскор к этому моменту уже
+        // пересохранён, и ронять из-за них весь ответ нельзя: для секретаря это выглядит
+        // как «кнопка не работает», хотя главная часть работы сделана. Причину при этом
+        // не проглатываем, а возвращаем наружу — в updateGameStatus она уходила только
+        // в лог, и поэтому смена статуса «работала», а пересчёт «нет».
+        let warning = null;
         if (game.division_id) {
-            if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
-            else await recalculateDivisionStandings(game.division_id);
+            try {
+                if (game.stage_type === 'playoff') await recalculatePlayoffs(game.division_id);
+                else await recalculateDivisionStandings(game.division_id);
 
-            const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
-            if (teamsToUpdate.length > 0) {
-                await recalculateTeamStatistics(teamsToUpdate);
+                const teamsToUpdate = [game.home_team_id, game.away_team_id].filter(Boolean);
+                if (teamsToUpdate.length > 0) {
+                    await recalculateTeamStatistics(teamsToUpdate);
+                }
+            } catch (calcErr) {
+                console.error(`Ошибка пересчёта сводных таблиц дивизиона ${game.division_id}:`, calcErr);
+                warning = `Боксскор матча пересчитан, но сводные таблицы дивизиона обновить не удалось: ${calcErr.message}`;
             }
         }
 
@@ -1493,13 +1523,13 @@ export const recalculateGameStats = async (req, res) => {
         // WHERE division_id = $1 с NULL (матч вне лиги) никогда ничего не находит,
         // и needs_recalc оставался бы true навсегда, а кнопка — вечно "недожатой".
         await pool.query('UPDATE games SET needs_recalc = false WHERE id = $1', [gameId]);
-        if (game.division_id) {
+        if (game.division_id && !warning) {
             await pool.query('UPDATE games SET needs_recalc = false WHERE division_id = $1', [game.division_id]);
         }
-        res.json({ success: true });
+        res.json({ success: true, warning });
     } catch (err) {
         console.error('Ошибка ручного пересчета:', err);
-        res.status(500).json({ success: false, error: 'Ошибка сервера при пересчете' });
+        res.status(500).json({ success: false, error: `Ошибка сервера при пересчете: ${err.message}` });
     }
 };
 
@@ -1594,7 +1624,6 @@ export const getGameStats = async (req, res) => {
                    AND gl.time_seconds <= ge.time_seconds
                 WHERE ge.game_id = $1
                     AND ge.event_type = 'goal'
-                    AND COALESCE(ge.goal_strength, '') <> 'ps'
                 ORDER BY ge.id, gl.time_seconds DESC
             ),
             ga_from_shot_stats AS (
@@ -1727,7 +1756,6 @@ export const getGameStats = async (req, res) => {
                 FROM game_events ge
                 CROSS JOIN game_info gi
                 WHERE ge.game_id = $1 AND ge.event_type = 'goal'
-                    AND COALESCE(ge.goal_strength, '') <> 'ps'
             ),
             goals_against_per_goalie AS (
                 SELECT goalie_id, COUNT(*)::int AS goals_against

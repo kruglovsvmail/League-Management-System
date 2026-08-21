@@ -1,9 +1,10 @@
 // src/components/GameLiveDesk/ProtocolSheet.jsx
 import React, { useState, useEffect } from 'react';
 import { 
-  formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines, 
-  CustomSelect, StylishSelect, StylishInput, 
-  goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY
+  formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines,
+  CustomSelect, StylishSelect, StylishInput,
+  goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY,
+  PENALTY_SHOT_MINS, PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
 } from './GameDeskShared';
 import { Icon } from '../../ui/Icon';
 
@@ -96,7 +97,12 @@ export const ProtocolSheet = ({
       penalty_reason_id: opt?.reasonId || null,
     };
   };
-  const goals = teamEvents.filter(e => e.event_type === 'goal').sort((a, b) => a.time_seconds - b.time_seconds);
+  // Во «Взятии ворот» живут и голы, и штрафные броски: реализованный ШБ — это
+  // обычный гол с ИС «ШБ», нереализованный и ещё не исполненный — отдельные типы
+  // события, в счёт матча не идущие. Нумерация строк общая, как в бумажном протоколе.
+  const goals = teamEvents
+    .filter(e => e.event_type === 'goal' || e.event_type === PS_PENDING || e.event_type === PS_FAILED)
+    .sort((a, b) => a.time_seconds - b.time_seconds);
   const penalties = teamEvents.filter(e => e.event_type === 'penalty');
   const timeouts = teamEvents.filter(e => e.event_type === 'timeout').sort((a, b) => a.time_seconds - b.time_seconds);
 
@@ -153,6 +159,7 @@ export const ProtocolSheet = ({
   const getJersey = (id) => roster.find(r => r.player_id == id)?.jersey_number || '';
 
   const getPenaltyClass = (val) => {
+    if (val === PENALTY_SHOT_MINS) return 'penalty_shot';
     if (val === 'match') return 'match';
     const m = parseInt(val, 10);
     if (m === 2) return 'minor';
@@ -163,11 +170,21 @@ export const ProtocolSheet = ({
   };
 
   // "5+20" физически занимает лёд только 5 минут (нарушитель удалён до конца матча отдельно от штрафного времени).
-  const resolvePenaltyMinutes = (val) => (val === 'match' ? 5 : parseInt(val, 10));
+  // ШБ не занимает лёд вовсе — вместо отсидки соперник пробивает штрафной бросок.
+  const resolvePenaltyMinutes = (val) => (
+    val === PENALTY_SHOT_MINS ? 0 : (val === 'match' ? 5 : parseInt(val, 10))
+  );
 
   // Отменяются голом только малый и двойной малый; для них — если у соперника есть гол в окне [start, start+mins],
   // окончание штрафа ставится на время этого гола, иначе — полная номинальная длительность.
+  //
+  // Гол с назначенного штрафного броска удаление НЕ прекращает: буллит разыгрывается
+  // один на один и к численному преимуществу отношения не имеет. Поэтому везде ниже
+  // берётся isScoredFromPlay, а не голый event_type === 'goal'.
   const computeAutoEnd = (startSecs, minsVal) => {
+    // ШБ не тикает: «окончание» равно началу, чтобы строка не попадала ни в
+    // слоты меньшинства, ни в обратный отсчёт таймера штрафов.
+    if (minsVal === PENALTY_SHOT_MINS) return startSecs;
     const mins = resolvePenaltyMinutes(minsVal);
     if (mins === 4) {
       // 2+2: два независимых 2-минутных отрезка, каждый может быть закрыт только своим голом.
@@ -176,7 +193,7 @@ export const ProtocolSheet = ({
       let segStart = startSecs;
       for (let i = 0; i < 2; i++) {
         const segEnd = segStart + 120;
-        const goalsInSeg = oppEvents.filter(e => e.event_type === 'goal' && e.time_seconds > segStart && e.time_seconds < segEnd);
+        const goalsInSeg = oppEvents.filter(e => isScoredFromPlay(e) && e.time_seconds > segStart && e.time_seconds < segEnd);
         segStart = goalsInSeg.length > 0
           ? goalsInSeg.reduce((a, b) => (a.time_seconds < b.time_seconds ? a : b)).time_seconds
           : segEnd;
@@ -185,7 +202,7 @@ export const ProtocolSheet = ({
     }
     const nominalEnd = startSecs + mins * 60;
     if (mins !== 2) return nominalEnd;
-    const oppGoals = oppEvents.filter(e => e.event_type === 'goal' && e.time_seconds > startSecs && e.time_seconds < nominalEnd);
+    const oppGoals = oppEvents.filter(e => isScoredFromPlay(e) && e.time_seconds > startSecs && e.time_seconds < nominalEnd);
     if (oppGoals.length === 0) return nominalEnd;
     return oppGoals.reduce((a, b) => (a.time_seconds < b.time_seconds ? a : b)).time_seconds;
   };
@@ -208,7 +225,8 @@ export const ProtocolSheet = ({
     setEditGoalData({
       time: formatTime(g.time_seconds), scorer: getJersey(g.primary_player_id),
       ast1: getJersey(g.assist1_id), ast2: getJersey(g.assist2_id), str: g.goal_strength || 'equal',
-      from_shot: g.from_shot ?? true
+      from_shot: g.from_shot ?? true,
+      psOutcome: g.event_type,
     });
   };
 
@@ -218,6 +236,46 @@ export const ProtocolSheet = ({
       assist1_id: getPlayerId(editGoalData.ast1), assist2_id: getPlayerId(editGoalData.ast2), goal_strength: editGoalData.str,
       from_shot: editGoalData.from_shot
     }, editGoalId);
+    if (success) setEditGoalId(null);
+  };
+
+  // ─── ШТРАФНОЙ БРОСОК ──────────────────────────────────────────────────────
+  // Строку заводит не секретарь, а система — в момент, когда сопернику записали
+  // штраф вида «ШБ». Здесь правятся время, бьющий и исход.
+  //
+  // Исход — выбор из двух: реализован (тип события становится 'goal' с ИС «ШБ»,
+  // шайба идёт в счёт) или не реализован ('failed_ps', счёт не меняется).
+  // «Ещё не исполнен» третьим вариантом не предлагается: это состояние по
+  // умолчанию, в котором строка рождается, и вернуться в него незачем — при
+  // завершении матча оно само переписывается в «не реализован».
+  const PS_OUTCOME_OPTIONS = [
+    { value: 'goal',     label: 'Реализован' },
+    { value: PS_FAILED,  label: 'Не реализован' },
+  ];
+  const PS_PENDING_LABEL = 'Не испол.';
+
+  // «Ещё не исполнен» остаётся в списке, только пока исход действительно не выбран —
+  // иначе поле показывало бы исход, которого никто не выбирал. Как только секретарь
+  // отметил результат, вариантов ровно два.
+  const psOutcomeOptions = (current) => (current === PS_PENDING
+    ? [{ value: PS_PENDING, label: PS_PENDING_LABEL }, ...PS_OUTCOME_OPTIONS]
+    : PS_OUTCOME_OPTIONS);
+
+  const PS_OUTCOME_VIEW = {
+    [PS_PENDING]: { label: PS_PENDING_LABEL, className: 'text-graphite/40' },
+    goal:         { label: 'Реализ.',     className: 'text-status-accepted font-bold' },
+    [PS_FAILED]:  { label: 'Не реализ.',  className: 'text-status-rejected font-bold' },
+  };
+
+  const saveEditPs = async (ev) => {
+    const success = await onSaveEvent(teamId, editGoalData.psOutcome || ev.event_type, {
+      time_seconds: parseTime(editGoalData.time),
+      player_id: getPlayerId(editGoalData.scorer),
+      // ИС у штрафного броска всегда «ШБ», менять её нельзя.
+      goal_strength: 'ps',
+      // Буллит — всегда бросок в створ: секретарь заносит его и в броски по вратарю.
+      from_shot: true,
+    }, ev.id);
     if (success) setEditGoalId(null);
   };
 
@@ -248,7 +306,11 @@ export const ProtocolSheet = ({
   const startEditPenalty = (p) => {
     setEditPenaltyId(p.id);
     setEditPenaltyData({
-      player: getJersey(p.primary_player_id), mins: p.penalty_class === 'match' ? 'match' : String(p.penalty_minutes),
+      player: getJersey(p.primary_player_id),
+      // У ШБ штрафных минут ноль, и по ним вид штрафа не восстановить — только по классу.
+      mins: p.penalty_class === 'penalty_shot' ? PENALTY_SHOT_MINS
+          : p.penalty_class === 'match' ? 'match'
+          : String(p.penalty_minutes),
       violation: p.penalty_violation || '', start: formatTime(p.time_seconds)
     });
   };
@@ -364,8 +426,13 @@ export const ProtocolSheet = ({
               const isGoalInput = i === goals.length; const isPenaltyInput = i === penaltiesWithTimeline.length;
               const isEditingGoal = goal && goal.id === editGoalId; const isEditingPenalty = penalty && penalty.id === editPenaltyId;
 
+              const isPenaltyShot = penalty?.penalty_class === 'penalty_shot';
+
               let isFinished = false; let endTimeDisplay = ''; let endTimeClass = 'font-mono font-semibold text-[13px] text-graphite';
-              if (penalty && !isEditingPenalty) {
+              if (isPenaltyShot) {
+                // ШБ не отсиживают — окончания у него нет, обратный отсчёт не нужен.
+                endTimeDisplay = '—'; endTimeClass = 'font-mono font-medium text-[13px] text-graphite/25';
+              } else if (penalty && !isEditingPenalty) {
                 const pStart = penalty.effStart; const pEnd = penalty.effEnd;
                 if (!isNaN(pStart) && !isNaN(pEnd)) {
                   isFinished = timerSeconds >= pEnd;
@@ -388,7 +455,49 @@ export const ProtocolSheet = ({
 
                   {/* ВЗЯТИЕ ВОРОТ */}
                   <td className="border-r border-graphite/30 font-bold text-graphite/25 text-[12px]">{goal || (isGoalInput && !isReadOnly) || isEditingGoal ? i + 1 : ''}</td>
-                  {isEditingGoal && !isReadOnly ? (
+                  {isEditingGoal && !isReadOnly && isPenaltyShotEvent(goal) ? (
+                    <>
+                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput isEditing isTimeField title="Время штрафного броска" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
+                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Бьющий" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
+                      <td colSpan="2" className="border-r border-graphite/30 p-0.5 bg-orange/5">
+                        <CustomSelect
+                          isEditing
+                          title="Исход штрафного броска"
+                          options={psOutcomeOptions(editGoalData.psOutcome)}
+                          value={editGoalData.psOutcome}
+                          onChange={e => setEditGoalData({...editGoalData, psOutcome: e.target.value})}
+                          hideEmpty
+                        />
+                      </td>
+                      {/* ИС и «Бр» у штрафного броска предопределены и не редактируются:
+                          ситуация всегда ШБ, бросок всегда в створ. */}
+                      <td className="border-r border-graphite/30 bg-orange/5 text-[10px] text-graphite/40 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
+                      <td className="border-r border-graphite/30 bg-orange/5 text-graphite/25 font-bold">—</td>
+                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/5"><button onClick={() => saveEditPs(goal)} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
+                    </>
+                  ) : goal && isPenaltyShotEvent(goal) ? (
+                    <>
+                      <td className="border-r border-graphite/30 font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
+                      <td className="border-r border-graphite/30 font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
+                      {/* Ассистентов у штрафного броска нет — вместо двух ячеек одна
+                          с исходом. ИС и «Бр» на месте, но правке не подлежат. */}
+                      <td colSpan="2" className={`border-r border-graphite/30 text-[11px] uppercase tracking-wider ${(PS_OUTCOME_VIEW[goal.event_type] || PS_OUTCOME_VIEW[PS_PENDING]).className}`}>
+                        {(PS_OUTCOME_VIEW[goal.event_type] || PS_OUTCOME_VIEW[PS_PENDING]).label}
+                      </td>
+                      <td className="border-r border-graphite/30 text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
+                      <td className="border-r border-graphite/30 text-graphite/25 font-bold" title="Штрафной бросок всегда идёт в створ">—</td>
+                      <td className="border-r-2 border-graphite/25 p-0 text-center">
+                         {!isReadOnly && (
+                            <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
+                               {/* +/- у штрафного броска не бывает: эпизод разыгрывается один на один.
+                                   Кнопки удаления тоже нет — строка живёт ровно столько, сколько
+                                   штраф вида «ШБ», который её породил; удалять надо его. */}
+                               <button onClick={() => startEditGoal(goal)} className="text-graphite/25 hover:text-orange transition-colors" title="Редактировать бьющего, время и исход"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                            </div>
+                         )}
+                      </td>
+                    </>
+                  ) : isEditingGoal && !isReadOnly ? (
                     <>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput isEditing isTimeField title="Время гола" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
@@ -484,7 +593,7 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Оштрафованный игрок" roster={roster} value={editPenaltyData.player} onChange={e=>setEditPenaltyData({...editPenaltyData, player: e.target.value})} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5">
                         <CustomSelect
-                          isEditing title="Штрафные минуты" options={penaltyMinsOptions} value={editPenaltyData.mins}
+                          isEditing title="Штраф" options={penaltyMinsOptions} value={editPenaltyData.mins}
                           onChange={e=>setEditPenaltyData({...editPenaltyData, mins: e.target.value})}
                           hideEmpty
                         />
@@ -498,6 +607,7 @@ export const ProtocolSheet = ({
                       </td>
                       <td className="border-r border-graphite/30 p-0.5 bg-orange/5 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
                         {(() => {
+                          if (editPenaltyData.mins === PENALTY_SHOT_MINS) return '—';
                           const s = parseTime(editPenaltyData.start);
                           return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, editPenaltyData.mins)) : '';
                         })()}
@@ -508,13 +618,15 @@ export const ProtocolSheet = ({
                     <>
                       <td className="border-r border-graphite/30 font-bold text-[13px] text-graphite">{getJersey(penalty.primary_player_id)}</td>
                       <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite">
-                        {(penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) ? '2+2'
+                        {isPenaltyShot ? 'ШБ'
+                          : (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) ? '2+2'
                           : (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) ? '5+20'
                           : penalty.penalty_minutes}
                       </td>
-                      {/* Показываем сокращение — как в поле выбора и в PDF. Полная формулировка
-                          остаётся в подсказке при наведении. */}
-                      <td className="border-r border-graphite/30 text-center px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation_code || getPenaltyReasonCode(penalty.penalty_violation)}</td>
+                      {/* Полная формулировка — секретарю удобнее читать причину целиком.
+                          Сокращение (penalty_violation_code) остаётся снимком в событии и
+                          печатается в PDF-протоколе, где ширина графы жёстко ограничена. */}
+                      <td className="border-r border-graphite/30 text-left px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation}</td>
                       <td className="border-r border-graphite/30 font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
                       <td className={`border-r border-graphite/30 ${endTimeClass}`}>{endTimeDisplay}</td>
                       <td className="border-r-2 border-graphite/25 p-0 text-center">
@@ -531,7 +643,7 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/30 p-0.5"><StylishSelect title="Оштрафованный игрок" roster={roster} value={newPenalty.player} onChange={e=>setNewPenalty({...newPenalty, player: e.target.value})} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/30 p-0.5">
                         <CustomSelect
-                          title="Штрафные минуты" options={penaltyMinsOptions} value={newPenalty.mins}
+                          title="Штраф" options={penaltyMinsOptions} value={newPenalty.mins}
                           onChange={e=>setNewPenalty({...newPenalty, mins: e.target.value})}
                           hideEmpty
                         />
@@ -549,6 +661,7 @@ export const ProtocolSheet = ({
                       </td>
                       <td className="border-r border-graphite/30 p-0.5 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
                         {(() => {
+                          if (newPenalty.mins === PENALTY_SHOT_MINS) return '—';
                           const s = newPenalty.start ? parseTime(newPenalty.start) : timerSeconds;
                           return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, newPenalty.mins)) : '';
                         })()}

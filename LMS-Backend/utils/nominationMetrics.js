@@ -39,6 +39,8 @@ export const METRIC_DEFS = {
     //   goals_ps — назначенный штрафной бросок по ходу матча, это обычная шайба в счёте;
     //   so_goals — попытка в послематчевой серии, в счёт матча она не идёт.
     goals_ps:         { label: 'Реализованные штрафные броски',      appliesTo: 'skater', order: 'desc', requires: null, expr: 'SUM(s.goals_ps)' },
+    ps_attempts:      { label: 'Назначенные штрафные броски',        appliesTo: 'skater', order: 'desc', requires: null, expr: 'SUM(s.ps_attempts)' },
+    ps_pct:           { label: '% реализации штрафных бросков',      appliesTo: 'skater', order: 'desc', requires: null, format: 'percent', expr: 'SUM(s.goals_ps)::numeric / NULLIF(SUM(s.ps_attempts), 0)' },
     so_goals:         { label: 'Реализованные послематчевые буллиты', appliesTo: 'skater', order: 'desc', requires: null, expr: 'SUM(s.so_goals)' },
     plus_minus:       { label: 'Показатель полезности',   appliesTo: 'skater', order: 'desc', requires: 'plus_minus', expr: 'SUM(s.plus_minus)' },
 
@@ -50,7 +52,14 @@ export const METRIC_DEFS = {
     goalie_goals_against: { label: 'Пропущенные шайбы',    appliesTo: 'goalie', order: 'asc',  requires: null,    expr: 'SUM(s.goalie_goals_against)' },
     goalie_shutouts:      { label: 'Сухие матчи',          appliesTo: 'goalie', order: 'desc', requires: null,    expr: 'COUNT(*) FILTER (WHERE s.goalie_shutout)' },
     goalie_wins:          { label: 'Победы вратаря',       appliesTo: 'goalie', order: 'desc', requires: null,    expr: `COUNT(*) FILTER (WHERE s.goalie_decision IN ('win', 'ot_win'))` },
-    goalie_so_saves:      { label: 'Отражённые буллиты',   appliesTo: 'goalie', order: 'desc', requires: null,    expr: 'SUM(s.goalie_so_saves)' },
+    goalie_so_saves:      { label: 'Отражённые послематчевые буллиты', appliesTo: 'goalie', order: 'desc', requires: null, expr: 'SUM(s.goalie_so_saves)' },
+    // ОШБ — штрафные броски, назначенные ПО ХОДУ матча. От послематчевых буллитов
+    // отличаются всем: реализованный идёт в счёт матча, пробивается по ходу игры,
+    // и вратарю он записывается в пропущенные. Не зависят от учёта бросков в
+    // дивизионе: назначенный буллит фиксируется в протоколе всегда.
+    goalie_ps_saves:      { label: 'Отражённые штрафные броски (ОШБ)', appliesTo: 'goalie', order: 'desc', requires: null, expr: 'SUM(s.goalie_ps_saves)' },
+    goalie_ps_against:    { label: 'Штрафные броски по воротам',       appliesTo: 'goalie', order: 'desc', requires: null, expr: 'SUM(s.goalie_ps_against)' },
+    goalie_ps_pct:        { label: '% отражённых штрафных бросков',    appliesTo: 'goalie', order: 'desc', requires: null, format: 'percent', expr: 'SUM(s.goalie_ps_saves)::numeric / NULLIF(SUM(s.goalie_ps_against), 0)' },
 
     // ── Общие ────────────────────────────────────────────────────────────
     penalty_minutes:  { label: 'Штрафные минуты',         appliesTo: 'both', order: 'desc', requires: null, expr: 'SUM(s.penalty_minutes)' },

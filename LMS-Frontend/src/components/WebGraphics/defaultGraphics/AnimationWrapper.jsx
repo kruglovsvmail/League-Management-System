@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
+// ВНИМАНИЕ ПРИ ПОЗИЦИОНИРОВАНИИ. Анимация появления висит на том же элементе,
+// которому вызывающий передаёт className, и её кадры задают transform целиком.
+// Любой transform из className (translate-x-1/2, rotate, scale) будет затёрт
+// первым же кадром, а animation-fill-mode: forwards оставит это навсегда.
+//
+// Поэтому центровать плашку нужно раскладкой, а не переносом:
+//   было:  absolute bottom-16 left-1/2 -translate-x-1/2
+//   надо:  absolute bottom-16 inset-x-0 flex justify-center
 export function AnimationWrapper({ isVisible, type, className = '', children }) {
   const [hasBeenVisible, setHasBeenVisible] = useState(false);
 

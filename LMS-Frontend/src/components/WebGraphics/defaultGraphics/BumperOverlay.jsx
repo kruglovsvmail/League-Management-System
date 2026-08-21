@@ -103,9 +103,46 @@ export default function BumperOverlay({ game, overlay, sources }) {
     const elapsed = startedAt ? Date.now() - startedAt : 0;
     const el = videoRefs.current[slot];
 
+    // Переход, как и ролик, нельзя запускать вслепую: у холодного элемента есть
+    // только первые кадры, он их покажет и встанет ждать данные — а заметить это
+    // некому, таймеры фаз идут по расписанию и через SWEEP_MS просто гасят
+    // застывшую картинку.
     const runTransition = (fromMs = 0) => {
       const t = transitionRef.current;
-      if (t) { t.currentTime = Math.max(0, fromMs) / 1000; t.play().catch(() => {}); }
+      if (!t) return;
+
+      const start = () => {
+        // currentTime трогаем ТОЛЬКО когда правда надо отмотать. Файл собран
+        // MediaRecorder'ом, а такой WebM пишется без длительности и без индекса:
+        // перемотка на нём может не завершиться вовсе и оставит элемент в
+        // seeking с первым кадром в эфире. При старте с нуля отматывать нечего.
+        const to = Math.max(0, fromMs) / 1000;
+        if (Math.abs(t.currentTime - to) > 0.05) t.currentTime = to;
+        // Со звуком: в файле перехода лежит удар (см. HIT_MS в bumperFrame.js).
+        // Отказ автозапуска разбираем как у ролика — лучше немой переход, чем
+        // видимая склейка. В браузерном источнике OBS политика не действует,
+        // ловится это только в обычной вкладке.
+        t.muted = false;
+        t.play().catch((err) => {
+          console.warn('[Заставка] переход не запустился:', err?.name, err?.message);
+          if (err?.name === 'NotAllowedError') {
+            t.muted = true;
+            t.play()
+              .then(() => console.warn('[Заставка] переход играет БЕЗ ЗВУКА — браузер запретил автозапуск со звуком'))
+              .catch(() => {});
+          }
+        });
+      };
+
+      if (t.readyState >= 3) { start(); return; }   // HAVE_FUTURE_DATA — данных хватает
+
+      // Сдвиг по времени тут НЕ добавляем, в отличие от ролика: перемотка на этом
+      // файле ненадёжна, а опоздавший на долю секунды переход в эфире заметен
+      // куда меньше, чем застывший кадр.
+      console.info('[Заставка] переход ещё не готов, ждём canplay', { readyState: t.readyState });
+      const onReady = () => { t.removeEventListener('canplay', onReady); start(); };
+      t.addEventListener('canplay', onReady);
+      waitersRef.current.push([t, onReady]);
     };
     // Ролик может быть ещё не готов: прогрев не успел или не прошёл вовсе, и у
     // элемента есть только первый кадр. Ждём canplay, а не суём в эфир стоп-кадр.
@@ -259,8 +296,12 @@ export default function BumperOverlay({ game, overlay, sources }) {
       {/* ---------- ПЕРЕХОД ----------
           Прозрачный WebM поверх всего. Всегда смонтирован ради preload, но
           показывается только пока идёт сам проход: иначе последний кадр висел
-          бы поверх ролика. muted обязателен — звук у перехода не предусмотрен,
-          а без него браузер может отказать в автовоспроизведении. */}
+          бы поверх ролика.
+
+          Звук у перехода ЕСТЬ — удар в момент столкновения эмблем. Он намеренно
+          накладывается на дорожку рекламного ролика: так решено осознанно.
+          Атрибута muted здесь нет, мьют ставится только откатом, если браузер
+          запретит автозапуск со звуком (см. runTransition). */}
       {transitionUrl && (
         <video
           ref={transitionRef}
@@ -268,8 +309,11 @@ export default function BumperOverlay({ game, overlay, sources }) {
           // означает, что кадр не перекроется вовремя и склейка будет видна.
           src={sources?.transition || transitionUrl}
           preload="auto"
-          muted
           playsInline
+          onError={(e) => {
+            const err = e?.target?.error;
+            console.warn('[Заставка] ошибка перехода', err?.code, err?.message);
+          }}
           className="absolute inset-0 w-full h-full object-cover"
           style={{ zIndex: 20, opacity: transitionOn ? 1 : 0, pointerEvents: 'none' }}
         />

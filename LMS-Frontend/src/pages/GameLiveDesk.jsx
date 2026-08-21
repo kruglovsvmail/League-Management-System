@@ -13,10 +13,11 @@ import { GameFlowAccordion } from '../components/GameLiveDesk/GameFlowAccordion'
 import { ShootoutAccordion } from '../components/GameLiveDesk/ShootoutAccordion';
 import { SummaryTablesAccordion } from '../components/GameLiveDesk/SummaryTablesAccordion';
 import { ProtocolBackAccordion } from '../components/GameLiveDesk/ProtocolBackAccordion';
-import { 
-  getPeriodLimits, 
-  calculatePenaltyTimelines, 
-  calculatePeriodFromTime
+import {
+  getPeriodLimits,
+  calculatePenaltyTimelines,
+  calculatePeriodFromTime,
+  PS_PENDING, PS_FAILED, isScoredFromPlay
 } from '../components/GameLiveDesk/GameDeskShared';
 import { ProtocolViewerModal } from '../components/GameLiveDesk/ProtocolViewerModal';
 import { Button } from '../ui/Button';
@@ -539,6 +540,10 @@ export function GameLiveDesk() {
     else setAwayRoster(updateState);
   };
 
+  // Досрочное прекращение малого штрафа заброшенной шайбой. Вызывается только для
+  // голов из игры: шайба с назначенного штрафного броска удаление не прекращает
+  // (см. isScoredFromPlay в GameDeskShared) — буллит разыгрывается один на один,
+  // и к численному преимуществу соперника отношения не имеет.
   const processGoalPenaltyLogic = async (scoringTeamId, goalTimeRaw) => {
     const concedingTeamId = scoringTeamId === game.home_team_id ? game.away_team_id : game.home_team_id;
     const goalTime = parseInt(goalTimeRaw, 10);
@@ -575,10 +580,18 @@ export function GameLiveDesk() {
     }
   };
 
+  // Типы, у которых период вычисляется по времени на табло. Послематчевая серия
+  // сюда не входит — у неё период всегда 'SO'.
+  //
+  // Парную строку во «Взятии ворот» для штрафа вида «ШБ» заводит бэкенд в той же
+  // транзакции (GameLiveDeskController), а не этот файл: событий должно быть либо
+  // два, либо ни одного, и оба приложения обязаны вести себя одинаково.
+  const TIMED_EVENT_TYPES = ['goal', 'penalty', 'timeout', PS_PENDING, PS_FAILED];
+
   const saveEventRow = async (teamId, eventType, rowData, existingId = null) => {
     setIsSaving(true);
     let finalPeriod = currentPeriod;
-    if (['goal', 'penalty', 'timeout'].includes(eventType) && rowData.time_seconds !== undefined) {
+    if (TIMED_EVENT_TYPES.includes(eventType) && rowData.time_seconds !== undefined) {
       finalPeriod = calculatePeriodFromTime(rowData.time_seconds, periodLength, otLength, periodsCount);
     } else if (['shootout_goal', 'shootout_miss'].includes(eventType)) {
       finalPeriod = 'SO';
@@ -594,7 +607,9 @@ export function GameLiveDesk() {
       const res = await fetch(url, { method: existingId ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.success) {
-        if (eventType === 'goal' && !existingId) await processGoalPenaltyLogic(teamId, rowData.time_seconds);
+        // goal_strength='ps' — это исход штрафного броска, а не шайба из игры:
+        // чужое удаление он не прекращает.
+        if (isScoredFromPlay(payload) && !existingId) await processGoalPenaltyLogic(teamId, rowData.time_seconds);
         await loadInitialData();
         socket?.emit('score_updated', { gameId });
         socket?.emit('game_updated', { gameId });
@@ -715,17 +730,36 @@ export function GameLiveDesk() {
     handleSaveActualData(field, '');
   };
 
+  // Отказ обязан быть виден. Раньше здесь стоял голый `if (res.ok)` без else:
+  // при ошибке сервера кнопка просто гасла, ничего не менялось и никакого следа
+  // не оставалось — со стороны секретаря это выглядит как «кнопка не работает».
   const handleRecalculateStats = async () => {
       setIsRecalculatingStats(true);
       try {
           const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/recalculate`, {
               method: 'POST', headers
           });
-          if (res.ok) {
-              await loadInitialData();
-              socket?.emit('game_updated', { gameId });
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok || !data.success) {
+              setToast({
+                  title: 'Пересчёт не выполнен',
+                  message: data.error || `Сервер ответил ошибкой (${res.status}). Повторите или обратитесь к администратору.`,
+                  type: 'error'
+              });
+              return;
           }
-      } catch (err) { console.error(err); } 
+
+          await loadInitialData();
+          socket?.emit('game_updated', { gameId });
+
+          setToast(data.warning
+              ? { title: 'Пересчёт выполнен частично', message: data.warning, type: 'error' }
+              : { title: 'Статистика пересчитана', message: 'Боксскор матча и сводные таблицы обновлены.', type: 'success' });
+      } catch (err) {
+          console.error(err);
+          setToast({ title: 'Пересчёт не выполнен', message: 'Сервер недоступен — проверьте соединение и повторите.', type: 'error' });
+      }
       finally { setIsRecalculatingStats(false); }
   };
 
