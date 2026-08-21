@@ -1,11 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { ConfirmModal } from '../modals/ConfirmModal';
 
-export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isDefaultPreview = false, mockText = "Заглушка", onFileSelect, initialUrl, emptyImage, canClear = true, disabled = false, readOnly = false }) {
+// confirmClear — текст предупреждения перед сбросом уже сохранённого файла. Не задан
+// (по умолчанию) — «Сбросить» срабатывает сразу, как и раньше во всех остальных местах.
+// Задан — сначала спрашиваем. Нужно там, где за сбросом стоит безвозвратное удаление
+// файла из хранилища: документы допуска игрока (медсправка, страховка, согласие).
+export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isDefaultPreview = false, mockText = "Заглушка", onFileSelect, initialUrl, emptyImage, canClear = true, disabled = false, readOnly = false, confirmClear = null }) {
   // Объединяем disabled и readOnly в один флаг для удобства
   const isDisabled = disabled || readOnly;
 
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(initialUrl || null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -25,13 +31,23 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
     else setPreviewUrl(URL.createObjectURL(selectedFile));
   };
 
-  const handleClear = (e) => {
-    e.stopPropagation();
-    if (isDisabled) return;
+  const applyClear = () => {
     setFile(null);
     setPreviewUrl(null);
     if (onFileSelect) onFileSelect(null, true);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    if (isDisabled) return;
+    // Спрашиваем только про уже сохранённый файл. Сброс только что выбранного — это
+    // отмена собственного действия секунду назад, и подтверждать там нечего.
+    if (confirmClear && !file && initialUrl) {
+      setConfirmingClear(true);
+      return;
+    }
+    applyClear();
   };
 
   const isPdf = previewUrl && (previewUrl.toLowerCase().includes('.pdf') || previewUrl === 'PDF');
@@ -106,6 +122,17 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
             )}
           </div>
         </div>
+      )}
+
+      {confirmClear && (
+        <ConfirmModal
+          isOpen={confirmingClear}
+          onClose={() => setConfirmingClear(false)}
+          onConfirm={() => { setConfirmingClear(false); applyClear(); }}
+          title="Сбросить документ?"
+          message={confirmClear}
+          confirmLabel="Сбросить"
+        />
       )}
     </div>
   );

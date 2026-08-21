@@ -8,6 +8,12 @@ import { DOCUMENT_ACCEPT } from '../utils/uploadFormats';
 // Импортируем нашу заглушку
 import { AccessFallback } from '../ui/AccessFallback';
 
+// Предупреждение перед сбросом. Сброс тут — не «убрать из заявки»: при сохранении файл
+// удаляется из хранилища насовсем, и повторно его взять неоткуда. Формулировка честно
+// говорит и про это, и про то, что произойдёт всё не сразу, а по кнопке «Сохранить».
+const clearWarning = (docName) =>
+  `Файл «${docName}» будет удалён из хранилища, когда вы нажмёте «Сохранить». Восстановить его после этого нельзя.`;
+
 export function MedicalDocsModal({ 
   isOpen, 
   onClose, 
@@ -133,9 +139,10 @@ export function MedicalDocsModal({
                   <Uploader 
                     heightClass="h-[100px]" 
                     accept={DOCUMENT_ACCEPT} 
-                    initialUrl={initialMed} 
+                    initialUrl={initialMed}
                     onFileSelect={(file, cleared) => { setMedFile(file); setMedCleared(cleared); }}
                     disabled={readOnly}
+                    confirmClear={clearWarning('Медицинская справка')}
                   />
                   <Calendar 
                     value={medExp} 
@@ -152,9 +159,10 @@ export function MedicalDocsModal({
                   <Uploader 
                     heightClass="h-[100px]" 
                     accept={DOCUMENT_ACCEPT} 
-                    initialUrl={initialIns} 
+                    initialUrl={initialIns}
                     onFileSelect={(file, cleared) => { setInsFile(file); setInsCleared(cleared); }}
                     disabled={readOnly}
+                    confirmClear={clearWarning('Страховка')}
                   />
                   <Calendar 
                     value={insExp} 
@@ -171,9 +179,10 @@ export function MedicalDocsModal({
                   <Uploader 
                     heightClass="h-[100px]" 
                     accept={DOCUMENT_ACCEPT} 
-                    initialUrl={initialConsent} 
+                    initialUrl={initialConsent}
                     onFileSelect={(file, cleared) => { setConsentFile(file); setConsentCleared(cleared); }}
                     disabled={readOnly}
+                    confirmClear={clearWarning('Согласие на обработку данных')}
                   />
                   <Calendar 
                     value={consentExp} 

@@ -80,6 +80,11 @@ export function PaperApplicationModal({ isOpen, onClose, app, onSave, isSaving, 
             heightClass="h-[232px]"
             accept={DOCUMENT_ACCEPT}
             disabled={readOnly}
+            // Здесь, в отличие от документов игрока, файл из хранилища не удаляется —
+            // обнуляется только ссылка (deleteTournamentTeamLeaguePaper в
+            // tournamentTeamController). Но через интерфейс её больше не вернуть, так что
+            // случайное нажатие всё равно стоит человеку повторной загрузки заявки.
+            confirmClear="Утверждённая заявка будет откреплена от команды, когда вы нажмёте «Сохранить». Вернуть её можно будет только повторной загрузкой файла."
           />
         </div>
       </div>
