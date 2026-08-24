@@ -55,6 +55,15 @@ const TOURNAMENT_ROLE_MAP = Object.fromEntries(TOURNAMENT_ROLES.map(r => [r.id, 
 // Роль в команде -> роль в заявке (главный тренер схлопывается в тренера)
 const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
 
+// Подпись квалификации в шторках выбора игроков. Пишем полное название, а не сокращение:
+// в списке нет колонки-легенды, и «МС» рядом с фамилией ни о чём не говорит. Тем, кого
+// дивизион не пропускает, дописываем причину прямо в ту же строку.
+// info — элемент карты quals из /qual-eligibility ({ name, short_name, allowed }).
+const qualLabel = (info) => {
+  const name = info?.name || 'Квалификации нет';
+  return info?.allowed === false ? `${name} — не допускается` : name;
+};
+
 export function TeamManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -813,6 +822,21 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
       const canAddA = r.is_assistant || (app.roster || []).filter(p => p.is_assistant).length < 2; 
       return ( <div className="flex gap-1.5"><button onClick={() => onUpdatePlayer(r.id, { is_captain: !r.is_captain, is_assistant: false })} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20'}`}>C</button><button onClick={() => { if (r.is_assistant) onUpdatePlayer(r.id, { is_assistant: false }); else onUpdatePlayer(r.id, { is_assistant: true, is_captain: false }); }} disabled={!canAddA && !r.is_assistant} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20'}`}>A</button></div> ); 
     }},
+    { label: 'Квал.', sortKey: 'qualification_short_name', width: 'w-[90px]', render: (r) => {
+      // Квалификация лиговая: её могли сменить уже после того, как игрока заявили сюда.
+      // Из турнира это никого не выкидывает, но расхождение с допуском дивизиона
+      // подсвечиваем — команда должна понимать, откуда взялось несоответствие.
+      const conflict = !!r.qualification_conflict;
+      const title = conflict
+        ? `${r.qualification_name || 'Квалификации нет'} — не допускается в этом дивизионе. Игрок остаётся в турнире: допуск проверяется при заявке.`
+        : (r.qualification_name || 'Квалификации нет');
+
+      return (
+        <div title={title} className={`inline-block ${conflict ? 'ring-2 ring-status-rejected/60 rounded-md' : ''}`}>
+          <Badge label={r.qualification_short_name || 'Нет'} type={r.qualification_id ? 'filled' : 'empty'} />
+        </div>
+      );
+    }},
     { label: 'Документы', width: 'w-[100px]', render: (r) => { 
       const hasMed = !!r.medical_url;
       const hasIns = !!r.insurance_url;
@@ -1012,7 +1036,9 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
   const [paperFile, setPaperFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [blockedPlayers, setBlockedPlayers] = useState({});
+  // Карта user_id -> { name, short_name, allowed }: подписываем квалификацию всем,
+  // а по allowed решаем, кого дивизион не пропустит
+  const [playerQuals, setPlayerQuals] = useState({});
 
   useEffect(() => {
     if (!isOpen) {
@@ -1023,21 +1049,21 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
     }
   }, [isOpen]);
 
-  // Кого не пропустит квалификация в выбранный дивизион. Уже отмеченных таких убираем
-  // из заявки: дивизион могли переключить после того, как состав набрали.
+  // Квалификации состава и кого из них не пропустит выбранный дивизион. Уже отмеченных
+  // недопущенных убираем из заявки: дивизион могли переключить после того, как состав набрали.
   useEffect(() => {
-    if (!isOpen || !teamId || !selectedDivisionId) { setBlockedPlayers({}); return; }
+    if (!isOpen || !teamId || !selectedDivisionId) { setPlayerQuals({}); return; }
 
     fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/qual-eligibility?divisionId=${selectedDivisionId}`, {
       headers: { 'Authorization': `Bearer ${getToken()}` }
     })
       .then(res => res.json())
       .then(data => {
-        const blocked = data.success ? data.blocked : {};
-        setBlockedPlayers(blocked);
-        setSelectedPlayers(prev => new Set([...prev].filter(id => !blocked[id])));
+        const quals = data.success ? (data.quals || {}) : {};
+        setPlayerQuals(quals);
+        setSelectedPlayers(prev => new Set([...prev].filter(id => quals[id]?.allowed !== false)));
       })
-      .catch(() => setBlockedPlayers({}));
+      .catch(() => setPlayerQuals({}));
   }, [isOpen, teamId, selectedDivisionId]);
 
   const activeLeague = leagues.find(l => l.league_id === selectedLeagueId);
@@ -1045,7 +1071,7 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
   const currentDiv = divisions.find(d => d.id === selectedDivisionId);
   const isPaperFirst = currentDiv && !currentDiv.digital_applications_only;
 
-  const togglePlayer = (id) => { if (blockedPlayers[id]) return; const next = new Set(selectedPlayers); if (next.has(id)) next.delete(id); else next.add(id); setSelectedPlayers(next); };
+  const togglePlayer = (id) => { if (playerQuals[id]?.allowed === false) return; const next = new Set(selectedPlayers); if (next.has(id)) next.delete(id); else next.add(id); setSelectedPlayers(next); };
 
   const handleSave = async () => {
     if (!selectedDivisionId || isSaving) return;
@@ -1104,17 +1130,19 @@ function CreateApplicationDrawer({ isOpen, onClose, leagues, roster, teamId, onS
                 <div className="p-4 bg-graphite/5 border-b border-graphite/10 font-bold text-[13px] text-graphite-light">Игровой состав ({roster.length})</div>
                 <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
                   {roster.map(r => {
-                    const blockReason = blockedPlayers[r.user_id];
+                    const qual = playerQuals[r.user_id];
+                    const isBlocked = qual?.allowed === false;
                     return (
-                      <div key={r.user_id} className={`flex items-center justify-between p-3 border-b border-graphite/5 ${blockReason ? 'opacity-60' : 'hover:bg-orange/5'}`}>
+                      <div key={r.user_id} className={`flex items-center justify-between p-3 border-b border-graphite/5 ${isBlocked ? 'opacity-60' : 'hover:bg-orange/5'}`}>
                         <div className="flex items-center gap-3 min-w-0">
                           <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-8 h-8 rounded-lg object-cover shrink-0" />
                           <div className="flex flex-col min-w-0">
                             <span className="text-[13px] font-semibold">{r.last_name} {r.first_name}</span>
-                            {blockReason && <span className="text-[11px] text-status-rejected leading-tight">{blockReason}</span>}
+                            {/* Пока дивизион не выбран, квалификаций у нас нет — строку не рисуем, чтобы не врать «квалификации нет» */}
+                            {qual && <span className={`text-[11px] leading-tight truncate ${isBlocked ? 'text-status-rejected font-semibold' : 'text-graphite-light'}`}>{qualLabel(qual)}</span>}
                           </div>
                         </div>
-                        {!blockReason && !selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white shrink-0">→</button>}
+                        {!isBlocked && !selectedPlayers.has(r.user_id) && <button onClick={() => togglePlayer(r.user_id)} className="text-orange font-bold text-[12px] bg-orange/10 px-3 py-1 rounded hover:bg-orange hover:text-white shrink-0">→</button>}
                       </div>
                     );
                   })}
@@ -1135,21 +1163,23 @@ function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, divisionId
   const [query, setQuery] = useState('');
   const [selectedPlayers, setSelectedPlayers] = useState(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [blockedPlayers, setBlockedPlayers] = useState({});
+  // Карта user_id -> { name, short_name, allowed }: квалификацию подписываем всем,
+  // а по allowed решаем, кого дивизион не пропустит
+  const [playerQuals, setPlayerQuals] = useState({});
 
   useEffect(() => { if (!isOpen) { setQuery(''); setSelectedPlayers(new Set()); } }, [isOpen]);
 
-  // Кого не пропустит квалификация в дивизион этой заявки — шторка красит их серым.
-  // Сохранение проверяет допуск само, поэтому это только подсказка.
+  // Квалификации состава и кого из них не пропустит дивизион этой заявки — шторка красит
+  // таких серым. Сохранение проверяет допуск само, поэтому это только подсказка.
   useEffect(() => {
-    if (!isOpen || !teamId || !divisionId) { setBlockedPlayers({}); return; }
+    if (!isOpen || !teamId || !divisionId) { setPlayerQuals({}); return; }
 
     fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/qual-eligibility?divisionId=${divisionId}`, {
       headers: { 'Authorization': `Bearer ${getToken()}` }
     })
       .then(res => res.json())
-      .then(data => setBlockedPlayers(data.success ? data.blocked : {}))
-      .catch(() => setBlockedPlayers({}));
+      .then(data => setPlayerQuals(data.success ? (data.quals || {}) : {}))
+      .catch(() => setPlayerQuals({}));
   }, [isOpen, teamId, divisionId]);
 
   let availableRoster = roster.filter(r => !currentAppRoster.some(cr => cr.player_id === r.user_id));
@@ -1186,18 +1216,19 @@ function AddAppPlayerDrawer({ isOpen, onClose, roster, teamId, appId, divisionId
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col gap-2">
           {availableRoster.map(r => {
             const isSelected = selectedPlayers.has(r.user_id);
-            const blockReason = blockedPlayers[r.user_id];
+            const qual = playerQuals[r.user_id];
+            const isBlocked = qual?.allowed === false;
             return (
               <div
                 key={r.user_id}
-                onClick={() => { if (blockReason) return; const s = new Set(selectedPlayers); if(s.has(r.user_id)) s.delete(r.user_id); else s.add(r.user_id); setSelectedPlayers(s); }}
-                className={`flex items-center gap-4 p-4 rounded-md border transition-all ${blockReason ? 'bg-white border-graphite/10 opacity-60 cursor-not-allowed' : `cursor-pointer ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}`}
+                onClick={() => { if (isBlocked) return; const s = new Set(selectedPlayers); if(s.has(r.user_id)) s.delete(r.user_id); else s.add(r.user_id); setSelectedPlayers(s); }}
+                className={`flex items-center gap-4 p-4 rounded-md border transition-all ${isBlocked ? 'bg-white border-graphite/10 opacity-60 cursor-not-allowed' : `cursor-pointer ${isSelected ? 'bg-orange/10 border-orange shadow-sm' : 'bg-white border-graphite/10 hover:border-orange'}`}`}
               >
-                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
-                <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5" alt="avatar" />
+                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-orange border-orange text-white' : 'border-graphite/30'}`}>{isSelected && '✓'}</div>
+                <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 object-cover rounded-lg bg-graphite/5 shrink-0" alt="avatar" />
                 <div className="flex flex-col min-w-0">
-                  <span className="block font-bold text-graphite text-[14px]">{r.last_name} {r.first_name}</span>
-                  {blockReason && <span className="text-[11px] text-status-rejected leading-tight">{blockReason}</span>}
+                  <span className="block font-bold text-graphite text-[14px] truncate">{r.last_name} {r.first_name}</span>
+                  {qual && <span className={`text-[11px] leading-tight truncate ${isBlocked ? 'text-status-rejected font-semibold' : 'text-graphite-light'}`}>{qualLabel(qual)}</span>}
                 </div>
               </div>
             );

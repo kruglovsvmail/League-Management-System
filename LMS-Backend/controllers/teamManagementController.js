@@ -323,39 +323,51 @@ export const getAvailableLeaguesAndDivisions = async (req, res) => {
 };
 
 // GET /teams-manage/:teamId/qual-eligibility?divisionId=
-// Кого из состава команды не пропустит квалификация в этот дивизион. Шторки добавления
-// игроков красят таких серым и показывают причину — но это подсказка, а не защита:
-// сохранение проверяет допуск само (assertPlayersAllowedInDivision).
+// Квалификация каждого человека состава + пройдёт ли он с ней в этот дивизион. Шторки
+// добавления игроков подписывают квалификацию всем, а недопущенных красят серым — но это
+// подсказка, а не защита: сохранение проверяет допуск само (assertPlayersAllowedInDivision).
+//
+// Отдаём весь состав, а не только нарушителей: подпись нужна каждой строке, и без неё
+// шторке пришлось бы ходить за квалификациями вторым запросом.
 export const getQualificationEligibility = async (req, res) => {
     try {
         const { teamId } = req.params;
         const divisionId = req.query.divisionId ? Number(req.query.divisionId) : null;
 
         const rules = await loadDivisionQualificationRules(pool, divisionId);
-        if (!rules || !rules.enabled) {
-            return res.json({ success: true, enabled: false, blocked: {} });
+        // Дивизион не выбран (или его нет) — лига неизвестна, а без неё квалификации не найти
+        if (!rules) {
+            return res.json({ success: true, enabled: false, quals: {} });
         }
 
         const { rows } = await pool.query(`
-            SELECT tm.user_id, lq.short_name
+            SELECT tm.user_id,
+                   uq.qualification_id,
+                   lq.name       AS qualification_name,
+                   lq.short_name AS qualification_short_name
             FROM team_members tm
             LEFT JOIN user_qualifications uq
                    ON uq.user_id = tm.user_id AND uq.league_id = $2 AND uq.ended_at IS NULL
             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
             WHERE tm.team_id = $1 AND tm.left_at IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM division_qualifications dq
-                  WHERE dq.division_id = $3
-                    AND dq.qualification_id IS NOT DISTINCT FROM uq.qualification_id
-              )
-        `, [teamId, rules.leagueId, divisionId]);
+        `, [teamId, rules.leagueId]);
 
-        const blocked = {};
+        const allowedIds = new Set((rules.allowed || []).map(q => q.id));
+        const quals = {};
+
         rows.forEach(row => {
-            blocked[row.user_id] = `${row.short_name || 'Без квалификации'} — не допущены в этот дивизион`;
+            // Контроль выключен (лига ничего не отметила) — проходят все, см. qualificationAccess.js
+            const allowed = !rules.enabled
+                || (row.qualification_id ? allowedIds.has(row.qualification_id) : rules.allowsNone);
+
+            quals[row.user_id] = {
+                name: row.qualification_name || null,
+                short_name: row.qualification_short_name || null,
+                allowed,
+            };
         });
 
-        res.json({ success: true, enabled: true, blocked });
+        res.json({ success: true, enabled: rules.enabled, quals });
     } catch (err) {
         console.error('Ошибка проверки допуска по квалификациям:', err);
         res.status(500).json({ success: false, error: 'Ошибка проверки допуска по квалификациям' });
@@ -382,11 +394,30 @@ export const getTeamApplications = async (req, res) => {
                            'medical_expires_at', tr.medical_expires_at, 'insurance_expires_at', tr.insurance_expires_at, 'consent_expires_at', tr.consent_expires_at,
                            'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
                            'user_avatar_url', u.avatar_url,
-                           'team_member_photo_url', tm.photo_url
+                           'team_member_photo_url', tm.photo_url,
+
+                           -- Квалификация лиговая (одна на человека во всей лиге), заявка её не хранит.
+                           -- qualification_conflict — действующая квалификация не входит в список
+                           -- допущенных дивизионом: игрока это ниоткуда не выкидывает (правила
+                           -- проверяются в момент заявки), но команда должна видеть расхождение.
+                           'qualification_id', uq.qualification_id,
+                           'qualification_name', lq.name,
+                           'qualification_short_name', lq.short_name,
+                           'qualification_conflict', (
+                               EXISTS (SELECT 1 FROM division_qualifications dq WHERE dq.division_id = tt.division_id)
+                               AND NOT EXISTS (
+                                   SELECT 1 FROM division_qualifications dq
+                                   WHERE dq.division_id = tt.division_id
+                                     AND dq.qualification_id IS NOT DISTINCT FROM uq.qualification_id
+                               )
+                           )
                        ) ORDER BY u.last_name ASC)
                        FROM tournament_rosters tr
                        JOIN users u ON tr.player_id = u.id
                        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
+                       LEFT JOIN user_qualifications uq
+                              ON uq.user_id = u.id AND uq.league_id = s.league_id AND uq.ended_at IS NULL
+                       LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
                        WHERE tr.tournament_team_id = tt.id AND tr.period_end IS NULL), 
                    '[]'::json) as roster,
 

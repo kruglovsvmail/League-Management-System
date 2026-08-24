@@ -357,11 +357,6 @@ export const SummaryTablesAccordion = ({
                 <span className="truncate">Броски в створ вратарю</span>
               </div>
 
-              <div className="mx-5 mt-3 px-3 py-2 bg-graphite/5 border border-graphite/15 rounded-md text-[11px] font-semibold text-graphite-light leading-tight mb-2">
-                Штрафные броски, назначенные по ходу матча, входят в это число — и отражённые, и реализованные.
-                Послематчевые буллиты не входят: они учитываются отдельно.
-              </div>
-
               {!shotsTrackingEnabled && (
                 <div className="mx-5 mt-3 px-3 py-2 bg-graphite/5 border border-graphite/15 rounded-md text-[11px] font-semibold text-graphite-light leading-tight mb-2">
                   Лига не ведёт статистику бросков для этого дивизиона — таблица заблокирована.
