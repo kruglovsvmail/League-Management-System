@@ -57,6 +57,7 @@ export default function BumperOverlay({ game, overlay, sources }) {
   const videoRefs = useRef({});
   const timersRef = useRef([]);
   const waitersRef = useRef([]);   // подписки «дождаться готовности ролика»
+  const watchersRef = useRef([]);  // наблюдатели за playhead, отменяются вместе с таймерами
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout);
@@ -66,8 +67,31 @@ export default function BumperOverlay({ game, overlay, sources }) {
     // эфир после того, как заставку уже убрали.
     waitersRef.current.forEach(([el, fn]) => el.removeEventListener('canplay', fn));
     waitersRef.current = [];
+    watchersRef.current.forEach(cancel => cancel());
+    watchersRef.current = [];
   };
-  const later = (fn, ms) => { timersRef.current.push(setTimeout(fn, Math.max(0, ms))); };
+
+  // Ждём, пока ДОРОЖКА дойдёт до нужной секунды, вместо отсчёта таймером.
+  //
+  // Таймер считает от момента, когда мы позвали play(), — а картинка появляется
+  // позже: декодер VP8 с альфой запускается не мгновенно, да и посреди прохода
+  // файл может подвиснуть на буферизации. Таймер этого не видит, playhead видит.
+  // Отсюда и лезло «реклама уже в кадре, а шторки ещё не сомкнулись»: кадр
+  // перекрыт всего около секунды, и запаса в полсекунды на такие сдвиги не
+  // хватает.
+  const watchTime = (el, atSec, fn) => {
+    if (!el) { fn(); return; }
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      // el.ended — страховка: если дорожка кончилась, не дойдя до отметки,
+      // цепочку всё равно надо двинуть дальше, иначе титр зависнет в эфире.
+      if (el.currentTime >= atSec || el.ended) { fn(); return; }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    watchersRef.current.push(() => { cancelled = true; });
+  };
 
   // Останавливаем ВСЕ ролики, а не только текущий слот. Режиссёр может
   // переключить слот прямо в эфире: к этому моменту overlay.data.slot указывает
@@ -118,36 +142,64 @@ export default function BumperOverlay({ game, overlay, sources }) {
     // только первые кадры, он их покажет и встанет ждать данные — а заметить это
     // некому, таймеры фаз идут по расписанию и через SWEEP_MS просто гасят
     // застывшую картинку.
-    const runTransition = (fromMs = 0) => {
+    const runTransition = (fromMs = 0, onStart) => {
       const t = transitionRef.current;
-      if (!t) return;
+      // Перехода нет — цепочку не подвешиваем: то, что должно идти после него,
+      // должно пойти всё равно.
+      if (!t) { onStart?.(); return; }
+
+      const to = Math.max(0, fromMs) / 1000;
+
+      // ПОВТОРНЫЙ ПОКАЗ С НУЛЯ ДЕЛАЕТСЯ ЧЕРЕЗ load(), А НЕ ПЕРЕМОТКОЙ.
+      //
+      // Файл собран MediaRecorder'ом, а такой WebM пишется без длительности и
+      // без индекса — seek на нём может не выполниться вовсе. Закрывающий проход
+      // как раз и есть перемотка назад: дорожка стоит в конце после открывающего.
+      // Не отмотавшись, элемент оставался в ended, play() не делал ничего, и
+      // картинка возвращалась в эфир мгновенно — то самое «ролик кончился, а
+      // шторки ещё не сомкнулись». load() возвращает дорожку в начало всегда.
+      const needRewind = to < 0.05 && (t.ended || t.currentTime > 0.05);
+      if (needRewind) t.load();
+      else if (Math.abs(t.currentTime - to) > 0.05) t.currentTime = to;
 
       const start = () => {
-        // currentTime трогаем ТОЛЬКО когда правда надо отмотать. Файл собран
-        // MediaRecorder'ом, а такой WebM пишется без длительности и без индекса:
-        // перемотка на нём может не завершиться вовсе и оставит элемент в
-        // seeking с первым кадром в эфире. При старте с нуля отматывать нечего.
-        const to = Math.max(0, fromMs) / 1000;
-        if (Math.abs(t.currentTime - to) > 0.05) t.currentTime = to;
         t.play().catch((err) => {
           console.warn('[Заставка] переход не запустился:', err?.name, err?.message);
         });
       };
 
-      if (t.readyState >= 3) { start(); return; }   // HAVE_FUTURE_DATA — данных хватает
-
       // Сдвиг по времени тут НЕ добавляем, в отличие от ролика: перемотка на этом
-      // файле ненадёжна, а опоздавший на долю секунды переход в эфире заметен
-      // куда меньше, чем застывший кадр.
+      // файле ненадёжна. Вместо этого от фактического старта отсчитывается всё
+      // остальное — за это и отвечает onStart.
+      const begin = () => { start(); onStart?.(); };
+
+      if (t.readyState >= 3) { begin(); return; }   // HAVE_FUTURE_DATA — данных хватает
+
       console.info('[Заставка] переход ещё не готов, ждём canplay', { readyState: t.readyState });
-      const onReady = () => { t.removeEventListener('canplay', onReady); start(); };
+
+      let guard;
+      const onReady = () => {
+        clearTimeout(guard);
+        t.removeEventListener('canplay', onReady);
+        begin();
+      };
       t.addEventListener('canplay', onReady);
       waitersRef.current.push([t, onReady]);
+
+      // Предохранитель: если готовность так и не наступила, идём дальше без неё.
+      // Дёрганый переход неприятен, но заставка, зависшая в эфире навсегда, хуже.
+      guard = setTimeout(() => {
+        t.removeEventListener('canplay', onReady);
+        console.warn('[Заставка] переход так и не догрузился — играем как есть');
+        begin();
+      }, COVER_MS);
+      timersRef.current.push(guard);
     };
     // Ролик может быть ещё не готов: прогрев не успел или не прошёл вовсе, и у
     // элемента есть только первый кадр. Ждём canplay, а не суём в эфир стоп-кадр.
-    // Стартуем со сдвигом на время ожидания — закрывающий переход и таймер плашки
-    // в панели считаются от нажатия кнопки и подвинуться уже не могут.
+    // Стартуем со сдвигом на время ожидания: закрывающий переход уже стоит в
+    // расписании, и растянуть ролик нельзя — иначе шторки сомкнутся, когда
+    // реклама ещё идёт.
     const runVideo = (fromMs = 0) => {
       setVideoOn(true);
       if (!el) return;
@@ -186,12 +238,34 @@ export default function BumperOverlay({ game, overlay, sources }) {
       waitersRef.current.push([el, onReady]);
     };
 
+    // Отметки на дорожке перехода, в секундах: когда кадр перекрыт и когда проход
+    // закончился. Всё расписание строится по ним, а не по часам.
+    const COVER_SEC = COVER_MS / 1000;
+    const SWEEP_SEC = SWEEP_MS / 1000;
+
+    // Закрывающий проход заводится от ЧАСОВ РОЛИКА: он должен накрыть кадр ровно
+    // к концу рекламы, а сколько она реально идёт, знает только она сама —
+    // цифра из БД могла устареть, да и старт ролика мог сдвинуться.
+    const armOutro = () => {
+      if (!withOutro || !el) return;
+      const dur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : D / 1000;
+      watchTime(el, Math.max(0, dur - COVER_SEC), () => {
+        runTransition(0, () => {
+          setPhase('out');
+          const t = transitionRef.current;
+          watchTime(t, COVER_SEC, () => setVideoOn(false));
+          watchTime(t, SWEEP_SEC, () => setPhase('idle'));
+        });
+      });
+    };
+
     // --- ТОЛЬКО ПЕРЕХОД: ролик не выбран или файла в слоте нет ---------------
     if (!hasVideo) {
       if (!transitionUrl || elapsed >= SWEEP_MS) { setPhase('idle'); return clearTimers; }
-      setPhase('in');
-      runTransition(elapsed);
-      later(() => setPhase('idle'), SWEEP_MS - elapsed);
+      runTransition(elapsed, () => {
+        setPhase('in');
+        watchTime(transitionRef.current, SWEEP_SEC, () => setPhase('idle'));
+      });
       return clearTimers;
     }
 
@@ -202,11 +276,10 @@ export default function BumperOverlay({ game, overlay, sources }) {
     const openCover = transitionUrl ? COVER_MS : 0;
     const openEnd = transitionUrl ? SWEEP_MS : 0;
 
+    // Эти цифры нужны ТОЛЬКО для подхвата — решить, в какой точке титра мы
+    // очнулись после перезагрузки оверлея. Ход вперёд ведут сами дорожки.
     const D = durationMs(el, active);
     const videoEnd = openCover + D;
-
-    // Закрывающий заходит так, чтобы накрыть кадр ровно к концу ролика, —
-    // значит стартует за COVER_MS до него.
     const closeAt = withOutro ? Math.max(D, openEnd) : null;
     const hideVideoAt = withOutro ? Math.max(videoEnd, closeAt + COVER_MS) : videoEnd;
     const endAt = withOutro ? closeAt + SWEEP_MS : videoEnd;
@@ -215,15 +288,14 @@ export default function BumperOverlay({ game, overlay, sources }) {
 
     // Подхват уже в закрывающем проходе
     if (withOutro && elapsed >= closeAt) {
-      setPhase('out');
-      runTransition(elapsed - closeAt);
-      if (elapsed < hideVideoAt) {
-        runVideo(elapsed - openCover);
-        later(() => setVideoOn(false), hideVideoAt - elapsed);
-      } else {
-        setVideoOn(false);
-      }
-      later(() => setPhase('idle'), endAt - elapsed);
+      runTransition(elapsed - closeAt, () => {
+        setPhase('out');
+        const t = transitionRef.current;
+        watchTime(t, COVER_SEC, () => setVideoOn(false));
+        watchTime(t, SWEEP_SEC, () => setPhase('idle'));
+      });
+      if (elapsed < hideVideoAt) runVideo(elapsed - openCover);
+      else setVideoOn(false);
       return clearTimers;
     }
 
@@ -231,18 +303,18 @@ export default function BumperOverlay({ game, overlay, sources }) {
       // Открывающий уже отыграл — в кадре чистый ролик
       setPhase('video');
       runVideo(elapsed - openCover);
+      armOutro();
     } else {
-      setPhase('in');
-      runTransition(elapsed);
-      if (elapsed >= openCover) runVideo(elapsed - openCover);
-      else later(() => runVideo(0), openCover - elapsed);
-      later(() => setPhase('video'), openEnd - elapsed);
-    }
-
-    if (withOutro) {
-      later(() => { setPhase('out'); runTransition(0); }, closeAt - elapsed);
-      later(() => setVideoOn(false), hideVideoAt - elapsed);
-      later(() => setPhase('idle'), endAt - elapsed);
+      // Часами служит САМ переход. Плашку показываем, только когда он реально
+      // пошёл; ролик впускаем ровно на его отметке COVER_MS; проход снимаем на
+      // его же конце. Ни задержка декодера, ни рассинхрон часов панели и OBS, ни
+      // подвисание на буферизации при таком отсчёте ничего не сдвигают.
+      runTransition(elapsed, () => {
+        setPhase('in');
+        const t = transitionRef.current;
+        watchTime(t, COVER_SEC, () => { runVideo(0); armOutro(); });
+        watchTime(t, SWEEP_SEC, () => setPhase('video'));
+      });
     }
 
     return clearTimers;
