@@ -75,6 +75,7 @@ export function GlobalRegistryPage() {
     is_active: false, 
     birth_date: '', 
     phone: '',
+    ui_color: '',
     color_home_1: '',
     color_home_2: '',
     color_away_1: '',
@@ -262,6 +263,7 @@ export function GlobalRegistryPage() {
       is_virtual: activeTab === 3 ? !!item.virtual_code : !!item.is_virtual,
       birth_date: item.birth_date ? formatDateToRU(item.birth_date) : '',
       phone: item.phone ? item.phone.replace(/^\+?7/, '').replace(/\D/g, '') : '',
+      ui_color: item.ui_color || '',
       color_home_1: item.color_home_1 || '',
       color_home_2: item.color_home_2 || '',
       color_away_1: item.color_away_1 || '',
@@ -660,7 +662,31 @@ export function GlobalRegistryPage() {
                   />
                   <div className="flex items-center gap-3 !mt-3">
                     <Switch checked={formData.is_virtual || false} onChange={(e) => handleChange('is_virtual', e.target.checked)} />
-                    <span className="text-[13px] font-bold text-graphite">Виртуальная команда</span>
+                    <span className="text-[13px] font-bold text-graphite">Виртуальная</span>
+
+                    {/* Цвет интерфейса команды в Кабинете команды (teams.ui_color).
+                        К джерси отношения не имеет: пустое значение означает, что
+                        Кабинет возьмёт акцентный цвет домашней формы. */}
+                    <div className="flex items-center gap-2 ml-auto">
+                      <span className="text-[13px] font-bold text-graphite">Интерфейс</span>
+                      <div
+                        className="w-[70px] h-[22px] rounded border border-graphite/20 relative cursor-pointer overflow-hidden shrink-0"
+                        title="Акцентный цвет интерфейса Кабинета команды"
+                        onClick={(e) => { const i = e.currentTarget.querySelector('input'); if (e.target !== i) i.click(); }}
+                      >
+                        <div className="absolute inset-0 bg-white" style={{ backgroundColor: formData.ui_color || '#ffffff' }}></div>
+                        {/* Хак: уводим системную палитру влево, как у полей формы ниже */}
+                        <input type="color" value={formData.ui_color || '#ffffff'} onChange={e => handleChange('ui_color', e.target.value)} className="absolute top-0 -left-[120px] w-4 h-4 opacity-0 pointer-events-none" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleChange('ui_color', '')}
+                        disabled={!formData.ui_color}
+                        className="text-[12px] font-bold text-graphite/50 hover:text-orange underline underline-offset-2 transition-colors disabled:opacity-30 disabled:hover:text-graphite/50"
+                      >
+                        Сбросить
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 !mt-3">
                     <Input placeholder="Произношение для озвучки (если отличается)" value={formData.pronunciation || ''} onChange={e => handleChange('pronunciation', e.target.value)} />

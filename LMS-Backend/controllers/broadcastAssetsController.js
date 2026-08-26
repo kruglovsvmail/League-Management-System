@@ -8,7 +8,7 @@
 // (см. getGameAudioUrl):
 //
 //   audio/league-{id}/Intro.mp3
-//   bumpers/league-{id}/slot-{1..3}.mp4
+//   bumpers/league-{id}/slot-{1..3}-{версия}.mp4
 //
 // В БД (leagues.broadcast_bumpers) хранятся ТОЛЬКО названия слотов и
 // длительность ролика — то, что режиссёр видит в панели. Благодаря этому
@@ -26,21 +26,38 @@ const PUBLIC_BASE = 'https://s3.twcstorage.ru/hockeyeco-uploads';
 export const BUMPER_SLOTS = [1, 2, 3];
 
 const introKey = (leagueId) => `audio/league-${leagueId}/Intro.mp3`;
-const bumperKey = (leagueId, slot, ext = 'mp4') => `bumpers/league-${leagueId}/slot-${slot}.${ext}`;
+// ВЕРСИЯ ЛЕЖИТ В ИМЕНИ ОБЪЕКТА, А НЕ В СТРОКЕ ЗАПРОСА.
+//
+// Сначала имя было постоянным, а разной делалась только метка `?v=`. Этого не
+// хватило: строку запроса обязаны учитывать все слои между нами и файлом —
+// кэш браузера, кэш OBS, фронт хранилища, — и хотя бы один из них её не
+// учитывает. После перезаливки в эфир продолжал идти прошлый ролик.
+//
+// Новая заливка = новый объект с новым именем. Отдать старые байты по новому
+// имени не может никто. Тем же приёмом сохраняются логотипы и регламенты
+// (см. divisionController.js) — там в имени стоит отметка времени.
+//
+// k = 0 или его отсутствие — файл, залитый до версионирования: он лежит по
+// старому постоянному имени и продолжает работать, пока его не перезальют.
+const bumperKey = (leagueId, slot, ext = 'mp4', k = 0) =>
+  `bumpers/league-${leagueId}/slot-${slot}${k ? `-${k}` : ''}.${ext}`;
 
-// Ссылки отдаём с меткой времени: S3 у Timeweb кэширует агрессивно, и после
-// перезаливки ролика OBS иначе продолжал бы играть старый файл до перезапуска.
+// Все возможные имена слота, кроме текущего: прошлая версия и легаси-имена без
+// версии во всех контейнерах. Нужны, чтобы убирать за собой при перезаливке и
+// удалении — иначе бакет копил бы неиспользуемые копии.
+const staleBumperKeys = (leagueId, slot, keep) => {
+  const list = [];
+  if (slot.k) list.push(bumperKey(leagueId, slot.slot, slot.ext, slot.k));
+  for (const e of ['mp4', 'webm', 'mov']) list.push(bumperKey(leagueId, slot.slot, e, 0));
+  return list.filter((key) => key !== keep);
+};
+
+// Интро по-прежнему живёт под постоянным именем: его читает только панель, и
+// метки времени в ссылке там достаточно.
 const publicUrl = (key) => `${PUBLIC_BASE}/${key}?t=${Date.now()}`;
 
-// Ссылка на ролик слота. Метка ЗДЕСЬ не может быть Date.now(): этот адрес
-// уходит в оверлей, а тот вызывается на каждое обновление счёта — менялся бы
-// src у <video>, и ролик перекачивался бы без конца. Поэтому берём версию,
-// записанную в момент заливки: адрес постоянный, пока файл тот же, и меняется
-// ровно тогда, когда ролик перезалили.
-const bumperUrl = (leagueId, slot) => {
-  const key = bumperKey(leagueId, slot.slot, slot.ext);
-  return slot.v ? `${PUBLIC_BASE}/${key}?v=${slot.v}` : `${PUBLIC_BASE}/${key}`;
-};
+const bumperUrl = (leagueId, slot) =>
+  `${PUBLIC_BASE}/${bumperKey(leagueId, slot.slot, slot.ext, slot.k)}`;
 
 const exists = async (key) => {
   try {
@@ -64,9 +81,8 @@ export const normalizeBumpers = (raw) => {
         ? Math.round(Number(found.duration))
         : null,
       ext: ['webm', 'mov'].includes(found.ext) ? found.ext : 'mp4',
-      // Версия файла — время последней заливки. Ключ в S3 у слота постоянный,
-      // и без этой метки браузер с OBS продолжали бы играть прошлый ролик.
-      v: Number.isFinite(Number(found.v)) && Number(found.v) > 0 ? Number(found.v) : 0,
+      // Версия объекта в S3 — время заливки, оно же часть имени файла.
+      k: Number.isFinite(Number(found.k)) && Number(found.k) > 0 ? Number(found.k) : 0,
     };
   });
 };
@@ -84,7 +100,7 @@ export const getBroadcastAssets = async (req, res) => {
 
     const introExists = await exists(introKey(leagueId));
     const bumpers = await Promise.all(slots.map(async (s) => {
-      const has = await exists(bumperKey(leagueId, s.slot, s.ext));
+      const has = await exists(bumperKey(leagueId, s.slot, s.ext, s.k));
       return { ...s, uploaded: has, url: has ? bumperUrl(leagueId, s) : null };
     }));
 
@@ -130,7 +146,14 @@ export const uploadBroadcastAsset = async (req, res) => {
     const ext = name.endsWith('.webm') || req.file.mimetype === 'video/webm' ? 'webm'
       : name.endsWith('.mov') || req.file.mimetype === 'video/quicktime' ? 'mov'
       : 'mp4';
-    const key = bumperKey(leagueId, slot, ext);
+    // Прошлую запись читаем ДО заливки: по ней потом находим объект, который
+    // нужно убрать.
+    const cur = await pool.query('SELECT broadcast_bumpers FROM leagues WHERE id = $1', [leagueId]);
+    const slots = normalizeBumpers(cur.rows[0]?.broadcast_bumpers);
+    const prev = slots.find((s) => s.slot === slot);
+
+    const k = Date.now();
+    const key = bumperKey(leagueId, slot, ext, k);
 
     await s3.send(new PutObjectCommand({
       Bucket: BUCKET,
@@ -139,12 +162,11 @@ export const uploadBroadcastAsset = async (req, res) => {
       ContentType: req.file.mimetype,
     }));
 
-    // Один слот — один файл. Если раньше был другой контейнер, старые объекты
-    // удаляем: иначе оверлей по записи в БД пошёл бы за новым расширением, а в
-    // бакете навсегда висели бы неиспользуемые копии.
-    for (const other of ['mp4', 'webm', 'mov'].filter((e) => e !== ext)) {
+    // Один слот — один файл. Прошлый объект убираем ПОСЛЕ успешной заливки
+    // нового: сорвись загрузка на полпути — в слоте остался бы рабочий ролик.
+    for (const staleKey of staleBumperKeys(leagueId, prev || { slot, ext, k: 0 }, key)) {
       try {
-        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: bumperKey(leagueId, slot, other) }));
+        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: staleKey }));
       } catch { /* прошлого файла могло не быть — это нормально */ }
     }
 
@@ -152,16 +174,11 @@ export const uploadBroadcastAsset = async (req, res) => {
     const patch = {
       slot,
       ext,
+      k,
       duration: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null,
-      // Новая версия слота: по ней оверлей поймёт, что ролик сменился, и пойдёт
-      // за файлом заново, а не отдаст прежний из кэша.
-      v: Date.now(),
     };
 
-    const cur = await pool.query('SELECT broadcast_bumpers FROM leagues WHERE id = $1', [leagueId]);
-    const next = normalizeBumpers(cur.rows[0]?.broadcast_bumpers).map((s) =>
-      s.slot === slot ? { ...s, ...patch, title: s.title } : s
-    );
+    const next = slots.map((s) => (s.slot === slot ? { ...s, ...patch, title: s.title } : s));
 
     await pool.query('UPDATE leagues SET broadcast_bumpers = $2::jsonb WHERE id = $1', [leagueId, JSON.stringify(next)]);
 
@@ -191,17 +208,17 @@ export const deleteBroadcastAsset = async (req, res) => {
     const slots = normalizeBumpers(cur.rows[0]?.broadcast_bumpers);
     const target = slots.find((s) => s.slot === slot);
 
-    // Удаляем оба возможных контейнера: в БД могло не сохраниться расширение
-    // (например, файл заливали до появления этого поля).
-    for (const ext of ['mp4', 'webm', 'mov']) {
+    // Текущий объект и все легаси-имена: расширение и версия в БД могли не
+    // сохраниться, если файл заливали до появления этих полей.
+    for (const staleKey of staleBumperKeys(leagueId, target || { slot, ext: 'mp4', k: 0 }, null)) {
       try {
-        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: bumperKey(leagueId, slot, ext) }));
+        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: staleKey }));
       } catch { /* файла могло не быть */ }
     }
 
     // Название слота осознанно СОХРАНЯЕМ: администратор чаще всего перезаливает
     // ролик того же партнёра, и стирать подпись вместе с файлом — лишняя работа.
-    const next = slots.map((s) => (s.slot === slot ? { ...s, duration: null, ext: 'mp4', v: 0 } : s));
+    const next = slots.map((s) => (s.slot === slot ? { ...s, duration: null, ext: 'mp4', k: 0 } : s));
     await pool.query('UPDATE leagues SET broadcast_bumpers = $2::jsonb WHERE id = $1', [leagueId, JSON.stringify(next)]);
 
     res.json({ success: true, bumpers: next, removedTitle: target?.title || '' });
@@ -255,7 +272,7 @@ export const getGameBumpers = async (req, res) => {
     // Здесь наличие файла проверяем: панель открывают раз за матч, а режиссёру
     // важно не ткнуть в пустой слот прямо в эфире.
     const bumpers = await Promise.all(slots.map(async (s) => {
-      const key = bumperKey(league_id, s.slot, s.ext);
+      const key = bumperKey(league_id, s.slot, s.ext, s.k);
       return { slot: s.slot, title: s.title, duration: s.duration, uploaded: await exists(key) };
     }));
 

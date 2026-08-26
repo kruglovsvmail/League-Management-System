@@ -281,11 +281,11 @@ export const getTeams = async (req, res) => {
 
 export const createTeam = async (req, res) => {
     try {
-        const { name, short_name, description, city, is_virtual, color_home_1, color_home_2, color_away_1, color_away_2, pronunciation } = req.body;
+        const { name, short_name, description, city, is_virtual, ui_color, color_home_1, color_home_2, color_away_1, color_away_2, pronunciation } = req.body;
         const result = await pool.query(
-            `INSERT INTO teams (name, short_name, description, city, is_virtual, color_home_1, color_home_2, color_away_1, color_away_2, pronunciation)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-            [name, short_name, description, city, is_virtual || false, color_home_1 || null, color_home_2 || null, color_away_1 || null, color_away_2 || null, pronunciation || null]
+            `INSERT INTO teams (name, short_name, description, city, is_virtual, ui_color, color_home_1, color_home_2, color_away_1, color_away_2, pronunciation)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+            [name, short_name, description, city, is_virtual || false, ui_color || null, color_home_1 || null, color_home_2 || null, color_away_1 || null, color_away_2 || null, pronunciation || null]
         );
         res.json({ success: true, id: result.rows[0].id });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
@@ -294,13 +294,13 @@ export const createTeam = async (req, res) => {
 export const updateTeam = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, short_name, description, city, is_virtual, color_home_1, color_home_2, color_away_1, color_away_2, pronunciation } = req.body;
+        const { name, short_name, description, city, is_virtual, ui_color, color_home_1, color_home_2, color_away_1, color_away_2, pronunciation } = req.body;
         await pool.query(
             `UPDATE teams
              SET name = $1, short_name = $2, description = $3, city = $4, is_virtual = $5,
-                 color_home_1 = $6, color_home_2 = $7, color_away_1 = $8, color_away_2 = $9, pronunciation = $10
-             WHERE id = $11`,
-            [name, short_name, description, city, is_virtual, color_home_1 || null, color_home_2 || null, color_away_1 || null, color_away_2 || null, pronunciation || null, id]
+                 ui_color = $6, color_home_1 = $7, color_home_2 = $8, color_away_1 = $9, color_away_2 = $10, pronunciation = $11
+             WHERE id = $12`,
+            [name, short_name, description, city, is_virtual, ui_color || null, color_home_1 || null, color_home_2 || null, color_away_1 || null, color_away_2 || null, pronunciation || null, id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
