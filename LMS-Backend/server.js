@@ -37,6 +37,11 @@ import leaguelessGamesRoutes from './routes/leaguelessGamesRoutes.js';
 import pool from './config/db.js';
 
 const app = express();
+
+// Приложение живёт за прокси Timeweb Cloud: HTTPS терминируется там, а в контейнер
+// приходит обычный HTTP. Без этой строки req.ip отдавал бы адрес прокси — один и тот
+// же для всех пользователей, и лимит попыток входа по IP блокировал бы всех разом.
+app.set('trust proxy', 1);
 const server = createServer(app);
 
 // --- Настройка CORS ---

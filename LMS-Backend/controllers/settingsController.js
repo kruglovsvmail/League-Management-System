@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import path from 'path';
 import s3 from '../config/s3.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { validatePassword } from '../utils/password.js';
 
 // ==========================================
 // ПАРАМЕТРЫ ЛИГИ (ГЛОБАЛЬНЫЕ НАСТРОЙКИ)
@@ -414,6 +415,10 @@ export const updateLeagueServiceAccount = async (req, res) => {
     let paramIndex = 6;
 
     if (password) {
+      const passwordError = validatePassword(password);
+      if (passwordError) {
+        return res.status(400).json({ success: false, error: passwordError });
+      }
       const passwordHash = await bcrypt.hash(password, 10);
       updateQuery += `, password_hash = $${paramIndex++}`;
       queryParams.push(passwordHash);

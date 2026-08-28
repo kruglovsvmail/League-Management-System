@@ -3,6 +3,8 @@ import transporter from '../config/mail.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PERMISSIONS, ROLES } from '../utils/permissions.js';
+import { generateTempPassword, validatePassword } from '../utils/password.js';
+import { checkLoginAllowed, recordLoginFailure, clearLoginFailures, getRequestIp } from '../utils/loginGuard.js';
 
 // Текст отказа для тех, кто не числится ни в одной лиге. Вынесен в константу, потому
 // что используется и при входе, и на всех трёх шагах активации аккаунта.
@@ -175,6 +177,18 @@ export const login = async (req, res) => {
     let user;
     let isMatch = false;
 
+    // Лимит проверяем ДО обращения к базе и bcrypt: ограничение защищает не только от
+    // подбора пароля, но и от того, чтобы перебор съедал процессор контейнера на
+    // хешировании. Сервисные аккаунты считаем по их логину — номера у них нет.
+    const guardKey = serviceLogin ? `service:${serviceLogin}` : phone;
+    const requestIp = getRequestIp(req);
+    if (guardKey) {
+      const guard = await checkLoginAllowed(guardKey, requestIp);
+      if (!guard.allowed) {
+        return res.status(429).json({ success: false, error: guard.error });
+      }
+    }
+
     if (serviceLogin) {
       const result = await pool.query(`
         SELECT lsa.user_id as id, lsa.password_hash, lsa.is_active
@@ -240,8 +254,13 @@ export const login = async (req, res) => {
       }
       const secret = process.env.JWT_SECRET || 'dev_secret_key';
       const token = jwt.sign({ id: user.id }, secret, { expiresIn: '30d' });
+      // Пароль подошёл — счётчик неудач обнуляем, чтобы пара опечаток не оставляла
+      // человека с висящей блокировкой на четверть часа.
+      if (guardKey) await clearLoginFailures(guardKey);
+
       res.json({ success: true, user: userData, token });
     } else {
+      if (guardKey) await recordLoginFailure(guardKey, requestIp, 'lms');
       res.status(401).json({ success: false, error: 'Неверные учетные данные' });
     }
   } catch (err) {
@@ -287,6 +306,10 @@ export const updateProfile = async (req, res) => {
     }
 
     if (password) {
+      const passwordError = validatePassword(password);
+      if (passwordError) {
+        return res.status(400).json({ success: false, error: passwordError });
+      }
       const hashedPassword = await bcrypt.hash(password, 10);
       await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, userId]);
     }
@@ -330,7 +353,7 @@ export const resetPassword = async (req, res) => {
     }
 
     const user = result.rows[0];
-    const newPassword = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const newPassword = generateTempPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user.id]);
@@ -484,7 +507,7 @@ export const register = async (req, res) => {
     }
 
     const normalizedCode = String(virtualCode || '').trim().toUpperCase();
-    const newPassword = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const newPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const finalBirthDate = birthDate || null;
 

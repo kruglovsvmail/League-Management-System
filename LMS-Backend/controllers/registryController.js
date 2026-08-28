@@ -400,6 +400,36 @@ export const getNextVirtualPhone = async (req, res) => {
     }
 };
 
+// Кто уже занимает этот номер или почту.
+//
+// С появлением самостоятельной регистрации в Team Room это стало обычным случаем:
+// человек завёл аккаунт сам, а руководитель, не зная об этом, пытается создать ему
+// карточку заново. Раньше он получал глухое «номер уже зарегистрирован» и не понимал,
+// что делать. Теперь называем, кто это, и объясняем: такого человека надо не создавать,
+// а найти в реестре и добавить в команду — иначе появится дубль, а вся статистика
+// и история останутся на первой карточке.
+const findFieldOwner = async (field, value, excludeId = null) => {
+    if (!value) return null;
+    const { rows } = await pool.query(
+        `SELECT id, first_name, last_name, middle_name, virtual_code IS NULL AS activated
+         FROM users
+         WHERE ${field === 'email' ? 'LOWER(email) = LOWER($1)' : 'phone = $1'}
+           AND ($2::int IS NULL OR id <> $2::int)
+         LIMIT 1`,
+        [value, excludeId]
+    );
+    return rows[0] || null;
+};
+
+const conflictResponse = (res, label, value, owner) => {
+    const name = [owner.last_name, owner.first_name, owner.middle_name].filter(Boolean).join(' ');
+    return res.status(400).json({
+        success: false,
+        error: `${label} ${value} уже занят: ${name}. Не создавайте карточку заново — найдите этого человека в реестре и добавьте в команду, иначе появится дубль, а статистика останется на первой карточке.`,
+        existingUser: { id: owner.id, name, activated: owner.activated }
+    });
+};
+
 export const createUser = async (req, res) => {
     try {
         let { first_name, last_name, middle_name, email, phone, is_virtual, birth_date, gender, height, weight, grip, pronunciation } = req.body;
@@ -407,6 +437,17 @@ export const createUser = async (req, res) => {
 
         if (is_virtual) {
             virtual_code = generateVirtualCode();
+        }
+
+        // Проверяем занятость ДО вставки: так мы можем назвать, кто занимает номер,
+        // а не отдавать безымянную ошибку уникального индекса
+        if (phone) {
+            const phoneOwner = await findFieldOwner('phone', phone);
+            if (phoneOwner) return conflictResponse(res, 'Номер', phone, phoneOwner);
+        }
+        if (email && email.trim() !== '') {
+            const emailOwner = await findFieldOwner('email', email.trim());
+            if (emailOwner) return conflictResponse(res, 'Email', email.trim(), emailOwner);
         }
 
         let needsEmailUpdate = false;
@@ -509,6 +550,8 @@ export const updateUser = async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         if (err.constraint === 'users_phone_unique') {
+            const owner = await findFieldOwner('phone', req.body.phone, Number(req.params.id));
+            if (owner) return conflictResponse(res, 'Номер', req.body.phone, owner);
             return res.status(400).json({ success: false, error: `Номер телефона ${req.body.phone} уже зарегистрирован за другим пользователем` });
         }
         if (err.constraint === 'users_email_key') {
