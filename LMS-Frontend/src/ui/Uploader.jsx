@@ -1,6 +1,31 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ConfirmModal } from '../modals/ConfirmModal';
 
+// Расширения, которые в браузере не покажешь картинкой — для них рисуем иконку
+// документа с подписью. Раньше отдельно обрабатывались только PDF и DOC, а
+// заявочный лист в XLS/XLSX уходил в фон-картинку и превращался в пустое место.
+const DOCUMENT_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'rtf', 'odt', 'ods', 'txt'];
+
+// Цвет иконки по типу файла — привычные ассоциации: PDF красный, Word синий,
+// Excel зелёный, остальное нейтральное.
+const DOCUMENT_COLORS = {
+  pdf: 'text-red-500',
+  doc: 'text-blue-500',
+  docx: 'text-blue-500',
+  xls: 'text-green-600',
+  xlsx: 'text-green-600',
+  csv: 'text-green-600',
+};
+
+// Расширение файла: из метки doc:<ext> (свежевыбранный файл) или из ссылки,
+// у которой сначала отрезаем ?t=... кэш-бастера и якорь.
+const getPreviewExt = (url) => {
+  if (!url) return '';
+  if (url.startsWith('doc:')) return url.slice(4);
+  const match = url.split(/[?#]/)[0].match(/\.([a-z0-9]+)$/i);
+  return match ? match[1].toLowerCase() : '';
+};
+
 // confirmClear — текст предупреждения перед сбросом уже сохранённого файла. Не задан
 // (по умолчанию) — «Сбросить» срабатывает сразу, как и раньше во всех остальных местах.
 // Задан — сначала спрашиваем. Нужно там, где за сбросом стоит безвозвратное удаление
@@ -25,9 +50,8 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
     setFile(selectedFile);
     if (onFileSelect) onFileSelect(selectedFile, false);
 
-    const name = selectedFile.name.toLowerCase();
-    if (name.endsWith('.pdf')) setPreviewUrl('PDF');
-    else if (name.endsWith('.doc') || name.endsWith('.docx')) setPreviewUrl('DOC');
+    const ext = (selectedFile.name.split('.').pop() || '').toLowerCase();
+    if (DOCUMENT_EXTENSIONS.includes(ext)) setPreviewUrl(`doc:${ext}`);
     else setPreviewUrl(URL.createObjectURL(selectedFile));
   };
 
@@ -50,9 +74,9 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
     applyClear();
   };
 
-  const isPdf = previewUrl && (previewUrl.toLowerCase().includes('.pdf') || previewUrl === 'PDF');
-  const isDoc = previewUrl && (previewUrl.toLowerCase().includes('.doc') || previewUrl.toLowerCase().includes('.docx') || previewUrl === 'DOC');
-  const isDocument = isPdf || isDoc;
+  const previewExt = getPreviewExt(previewUrl);
+  const isDocument = Boolean(previewUrl) && (previewUrl.startsWith('doc:') || DOCUMENT_EXTENSIONS.includes(previewExt));
+  const documentColor = DOCUMENT_COLORS[previewExt] || 'text-graphite-light';
 
   return (
     <div className={`w-full font-sans flex flex-col ${heightClass} ${isDisabled ? 'opacity-100' : ''}`}>
@@ -87,15 +111,15 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
             style={!isDocument ? { backgroundImage: `url(${previewUrl})` } : {}}
             onClick={() => !isDisabled && fileInputRef.current.click()}
           >
-            {isPdf && (
-              <div className="flex flex-col items-center justify-center w-full h-full">
-                <span className={`text-4xl font-black text-red-500 uppercase tracking-widest transition-transform duration-300 drop-shadow-sm ${isDisabled ? '' : 'group-hover:scale-110'}`}>PDF</span>
-              </div>
-            )}
-            
-            {isDoc && (
-              <div className="flex flex-col items-center justify-center w-full h-full">
-                <span className={`text-4xl font-black text-blue-500 uppercase tracking-widest transition-transform duration-300 drop-shadow-sm ${isDisabled ? '' : 'group-hover:scale-110'}`}>DOC</span>
+            {isDocument && (
+              <div className={`flex flex-col items-center justify-center w-full h-full gap-2 transition-transform duration-300 ${isDisabled ? '' : 'group-hover:scale-110'}`}>
+                <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={`${documentColor} drop-shadow-sm`}>
+                  <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                  <path d="M14 2v5h5" />
+                  <path d="M9 13h6" />
+                  <path d="M9 17h4" />
+                </svg>
+                <span className={`text-[13px] font-black uppercase tracking-widest ${documentColor}`}>{previewExt || 'файл'}</span>
               </div>
             )}
           </div>
