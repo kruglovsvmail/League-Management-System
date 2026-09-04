@@ -1,5 +1,9 @@
 import pool from '../config/db.js';
 
+// Алфавит для команд, которых нечем различить по спортивным показателям.
+// numeric — чтобы «Команда 10» не вставала перед «Команда 2».
+const teamNameCollator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+
 export const recalculateDivisionStandings = async (divisionId) => {
     const client = await pool.connect();
     try {
@@ -37,11 +41,17 @@ export const recalculateDivisionStandings = async (divisionId) => {
         }
 
         // 3. Инициализируем статистику
-        const teamsRes = await client.query("SELECT team_id FROM tournament_teams WHERE division_id = $1 AND status = 'approved'", [divisionId]);
+        const teamsRes = await client.query(`
+            SELECT tt.team_id, t.name
+            FROM tournament_teams tt
+            JOIN teams t ON t.id = tt.team_id
+            WHERE tt.division_id = $1 AND tt.status = 'approved'
+        `, [divisionId]);
         const stats = {};
         teamsRes.rows.forEach(t => {
             stats[t.team_id] = {
                 team_id: t.team_id,
+                name: t.name || '',
                 games_played: 0, wins_reg: 0, wins_ot: 0, draws: 0,
                 losses_ot: 0, losses_reg: 0, goals_for: 0, goals_against: 0,
                 points: 0, penalty_minutes: 0, avg_age: 0, rank: 0
@@ -158,8 +168,16 @@ export const recalculateDivisionStandings = async (divisionId) => {
 
         // 5. РЕКУРСИВНАЯ СОРТИРОВКА ТАБЛИЦЫ
         function sortTeamsGroup(teamsGroup, criteriaIndex) {
-            // Если в группе осталась 1 команда или кончились критерии — возвращаем как есть
-            if (teamsGroup.length <= 1 || criteriaIndex >= rankingCriteria.length) {
+            if (teamsGroup.length <= 1) return teamsGroup;
+
+            // Команды без сыгранных матчей различать нечем: все показатели нулевые, и порядок
+            // внутри группы задавала бы случайная выдача БД. Ставим их по алфавиту.
+            if (teamsGroup.every(t => t.games_played === 0)) {
+                return [...teamsGroup].sort((a, b) => teamNameCollator.compare(a.name, b.name));
+            }
+
+            // Кончились критерии — возвращаем как есть
+            if (criteriaIndex >= rankingCriteria.length) {
                 return teamsGroup;
             }
 
