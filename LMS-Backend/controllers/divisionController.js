@@ -182,7 +182,7 @@ export const createDivision = async (req, res) => {
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
             reg_track_shots, playoff_track_shots, track_timer_log,
             reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
-            req_med_cert, req_insurance, req_consent, digital_applications_only,
+            req_med_cert, req_insurance, req_consent, digital_applications_only, league_managed_roster,
             hide_stats_unpaid, individual_fee, is_tournament,
             qualification_ids
         } = req.body;
@@ -206,7 +206,8 @@ export const createDivision = async (req, res) => {
                 req_med_cert, req_insurance, req_consent, digital_applications_only, classification,
                 hide_stats_unpaid, individual_fee, is_tournament,
                 reg_track_shots, playoff_track_shots, track_timer_log,
-                reserve_goalie_max_per_game, reserve_goalie_block_back_to_back
+                reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
+                league_managed_roster
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, ${dayStartExpr(7)}, ${dayEndExpr(8)}, ${dayStartExpr(9)}, ${dayEndExpr(10)}, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 false,
@@ -215,7 +216,8 @@ export const createDivision = async (req, res) => {
                 $37, $38, $39, $40, $41,
                 $42, $43, $44,
                 $45, $46, $47,
-                $48, $49
+                $48, $49,
+                $50
             )
             RETURNING id
         `, [
@@ -233,7 +235,10 @@ export const createDivision = async (req, res) => {
             classification || null,
             hide_stats_unpaid ?? false, individualFeeValue, is_tournament ?? false,
             reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false,
-            reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false
+            reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false,
+            // Флаг значим только в бумажном дивизионе (digital_applications_only = false);
+            // у цифрового он просто лежит в строке и никем не читается.
+            league_managed_roster !== undefined ? league_managed_roster : true
         ]);
 
         await syncDivisionQualifications(result.rows[0].id, qualification_ids);
@@ -256,7 +261,7 @@ export const updateDivision = async (req, res) => {
             playoff_periods_count, playoff_period_length, playoff_has_overtime, playoff_ot_length, playoff_has_shootouts, playoff_so_length, playoff_track_plus_minus, playoff_auto_stop_on_event,
             reg_track_shots, playoff_track_shots, track_timer_log,
             reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
-            req_med_cert, req_insurance, req_consent, digital_applications_only, clear_logo, clear_regulations,
+            req_med_cert, req_insurance, req_consent, digital_applications_only, league_managed_roster, clear_logo, clear_regulations,
             hide_stats_unpaid, individual_fee, is_tournament,
             qualification_ids
         } = req.body;
@@ -279,7 +284,8 @@ export const updateDivision = async (req, res) => {
                 req_med_cert = $37, req_insurance = $38, req_consent = $39, digital_applications_only = $40, classification = $41,
                 hide_stats_unpaid = $42, individual_fee = $43, is_tournament = $44,
                 reg_track_shots = $45, playoff_track_shots = $46, track_timer_log = $47,
-                reserve_goalie_max_per_game = $48, reserve_goalie_block_back_to_back = $49
+                reserve_goalie_max_per_game = $48, reserve_goalie_block_back_to_back = $49,
+                league_managed_roster = $50
             WHERE id = $20
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
@@ -292,7 +298,8 @@ export const updateDivision = async (req, res) => {
             classification || null,
             hide_stats_unpaid ?? false, individualFeeValue, is_tournament ?? false,
             reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false,
-            reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false
+            reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false,
+            league_managed_roster !== undefined ? league_managed_roster : true
         ]);
 
         await syncDivisionQualifications(id, qualification_ids);

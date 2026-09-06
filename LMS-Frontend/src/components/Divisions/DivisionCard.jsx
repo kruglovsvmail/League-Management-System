@@ -19,6 +19,7 @@ import { TeamDescriptionModal } from '../../modals/TeamDescriptionModal';
 import { TeamPhotoModal } from '../../modals/TeamPhotoModal';
 import { PublishStatusModal } from '../../modals/PublishStatusModal';
 import { TeamStatusModal } from '../../modals/TeamStatusModal';
+import { AppRosterComposeDrawer } from '../../modals/AppRosterComposeDrawer';
 
 // Модалки игроков
 import { QualSelectModal } from '../../modals/QualSelectModal';
@@ -40,6 +41,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const canDeleteDivision = checkAccess('DIVISIONS_DELETE');
   const canChangeTeamStatus = checkAccess('DIVISIONS_TEAM_STATUS');
   const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
+  const canManageAppRoster = checkAccess('DIVISIONS_TEAM_ROSTER_MANAGE');
 
   const initialExpanded = getExpiringStorage(`div_${division.id}_expanded`) === true;
   const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTab`)) || 0;
@@ -73,6 +75,8 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const [playerModalType, setPlayerModalType] = useState(null);
   const [isPlayerSaving, setIsPlayerSaving] = useState(false);
   const [profileModalPlayerId, setProfileModalPlayerId] = useState(null);
+  // Шторка «Состав заявки» — только для дивизионов, где состав ведёт лига
+  const [composeRosterTeam, setComposeRosterTeam] = useState(null);
   const [leagueQuals, setLeagueQuals] = useState([]);
   // Порядок квалификаций и показ описаний настраиваются в лиге и приходят вместе со списком
   const [qualShowDescriptions, setQualShowDescriptions] = useState(true);
@@ -310,7 +314,42 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const now = new Date();
   const appStart = division.application_start ? new Date(division.application_start) : null;
   const appEnd = division.application_end ? new Date(division.application_end) : null;
-  const isAppWindowOpen = appStart && appEnd ? (now >= appStart && now <= appEnd) : true; 
+  const isAppWindowOpen = appStart && appEnd ? (now >= appStart && now <= appEnd) : true;
+
+  // Окно правки состава заявки: заявочная кампания ИЛИ трансферное окно. Пара дат
+  // считается заданной только целиком; если не задано ни одно окно — ограничивать нечем.
+  // Тот же расчёт повторяет сервер (tournamentTeamController.isRosterWindowOpen).
+  const isRosterWindowOpen = (() => {
+    const within = (start, end) => {
+      if (!start || !end) return null;
+      return now >= new Date(start) && now <= new Date(end);
+    };
+    const inApplication = within(division.application_start, division.application_end);
+    const inTransfer = within(division.transfer_start, division.transfer_end);
+    if (inApplication === null && inTransfer === null) return true;
+    return inApplication === true || inTransfer === true;
+  })();
+
+  // Дивизион, где состав заявки ведёт лига. Флаг осмыслен только в бумажном дивизионе:
+  // в цифровом заявочного листа нет, и состав всегда ведёт команда.
+  const isLeagueManagedRoster = !division.digital_applications_only && !!division.league_managed_roster;
+
+  // selectedTeam — снимок строки на момент клика, и он устаревает: прикрепление
+  // утверждённого скана обновляет division.teams, но не его. Для решений о доступности
+  // берём свежую строку из дивизиона, а снимок оставляем как запасной вариант.
+  const selectedTeamLive = selectedTeam
+    ? (teams.find(t => t.id === selectedTeam.id) || selectedTeam)
+    : null;
+
+  // Почему кнопка «Состав заявки» сейчас не работает. null = работает.
+  // Повторяет compositionBlockReason на сервере: тексты должны совпадать.
+  const rosterComposeBlockReason = (team) => {
+    if (!team) return 'Выберите команду';
+    if (!team.paper_roster_league_url) return 'Сначала прикрепите утверждённый заявочный лист';
+    if (!['pending', 'approved'].includes(team.status)) return 'Состав редактируется только у заявок на проверке и допущенных';
+    if (!isRosterWindowOpen) return 'Заявочная кампания и трансферное окно закрыты';
+    return null;
+  };
 
   const STATUS_LABELS = {
     approved: 'Команда допущена',
@@ -465,7 +504,28 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                       <div className="overflow-x-auto pb-2 custom-scrollbar flex-1">
                         <Tabs tabs={rosterTabsCounts} activeTab={rosterTab} onChange={setRosterTab} />
                       </div>
-                      <button 
+                      {/* Состав заявки лига ведёт сама только в дивизионах с league_managed_roster.
+                          Кнопку не прячем, когда правка сейчас закрыта, — показываем причину
+                          в подсказке, иначе непонятно, куда делась функция. */}
+                      {isLeagueManagedRoster && canManageAppRoster && (() => {
+                        const blockReason = rosterComposeBlockReason(selectedTeamLive);
+                        return (
+                          <button
+                            onClick={() => !blockReason && setComposeRosterTeam(selectedTeamLive)}
+                            className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${
+                              blockReason
+                                ? 'border-graphite/5 text-graphite/40 bg-graphite/5 cursor-not-allowed'
+                                : 'border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 cursor-pointer'
+                            }`}
+                            title={blockReason || 'Внести игроков и представителей в заявку'}
+                          >
+                            <Icon name="user_plus" className="w-4 h-4" />
+                            Состав заявки
+                          </button>
+                        );
+                      })()}
+
+                      <button
                         onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
                         className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
                         title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
@@ -586,6 +646,18 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       />
       
       <PlayerProfileModal isOpen={!!profileModalPlayerId} onClose={() => setProfileModalPlayerId(null)} playerId={profileModalPlayerId} />
+
+      <AppRosterComposeDrawer
+        isOpen={!!composeRosterTeam}
+        onClose={() => setComposeRosterTeam(null)}
+        teamApp={composeRosterTeam}
+        showToast={(title, message, type) => setGlobalToast({ title, message, type })}
+        onSaved={() => {
+          // Состав перерисовывается сразу, счётчики команд в карточке — тихим обновлением
+          if (selectedTeam) loadTeamData(selectedTeam.id);
+          onRefresh(true);
+        }}
+      />
     </div>
   );
 }

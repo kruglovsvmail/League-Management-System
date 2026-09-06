@@ -25,12 +25,16 @@ export function HandbookPage() {
   const activeTab = parseInt(searchParams.get('tab') || '0', 10);
   const matchType = parseInt(searchParams.get('match') || '0', 10);
   const searchQuery = searchParams.get('q') || '';
+  // Фильтр по команде живёт только на вкладке «Пользователи» и сбрасывается вместе
+  // с поиском при смене вкладки
+  const teamQuery = searchParams.get('team') || '';
 
   const setActiveTab = (index) => {
     setSearchParams(prev => {
       prev.set('tab', index);
-      prev.delete('q');     
-      prev.delete('match'); 
+      prev.delete('q');
+      prev.delete('match');
+      prev.delete('team');
       return prev;
     }, { replace: true });
   };
@@ -43,6 +47,14 @@ export function HandbookPage() {
     setSearchParams(prev => {
       if (val) prev.set('q', val);
       else prev.delete('q');
+      return prev;
+    }, { replace: true });
+  };
+
+  const setTeamQuery = (val) => {
+    setSearchParams(prev => {
+      if (val) prev.set('team', val);
+      else prev.delete('team');
       return prev;
     }, { replace: true });
   };
@@ -77,20 +89,20 @@ export function HandbookPage() {
     setHasMore(true);
     // Делаем задержку для поиска (Debounce), чтобы не спамить бэкенд при каждом вводе буквы
     const timeout = setTimeout(() => {
-      fetchData(activeTab, 1, searchQuery, true);
+      fetchData(activeTab, 1, searchQuery, true, teamQuery);
     }, 400);
 
     return () => clearTimeout(timeout);
-  }, [activeTab, searchQuery, leagueId]);
+  }, [activeTab, searchQuery, teamQuery, leagueId]);
 
   // Подгрузка при изменении страницы (скролле)
   useEffect(() => {
     if (page > 1) {
-      fetchData(activeTab, page, searchQuery, false);
+      fetchData(activeTab, page, searchQuery, false, teamQuery);
     }
   }, [page]);
 
-  const fetchData = async (tabIndex, pageNum, search, isInitial) => {
+  const fetchData = async (tabIndex, pageNum, search, isInitial, teamSearch = '') => {
     if (isInitial) setIsLoading(true);
     else setIsFetchingMore(true);
     
@@ -102,7 +114,8 @@ export function HandbookPage() {
     try {
       const token = getToken();
       const leagueParam = tabIndex === 0 && leagueId ? `&leagueId=${leagueId}` : '';
-      const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}?page=${pageNum}&limit=30&search=${encodeURIComponent(search)}${leagueParam}`, {
+      const teamParam = tabIndex === 0 && teamSearch ? `&team=${encodeURIComponent(teamSearch)}` : '';
+      const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}?page=${pageNum}&limit=30&search=${encodeURIComponent(search)}${leagueParam}${teamParam}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const result = await res.json();
@@ -196,7 +209,10 @@ export function HandbookPage() {
         </div>
       );
     }},
-    { label: 'ФИО', sortKey: 'last_name', width: 'w-[800px]', render: (row) => (
+    // Ширины: таблица table-auto делит место пропорционально подсказкам колонок, поэтому
+    // раздутая ФИО отбирала его у «Команд» — логотипы не помещались в строку и сворачивались
+    // в сетку. ФИО ужата вдвое, освободившееся отдано колонке команд.
+    { label: 'ФИО', sortKey: 'last_name', width: 'w-[400px]', render: (row) => (
       <div onClick={() => openPlayerProfile(row.id)} className="cursor-pointer group flex flex-col items-start">
         <span className="font-bold text-[14px] text-graphite/70 group-hover:opacity-60 transition-colors leading-tight block truncate">
           {`${row.last_name || ''} ${row.first_name || ''}`.trim() || 'Без имени'}
@@ -223,17 +239,21 @@ export function HandbookPage() {
         </div>
       );
     }},
-    { label: 'Команды', width: 'w-[260px] text-center', render: (row) => {
+    { label: 'Команды', width: 'w-[420px] text-center', render: (row) => {
       const teams = row.current_teams || [];
       if (teams.length === 0) return <span className="text-graphite-light">-</span>;
       return (
-        <div className="flex justify-center items-center gap-1.5 flex-wrap">
+        // flex-nowrap: логотипы всегда идут одной строкой. Обёртка со shrink-0 нужна
+        // потому, что Tooltip не принимает className, а без неё flex сжимал бы логотипы.
+        <div className="flex flex-nowrap justify-center items-center gap-1.5">
           {teams.map((t) => (
-            <Tooltip key={t.id} title={t.name} subtitle={t.city || ''} noUnderline>
-              <div className="w-[50px] h-[50px] flex items-center justify-center p-1 rounded-md cursor-help">
-                <img src={getImageUrl(t.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="logo" />
-              </div>
-            </Tooltip>
+            <div key={t.id} className="shrink-0">
+              <Tooltip title={t.name} subtitle={t.city || ''} noUnderline>
+                <div className="w-[50px] h-[50px] flex items-center justify-center p-1 rounded-md cursor-help">
+                  <img src={getImageUrl(t.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="logo" />
+                </div>
+              </Tooltip>
+            </div>
           ))}
         </div>
       );
@@ -311,6 +331,14 @@ export function HandbookPage() {
             <div className="space-y-2">
               <Input label="Поиск по справочнику" placeholder={activeTab === 0 ? "Поиск по ФИО..." : "Поиск по названию или городу..."} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
+
+            {/* Фильтр по команде: вводим название — получаем её состав. Работает вместе
+                с поиском по ФИО, поэтому стоит отдельным полем, а не переключателем. */}
+            {activeTab === 0 && (
+              <div className="space-y-2 animate-zoom-in">
+                <Input label="Фильтр по команде" placeholder="Название или аббревиатура..." value={teamQuery} onChange={(e) => setTeamQuery(e.target.value)} />
+              </div>
+            )}
           </div>
         </div>
 

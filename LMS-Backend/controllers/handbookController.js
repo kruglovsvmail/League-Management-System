@@ -7,6 +7,9 @@ export const getUsers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 30;
     const offset = (page - 1) * limit;
     const search = req.query.search || '';
+    // Фильтр по команде: вводится название (или аббревиатура) — выдаём весь её состав.
+    // Работает вместе с поиском по ФИО, а не вместо него.
+    const teamSearch = req.query.team || '';
     // Квалификация лиговая, а справочник — общий по системе. Поэтому колонка показывает
     // квалификацию в ТЕКУЩЕЙ выбранной лиге: её id фронт передаёт параметром. Без него
     // (или у человека из чужой лиги) в колонке просто прочерк.
@@ -18,10 +21,24 @@ export const getUsers = async (req, res) => {
     // из команды игрок остаётся в справочнике вместе со своим профилем и историей.
     let whereCondition = `WHERE EXISTS (SELECT 1 FROM team_members tm_any WHERE tm_any.user_id = u.id)`;
     let params = [limit, offset, leagueId];
+
     if (search) {
       // Ищем по имени, фамилии или отчеству
-      whereCondition += ` AND (u.first_name ILIKE $4 OR u.last_name ILIKE $4 OR u.middle_name ILIKE $4)`;
       params.push(`%${search}%`);
+      whereCondition += ` AND (u.first_name ILIKE $${params.length} OR u.last_name ILIKE $${params.length} OR u.middle_name ILIKE $${params.length})`;
+    }
+
+    if (teamSearch) {
+      // Только действующее членство (left_at IS NULL): фильтр должен совпадать с колонкой
+      // «Команды», где показаны текущие команды человека. Иначе по названию находились бы
+      // те, кто ушёл из команды год назад и её логотипа в строке уже не имеет.
+      params.push(`%${teamSearch}%`);
+      whereCondition += ` AND EXISTS (
+          SELECT 1 FROM team_members tm_f
+          JOIN teams t_f ON t_f.id = tm_f.team_id
+          WHERE tm_f.user_id = u.id AND tm_f.left_at IS NULL
+            AND (t_f.name ILIKE $${params.length} OR t_f.short_name ILIKE $${params.length})
+      )`;
     }
 
     // current_teams — команды, в которых пользователь числится прямо сейчас

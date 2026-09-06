@@ -525,6 +525,7 @@ export const sendApplicationForReview = async (req, res) => {
             SELECT
                 tt.paper_roster_league_url,
                 d.digital_applications_only,
+                d.league_managed_roster,
                 (SELECT COUNT(*) FROM tournament_team_roles WHERE tournament_team_id = tt.id AND left_at IS NULL) as staff_count
             FROM tournament_teams tt
             JOIN divisions d ON tt.division_id = d.id
@@ -533,8 +534,11 @@ export const sendApplicationForReview = async (req, res) => {
 
         if (checkRes.rows.length > 0) {
             const appData = checkRes.rows[0];
-            
-            if (appData.digital_applications_only || appData.paper_roster_league_url !== null) {
+            // Состав ведёт лига — представителей вносит она же, требовать их от отправителя
+            // заявки бессмысленно: он их добавить не может.
+            const isLeagueManaged = !appData.digital_applications_only && appData.league_managed_roster;
+
+            if (!isLeagueManaged && (appData.digital_applications_only || appData.paper_roster_league_url !== null)) {
                 if (parseInt(appData.staff_count) === 0) {
                     throw new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или менеджера).');
                 }

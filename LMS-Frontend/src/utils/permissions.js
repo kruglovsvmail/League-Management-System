@@ -37,6 +37,7 @@ export const PERMISSIONS = {                                                    
   DIVISIONS_TEAM_DOCS_MODAL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                   // Открытие модального окна работы с документами (страховки, справки)
   DIVISIONS_TEAM_FEE_MODAL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                    // Открытие модального окна для фиксации оплаты турнирных взносов
   DIVISIONS_PLAYER_ADMIT_TOGGLE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],               // Право вручную допускать конкретного игрока к матчам (тумблер "Допуск")
+  DIVISIONS_TEAM_ROSTER_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                // Право самой лиге вести состав заявки команды (дивизионы с league_managed_roster)
 
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: РАСПИСАНИЕ                                                         

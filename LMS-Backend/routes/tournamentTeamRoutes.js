@@ -8,7 +8,9 @@ import {
     updateTournamentTeamCustomData,
     uploadTournamentTeamFile,
     deleteTournamentTeamLeaguePaper,
-    getTournamentTeamRoster
+    getTournamentTeamRoster,
+    getTournamentTeamRosterPool,
+    saveTournamentTeamComposition
 } from '../controllers/tournamentTeamController.js';
 
 const router = express.Router();
@@ -27,5 +29,10 @@ router.post('/tournament-teams/:id/upload/:type', upload.single('file'), require
 
 // Удаление (сброс) бумажной заявки, которую загрузила Лига
 router.delete('/tournament-teams/:id/paper_league', requirePermission('DIVISIONS_TEAM_DOCS_MODAL'), deleteTournamentTeamLeaguePaper);
+
+// Ведение состава заявки самой лигой (дивизионы с league_managed_roster).
+// Контекст лиги для проверки прав резолвится по /tournament-teams/:id автоматически.
+router.get('/tournament-teams/:id/roster-pool', requirePermission('DIVISIONS_TEAM_ROSTER_MANAGE'), getTournamentTeamRosterPool);
+router.put('/tournament-teams/:id/roster-composition', requirePermission('DIVISIONS_TEAM_ROSTER_MANAGE'), saveTournamentTeamComposition);
 
 export default router;

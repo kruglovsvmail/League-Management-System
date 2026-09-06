@@ -106,6 +106,10 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       reserve_goalie_block_back_to_back: div.reserve_goalie_block_back_to_back ?? false,
 
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
+      // Тумблер в форме подписан «Скан заяв. листа» и включён, когда скан ТРЕБУЕТСЯ,
+      // то есть при digital_applications_only = false. Инверсия живёт только в рендере:
+      // колонка в базе осталась прежней.
+      league_managed_roster: div.league_managed_roster ?? true,
       // null в массиве — пункт «Без квалификации» (тем, кому квалификация в лиге не присвоена).
       // Пустой массив = допуск по квалификациям не ограничен.
       qualification_ids: Array.isArray(div.qualification_ids) ? div.qualification_ids : [],
@@ -126,6 +130,7 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     reserve_goalie_max_per_game: 1, reserve_goalie_block_back_to_back: false,
 
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
+    league_managed_roster: true,
     qualification_ids: [],
     hide_stats_unpaid: false, individual_fee: '',
     is_tournament: isTournamentDefault,
@@ -749,9 +754,34 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                         )}
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                            <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
-                                <div><div className="font-bold text-graphite uppercase text-[12px]">Только цифровые</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Без загрузки скана заявочного листа.</div></div>
-                                <Switch checked={formData.digital_applications_only} onChange={(e) => handleChange('digital_applications_only', e.target.checked)} disabled={isLocked} />
+                            {/* Первый тумблер подписан от требования, а не от его отсутствия: включён —
+                                скан заявочного листа нужен. В базе это по-прежнему
+                                digital_applications_only, поэтому значение инвертируется здесь.
+                                Второй осмыслен только при включённом скане, поэтому стоит прямо под
+                                ним и гаснет вместе с ним (в базу уходит как есть, но не читается).
+                                Колонка занимает две строки сетки: иначе соседние карточки
+                                растянулись бы на высоту двух. */}
+                            <div className="row-span-2 flex flex-col gap-4">
+                                <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
+                                    <div><div className="font-bold text-graphite uppercase text-[12px]">Скан заявочного листа</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Команда загружает скан заявочного листа, лига прикрепляет утверждённый.</div></div>
+                                    <Switch checked={!formData.digital_applications_only} onChange={(e) => handleChange('digital_applications_only', !e.target.checked)} disabled={isLocked} />
+                                </div>
+
+                                <div className={`p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between transition-opacity duration-300 ${formData.digital_applications_only ? 'opacity-50' : ''}`}>
+                                    <div>
+                                        <div className="font-bold text-graphite uppercase text-[12px]">Состав вводит лига</div>
+                                        <div className="text-[11px] text-graphite-light mt-1 leading-tight">
+                                            {formData.digital_applications_only
+                                                ? 'Доступно только при включённом скане заявочного листа.'
+                                                : 'После утверждения заявочного листа, игроков и представителей вносит лига.'}
+                                        </div>
+                                    </div>
+                                    <Switch
+                                        checked={formData.league_managed_roster}
+                                        onChange={(e) => handleChange('league_managed_roster', e.target.checked)}
+                                        disabled={isLocked || formData.digital_applications_only}
+                                    />
+                                </div>
                             </div>
                             <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
                                 <div><div className="font-bold text-graphite uppercase text-[12px]">Мед. справка</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать медицинскую справку.</div></div>
@@ -762,7 +792,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 <Switch checked={formData.req_insurance} onChange={(e) => handleChange('req_insurance', e.target.checked)} disabled={isLocked} />
                             </div>
                             <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
-                                <div><div className="font-bold text-graphite uppercase text-[12px]">Согласие игрока</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать согласие на обработку ПДн.</div></div>
+                                <div><div className="font-bold text-graphite uppercase text-[12px]">Согласие игрока</div><div className="text-[11px] text-graphite-light mt-1 leading-tight">Требовать согласие на обработку персональных данных.</div></div>
                                 <Switch checked={formData.req_consent} onChange={(e) => handleChange('req_consent', e.target.checked)} disabled={isLocked} />
                             </div>
                             <div className="p-4 bg-white/70 rounded-md border border-graphite/10 flex flex-col gap-3 justify-between">
