@@ -60,6 +60,75 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
   const reqConsent = division?.req_consent ?? true;
   const totalDocsRequired = [reqMed, reqIns, reqConsent].filter(Boolean).length;
 
+  // Колонка документов одна и та же для состава и для штаба: дивизион требует документы
+  // и с представителей — по тем же флагам, — а лежат они на человеке в заявке, поэтому у
+  // играющего тренера бейдж в обеих вкладках показывает одно и то же.
+  const docsColumn = {
+    label: 'Докум.',
+    width: 'w-[80px]', align: 'center',
+    render: (row) => {
+        const hasMed = !!row.medical_url;
+        const hasIns = !!row.insurance_url;
+        const hasConsent = !!row.consent_url;
+        
+        // Считаем только те документы, которые ТРЕБУЮТСЯ в настройках дивизиона
+        let providedCount = 0;
+        if (reqMed && hasMed) providedCount++;
+        if (reqIns && hasIns) providedCount++;
+        if (reqConsent && hasConsent) providedCount++;
+        
+        let type = 'empty';
+        let text = 'Док.';
+        
+        // Логика закрашивания бейджа:
+        if (providedCount === totalDocsRequired) type = 'filled'; // 2/2, 3/3, 1/1
+        else if (providedCount === 0) type = 'empty';             // 0/1, 0/2, 0/3
+        else {
+          if (totalDocsRequired === 3) {
+            if (providedCount === 1) type = 'oneThird'; // 1/3
+            if (providedCount === 2) type = 'twoThirds'; // 2/3
+          } else if (totalDocsRequired === 2) {
+            if (providedCount === 1) type = 'half'; // 1/2
+          }
+        }
+
+        const today = dayjs().startOf('day');
+        let isExpired = false;
+        let minDaysLeft = Infinity;
+
+        const checkExp = (expDateStr) => {
+          if (!expDateStr) return;
+          const expDate = dayjs(expDateStr).startOf('day');
+          const daysLeft = expDate.diff(today, 'day');
+          
+          if (daysLeft < 0) {
+            isExpired = true;
+          } else if (daysLeft <= 7) {
+            if (daysLeft < minDaysLeft) minDaysLeft = daysLeft;
+          }
+        };
+
+        // Проверяем сроки только у обязательных документов
+        if (reqMed && hasMed) checkExp(row.medical_expires_at);
+        if (reqIns && hasIns) checkExp(row.insurance_expires_at);
+        if (reqConsent && hasConsent) checkExp(row.consent_expires_at);
+
+        if (isExpired) {
+          type = 'expired';
+          text = 'Истек';
+        } else if (minDaysLeft <= 7) {
+          type = 'expiring';
+          text = `${minDaysLeft} дн.`;
+        }
+        
+        return (
+          <div onClick={() => onOpenModal(row, 'docs')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
+            <Badge label={text} type={type} />
+          </div>
+        );
+      }
+  };
+
   const playerColumns = [
     { 
       label: 'Фото', 
@@ -182,72 +251,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       }
     },
     
-    // Динамически показываем колонку Документов только если они вообще нужны
-    ...(totalDocsRequired > 0 ? [{ 
-      label: 'Докум.', 
-      width: 'w-[80px]', align: 'center',
-      render: (row) => {
-        const hasMed = !!row.medical_url;
-        const hasIns = !!row.insurance_url;
-        const hasConsent = !!row.consent_url;
-        
-        // Считаем только те документы, которые ТРЕБУЮТСЯ в настройках дивизиона
-        let providedCount = 0;
-        if (reqMed && hasMed) providedCount++;
-        if (reqIns && hasIns) providedCount++;
-        if (reqConsent && hasConsent) providedCount++;
-        
-        let type = 'empty';
-        let text = 'Док.';
-        
-        // Логика закрашивания бейджа:
-        if (providedCount === totalDocsRequired) type = 'filled'; // 2/2, 3/3, 1/1
-        else if (providedCount === 0) type = 'empty';             // 0/1, 0/2, 0/3
-        else {
-          if (totalDocsRequired === 3) {
-            if (providedCount === 1) type = 'oneThird'; // 1/3
-            if (providedCount === 2) type = 'twoThirds'; // 2/3
-          } else if (totalDocsRequired === 2) {
-            if (providedCount === 1) type = 'half'; // 1/2
-          }
-        }
-
-        const today = dayjs().startOf('day');
-        let isExpired = false;
-        let minDaysLeft = Infinity;
-
-        const checkExp = (expDateStr) => {
-          if (!expDateStr) return;
-          const expDate = dayjs(expDateStr).startOf('day');
-          const daysLeft = expDate.diff(today, 'day');
-          
-          if (daysLeft < 0) {
-            isExpired = true;
-          } else if (daysLeft <= 7) {
-            if (daysLeft < minDaysLeft) minDaysLeft = daysLeft;
-          }
-        };
-
-        // Проверяем сроки только у обязательных документов
-        if (reqMed && hasMed) checkExp(row.medical_expires_at);
-        if (reqIns && hasIns) checkExp(row.insurance_expires_at);
-        if (reqConsent && hasConsent) checkExp(row.consent_expires_at);
-
-        if (isExpired) {
-          type = 'expired';
-          text = 'Истек';
-        } else if (minDaysLeft <= 7) {
-          type = 'expiring';
-          text = `${minDaysLeft} дн.`;
-        }
-        
-        return (
-          <div onClick={() => onOpenModal(row, 'docs')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
-            <Badge label={text} type={type} />
-          </div>
-        );
-      }
-    }] : []),
+    // Документы: колонка общая с представителями (docsColumn)
+    ...(totalDocsRequired > 0 ? [docsColumn] : []),
 
     { 
       label: 'Оплата', 
@@ -351,6 +356,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         </span>
       )
     },
+    ...(totalDocsRequired > 0 ? [docsColumn] : []),
     {
       label: 'Роль', 
       sortKey: 'roles',

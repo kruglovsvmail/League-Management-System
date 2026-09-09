@@ -3,6 +3,7 @@ import transporter from '../config/mail.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PERMISSIONS, ROLES } from '../utils/permissions.js';
+import { isLeagueOwner } from '../utils/leagueOwners.js';
 import { generateTempPassword, validatePassword } from '../utils/password.js';
 import { checkLoginAllowed, recordLoginFailure, clearLoginFailures, getRequestIp } from '../utils/loginGuard.js';
 
@@ -23,7 +24,11 @@ const NO_LEAGUE_ACCESS_ERROR =
 const hasLeagueAccess = async (userId, globalRole) => {
   if (globalRole === ROLES.GLOBAL_ADMIN) return true;
   const result = await pool.query(
-    `SELECT 1 FROM league_staff WHERE user_id = $1 AND end_date IS NULL LIMIT 1`,
+    `SELECT 1 FROM league_staff WHERE user_id = $1 AND end_date IS NULL
+     UNION ALL
+     -- Владелец лиги штатной роли может не иметь вовсе, но вход ему нужен
+     SELECT 1 FROM league_owners WHERE user_id = $1
+     LIMIT 1`,
     [userId]
   );
   return result.rows.length > 0;
@@ -140,16 +145,25 @@ const fetchUserProfile = async (userId) => {
       FROM leagues
     `);
   } else {
+    // Владелец лиги приезжает синтетической ролью league_owner в общей строке ролей:
+    // отдельной сущности фронту не нужно, а useAccess по этой роли открывает всё.
+    // Штатной роли у владельца может не быть вовсе — тогда лига попадёт в список
+    // только по владению.
     leaguesResult = await pool.query(`
       SELECT l.id, l.name, l.short_name, l.city, l.logo_url,
              l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode,
              l.reserve_goalies_enabled, l.reserve_goalie_dq_games_enabled, l.reserve_goalie_own_dq_blocks,
-             string_agg(ls.role, ', ') as role
-      FROM league_staff ls
-      JOIN leagues l ON ls.league_id = l.id
-      WHERE ls.user_id = $1 AND ls.end_date IS NULL
-      GROUP BY l.id, l.name, l.short_name, l.city, l.logo_url, l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode,
-               l.reserve_goalies_enabled, l.reserve_goalie_dq_games_enabled, l.reserve_goalie_own_dq_blocks
+             CONCAT_WS(', ',
+               (SELECT string_agg(ls.role, ', ') FROM league_staff ls
+                 WHERE ls.league_id = l.id AND ls.user_id = $1 AND ls.end_date IS NULL),
+               (SELECT 'league_owner' FROM league_owners lo
+                 WHERE lo.league_id = l.id AND lo.user_id = $1)
+             ) as role
+      FROM leagues l
+      WHERE EXISTS (SELECT 1 FROM league_staff ls
+                     WHERE ls.league_id = l.id AND ls.user_id = $1 AND ls.end_date IS NULL)
+         OR EXISTS (SELECT 1 FROM league_owners lo
+                     WHERE lo.league_id = l.id AND lo.user_id = $1)
     `, [user.id]);
   }
 
@@ -809,6 +823,13 @@ export const requirePermission = (permissionKey) => async (req, res, next) => {
     if (!leagueId) {
       console.warn(`[RBAC] Не удалось определить leagueId для маршрута: ${req.originalUrl}`);
       return res.status(400).json({ success: false, error: 'Невозможно определить контекст лиги для проверки прав' });
+    }
+
+    // Владелец лиги: внутри своей лиги ему можно всё, роли не проверяем. Права с пустым
+    // списком ролей отсеклись выше — они не про лигу, а про платформу, и остаются за
+    // глобальным администратором.
+    if (await isLeagueOwner(pool, leagueId, userId)) {
+      return next();
     }
 
     let userRoles = [];

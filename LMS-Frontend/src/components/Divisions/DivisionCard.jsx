@@ -35,7 +35,7 @@ const TOURNAMENT_TYPES = {
 
 export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGlobalToast }) {
   // Используем useAccess для проверки прав
-  const { checkAccess } = useAccess();
+  const { checkAccess, hasFullLeagueAccess } = useAccess();
   
   // Вычисляем права доступа
   const canPublishDivision = checkAccess('DIVISIONS_PUBLISH');
@@ -224,21 +224,15 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
     if (medExp !== undefined && medExp !== null) formData.append('medical_expires_at', medExp);
     if (consentExp !== undefined && consentExp !== null) formData.append('consent_expires_at', consentExp); 
     
-    formData.append('player_id', activePlayerForModal.player_id);
-
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-rosters/${activePlayerForModal.tournament_roster_id}/docs`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` }, body: formData });
+      // Документы лежат на человеке в заявке, а не на строке состава: у представителя
+      // строки состава может не быть вовсе, а у играющего тренера документы общие.
+      // Поэтому и адрес — по заявке и user_id, и состав перечитываем целиком: одна
+      // загрузка меняет карточку человека сразу в обеих вкладках.
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${selectedTeam.id}/person-docs/${activePlayerForModal.player_id}`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` }, body: formData });
       const data = await res.json();
       if (data.success) {
-        setRosterData(prev => prev.map(p => p.tournament_roster_id === activePlayerForModal.tournament_roster_id ? { 
-          ...p, 
-          insurance_url: data.insurance_url !== undefined ? data.insurance_url : p.insurance_url, 
-          medical_url: data.medical_url !== undefined ? data.medical_url : p.medical_url,
-          consent_url: data.consent_url !== undefined ? data.consent_url : p.consent_url,
-          insurance_expires_at: insExp !== null ? insExp : p.insurance_expires_at,
-          medical_expires_at: medExp !== null ? medExp : p.medical_expires_at,
-          consent_expires_at: consentExp !== null ? consentExp : p.consent_expires_at
-        } : p));
+        await loadTeamData(selectedTeam.id);
         setGlobalToast({ title: 'Успешно', message: 'Документы загружены', type: 'success' });
         setPlayerModalType(null);
       } else setGlobalToast({ title: 'Ошибка', message: data.error, type: 'error' });
@@ -354,6 +348,9 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   // Повторяет compositionBlockReason на сервере: тексты должны совпадать.
   const rosterComposeBlockReason = (team) => {
     if (!team) return 'Выберите команду';
+    // Владельцу лиги не мешают ни сроки, ни статус заявки, ни отсутствие утверждённого
+    // заявочного листа — на сервере ровно то же исключение
+    if (hasFullLeagueAccess) return null;
     if (!team.paper_roster_league_url) return 'Сначала прикрепите утверждённый заявочный лист';
     if (!['pending', 'approved'].includes(team.status)) return 'Состав редактируется только у заявок на проверке и допущенных';
     if (!isRosterWindowOpen) return 'Заявочная кампания и трансферное окно закрыты';
@@ -367,8 +364,11 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
     rejected: 'Команда отклонена'
   };
 
+  // canChange здесь — это «кнопка реально кликается» (isStatusClickable), а не голое право:
+  // у владельца лиги статус меняется и в «На исправлении», и кнопка должна выглядеть живой,
+  // а не серой заглушкой.
   const getStatusButtonStyle = (status, canChange) => {
-    if (status === 'revision') return 'bg-blue-500/10 text-blue-600 cursor-not-allowed border-transparent opacity-90';
+    if (status === 'revision' && !canChange) return 'bg-blue-500/10 text-blue-600 cursor-not-allowed border-transparent opacity-90';
     if (!canChange) {
       if (status === 'approved') return 'bg-status-accepted/5 text-status-accepted/50 cursor-not-allowed border-transparent';
       if (status === 'pending') return 'bg-orange/5 text-orange/50 cursor-not-allowed border-transparent';
@@ -379,11 +379,14 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       case 'approved': return 'bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white border-transparent cursor-pointer';
       case 'pending': return 'bg-orange/10 text-orange hover:bg-orange hover:text-white border-transparent cursor-pointer';
       case 'rejected': return 'bg-status-rejected/10 text-status-rejected hover:bg-status-rejected hover:text-white border-transparent cursor-pointer';
+      case 'revision': return 'bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white border-transparent cursor-pointer';
       default: return 'border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 cursor-pointer';
     }
   };
 
-  const isStatusClickable = canChangeTeamStatus && selectedTeam?.status !== 'revision';
+  // В «На исправлении» заявка у команды, и статус ей обычно не меняют. Владельцу лиги
+  // и глобальному админу это правило не писано: они правят заявку в любом состоянии.
+  const isStatusClickable = canChangeTeamStatus && (hasFullLeagueAccess || selectedTeam?.status !== 'revision');
 
   return (
     <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg hover:shadow-lg overflow-hidden font-sans w-full transition-all duration-300 relative animate-zoom-in">
@@ -534,10 +537,10 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                         );
                       })()}
 
-                      {/* Командная справка — одна бумага со списком игроков внутри. Кнопка только
-                          на вкладке действующего состава: применяется справка именно к нему, а у
-                          отзаявленных и штаба документов допуска не бывает. */}
-                      {canBulkTeamDocs && rosterTab === 0 && activePlayers.length > 0 && (
+                      {/* Командная справка — одна бумага со списком людей внутри. Кнопка есть и на
+                          составе, и на представителях: применяется справка и к тем, и к другим.
+                          Нет её только у отзаявленных — они из заявки уже вышли. */}
+                      {canBulkTeamDocs && rosterTab !== 1 && (activePlayers.length > 0 || staffMembers.length > 0) && (
                         <button
                           onClick={() => setIsTeamDocsBulkOpen(true)}
                           className="ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 cursor-pointer transition-all duration-300 text-[13px] font-bold shadow-sm"
@@ -552,7 +555,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
 
                       <button
                         onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
-                        className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
+                        className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, isStatusClickable)}`}
                         title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
                       >
                         <Icon name="swap" className="w-4 h-4" />
@@ -680,6 +683,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
         onClose={() => setIsTeamDocsBulkOpen(false)}
         teamApp={selectedTeamLive}
         roster={activePlayers}
+        staff={staffMembers}
         docTypes={teamDocTypes}
         showToast={(title, message, type) => setGlobalToast({ title, message, type })}
         onSaved={() => { if (selectedTeam) loadTeamData(selectedTeam.id); }}

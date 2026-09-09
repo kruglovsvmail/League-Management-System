@@ -297,7 +297,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
                 p.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'
               } ${readOnly ? 'opacity-40 cursor-not-allowed' : ''}`}
               title="Капитан"
-            >C</button>
+            >К</button>
             <button
               onClick={() => toggleLetter(p.player_id, 'A')}
               disabled={readOnly || (!canAddA && !p.is_assistant)}

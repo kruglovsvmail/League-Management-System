@@ -5,6 +5,7 @@ import path from 'path';
 import s3 from '../config/s3.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { validatePassword } from '../utils/password.js';
+import { getLeagueOwners } from '../utils/leagueOwners.js';
 
 // ==========================================
 // ПАРАМЕТРЫ ЛИГИ (ГЛОБАЛЬНЫЕ НАСТРОЙКИ)
@@ -491,6 +492,71 @@ export const deleteLeagueServiceAccount = async (req, res) => {
     await pool.query('DELETE FROM users WHERE id = $1', [user_id]);
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+// ============================================================================
+// ВЛАДЕЛЬЦЫ ЛИГИ
+// ============================================================================
+// Уровень выше любого штатного: внутри своей лиги владельцу можно всё, включая обход
+// временных окон и статусов заявок (см. utils/leagueOwners.js). Штатной ролью владение
+// не является и в разделе «Персонал» не показывается — это отдельная таблица.
+//
+// Все три маршрута закрыты правом LEAGUE_OWNERS_MANAGE с пустым списком ролей: назначать
+// и снимать владельцев может только глобальный администратор. Иначе руководитель лиги
+// назначил бы владельцем себя и вышел из-под любых ограничений.
+
+export const getLeagueOwnersList = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const owners = await getLeagueOwners(pool, leagueId);
+    res.json({ success: true, owners });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+export const addLeagueOwner = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const { userId } = req.body;
+    const ownerId = parseInt(userId, 10);
+
+    if (!Number.isInteger(ownerId)) {
+      return res.status(400).json({ success: false, error: 'Некорректный пользователь' });
+    }
+
+    // Заблокированный аккаунт владельцем быть не может: вход ему всё равно закрыт,
+    // а у лиги остался бы формальный, но нерабочий владелец.
+    const userRes = await pool.query(
+      `SELECT id FROM users WHERE id = $1 AND status = 'active'`,
+      [ownerId]
+    );
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Пользователь не найден или заблокирован' });
+    }
+
+    await pool.query(`
+      INSERT INTO league_owners (league_id, user_id, added_by)
+      VALUES ($1, $2, $3)
+      ON CONFLICT ON CONSTRAINT league_owners_unique DO NOTHING
+    `, [leagueId, ownerId, req.user?.id || null]);
+
+    const owners = await getLeagueOwners(pool, leagueId);
+    res.json({ success: true, owners });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+export const removeLeagueOwner = async (req, res) => {
+  try {
+    const { leagueId, userId } = req.params;
+    await pool.query('DELETE FROM league_owners WHERE league_id = $1 AND user_id = $2', [leagueId, userId]);
+
+    const owners = await getLeagueOwners(pool, leagueId);
+    res.json({ success: true, owners });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -16,6 +16,7 @@ import { DOCUMENT_ACCEPT, DOCUMENT_ACCEPT_HINT } from '../utils/uploadFormats';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { TeamOwnerDrawer } from '../modals/TeamOwnerDrawer';
 import { ClubsWorkspace } from '../components/ClubsWorkspace';
+import { LeaguesWorkspace } from '../components/LeaguesWorkspace';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
@@ -71,16 +72,31 @@ export function TeamManagementPage() {
   const appFilter = searchParams.get('filter') || 'current';
   const teamSearchQuery = searchParams.get('q') || '';
 
-  // Раздел делится на две вкладки: команды и клубы (организации над командами).
+  // Раздел делится на три вкладки: команды, клубы (организации над командами) и лиги.
   // Держим выбор в адресе — так он переживает перезагрузку и возврат назад.
-  const section = searchParams.get('section') === 'clubs' ? 'clubs' : 'teams';
+  const SECTIONS = ['teams', 'clubs', 'leagues'];
+  const sectionParam = searchParams.get('section');
+  const section = SECTIONS.includes(sectionParam) ? sectionParam : 'teams';
 
   const setSection = (next) => {
     setSearchParams(prev => {
-      if (next === 'clubs') prev.set('section', 'clubs');
+      if (next && next !== 'teams') prev.set('section', next);
       else prev.delete('section');
       return prev;
     }, { replace: true });
+  };
+
+  // Выбранная лига (вкладка «Лиги») живёт на странице, а не внутри воркспейса: кнопка
+  // «Вернуться к выбору лиги» рисуется в шапке рядом с заголовком, как у команд.
+  const [selectedOwnersLeague, setSelectedOwnersLeague] = useState(() => {
+    const saved = sessionStorage.getItem('lm_selected_league_data');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const selectOwnersLeague = (league) => {
+    setSelectedOwnersLeague(league);
+    if (league) sessionStorage.setItem('lm_selected_league_data', JSON.stringify(league));
+    else sessionStorage.removeItem('lm_selected_league_data');
   };
 
   const setActiveTab = (tab) => {
@@ -488,7 +504,7 @@ export function TeamManagementPage() {
       const isConflict = duplicateJerseys.has(Number(currentNum)) && currentNum !== '';
       return ( <Input value={currentNum} maxLength={2} hasError={isConflict} className="w-14 h-8 text-center font-black bg-white border border-graphite/20" onChange={(e) => setJerseyEdits(prev => ({ ...prev, [r.user_id]: e.target.value.replace(/\D/g, '') }))} onBlur={() => { const typed = jerseyEdits[r.user_id]; if (typed !== undefined && typed !== String(r.jersey_number || '')) { if (typed !== '' && duplicateJerseys.has(Number(typed))) { showToast('Занят', `Номер ${typed} уже используется`); setJerseyEdits(prev => { const n = {...prev}; delete n[r.user_id]; return n; }); return; } autoSavePlayer(r.user_id, { jersey_number: typed }); setJerseyEdits(prev => { const n = {...prev}; delete n[r.user_id]; return n; }); }}} /> );
     }},
-    { label: 'Нашивки', sortKey: 'is_captain', width: 'w-[100px]', render: (r) => { const canAddA = r.is_assistant || roster.filter(p => p.is_assistant).length < 2; return ( <div className="flex gap-1.5"><button onClick={() => handleLetterClick(r.user_id, 'C')} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20'}`}>C</button><button onClick={() => handleLetterClick(r.user_id, 'A')} disabled={!canAddA && !r.is_assistant} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20'}`}>A</button></div> ); }},
+    { label: 'Нашивки', sortKey: 'is_captain', width: 'w-[100px]', render: (r) => { const canAddA = r.is_assistant || roster.filter(p => p.is_assistant).length < 2; return ( <div className="flex gap-1.5"><button onClick={() => handleLetterClick(r.user_id, 'C')} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20'}`}>К</button><button onClick={() => handleLetterClick(r.user_id, 'A')} disabled={!canAddA && !r.is_assistant} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20'}`}>A</button></div> ); }},
     { label: '', width: 'w-[50px] text-right', render: (r) => ( <button onClick={() => requestRemove(r.user_id, 'roster')} className="text-status-rejected w-8 h-8 hover:bg-status-rejected/10 rounded">×</button> )}
   ];
 
@@ -504,22 +520,32 @@ export function TeamManagementPage() {
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
       <Header
-        title={section === 'clubs' ? 'Управление клубами' : 'Управление командой'}
-        subtitle={section === 'teams' && selectedTeam && ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange">←  Вернуться к выбору команды</button> )}
+        title={section === 'clubs' ? 'Управление клубами' : section === 'leagues' ? 'Управление лигами' : 'Управление командой'}
+        subtitle={
+          section === 'teams' && selectedTeam
+            ? ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange cursor-pointer">←  Вернуться к выбору команды</button> )
+            : section === 'leagues' && selectedOwnersLeague
+              ? ( <button onClick={() => selectOwnersLeague(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange cursor-pointer">←  Вернуться к выбору лиги</button> )
+              : null
+        }
       />
 
       {/* Переключатель раздела: команды или клубы */}
       <div className="px-10 pt-8 relative z-10">
         <div className="w-[320px]">
           <SegmentButton
-            options={['Команды', 'Клубы']}
-            defaultIndex={section === 'clubs' ? 1 : 0}
-            onChange={(idx) => setSection(idx === 1 ? 'clubs' : 'teams')}
+            options={['Команды', 'Клубы', 'Лиги']}
+            defaultIndex={SECTIONS.indexOf(section)}
+            onChange={(idx) => setSection(SECTIONS[idx] || 'teams')}
           />
         </div>
       </div>
 
-      {section === 'clubs' ? (
+      {section === 'leagues' ? (
+        <div className="px-10 pt-6 relative z-10">
+          <LeaguesWorkspace showToast={showToast} selectedLeague={selectedOwnersLeague} onSelectLeague={selectOwnersLeague} />
+        </div>
+      ) : section === 'clubs' ? (
         <div className="px-10 pt-6 relative z-10">
           <ClubsWorkspace showToast={showToast} onOpenProfile={(id) => setProfileModalUserId(id)} />
         </div>
@@ -825,7 +851,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
         return ( <div className="flex gap-1.5">{r.is_captain && <span className="w-6 h-6 flex items-center justify-center bg-orange text-white text-[12px] font-bold rounded">K</span>}{r.is_assistant && <span className="w-6 h-6 flex items-center justify-center bg-status-accepted text-white text-[12px] font-bold rounded">A</span>}</div> );
       }
       const canAddA = r.is_assistant || (app.roster || []).filter(p => p.is_assistant).length < 2; 
-      return ( <div className="flex gap-1.5"><button onClick={() => onUpdatePlayer(r.id, { is_captain: !r.is_captain, is_assistant: false })} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20'}`}>C</button><button onClick={() => { if (r.is_assistant) onUpdatePlayer(r.id, { is_assistant: false }); else onUpdatePlayer(r.id, { is_assistant: true, is_captain: false }); }} disabled={!canAddA && !r.is_assistant} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20'}`}>A</button></div> ); 
+      return ( <div className="flex gap-1.5"><button onClick={() => onUpdatePlayer(r.id, { is_captain: !r.is_captain, is_assistant: false })} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_captain ? 'bg-orange text-white border-orange' : 'text-graphite/40 border-graphite/20'}`}>К</button><button onClick={() => { if (r.is_assistant) onUpdatePlayer(r.id, { is_assistant: false }); else onUpdatePlayer(r.id, { is_assistant: true, is_captain: false }); }} disabled={!canAddA && !r.is_assistant} className={`w-7 h-7 rounded text-[12px] font-black border ${r.is_assistant ? 'bg-status-accepted text-white border-status-accepted' : 'text-graphite/40 border-graphite/20'}`}>A</button></div> ); 
     }},
     { label: 'Квал.', sortKey: 'qualification_short_name', width: 'w-[90px]', render: (r) => {
       // Квалификация лиговая: её могли сменить уже после того, как игрока заявили сюда.

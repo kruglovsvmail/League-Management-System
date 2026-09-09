@@ -14,7 +14,7 @@ import { useAccess } from '../../hooks/useAccess';
 const STATUS_KEYS = ['approved', 'pending', 'revision', 'rejected'];
 
 export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId, onTeamSelect, activeTab, onTabChange, isAppWindowOpen, onRefresh }) {
-  const { checkAccess } = useAccess();
+  const { checkAccess, hasFullLeagueAccess } = useAccess();
   const isCompact = !!selectedTeamId;
   
   // Локальное состояние для моментального визуального обновления без перезагрузки страницы
@@ -186,7 +186,9 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     
     { label: '', width: 'w-[50px]', align: 'right', render: (row) => {
       // Иконка статуса появляется только если есть права
-      const canChangeStatus = checkAccess('DIVISIONS_TEAM_STATUS') && row.status !== 'revision';
+      // В «На исправлении» заявка у команды и статус ей обычно не меняют. Владельцу
+      // лиги и глобальному админу это правило не писано.
+      const canChangeStatus = checkAccess('DIVISIONS_TEAM_STATUS') && (hasFullLeagueAccess || row.status !== 'revision');
 
       if (!canChangeStatus) return null;
 

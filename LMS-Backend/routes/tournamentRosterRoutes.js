@@ -18,7 +18,9 @@ router.use(verifyToken);
 router.patch('/tournament-rosters/:id/status', requirePermission('DIVISIONS_PLAYER_ADMIT_TOGGLE'), updateTournamentRosterStatus);
 router.patch('/tournament-rosters/:id/fee', requirePermission('DIVISIONS_TEAM_FEE_MODAL'), updateTournamentRosterFee);
 
-router.post('/tournament-rosters/:id/docs', upload.fields([
+// Документы допуска — на человека в заявке, а не на строку состава: представитель может
+// быть и игроком, и документы у него одни (см. tournament_person_docs).
+router.post('/tournament-teams/:id/person-docs/:userId', upload.fields([
     { name: 'insurance', maxCount: 1 },
     { name: 'medical', maxCount: 1 },
     { name: 'consent', maxCount: 1 }

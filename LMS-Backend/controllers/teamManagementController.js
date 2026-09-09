@@ -430,8 +430,8 @@ export const getTeamApplications = async (req, res) => {
                            'id', tr.id, 'player_id', tr.player_id, 'jersey_number', tr.jersey_number,
                            'position', tr.position, 'is_captain', tr.is_captain, 'is_assistant', tr.is_assistant,
                            'application_status', tr.application_status,
-                           'medical_url', tr.medical_url, 'insurance_url', tr.insurance_url, 'consent_url', tr.consent_url,
-                           'medical_expires_at', tr.medical_expires_at, 'insurance_expires_at', tr.insurance_expires_at, 'consent_expires_at', tr.consent_expires_at,
+                           'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
+                           'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at,
                            'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
                            'user_avatar_url', u.avatar_url,
                            'team_member_photo_url', tm.photo_url,
@@ -454,6 +454,10 @@ export const getTeamApplications = async (req, res) => {
                        ) ORDER BY u.last_name ASC)
                        FROM tournament_rosters tr
                        JOIN users u ON tr.player_id = u.id
+                       -- Документы допуска — на паре «заявка + человек»: у играющего
+                       -- представителя они общие с его строкой в штабе
+                       LEFT JOIN tournament_person_docs tpd
+                              ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
                        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
                        LEFT JOIN user_qualifications uq
                               ON uq.user_id = u.id AND uq.league_id = s.league_id AND uq.ended_at IS NULL
@@ -469,10 +473,15 @@ export const getTeamApplications = async (req, res) => {
                            'role', ttr.tournament_role,
                            'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
                            'user_avatar_url', u.avatar_url,
-                           'team_member_photo_url', tm.photo_url
+                           'team_member_photo_url', tm.photo_url,
+                           -- Те же документы допуска, что и у игроков
+                           'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
+                           'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at
                        ) ORDER BY u.last_name ASC)
                        FROM tournament_team_roles ttr
                        JOIN users u ON ttr.user_id = u.id
+                       LEFT JOIN tournament_person_docs tpd
+                              ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
                        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
                        WHERE ttr.tournament_team_id = tt.id AND ttr.left_at IS NULL), 
                    '[]'::json) as staff

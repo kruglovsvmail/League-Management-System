@@ -1,4 +1,4 @@
-import { PERMISSIONS, ROLES } from './permissions';
+import { PERMISSIONS, ROLES, hasLeaguePermission } from './permissions';
 
 /**
  * Единый реестр пунктов бокового меню LMS.
@@ -41,19 +41,12 @@ const DEFAULT_DIVIDER_BEFORE = 'registry';
 const itemByKey = Object.fromEntries(SIDEBAR_ITEMS.map(i => [i.key, i]));
 
 /**
- * Право на пункт меню. Повторяет проверку из App.jsx: глобальный админ видит всё,
- * остальным нужно совпадение роли в выбранной лиге.
+ * Право на пункт меню. Пункт без права виден всем, остальное решает общая проверка
+ * hasLeaguePermission — та же, что у роутинга и у компонентов.
  */
 export const hasMenuAccess = (user, league, permission) => {
   if (!permission) return true;
-  if (!user) return false;
-  if (user.globalRole === ROLES.GLOBAL_ADMIN) return true;
-
-  const allowedRoles = PERMISSIONS[permission];
-  if (!allowedRoles || allowedRoles.length === 0) return false;
-
-  const userRoles = league?.role ? league.role.split(',').map(r => r.trim()).filter(Boolean) : [];
-  return userRoles.some(role => allowedRoles.includes(role));
+  return hasLeaguePermission(user, league, permission);
 };
 
 /** Пункты, доступные пользователю в текущей лиге, в порядке реестра. */

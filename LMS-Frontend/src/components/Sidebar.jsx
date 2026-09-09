@@ -17,9 +17,14 @@ const ROLE_NAMES = {
   [ROLES.SERVICE_BROADCASTER]: 'Сервисный Бродкастер',
 };
 
+// Владение лигой идёт в подписи первым и сокращённо — «Вл.»: это не должность, а уровень
+// доступа над любыми ролями. Штатных ролей может не быть вовсе — тогда остаётся только оно.
 const translateRoles = (roleString) => {
   if (!roleString) return 'Пользователь';
-  return roleString.split(',').map(r => ROLE_NAMES[r.trim()] || r.trim()).join(', ');
+  const roles = roleString.split(',').map(r => r.trim()).filter(Boolean);
+  const names = roles.filter(r => r !== ROLES.LEAGUE_OWNER).map(r => ROLE_NAMES[r] || r);
+  if (roles.includes(ROLES.LEAGUE_OWNER)) names.unshift('Вл.');
+  return names.length > 0 ? names.join(', ') : 'Пользователь';
 };
 
 export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {

@@ -27,7 +27,7 @@ import { PlayoffConstructor } from './components/Settings/PlayoffConstructor';
 // Импорт каркаса, UI и прав
 import { AdminLayout } from './AdminLayout';
 import { Loader } from './ui/Loader';
-import { PERMISSIONS, ROLES } from './utils/permissions';
+import { PERMISSIONS, ROLES, hasLeaguePermission } from './utils/permissions';
 import { OrientationGuard } from './ui/OrientationGuard';
 import { AppUpdater, isObsOverlayPath } from './components/AppUpdater';
 
@@ -43,14 +43,8 @@ export default function App() {
   const location = useLocation();
 
   // Локальная функция проверки прав для роутера верхнего уровня
-  const hasAccess = (user, league, action) => {
-    if (!user) return false;
-    if (user.globalRole === ROLES.GLOBAL_ADMIN) return true;
-    const allowedRoles = PERMISSIONS[action];
-    if (!allowedRoles || allowedRoles.length === 0) return false;
-    const userRoles = league?.role ? league.role.split(',').map(r => r.trim()) : [];
-    return userRoles.some(role => allowedRoles.includes(role));
-  };
+  // Проверка одна на всё приложение — см. hasLeaguePermission в utils/permissions
+  const hasAccess = (user, league, action) => hasLeaguePermission(user, league, action);
 
   const initLeague = (user) => {
     const savedLeagueId = localStorage.getItem('hockeyeco_selected_league');

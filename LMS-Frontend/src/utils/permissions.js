@@ -5,6 +5,7 @@
 // Справочник всех системных ролей для удобного переиспользования              
 export const ROLES = {                                                          // Экспортируем объект ROLES, где ключи используются в коде, а значения - в базе данных
   GLOBAL_ADMIN: 'admin',                                                        // Глобальный администратор всей платформы (имеет неограниченный доступ)
+  LEAGUE_OWNER: 'league_owner',                                                 // Владелец лиги (league_owners): внутри своей лиги может всё, включая обход дедлайнов и статусов. Приезжает синтетической ролью в profile.leagues[].role, в league_staff не хранится
   TOP_MANAGER: 'top_manager',                                                   // Руководитель лиги (высший уровень доступа в рамках одной лиги)
   LEAGUE_ADMIN: 'league_admin',                                                 // Администратор лиги (операционное управление лигой)
   REFEREE: 'referee',                                                           // Судья лиги (общая должность в штате лиги, без привязки к конкретному матчу)
@@ -112,8 +113,31 @@ export const PERMISSIONS = {                                                    
   // --------------------------------------------------------------------------
   // ГЛОБАЛЬНЫЕ РАЗДЕЛЫ (Только для users.global_role = 'admin')                
   // -------------------------------------------------------------------------- 
+  LEAGUE_OWNERS_MANAGE: [],                                                     // Пустой массив: владельцев лиги назначает и снимает только глобальный администратор
   GLOBAL_REGISTRY_ACCESS: [],                                                   // Пустой массив означает, что никто из ролей лиги сюда не зайдет (только Суперадмин)
   TEAM_MANAGEMENT_ACCESS: [],                                                   // Пустой массив защищает прямой доступ к управлению любой командой в обход лиги
   LEAGUELESS_MATCHES_ACCESS: [],                                                // Пустой массив: раздел "Матчи вне лиг" доступен исключительно users.global_role = 'admin'
   METRICS_ACCESS: [],                                                           // Пустой массив: раздел "Метрика" доступен исключительно users.global_role = 'admin'
+};
+
+/**
+ * Есть ли у пользователя право в конкретной лиге.
+ *
+ * Единая точка для всех проверок на клиенте: useAccess (компоненты), sidebarMenu (пункты
+ * меню) и роутинг в App.jsx. Раньше это были три копии одной логики, и владелец лиги,
+ * учтённый в одной из них, не появлялся в остальных — у него пропадало всё меню.
+ */
+export const hasLeaguePermission = (user, league, permission) => {
+  if (!user) return false;
+  if (user.globalRole === ROLES.GLOBAL_ADMIN) return true;
+
+  const allowedRoles = PERMISSIONS[permission];
+  // Пустой список — право платформенное, а не лиговое: остаётся за глобальным админом
+  if (!allowedRoles || allowedRoles.length === 0) return false;
+
+  const roles = (league?.role || '').split(',').map(r => r.trim()).filter(Boolean);
+  // Владельцу лиги внутри его лиги можно всё
+  if (roles.includes(ROLES.LEAGUE_OWNER)) return true;
+
+  return roles.some(role => allowedRoles.includes(role));
 };

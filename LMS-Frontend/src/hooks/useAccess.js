@@ -1,6 +1,6 @@
 // HockeyEco/src/hooks/useAccess.js
 import { useOutletContext } from 'react-router-dom';
-import { PERMISSIONS, ROLES } from '../utils/permissions';
+import { PERMISSIONS, ROLES, hasLeaguePermission } from '../utils/permissions';
 
 export function useAccess(customUser = null, customLeague = null) {
   let context = {};
@@ -11,18 +11,26 @@ export function useAccess(customUser = null, customLeague = null) {
   const user = customUser || context.user || null;
   const selectedLeague = customLeague || context.selectedLeague || null;
   
+  // Роли в текущей лиге. Владелец лиги приезжает сюда синтетической ролью league_owner:
+  // отдельной сущности на фронте нет, профиль отдаёт её в общей строке ролей.
+  const leagueRoles = (selectedLeague?.role || '').split(',').map(r => r.trim()).filter(Boolean);
+
+  // Полный доступ в границах лиги: глобальный админ и владелец лиги. По нему снимаются и
+  // права, и жёсткие правила интерфейса — окно управления матчем, статус заявки команды.
+  const hasFullLeagueAccess = user?.globalRole === ROLES.GLOBAL_ADMIN || leagueRoles.includes(ROLES.LEAGUE_OWNER);
+
   const checkAccess = (action, options = {}) => {
     if (!user) return false;
-    
-    // Глобальный админ имеет доступ ко всему
-    if (user.globalRole === ROLES.GLOBAL_ADMIN) return true;
+
+    // Глобальный админ, владелец лиги и совпадение штатной роли — всё это решает
+    // общая проверка. Ниже остаётся только то, чего она не знает: роли по назначению
+    // на конкретный матч.
+    if (hasLeaguePermission(user, selectedLeague, action)) return true;
 
     const allowedRoles = PERMISSIONS[action];
     if (!allowedRoles || allowedRoles.length === 0) return false;
 
-    // Извлекаем роли пользователя в текущей лиге
-    const userRolesStr = selectedLeague?.role || '';
-    let currentUserRoles = userRolesStr.split(',').map(r => r.trim()).filter(Boolean);
+    let currentUserRoles = [];
 
     // Если это сервисный аккаунт, его основная роль уже заложена в selectedLeague.role 
     // (например, 'service_secretary' или 'service_broadcaster')
@@ -52,11 +60,10 @@ export function useAccess(customUser = null, customLeague = null) {
   const checkMatchEditAccess = (game, gameStaff = []) => {
     if (!user || !game) return { hasAccess: false, reason: 'Нет данных' };
     
-    // 1. Глобальные админы
-    if (user.globalRole === ROLES.GLOBAL_ADMIN) return { hasAccess: true };
+    // 1. Глобальные админы и владельцы лиги — окна на них не действуют
+    if (hasFullLeagueAccess) return { hasAccess: true };
 
-    const userRolesStr = selectedLeague?.role || '';
-    const roles = userRolesStr.split(',').map(r => r.trim()).filter(Boolean);
+    const roles = leagueRoles;
 
     // 2. Руководство лиги (Доступ всегда)
     if (roles.includes(ROLES.TOP_MANAGER) || roles.includes(ROLES.LEAGUE_ADMIN)) {
@@ -93,5 +100,5 @@ export function useAccess(customUser = null, customLeague = null) {
     return { hasAccess: false, reason: 'Нет доступа' };
   };
 
-  return { user, selectedLeague, checkAccess, checkMatchEditAccess };
+  return { user, selectedLeague, checkAccess, checkMatchEditAccess, hasFullLeagueAccess };
 }

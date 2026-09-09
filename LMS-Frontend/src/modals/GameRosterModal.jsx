@@ -323,7 +323,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                   : 'text-graphite/40 border-graphite/20 hover:bg-graphite/10'
               } ${lockLetters && !p.is_captain ? 'opacity-30 cursor-not-allowed' : ''}`}
               title={p.is_reserve_goalie ? 'Резервному вратарю нашивки не выдаются' : 'Капитан'}
-            >C</button>
+            >К</button>
             <button
               onClick={() => handleLetterClick(p.id, 'A')}
               disabled={lockLetters || (!canAddA && !p.is_assistant)}

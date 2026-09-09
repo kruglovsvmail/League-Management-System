@@ -3,6 +3,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { assertApplicationRosterAllowed, assertPlayersAllowedInDivision, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
+import { isLeagueOwner } from '../utils/leagueOwners.js';
 
 /**
  * Роли представителя в турнирной заявке — те же три, что и в Team-Room
@@ -37,12 +38,14 @@ export const getTournamentTeamRoster = async (req, res) => {
                 tr.id as tournament_roster_id,
                 tr.player_id,
                 tr.application_status,
-                tr.insurance_url,
-                tr.insurance_expires_at,
-                tr.medical_url,
-                tr.medical_expires_at,
-                tr.consent_url,
-                tr.consent_expires_at,
+                -- Документы допуска лежат на паре «заявка + человек» (tournament_person_docs):
+                -- у играющего представителя они одни и те же и в составе, и в штабе
+                tpd.insurance_url,
+                tpd.insurance_expires_at,
+                tpd.medical_url,
+                tpd.medical_expires_at,
+                tpd.consent_url,
+                tpd.consent_expires_at,
                 tr.is_fee_paid,
                 tr.jersey_number,
                 tr.position,
@@ -82,6 +85,8 @@ export const getTournamentTeamRoster = async (req, res) => {
             FROM tournament_rosters tr
             JOIN users u ON tr.player_id = u.id
             JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+            LEFT JOIN tournament_person_docs tpd
+                   ON tpd.tournament_team_id = tr.tournament_team_id AND tpd.user_id = tr.player_id
             LEFT JOIN user_qualifications uq
                    ON uq.user_id = tr.player_id AND uq.league_id = $2 AND uq.ended_at IS NULL
             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
@@ -132,10 +137,20 @@ export const getTournamentTeamRoster = async (req, res) => {
                 u.avatar_url as user_avatar_url,
                 tm.photo_url as team_member_photo_url,
                 string_agg(ttr.tournament_role, ', ') as roles,
-                user_active_disqualifications(ttr.user_id, $2) as active_disqualifications
+                user_active_disqualifications(ttr.user_id, $2) as active_disqualifications,
+                -- Дивизион требует документы и с представителей — по тем же флагам,
+                -- что и с игроков. Играющий тренер видит здесь ровно то же, что в составе.
+                MAX(tpd.insurance_url) as insurance_url,
+                MAX(tpd.insurance_expires_at) as insurance_expires_at,
+                MAX(tpd.medical_url) as medical_url,
+                MAX(tpd.medical_expires_at) as medical_expires_at,
+                MAX(tpd.consent_url) as consent_url,
+                MAX(tpd.consent_expires_at) as consent_expires_at
             FROM tournament_team_roles ttr
             JOIN users u ON ttr.user_id = u.id
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
+            LEFT JOIN tournament_person_docs tpd
+                   ON tpd.tournament_team_id = ttr.tournament_team_id AND tpd.user_id = ttr.user_id
             LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.left_at IS NULL
             WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
             GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url
@@ -323,9 +338,15 @@ const isRosterWindowOpen = (app) => {
 
 // Почему лига не может править состав этой заявки прямо сейчас. null = может.
 // Текст уходит и в шторку (подсказка), и в отказ сохранения — он должен объяснять причину.
-const compositionBlockReason = (app) => {
+//
+// isOwner — владелец лиги: его не держат ни сроки (окна кампании и трансферов), ни статус
+// заявки, ни отсутствие утверждённого заявочного листа. Единственное, что остаётся в силе, —
+// устройство дивизиона: если состав заявки ведёт команда, у лиги там просто нет своих данных
+// для правки, и это не запрет, который можно продавить.
+const compositionBlockReason = (app, { isOwner = false } = {}) => {
     if (app.digital_applications_only) return 'В цифровом дивизионе состав заявки ведёт команда';
     if (!app.league_managed_roster) return 'В этом дивизионе состав заявки ведёт команда';
+    if (isOwner) return null;
     if (!app.paper_roster_league_url) return 'Сначала прикрепите утверждённый заявочный лист';
     if (!COMPOSITION_EDITABLE_STATUSES.includes(app.status)) {
         return 'Состав редактируется только у заявок на проверке и допущенных';
@@ -428,7 +449,7 @@ export const getTournamentTeamRosterPool = async (req, res) => {
                 division_name: app.division_name,
                 status: app.status,
                 division_has_games: app.division_has_games,
-                block_reason: compositionBlockReason(app)
+                block_reason: compositionBlockReason(app, { isOwner: await isLeagueOwner(pool, app.league_id, req.user?.id) })
             },
             players,
             staff: staffRes.rows,
@@ -461,7 +482,7 @@ export const saveTournamentTeamComposition = async (req, res) => {
         }
         const app = appRes.rows[0];
 
-        const blockReason = compositionBlockReason(app);
+        const blockReason = compositionBlockReason(app, { isOwner: await isLeagueOwner(pool, app.league_id, req.user?.id) });
         if (blockReason) {
             const err = new Error(blockReason);
             err.status = 400;

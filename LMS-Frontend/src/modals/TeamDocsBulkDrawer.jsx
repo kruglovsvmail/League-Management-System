@@ -56,7 +56,7 @@ const formatForDB = (date) => {
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim();
 const personPhoto = (p) => getImageUrl(p.team_member_photo_url || p.user_avatar_url || '/default/user_default.webp');
 
-export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docTypes = ['medical'], onSaved, showToast }) {
+export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], staff = [], docTypes = ['medical'], onSaved, showToast }) {
   // Дивизион может требовать и справку, и полис — тогда шторка одна, а тип переключается
   // внутри: это два разных документа, и файл со сроком у каждого свой.
   const [activeType, setActiveType] = useState(docTypes[0]);
@@ -65,10 +65,17 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
   const urlKey = `${activeType}_url`;
   const expiresKey = `${activeType}_expires_at`;
 
-  const players = useMemo(
-    () => [...roster].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')),
-    [roster]
-  );
+  // В списке и состав, и штаб: документы лежат на человеке в заявке, и играющий тренер
+  // в бумажной справке обычно идёт общей строкой. В списке он ровно один — иначе получил
+  // бы две отметки на один комплект документов.
+  const players = useMemo(() => {
+    const byUser = new Map();
+    [...roster, ...staff].forEach(p => {
+      const key = String(p.player_id);
+      if (!byUser.has(key)) byUser.set(key, p);
+    });
+    return [...byUser.values()].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru'));
+  }, [roster, staff]);
 
   const [file, setFile] = useState(null);
   const [expiresAt, setExpiresAt] = useState(null);
@@ -94,14 +101,14 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
     setSearch('');
     setError('');
     setConfirmOpen(false);
-    setSelectedIds(new Set(players.filter(p => !p[urlKey]).map(p => p.tournament_roster_id)));
+    setSelectedIds(new Set(players.filter(p => !p[urlKey]).map(p => String(p.player_id))));
     // Без players в зависимостях: roster приходит новым массивом на каждую перерисовку карточки
     // дивизиона, и с ним отметки сбрасывались бы прямо под руками.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeType]);
 
   const filtered = players.filter(p => `${fullName(p)} ${p.middle_name || ''}`.toLowerCase().includes(search.trim().toLowerCase()));
-  const replacedCount = players.filter(p => selectedIds.has(p.tournament_roster_id) && p[urlKey]).length;
+  const replacedCount = players.filter(p => selectedIds.has(String(p.player_id)) && p[urlKey]).length;
 
   const toggle = (rosterId) => setSelectedIds(prev => {
     const next = new Set(prev);
@@ -109,7 +116,7 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
     return next;
   });
 
-  const setAll = (checked) => setSelectedIds(checked ? new Set(players.map(p => p.tournament_roster_id)) : new Set());
+  const setAll = (checked) => setSelectedIds(checked ? new Set(players.map(p => String(p.player_id))) : new Set());
 
   const apply = async () => {
     setIsSaving(true);
@@ -119,7 +126,7 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
       formData.append('file', file);
       formData.append('type', activeType);
       formData.append('expires_at', formatForDB(expiresAt));
-      formData.append('rosterIds', JSON.stringify([...selectedIds]));
+      formData.append('userIds', JSON.stringify([...selectedIds].map(Number)));
 
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${teamApp.id}/roster-docs/bulk`, {
         method: 'POST',
@@ -131,7 +138,7 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
       if (data.success) {
         setConfirmOpen(false);
         const count = data.updated ?? selectedIds.size;
-        showToast?.('Успешно', `Документ добавлен ${count} ${count === 1 ? 'игроку' : 'игрокам'}`, 'success');
+        showToast?.('Успешно', `Документ добавлен ${count} ${count === 1 ? 'человеку' : 'людям'}`, 'success');
         onSaved?.();
         onClose();
       } else {
@@ -232,8 +239,8 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
               {!file
                 ? 'Выберите файл'
                 : selectedIds.size === 0
-                  ? 'Отметьте игроков'
-                  : `Применить к ${selectedIds.size} ${selectedIds.size === 1 ? 'игроку' : 'игрокам'}`}
+                  ? 'Отметьте людей'
+                  : `Применить к ${selectedIds.size} ${selectedIds.size === 1 ? 'человеку' : 'людям'}`}
             </Button>
           </div>
 
@@ -261,17 +268,17 @@ export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], docT
             <div className="flex-1 overflow-y-auto custom-scrollbar p-3 flex flex-col gap-2">
               {filtered.length === 0 ? (
                 <div className="py-10 text-center text-[13px] font-bold text-graphite/40">
-                  {players.length === 0 ? 'В заявке нет игроков' : 'По запросу никого нет'}
+                  {players.length === 0 ? 'В заявке никого нет' : 'По запросу никого нет'}
                 </div>
               ) : filtered.map(player => {
-                const checked = selectedIds.has(player.tournament_roster_id);
+                const checked = selectedIds.has(String(player.player_id));
                 const hasDoc = !!player[urlKey];
                 const expires = formatDate(player[expiresKey]);
 
                 return (
                   <div
-                    key={player.tournament_roster_id}
-                    onClick={() => toggle(player.tournament_roster_id)}
+                    key={player.player_id}
+                    onClick={() => toggle(String(player.player_id))}
                     className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer select-none transition-colors ${
                       checked ? 'border-orange bg-orange/5' : 'border-graphite/10 bg-white hover:bg-graphite/[0.03]'
                     }`}

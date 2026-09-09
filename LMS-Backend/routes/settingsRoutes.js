@@ -1,6 +1,7 @@
 import express from 'express';
 import { 
   lookupUserByPhone, getLeagueStaff, updateLeagueStaff,
+  getLeagueOwnersList, addLeagueOwner, removeLeagueOwner,
   getSettingsQualifications, createQualification, deleteQualification, reorderQualifications, updateQualificationsDisplay,
   getAllSettingsArenas, getLeagueSettingsArenas, toggleLeagueArena,
   getLeagueServiceAccounts, createLeagueServiceAccount, updateLeagueServiceAccount, deleteLeagueServiceAccount,
@@ -32,6 +33,11 @@ router.put('/leagues/:leagueId/broadcast-assets/titles', express.json(), require
 // ПЕРСОНАЛ
 router.get('/leagues/:leagueId/settings-staff', requirePermission('SETTINGS_STAFF_VIEW'), getLeagueStaff);
 router.post('/leagues/:leagueId/settings-staff', express.json(), requirePermission('SETTINGS_STAFF_MANAGE'), updateLeagueStaff);
+
+// ВЛАДЕЛЬЦЫ ЛИГИ — только глобальный админ (LEAGUE_OWNERS_MANAGE с пустым списком ролей)
+router.get('/leagues/:leagueId/owners', requirePermission('LEAGUE_OWNERS_MANAGE'), getLeagueOwnersList);
+router.post('/leagues/:leagueId/owners', express.json(), requirePermission('LEAGUE_OWNERS_MANAGE'), addLeagueOwner);
+router.delete('/leagues/:leagueId/owners/:userId', requirePermission('LEAGUE_OWNERS_MANAGE'), removeLeagueOwner);
 
 // КВАЛИФИКАЦИИ
 router.get('/leagues/:leagueId/settings-qualifications', requirePermission('SETTINGS_QUAL_VIEW'), getSettingsQualifications);
