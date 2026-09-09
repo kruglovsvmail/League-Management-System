@@ -740,7 +740,7 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 <span className="text-[11px] text-graphite-light leading-tight">Считается по МСК (00:00–23:59)</span>
                             </div>
                             <div className="bg-white/70 p-5 rounded-md border border-graphite/10 flex flex-col gap-4">
-                                <span className="text-[14px] font-bold text-graphite uppercase">Трансферы</span>
+                                <span className="text-[14px] font-bold text-graphite uppercase">Дозаявки</span>
                                 <DatePicker placeholder="Старт" value={formData.transfer_start} onChange={(val) => handleChange('transfer_start', val)} disabled={isLocked} />
                                 <DatePicker placeholder="Конец" value={formData.transfer_end} onChange={(val) => handleChange('transfer_end', val)} disabled={isLocked} />
                                 <span className="text-[11px] text-graphite-light leading-tight">Считается по МСК (00:00–23:59)</span>

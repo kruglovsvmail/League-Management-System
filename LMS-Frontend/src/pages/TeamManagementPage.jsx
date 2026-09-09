@@ -125,11 +125,12 @@ export function TeamManagementPage() {
   const [roster, setRoster] = useState([]);
   const [staff, setStaff] = useState([]);
 
-  // Владелец команды (teams.owner_id) — приходит вместе с составом, но членом
-  // команды не является: у него может не быть записи ни в базе, ни в штабе.
-  // undefined = ещё не загружен, null = загружен и не назначен — различаем, чтобы
+  // Владельцы команды (team_owners) — приходят вместе с составом, но членами команды
+  // не являются: записи ни в базе, ни в штабе у них может не быть. Владельцев бывает
+  // двое, и оба равны в правах; назначает их только глобальный админ отсюда.
+  // undefined = ещё не загружены, [] = загружены и не назначены — различаем, чтобы
   // при переключении команд не мигало тревожное «Не назначен»
-  const [owner, setOwner] = useState(undefined);
+  const [owners, setOwners] = useState(undefined);
   const [isOwnerDrawerOpen, setIsOwnerDrawerOpen] = useState(false);
   
   const [applications, setApplications] = useState([]);
@@ -176,7 +177,7 @@ export function TeamManagementPage() {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${teamId}/members`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
       const data = await res.json();
-      if (data.success) { setBase(data.base); setRoster(data.roster); setStaff(data.staff); setOwner(data.owner || null); setCacheBuster(Date.now()); }
+      if (data.success) { setBase(data.base); setRoster(data.roster); setStaff(data.staff); setOwners(data.owners || []); setCacheBuster(Date.now()); }
     } catch (err) { console.error(err); }
   };
 
@@ -538,18 +539,18 @@ export function TeamManagementPage() {
               onClick={() => setIsOwnerDrawerOpen(true)}
               className="text-left px-4 py-3 mb-2 rounded-md border border-graphite/10 bg-white/60 hover:border-orange hover:bg-white transition-all group"
             >
-              <span className="text-[10px] font-black uppercase tracking-wide text-graphite-light block">Владелец команды</span>
-              {owner === undefined ? (
+              <span className="text-[10px] font-black uppercase tracking-wide text-graphite-light block">Владельцы команды</span>
+              {owners === undefined ? (
                 <span className="text-[13px] font-bold text-graphite-light block mt-1">Загрузка…</span>
-              ) : owner ? (
+              ) : owners.length > 0 ? (
                 <span className="text-[13px] font-bold text-graphite block truncate mt-1 group-hover:text-orange">
-                  {owner.last_name} {owner.first_name}
+                  {owners.map(o => `${o.last_name} ${o.first_name}`).join(', ')}
                 </span>
               ) : (
                 <span className="text-[13px] font-bold text-status-rejected block mt-1">Не назначен</span>
               )}
               <span className="text-[11px] font-bold text-orange block mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                {owner ? 'Изменить' : 'Назначить'}
+                {owners?.length ? 'Изменить' : 'Назначить'}
               </span>
             </button>
 
@@ -606,11 +607,15 @@ export function TeamManagementPage() {
                         >
                           {t.last_activity ? `Актив: ${dayjs(t.last_activity).format('D MMM')}` : 'Не заходили'}
                         </span>
+                        {/* Фамилии владельцев прямо на карточке: админу нужен не факт
+                            «есть владелец», а кто именно им числится. Их бывает двое. */}
                         <span
-                          className={`text-[11px] font-bold px-2 py-1 rounded ${t.has_owner ? 'bg-status-accepted/10 text-status-accepted' : 'bg-status-rejected/10 text-status-rejected'}`}
-                          title={t.has_owner ? 'Владелец команды назначен' : 'Владелец команды не назначен'}
+                          className={`text-[11px] font-bold px-2 py-1 rounded ${t.owners?.length ? 'bg-status-accepted/10 text-status-accepted' : 'bg-status-rejected/10 text-status-rejected'}`}
+                          title={t.owners?.length ? 'Владельцы команды' : 'Владелец команды не назначен'}
                         >
-                          {t.has_owner ? 'Владелец есть' : 'Без владельца'}
+                          {t.owners?.length
+                            ? t.owners.map(o => `${o.last_name} ${o.first_name}`).join(', ')
+                            : 'Без владельца'}
                         </span>
                       </div>
                     </div>
@@ -715,10 +720,10 @@ export function TeamManagementPage() {
         onClose={() => setIsOwnerDrawerOpen(false)}
         teamId={selectedTeam?.id}
         teamName={selectedTeam?.name}
-        owner={owner}
-        onSaved={(nextOwner) => {
-          setOwner(nextOwner);
-          showToast('Успешно', nextOwner ? 'Владелец команды назначен' : 'Владелец команды снят', 'success');
+        owners={owners || []}
+        onSaved={(nextOwners) => {
+          setOwners(nextOwners);
+          showToast('Успешно', nextOwners.length ? 'Владельцы команды сохранены' : 'Владелец команды снят', 'success');
         }}
       />
       <PlayerAvatarModal isOpen={!!avatarModalUser} onClose={() => setAvatarModalUser(null)} initialAvatar={avatarModalUser ? getRenderPhoto(avatarModalUser) : null} onSave={handlePhotoSave} isSaving={isPhotoSaving} />

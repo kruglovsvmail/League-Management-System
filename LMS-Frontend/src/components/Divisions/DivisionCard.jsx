@@ -20,6 +20,7 @@ import { TeamPhotoModal } from '../../modals/TeamPhotoModal';
 import { PublishStatusModal } from '../../modals/PublishStatusModal';
 import { TeamStatusModal } from '../../modals/TeamStatusModal';
 import { AppRosterComposeDrawer } from '../../modals/AppRosterComposeDrawer';
+import { TeamDocsBulkDrawer, TEAM_DOC_META } from '../../modals/TeamDocsBulkDrawer';
 
 // Модалки игроков
 import { QualSelectModal } from '../../modals/QualSelectModal';
@@ -42,6 +43,12 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const canChangeTeamStatus = checkAccess('DIVISIONS_TEAM_STATUS');
   const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
   const canManageAppRoster = checkAccess('DIVISIONS_TEAM_ROSTER_MANAGE');
+  // Общими на команду бывают справка и полис — показываем те, что требует дивизион.
+  // Массовая загрузка идёт по тому же праву, что и карточка документов игрока.
+  const teamDocTypes = Object.entries(TEAM_DOC_META)
+    .filter(([, meta]) => division[meta.reqKey] ?? true)
+    .map(([type]) => type);
+  const canBulkTeamDocs = checkAccess('DIVISIONS_TEAM_DOCS_MODAL') && teamDocTypes.length > 0;
 
   const initialExpanded = getExpiringStorage(`div_${division.id}_expanded`) === true;
   const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTab`)) || 0;
@@ -77,6 +84,8 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const [profileModalPlayerId, setProfileModalPlayerId] = useState(null);
   // Шторка «Состав заявки» — только для дивизионов, где состав ведёт лига
   const [composeRosterTeam, setComposeRosterTeam] = useState(null);
+  // Шторка «Мед. справка команды»: один файл сразу нескольким игрокам заявки
+  const [isTeamDocsBulkOpen, setIsTeamDocsBulkOpen] = useState(false);
   const [leagueQuals, setLeagueQuals] = useState([]);
   // Порядок квалификаций и показ описаний настраиваются в лиге и приходят вместе со списком
   const [qualShowDescriptions, setQualShowDescriptions] = useState(true);
@@ -354,7 +363,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const STATUS_LABELS = {
     approved: 'Команда допущена',
     pending: 'Команда на проверке',
-    revision: 'Команда К доработке',
+    revision: 'Команда на исправлении',
     rejected: 'Команда отклонена'
   };
 
@@ -525,6 +534,22 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                         );
                       })()}
 
+                      {/* Командная справка — одна бумага со списком игроков внутри. Кнопка только
+                          на вкладке действующего состава: применяется справка именно к нему, а у
+                          отзаявленных и штаба документов допуска не бывает. */}
+                      {canBulkTeamDocs && rosterTab === 0 && activePlayers.length > 0 && (
+                        <button
+                          onClick={() => setIsTeamDocsBulkOpen(true)}
+                          className="ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 cursor-pointer transition-all duration-300 text-[13px] font-bold shadow-sm"
+                          title="Загрузить общий документ команды сразу нескольким игрокам"
+                        >
+                          <Icon name="upload" className="w-4 h-4" />
+                          {/* Требуется один тип — пишем его прямо на кнопке, два — общий заголовок,
+                              а тип выбирается уже в шторке. */}
+                          {teamDocTypes.length === 1 ? TEAM_DOC_META[teamDocTypes[0]].title : 'Документы команды'}
+                        </button>
+                      )}
+
                       <button
                         onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
                         className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, canChangeTeamStatus)}`}
@@ -534,9 +559,12 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                         {STATUS_LABELS[selectedTeam.status] || 'Статус команды'}
                       </button>
                     </div>
-                    <div className="relative transition-all duration-300 min-h-[150px]">
+                    {/* Пока состав грузится, область держим не ниже самого лоудера: у него
+                        собственная min-h-[250px], а карточка дивизиона обрезает всё, что за неё
+                        вылезает, — на пустом составе спиннер уезжал под нижний край и срезался. */}
+                    <div className={`relative transition-all duration-300 ${isRosterLoading ? 'min-h-[250px]' : 'min-h-[150px]'}`}>
                       {isRosterLoading && (
-                        <div className="absolute inset-0 z-10 flex items-start pt-16 justify-center transition-all duration-700">
+                        <div className="absolute inset-0 z-10 flex items-start justify-center transition-all duration-700">
                           <Loader text="" />
                         </div>
                       )}
@@ -646,6 +674,16 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       />
       
       <PlayerProfileModal isOpen={!!profileModalPlayerId} onClose={() => setProfileModalPlayerId(null)} playerId={profileModalPlayerId} />
+
+      <TeamDocsBulkDrawer
+        isOpen={isTeamDocsBulkOpen}
+        onClose={() => setIsTeamDocsBulkOpen(false)}
+        teamApp={selectedTeamLive}
+        roster={activePlayers}
+        docTypes={teamDocTypes}
+        showToast={(title, message, type) => setGlobalToast({ title, message, type })}
+        onSaved={() => { if (selectedTeam) loadTeamData(selectedTeam.id); }}
+      />
 
       <AppRosterComposeDrawer
         isOpen={!!composeRosterTeam}

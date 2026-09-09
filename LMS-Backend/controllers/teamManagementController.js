@@ -32,7 +32,16 @@ export const searchTeams = async (req, res) => {
         // участников в Team-Room (максимум page_visits.last_visited_at).
         let query = `
             SELECT t.id, t.name, t.short_name, t.city, t.logo_url,
-                (t.owner_id IS NOT NULL) AS has_owner,
+                -- Владельцы команды (их бывает двое) — карточка печатает фамилии,
+                -- а не признак «есть/нет»: админу важно видеть, кто именно владелец.
+                COALESCE((
+                    SELECT json_agg(json_build_object(
+                        'user_id', u.id, 'first_name', u.first_name, 'last_name', u.last_name
+                    ) ORDER BY tow.added_at, tow.id)
+                    FROM team_owners tow
+                    JOIN users u ON u.id = tow.user_id
+                    WHERE tow.team_id = t.id
+                ), '[]'::json) AS owners,
                 (SELECT COUNT(*)::int FROM team_members tm
                  WHERE tm.team_id = t.id AND tm.left_at IS NULL) AS base_count,
                 (SELECT COUNT(*)::int FROM team_rosters tr
@@ -128,15 +137,16 @@ export const getTeamMembers = async (req, res) => {
             GROUP BY u.id, tm.id, tm.photo_url, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone, u.password_hash
         `, [teamId]);
 
-        // Владелец команды (teams.owner_id) — отдельная сущность, а не роль в штабе:
-        // он может вообще не числиться в team_members, поэтому берём его прямым JOIN
-        // от teams, а не из выборок выше.
-        const ownerRes = await pool.query(`
+        // Владельцы команды (team_owners) — отдельная сущность, а не роль в штабе:
+        // они могут вообще не числиться в team_members, поэтому берём их отдельно,
+        // а не из выборок выше. Владельцев бывает двое, и оба равны в правах.
+        const ownersRes = await pool.query(`
             SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url,
                    (u.password_hash IS NULL) as is_virtual
-            FROM teams t
-            JOIN users u ON u.id = t.owner_id
-            WHERE t.id = $1
+            FROM team_owners tow
+            JOIN users u ON u.id = tow.user_id
+            WHERE tow.team_id = $1
+            ORDER BY tow.added_at, tow.id
         `, [teamId]);
 
         res.json({
@@ -144,55 +154,85 @@ export const getTeamMembers = async (req, res) => {
             base: baseRes.rows,
             roster: rosterRes.rows,
             staff: staffRes.rows,
-            owner: ownerRes.rows[0] || null
+            owners: ownersRes.rows
         });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
 /**
- * Назначение или снятие владельца команды (teams.owner_id) из LMS.
- * Владелец у команды ровно один — колонка перезаписывается, а не дополняется,
- * так что отдельная проверка на «уже есть владелец» не нужна.
- * Членом команды он быть не обязан: в Team-Room owner_id — самостоятельное основание
- * для роли OWNER и доступа к команде, даже без записи в team_members.
- * userId = null снимает владельца.
+ * Назначение и снятие владельцев команды (team_owners) из LMS.
+ *
+ * Приходит итоговый список: пусто — у команды владельцев нет, один или два — ровно эти
+ * люди ими и станут. Так проще и атомарнее, чем «добавить/убрать по одному»: список на
+ * экране всегда совпадает с тем, что записано.
+ *
+ * Владельцев не больше двух, оба равны в правах. Менять их вправе только глобальный
+ * администратор отсюда — в Team-Room управления владельцами нет вовсе.
+ *
+ * Членом команды владелец быть не обязан: строка в team_owners — самостоятельное
+ * основание для роли OWNER и доступа к команде, даже без записи в team_members.
  */
-export const setTeamOwner = async (req, res) => {
+export const MAX_TEAM_OWNERS = 2;
+
+export const setTeamOwners = async (req, res) => {
+    const client = await pool.connect();
     try {
         const { teamId } = req.params;
-        const { userId } = req.body;
-        const nextOwnerId = (userId === null || userId === undefined || userId === '') ? null : parseInt(userId, 10);
+        const { userIds } = req.body;
 
-        if (nextOwnerId !== null && Number.isNaN(nextOwnerId)) {
-            return res.status(400).json({ success: false, error: 'Некорректный пользователь' });
+        const ids = [...new Set((Array.isArray(userIds) ? userIds : [])
+            .map(Number)
+            .filter(Number.isInteger))];
+
+        if (ids.length > MAX_TEAM_OWNERS) {
+            return res.status(400).json({ success: false, error: `Владельцев у команды может быть не больше ${MAX_TEAM_OWNERS}` });
         }
 
-        const teamRes = await pool.query('SELECT id FROM teams WHERE id = $1', [teamId]);
+        const teamRes = await client.query('SELECT id FROM teams WHERE id = $1', [teamId]);
         if (teamRes.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'Команда не найдена' });
         }
 
         // Заблокированный аккаунт владельцем быть не может: он всё равно не пройдёт вход
         // в Team-Room, а команда осталась бы с формальным, но нерабочим владельцем.
-        if (nextOwnerId !== null) {
-            const userRes = await pool.query(`SELECT id FROM users WHERE id = $1 AND status = 'active'`, [nextOwnerId]);
-            if (userRes.rows.length === 0) {
+        if (ids.length > 0) {
+            const usersRes = await client.query(
+                `SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active'`,
+                [ids]
+            );
+            if (usersRes.rows.length !== ids.length) {
                 return res.status(404).json({ success: false, error: 'Пользователь не найден или заблокирован' });
             }
         }
 
-        await pool.query('UPDATE teams SET owner_id = $1, updated_at = NOW() WHERE id = $2', [nextOwnerId, teamId]);
+        await client.query('BEGIN');
+        await client.query('DELETE FROM team_owners WHERE team_id = $1', [teamId]);
+        if (ids.length > 0) {
+            await client.query(`
+                INSERT INTO team_owners (team_id, user_id, added_by)
+                SELECT $1, uid, $2 FROM unnest($3::int[]) AS uid
+            `, [teamId, req.user?.id || null, ids]);
+        }
+        await client.query('UPDATE teams SET updated_at = NOW() WHERE id = $1', [teamId]);
+        await client.query('COMMIT');
 
-        const ownerRes = nextOwnerId === null ? { rows: [] } : await pool.query(`
-            SELECT id as user_id, first_name, last_name, middle_name, phone, avatar_url,
-                   (password_hash IS NULL) as is_virtual
-            FROM users WHERE id = $1
-        `, [nextOwnerId]);
+        const ownersRes = await client.query(`
+            SELECT u.id as user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url,
+                   (u.password_hash IS NULL) as is_virtual
+            FROM team_owners tow
+            JOIN users u ON u.id = tow.user_id
+            WHERE tow.team_id = $1
+            ORDER BY tow.added_at, tow.id
+        `, [teamId]);
 
-        res.json({ success: true, owner: ownerRes.rows[0] || null });
-    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+        res.json({ success: true, owners: ownersRes.rows });
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        client.release();
+    }
 };
-
 export const addTeamMember = async (req, res) => {
     const client = await pool.connect();
     try {

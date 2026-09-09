@@ -91,7 +91,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
   const tabsCounts = [
     `Допущенные (${teams.filter(t => t.status === 'approved').length})`,
     `На проверке (${teams.filter(t => t.status === 'pending').length})`,
-    `К доработке (${teams.filter(t => t.status === 'revision').length})`,
+    `На исправлении (${teams.filter(t => t.status === 'revision').length})`,
     `Отклоненные (${teams.filter(t => t.status === 'rejected').length})`
   ];
 

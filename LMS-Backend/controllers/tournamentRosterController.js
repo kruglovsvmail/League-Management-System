@@ -4,6 +4,11 @@ import s3 from '../config/s3.js';
 
 const DOCS_BUCKET = 'hockeyeco-uploads';
 
+// Типы документов, которые бывают общими на команду: одна бумага со списком игроков внутри.
+// Тем же словом названы колонки в tournament_rosters (medical_url / medical_expires_at).
+// Согласия тут нет намеренно: его подписывает каждый лично, общего согласия не бывает.
+const BULK_DOC_TYPES = ['medical', 'insurance'];
+
 // Прежний файл документа в S3 после замены или очистки. Раньше он оставался в бакете
 // навсегда: «очистить документ» обнуляло только ссылку в базе, а новый скан ложился
 // рядом, если у него другое расширение — или если согласие до этого подписали на сайте
@@ -163,4 +168,88 @@ export const updateTournamentRosterInline = async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: 'Ошибка сохранения данных игрока' }); }
+};
+
+// POST /tournament-teams/:id/roster-docs/bulk (multipart: file, type, expires_at, rosterIds)
+//
+// Командный документ — одна бумага со списком игроков внутри (типовой пример: медицинское
+// заключение по приложению N2 к приказу Минздрава N 1144н). Отдельной сущности под неё в базе
+// нет: файл раскладывается копиями по выбранным строкам состава, и дальше это обычные личные
+// документы игроков — со своей плиткой, своим сроком и своим удалением у каждого.
+//
+// Получателей отмечает лига сама: в списке справки есть не все, а кого-то могли и не допустить.
+export const bulkUploadTournamentRosterDocs = async (req, res) => {
+    try {
+        const { id } = req.params; // tournament_teams.id — заявка команды в дивизионе
+        const { type, expires_at } = req.body;
+
+        if (!BULK_DOC_TYPES.includes(type)) {
+            return res.status(400).json({ success: false, error: 'Неизвестный тип документа' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'Файл документа не передан' });
+        }
+
+        // rosterIds приходит строкой: запрос multipart, JSON в теле нет
+        let rosterIds;
+        try {
+            rosterIds = JSON.parse(req.body.rosterIds || '[]');
+        } catch {
+            rosterIds = [];
+        }
+        rosterIds = [...new Set((Array.isArray(rosterIds) ? rosterIds : []).map(Number).filter(Number.isInteger))];
+
+        if (rosterIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'Не выбран ни один игрок' });
+        }
+
+        // Строки состава и их прежние файлы читаем одним запросом: он же проверяет, что все
+        // выбранные игроки принадлежат этой заявке и не отзаявлены.
+        const { rows } = await pool.query(
+            `SELECT id, ${type}_url AS previous_url
+               FROM tournament_rosters
+              WHERE id = ANY($1::int[]) AND tournament_team_id = $2 AND period_end IS NULL`,
+            [rosterIds, id]
+        );
+
+        if (rows.length !== rosterIds.length) {
+            return res.status(400).json({ success: false, error: 'Часть выбранных игроков не найдена в этой заявке' });
+        }
+
+        // Файл кладём в бакет столько раз, сколько отмечено игроков, — по ключу на строку состава.
+        // Копия у каждого своя намеренно: ключи и удаление прежних файлов завязаны на rosterId
+        // (см. deleteReplacedDoc), и одна общая ссылка на всех означала бы, что очистка документа
+        // у одного игрока уносит файл у всех остальных.
+        const ext = req.file.originalname.split('.').pop();
+        const targets = rows.map(row => ({
+            id: row.id,
+            previousUrl: row.previous_url,
+            key: `uploads/tournament_rosters_${row.id}_${type}.${ext}`,
+        }));
+
+        await Promise.all(targets.map(t => s3.send(new PutObjectCommand({
+            Bucket: DOCS_BUCKET,
+            Key: t.key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype
+        }))));
+
+        await pool.query(
+            `UPDATE tournament_rosters tr
+                SET ${type}_url = v.url, ${type}_expires_at = $1, updated_at = NOW()
+               FROM unnest($2::int[], $3::text[]) AS v(id, url)
+              WHERE tr.id = v.id`,
+            [expires_at || null, targets.map(t => t.id), targets.map(t => `/${t.key}`)]
+        );
+
+        // Только после успешной записи: сбой на UPDATE оставил бы заявку со ссылками на удалённое
+        for (const t of targets) {
+            await deleteReplacedDoc(t.previousUrl, `/${t.key}`, t.id, type);
+        }
+
+        res.json({ success: true, updated: targets.length });
+    } catch (err) {
+        console.error('Ошибка массовой загрузки документа:', err);
+        res.status(500).json({ success: false, error: 'Ошибка массовой загрузки документа' });
+    }
 };

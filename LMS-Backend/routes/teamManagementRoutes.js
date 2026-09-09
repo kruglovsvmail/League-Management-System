@@ -6,7 +6,7 @@ import {
     searchTeams,
     searchUsers,
     getTeamMembers,
-    setTeamOwner,
+    setTeamOwners,
     addTeamMember,
     uploadMemberPhoto,
     deleteMemberPhoto,
@@ -33,7 +33,8 @@ router.get('/teams-manage/:teamId/members', getTeamMembers);
 router.post('/teams-manage/:teamId/members', addTeamMember);
 
 // Владелец команды. Текущий владелец приходит в ответе /members, здесь только запись
-router.put('/teams-manage/:teamId/owner', setTeamOwner);
+// Список владельцев целиком: пусто, один или два — ровно эти люди и станут владельцами
+router.put('/teams-manage/:teamId/owners', setTeamOwners);
 
 // Эндпоинты для фото члена команды
 router.post('/teams-manage/:teamId/members/:userId/photo', upload.single('file'), uploadMemberPhoto);

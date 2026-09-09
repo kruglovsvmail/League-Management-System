@@ -28,7 +28,7 @@ const STATUS_OPTIONS = [
   },
   { 
     value: 'revision', 
-    label: 'К доработке', 
+    label: 'На исправлении', 
     styles: {
       bg: 'bg-blue-500/10', border: 'border-blue-500', 
       text: 'text-blue-600', hover: 'hover:border-blue-500/40', 

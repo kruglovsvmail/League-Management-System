@@ -241,8 +241,7 @@ export function ReserveGoaliesSection({ divisionId, canManage, setToast, formDat
         <div>
           <span className="text-[15px] font-bold text-graphite uppercase">Список дивизиона ({pool.length})</span>
           <div className="text-[12px] text-graphite-light mt-1 leading-snug max-w-[620px]">
-            Кандидаты, которых команда может пригласить на матч. Список закрытый — командам он нигде
-            не публикуется, договариваются офлайн. Убрать вратаря из списка можно в любой момент:
+            Кандидаты, которых команда может пригласить на матч. Убрать вратаря из списка можно в любой момент:
             его сыгранные матчи и статистика останутся на месте.
           </div>
         </div>
