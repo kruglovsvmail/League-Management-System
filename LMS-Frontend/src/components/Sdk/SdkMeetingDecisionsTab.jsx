@@ -141,7 +141,7 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
 
             const avatarSrc = getImageUrl(isTeamTarget
               ? (d.team_logo || '/default/Logo_team_default.webp')
-              : (d.team_member_photo_url || d.user_avatar_url || '/default/user_default.webp'));
+              : (d.team_member_photo_url || '/default/user_default.webp'));
             const teamLogoSrc = getImageUrl(d.team_logo || '/default/Logo_team_default.webp');
 
             // Обязательные/доп.матчи хранятся раздельно (mandatory_games/additional_games) только начиная с

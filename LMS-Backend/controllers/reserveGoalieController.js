@@ -14,6 +14,27 @@ import pool from '../config/db.js';
  * применяют шторка состава и сохранение состава.
  */
 
+// Фото резервного вратаря в лиговых списках. Личный аватар здесь не показываем:
+// человека в лиге узнают по заявочному фото (снимок на момент допуска), а если
+// снимка нет — по его фото в составе команды. $DIV — id дивизиона списка.
+const RESERVE_GOALIE_PHOTO_SQL = (divParam) => `
+    COALESCE(
+        (SELECT tr_ph.photo_snapshot_url
+           FROM tournament_rosters tr_ph
+           JOIN tournament_teams tt_ph ON tt_ph.id = tr_ph.tournament_team_id
+           JOIN divisions d_ph ON d_ph.id = tt_ph.division_id
+           JOIN seasons s_ph ON s_ph.id = d_ph.season_id
+          WHERE tr_ph.player_id = u.id
+            AND tr_ph.photo_snapshot_url IS NOT NULL
+            AND s_ph.league_id = (SELECT s_l.league_id FROM divisions d_l
+                                    JOIN seasons s_l ON s_l.id = d_l.season_id
+                                   WHERE d_l.id = ${divParam})
+          ORDER BY tr_ph.id DESC LIMIT 1),
+        (SELECT tm_ph.photo_url FROM team_members tm_ph
+          WHERE tm_ph.user_id = u.id AND tm_ph.photo_url IS NOT NULL
+          ORDER BY tm_ph.id DESC LIMIT 1)
+    )`;
+
 const loadDivision = async (divisionId) => {
     const { rows } = await pool.query(
         `SELECT d.id, d.reserve_goalie_max_per_game, d.reserve_goalie_block_back_to_back,
@@ -63,7 +84,8 @@ export const getReserveGoalies = async (req, res) => {
                 // added_by в выборку не идёт: кто именно из сотрудников лиги добавил
                 // вратаря, в интерфейсе не нужно. Колонка остаётся как след в базе.
                 `SELECT drg.id, drg.player_id, drg.jersey_number, drg.note, drg.created_at,
-                        u.first_name, u.last_name, u.middle_name, u.avatar_url, u.phone,
+                        u.first_name, u.last_name, u.middle_name, u.phone,
+                        ${RESERVE_GOALIE_PHOTO_SQL('$1')} AS avatar_url,
                         to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                         -- Сыграл ли он уже за кого-то в этом дивизионе: по такому
                         -- вратарю удаление из пула стоит делать осознанно.
@@ -78,7 +100,8 @@ export const getReserveGoalies = async (req, res) => {
 
             pool.query(
                 `SELECT r.player_id,
-                        u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                        u.first_name, u.last_name, u.middle_name,
+                        ${RESERVE_GOALIE_PHOTO_SQL('$1')} AS avatar_url,
                         COUNT(*)::int                                        AS games_played,
                         COALESCE(SUM(r.goalie_goals_against), 0)::int         AS goals_against,
                         COALESCE(SUM(r.goalie_saves), 0)::int                 AS saves,
@@ -109,7 +132,7 @@ export const getReserveGoalies = async (req, res) => {
                  FROM reserve_goalie_game_statistics r
                  JOIN users u ON u.id = r.player_id
                  WHERE r.division_id = $1
-                 GROUP BY r.division_id, r.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url
+                 GROUP BY r.division_id, r.player_id, u.id, u.first_name, u.last_name, u.middle_name
                  ORDER BY games_played DESC, u.last_name`,
                 [divisionId]
             ),

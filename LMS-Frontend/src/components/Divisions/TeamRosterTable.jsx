@@ -8,6 +8,7 @@ import { getImageUrl } from '../../utils/helpers';
 
 // Импортируем новую систему прав
 import { useAccess } from '../../hooks/useAccess';
+import { EquipmentMark } from '../../ui/EquipmentMark';
 
 const POSITION_MAP = {
   goalie: 'Вр',
@@ -26,7 +27,7 @@ const STAFF_ROLE_MAP = {
 
 export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, division }) {
   // Достаем проверку прав из хука
-  const { checkAccess } = useAccess();
+  const { checkAccess, selectedLeague } = useAccess();
   const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
   
   const formatPhone = (phone) => {
@@ -134,8 +135,9 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       label: 'Фото', 
       width: 'w-[60px] text-center', 
       render: (row) => {
-        const photoUrl = row.team_member_photo_url || row.user_avatar_url;
-        const src = getImageUrl(photoUrl || '/default/user_default.webp');
+        // Личный аватар сюда не подставляем: в лиге человека показываем только по
+        // заявочному фото (снимок на момент допуска) или по фото в составе команды.
+        const src = getImageUrl(row.team_member_photo_url || '/default/user_default.webp');
         return (
           <div 
             onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
@@ -151,37 +153,53 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       sortKey: 'last_name',
       width: 'w-[100px]',
       render: (row) => {
-        let statusBadge = '';
-        if (row.is_captain) statusBadge = ' | Капитан';
-        else if (row.is_assistant) statusBadge = ' | Ассистент';
-
         const dsqBadge = renderDsqBadge(row.active_disqualifications);
+        // Значок экипировки живёт во второй строке, после отчества: в первой строке
+        // фамилия обрезается по ширине колонки и он вместе с ней пропадал бы из виду.
+        const mark = <EquipmentMark birthDate={row.birth_date} league={selectedLeague} className="ml-1.5" />;
 
         return (
-          <div 
-            onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
-            className="flex items-center min-w-0 w-full cursor-pointer group"
-          >
+          <div className="flex items-center min-w-0 w-full group">
             <div className="flex flex-col min-w-0">
               <span 
-                className="font-bold text-graphite text-[14px] block truncate group-hover:transition-colors"
+                onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
+                className="font-bold text-graphite text-[14px] block truncate cursor-pointer group-hover:transition-colors"
                 title={`${row.last_name || ''} ${row.first_name || ''}`}
               >
                 {`${row.last_name || ''} ${row.first_name || ''}`.trim()}
               </span>
-              
-              {(row.middle_name || statusBadge) && (
-                <span 
-                  className="text-[12px] text-graphite/50 font-medium block truncate w-full group-hover:transition-colors"
-                  title={`${row.middle_name || ''}${statusBadge}`}
+
+              <span 
+                className="text-[12px] text-graphite/50 font-medium flex items-center min-w-0 w-full"
+                title={row.middle_name || ''}
+              >
+                <span
+                  onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
+                  className="truncate cursor-pointer"
                 >
-                  {row.middle_name || ''} <span className="text-orange font-normal">{statusBadge}</span>
+                  {row.middle_name || ''}
                 </span>
-              )}
+                {mark}
+              </span>
             </div>
 
             {dsqBadge}
           </div>
+        );
+      }
+    },
+    {
+      // Капитан и ассистент отдельным столбцом: в подписи под фамилией они терялись,
+      // а по букве состав читается с одного взгляда.
+      label: 'Нашивка',
+      sortKey: 'is_captain',
+      width: 'w-[70px]', align: 'center',
+      render: (row) => {
+        if (!row.is_captain && !row.is_assistant) return null;
+        return (
+          <span className="text-orange text-[16px] font-black">
+            {row.is_captain ? 'К' : 'А'}
+          </span>
         );
       }
     },
@@ -296,8 +314,9 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
       label: 'Фото', 
       width: 'w-[60px] text-center', 
       render: (row) => {
-        const photoUrl = row.team_member_photo_url || row.user_avatar_url;
-        const src = getImageUrl(photoUrl || '/default/user_default.webp');
+        // Личный аватар сюда не подставляем: в лиге человека показываем только по
+        // заявочному фото (снимок на момент допуска) или по фото в составе команды.
+        const src = getImageUrl(row.team_member_photo_url || '/default/user_default.webp');
         return (
           <div 
             onClick={() => onOpenProfile && onOpenProfile(row.player_id)}

@@ -35,7 +35,7 @@ const TOURNAMENT_TYPES = {
 
 export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGlobalToast }) {
   // Используем useAccess для проверки прав
-  const { checkAccess, hasFullLeagueAccess } = useAccess();
+  const { checkAccess, hasFullLeagueAccess, selectedLeague } = useAccess();
   
   // Вычисляем права доступа
   const canPublishDivision = checkAccess('DIVISIONS_PUBLISH');
@@ -690,6 +690,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       />
 
       <AppRosterComposeDrawer
+        league={selectedLeague}
         isOpen={!!composeRosterTeam}
         onClose={() => setComposeRosterTeam(null)}
         teamApp={composeRosterTeam}

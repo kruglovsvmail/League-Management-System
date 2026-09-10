@@ -6,6 +6,7 @@ import { Select } from '../ui/Select';
 import { Table } from '../ui/Table2';
 import { DisqualificationBadge } from '../ui/DisqualificationBadge';
 import { AccessFallback } from '../ui/AccessFallback';
+import { EquipmentMark } from '../ui/EquipmentMark';
 import { getImageUrl, getToken } from '../utils/helpers';
 
 // Шторка «Состав заявки»: лига переносит людей из состава команды (слева) в заявку (справа).
@@ -28,10 +29,11 @@ const TOURNAMENT_ROLES = [
 const ROLE_LABELS = Object.fromEntries(TOURNAMENT_ROLES.map(r => [r.id, r.label]));
 const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
 
-const personPhoto = (p) => getImageUrl(p.photo_url || p.avatar_url || '/default/user_default.webp');
+// Личный аватар в лиге не показываем — только заявочное фото или фото в составе команды
+const personPhoto = (p) => getImageUrl(p.photo_url || '/default/user_default.webp');
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim();
 
-export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, showToast }) {
+export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, showToast, league }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -74,6 +76,8 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
           player_id: r.player_id,
           first_name: r.first_name, last_name: r.last_name, middle_name: r.middle_name,
           photo_url: r.photo_url, avatar_url: r.avatar_url,
+          // Нужна значкам экипировки по возрасту — без неё они пропадают при переносе
+          birth_date: r.birth_date,
           position: r.position || 'forward',
           jersey_number: r.jersey_number ?? '',
           is_captain: !!r.is_captain,
@@ -128,6 +132,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
       player_id: player.player_id,
       first_name: player.first_name, last_name: player.last_name, middle_name: player.middle_name,
       photo_url: player.photo_url, avatar_url: player.avatar_url,
+      birth_date: player.birth_date,
       position: player.position || 'forward',
       jersey_number: player.jersey_number ?? '',
       is_captain: false,
@@ -243,7 +248,12 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
       render: (p) => (
         <div className="min-w-0 flex flex-col justify-center">
           <span className="text-[13px] font-bold text-graphite leading-tight block truncate">{p.last_name} {p.first_name}</span>
-          {p.middle_name && <span className="text-[11px] text-graphite-light block truncate mt-[2px]">{p.middle_name}</span>}
+          {/* Значок экипировки во второй строке, после отчества: в первой строке фамилия
+              обрезается по ширине колонки и он пропадал бы вместе с ней */}
+          <span className="text-[11px] text-graphite-light flex items-center min-w-0 mt-[2px]">
+            <span className="truncate">{p.middle_name || ''}</span>
+            <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
+          </span>
         </div>
       )
     },
@@ -338,7 +348,10 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
         <img src={personPhoto(person)} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
         <div className="min-w-0 flex flex-col justify-center">
           <span className="block text-[13px] font-bold text-graphite leading-tight truncate">{person.last_name} {person.first_name}</span>
-          {subtitle && <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">{subtitle}</span>}
+          <span className="flex items-center min-w-0 text-[11px] font-medium text-graphite-light mt-[2px]">
+            <span className="truncate">{subtitle}</span>
+            <EquipmentMark birthDate={person.birth_date} league={league} className="ml-1.5" />
+          </span>
           {blockedReason && (
             <span className="block text-[11px] font-semibold text-status-rejected leading-snug mt-1">{blockedReason}</span>
           )}

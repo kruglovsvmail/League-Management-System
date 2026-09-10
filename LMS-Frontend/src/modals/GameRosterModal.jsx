@@ -7,6 +7,7 @@ import { Table } from '../ui/Table2';
 import { DisqualificationBadge } from '../ui/DisqualificationBadge';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { AccessFallback } from '../ui/AccessFallback';
+import { EquipmentMark } from '../ui/EquipmentMark';
 
 const renderDsqBadge = (activeDisqualifications) => <DisqualificationBadge activeDisqualifications={activeDisqualifications} />;
 
@@ -19,7 +20,7 @@ const mapDbPositionToUI = (dbPos) => {
   return 'forward'; // LW, C, RW
 };
 
-export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onSuccess, readOnly = false }) {
+export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onSuccess, readOnly = false, league}) {
   const [available, setAvailable] = useState([]);
   const [selected, setSelected] = useState([]);
   // Пул резервных вратарей дивизиона: их нет в заявке команды, поэтому список
@@ -249,8 +250,15 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       render: (p) => (
         <div className="min-w-0 flex items-center gap-2">
           <div className="flex flex-col justify-center min-w-0">
-            <span className="text-[13px] font-bold text-graphite leading-tight block truncate">{p.last_name} {p.first_name}</span>
-            {p.middle_name && <span className="text-[11px] text-graphite-light block truncate mt-[2px]">{p.middle_name}</span>}
+            <span className="text-[13px] font-bold text-graphite leading-tight block truncate">
+              {p.last_name} {p.first_name}
+            </span>
+            {/* Значок экипировки — во второй строке, вместе с отчеством: в первой он
+                обрезался бы вместе с длинной фамилией */}
+            <span className="text-[11px] text-graphite-light flex items-center min-w-0 mt-[2px]">
+              <span className="truncate">{p.middle_name || ''}</span>
+              <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
+            </span>
           </div>
           {p.is_reserve_goalie && (
             <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-blue-500/10 text-blue-600">
@@ -402,13 +410,18 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                       <div className="flex items-center gap-3 min-w-0 pr-2">
                         <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
                         <div className="min-w-0 flex flex-col justify-center">
-                          <span className="block text-[13px] font-bold text-graphite leading-tight truncate">{p.last_name} {p.first_name}</span>
-                          <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
-                            {[
-                              p.middle_name,
-                              POSITION_MAP[p.position] || 'Амплуа',
-                              p.jersey_number ? `№${p.jersey_number}` : null
-                            ].filter(Boolean).join(' | ')}
+                          <span className="block text-[13px] font-bold text-graphite leading-tight truncate">
+                            {p.last_name} {p.first_name}
+                          </span>
+                          <span className="flex items-center min-w-0 text-[11px] font-medium text-graphite-light mt-[2px]">
+                            <span className="truncate">
+                              {[
+                                p.middle_name,
+                                POSITION_MAP[p.position] || 'Амплуа',
+                                p.jersey_number ? `№${p.jersey_number}` : null
+                              ].filter(Boolean).join(' | ')}
+                            </span>
+                            <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
                           </span>
                         </div>
                       </div>

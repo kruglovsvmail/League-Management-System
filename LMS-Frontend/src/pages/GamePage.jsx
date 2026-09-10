@@ -18,6 +18,7 @@ import { ManageOfficialsModal } from '../modals/ManageOfficialsModal';
 import { EditGameInfoDrawer } from '../modals/EditGameInfoDrawer';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { useAccess } from '../hooks/useAccess';
+import { EquipmentMark } from '../ui/EquipmentMark';
 import { Header } from '../components/Header';
 import { AccessFallback } from '../ui/AccessFallback';
 import { ROLES } from '../utils/permissions';
@@ -323,7 +324,7 @@ export function GamePage() {
     const totalPlayers = roster.length;
 
     const rosterColumns = [
-      { label: 'Фото', width: 'w-[80px]', align: 'left', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" /> )},
+      { label: 'Фото', width: 'w-[80px]', align: 'left', render: (r) => ( <img src={getImageUrl(r.photo_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" /> )},
       { label: 'Игрок',  align: 'left',  render: (r) => (
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={() => setSelectedPlayerId(r.player_id)} className="text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors flex items-center gap-1 truncate text-left">
@@ -331,6 +332,8 @@ export function GamePage() {
             {r.is_captain && <span className="text-orange text-[12px] font-bold ml-1">К</span>}
             {r.is_assistant && <span className="text-orange text-[12px] font-bold ml-1">А</span>}
           </button>
+          {/* Значок обязательной экипировки по возрасту — включается в параметрах лиги */}
+          <EquipmentMark birthDate={r.birth_date} league={selectedLeague} />
           {renderDsqBadge(r.active_disqualifications)}
         </div>
       )},
@@ -341,7 +344,7 @@ export function GamePage() {
     ];
 
     const staffColumns = [
-      { label: 'Фото', width: 'w-[80px]', render: (r) => ( <img src={getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/5" alt="" /> )},
+      { label: 'Фото', width: 'w-[80px]', render: (r) => ( <img src={getImageUrl(r.photo_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/5" alt="" /> )},
       { label: 'Представитель', render: (r) => (
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-semibold text-graphite/85">{r.last_name} {r.first_name}</span>
@@ -433,12 +436,12 @@ export function GamePage() {
   const compareRows = STATS_COMPARE_ROWS.filter(row => tracksShots || !row.needsShots);
 
   // Вкладка «Статистика»: таблица вратарей + полевых одной команды матча.
-  // Фото — тот же приоритет, что у ростера (вкладка 0): team_members.photo_url,
-  // потом avatar_url, потом заглушка.
+  // Фото — тот же приоритет, что у ростера (вкладка 0): заявочный снимок,
+  // потом team_members.photo_url, потом заглушка. Личный аватар в лиге не показываем.
   const renderTeamStats = (teamName, teamLogo, teamStats) => {
     const skaters = teamStats?.skaters || [];
     const goalies = teamStats?.goalies || [];
-    const photoSrc = (r) => getImageUrl(r.photo_url || r.avatar_url || '/default/user_default.webp');
+    const photoSrc = (r) => getImageUrl(r.photo_url || '/default/user_default.webp');
 
     // Таблицы в режиме table-fixed: колонка с ФИО ширины не имеет и забирает весь остаток,
     // поэтому имя усекается только когда места действительно не хватает.
@@ -950,7 +953,7 @@ export function GamePage() {
       {game && (
         <>
           <GameStatusModal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} game={game} onSuccess={loadAllData} />
-          <GameRosterModal isOpen={rosterModalState.isOpen} onClose={() => setRosterModalState({ isOpen: false, teamId: null, teamName: '' })} gameId={game.id} teamId={rosterModalState.teamId} teamName={rosterModalState.teamName} onSuccess={loadAllData} />
+          <GameRosterModal isOpen={rosterModalState.isOpen} onClose={() => setRosterModalState({ isOpen: false, teamId: null, teamName: '' })} gameId={game.id} teamId={rosterModalState.teamId} teamName={rosterModalState.teamName} league={selectedLeague} onSuccess={loadAllData} />
           <ManageOfficialsModal isOpen={isOfficialsModalOpen} onClose={() => setIsOfficialsModalOpen(false)} gameId={game.id} initialOfficials={game.officials} onSuccess={loadAllData} />
           <EditGameInfoDrawer isOpen={isEditInfoDrawerOpen} onClose={() => setIsEditInfoDrawerOpen(false)} game={game} arenas={arenas} onSuccess={loadAllData} />
         </>
@@ -1015,7 +1018,7 @@ const EventCard = ({ ev, isHome }) => {
     <div className={`flex items-start gap-4 p-4 rounded-lg border ${borderClass} bg-gradient-to-br ${bgClass} shadow-sm hover:shadow-md transition-all w-full max-w-[340px] ${isHome ? 'flex-row' : 'flex-row-reverse text-right'}`}>
       <div className="relative shrink-0 mt-1">
         <img 
-          src={getImageUrl(ev.primary_photo_url || ev.primary_avatar_url || '/default/user_default.webp')} 
+          src={getImageUrl(ev.primary_photo_url || '/default/user_default.webp')} 
           className="w-14 h-14 rounded-lg bg-graphite/10 object-cover border-2 border-white shadow-sm" 
           alt="" 
         />

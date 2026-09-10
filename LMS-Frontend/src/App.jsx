@@ -120,6 +120,26 @@ export default function App() {
     navigate(canView ? '/divisions' : '/games'); 
   };
 
+  // Настройки лиги правятся прямо в интерфейсе («Настройки → Параметры»), а живут они в
+  // профиле: его отдаёт /api/me при загрузке. Без этой правки включённая настройка
+  // подхватывалась бы только после F5 — профиль в памяти оставался бы прежним.
+  const patchSelectedLeague = (patch) => {
+    if (!selectedLeague || !patch) return;
+
+    setSelectedLeague(prev => (prev ? { ...prev, ...patch } : prev));
+    setCurrentUser(prev => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        leagues: (prev.leagues || []).map(l => (l.id === selectedLeague.id ? { ...l, ...patch } : l)),
+      };
+      // Кэш профиля тоже обновляем: до следующего /api/me читают именно его
+      const store = localStorage.getItem('hockeyeco_user') ? localStorage : sessionStorage;
+      if (store.getItem('hockeyeco_user')) store.setItem('hockeyeco_user', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const handleLeagueChange = (league) => {
     setSelectedLeague(league);
     localStorage.setItem('hockeyeco_selected_league', league.id);
@@ -177,6 +197,7 @@ export default function App() {
                     onLogout={handleLogout} 
                     selectedLeague={selectedLeague}
                     onLeagueChange={handleLeagueChange}
+                    onPatchSelectedLeague={patchSelectedLeague}
                   /> 
                 : <Navigate to="/login" replace />
             }

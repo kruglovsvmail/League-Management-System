@@ -15,7 +15,13 @@ export const getLeaguePreferences = async (req, res) => {
     const { leagueId } = req.params;
     const result = await pool.query(
       `SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order,
-              reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks
+              reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
+              -- Обозначения экипировки по возрасту: «ушк» и «к» рядом с фамилией в составах
+              equip_mark_ushk_enabled, equip_mark_ushk_max_age,
+              equip_mark_mouthguard_enabled,
+              to_char(equip_mark_mouthguard_born_after, 'YYYY-MM-DD') AS equip_mark_mouthguard_born_after,
+              -- Что команда вправе менять в формации на матч (Team-Room)
+              allow_match_jersey_change, allow_match_letters_change
        FROM leagues WHERE id = $1`,
       [leagueId]
     );
@@ -29,7 +35,10 @@ export const updateLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const { sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order,
-            reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks } = req.body;
+            reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
+            equip_mark_ushk_enabled, equip_mark_ushk_max_age,
+            equip_mark_mouthguard_enabled, equip_mark_mouthguard_born_after,
+            allow_match_jersey_change, allow_match_letters_change } = req.body;
 
     // Тумблеры: undefined — поле не прислали (вкладка «Арены» шлёт только своё),
     // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
@@ -52,10 +61,19 @@ export const updateLeaguePreferences = async (req, res) => {
          arena_sort_order = COALESCE($4, arena_sort_order),
          reserve_goalies_enabled = COALESCE($5, reserve_goalies_enabled),
          reserve_goalie_dq_games_enabled = COALESCE($6, reserve_goalie_dq_games_enabled),
-         reserve_goalie_own_dq_blocks = COALESCE($7, reserve_goalie_own_dq_blocks)
-       WHERE id = $8`,
+         reserve_goalie_own_dq_blocks = COALESCE($7, reserve_goalie_own_dq_blocks),
+         equip_mark_ushk_enabled = COALESCE($8, equip_mark_ushk_enabled),
+         equip_mark_ushk_max_age = COALESCE($9, equip_mark_ushk_max_age),
+         equip_mark_mouthguard_enabled = COALESCE($10, equip_mark_mouthguard_enabled),
+         equip_mark_mouthguard_born_after = COALESCE($11, equip_mark_mouthguard_born_after),
+         allow_match_jersey_change = COALESCE($12, allow_match_jersey_change),
+         allow_match_letters_change = COALESCE($13, allow_match_letters_change)
+       WHERE id = $14`,
       [sec_access_before_hours ?? null, sec_access_after_hours ?? null, disqualification_mode ?? null, arena_sort_order ?? null,
        toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
+       toggle(equip_mark_ushk_enabled), equip_mark_ushk_max_age ?? null,
+       toggle(equip_mark_mouthguard_enabled), equip_mark_mouthguard_born_after || null,
+       toggle(allow_match_jersey_change), toggle(allow_match_letters_change),
        leagueId]
     );
     res.json({ success: true });

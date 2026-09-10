@@ -96,38 +96,45 @@ export const getGameEvents = async (req, res) => {
                 su.id as primary_player_id, su.last_name as primary_last_name,
                 su.first_name as primary_first_name, su.avatar_url as primary_avatar_url,
                 su.pronunciation as primary_pronunciation,
-                tm_su.photo_url as primary_photo_url,
+                COALESCE(tr_su.photo_snapshot_url, tm_su.photo_url) as primary_photo_url,
                 gr_su.jersey_number as primary_jersey_number,
                 gr_su.position_in_line as primary_position,
 
                 a1.id as assist1_id, a1.last_name as assist1_last_name,
                 a1.first_name as assist1_first_name, a1.avatar_url as assist1_avatar_url,
                 a1.pronunciation as assist1_pronunciation,
-                tm_a1.photo_url as assist1_photo_url,
+                COALESCE(tr_a1.photo_snapshot_url, tm_a1.photo_url) as assist1_photo_url,
                 gr_a1.jersey_number as assist1_jersey_number,
 
                 a2.id as assist2_id, a2.last_name as assist2_last_name,
                 a2.first_name as assist2_first_name, a2.avatar_url as a2_avatar_url,
                 a2.pronunciation as assist2_pronunciation,
-                tm_a2.photo_url as assist2_photo_url,
+                COALESCE(tr_a2.photo_snapshot_url, tm_a2.photo_url) as assist2_photo_url,
                 gr_a2.jersey_number as assist2_jersey_number,
 
                 EXISTS (SELECT 1 FROM game_plus_minus gpm WHERE gpm.event_id = ge.id) as has_plus_minus
 
             FROM game_events ge
+            JOIN games g_ev ON g_ev.id = ge.game_id
             LEFT JOIN teams t ON ge.team_id = t.id
+            -- Заявка команды в дивизион этого матча: фото участников события берём из неё
+            -- (снимок на момент допуска), а не из текущего фото в составе команды
+            LEFT JOIN tournament_teams tt_ev ON tt_ev.team_id = ge.team_id AND tt_ev.division_id = g_ev.division_id
 
             LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id
             LEFT JOIN team_members tm_su ON tm_su.user_id = su.id AND tm_su.team_id = ge.team_id
             LEFT JOIN game_rosters gr_su ON gr_su.game_id = ge.game_id AND gr_su.player_id = su.id AND gr_su.team_id = ge.team_id
+            LEFT JOIN tournament_rosters tr_su ON tr_su.tournament_team_id = tt_ev.id AND tr_su.player_id = su.id AND tr_su.period_end IS NULL
 
             LEFT JOIN users a1 ON ge.assist1_id = a1.id
             LEFT JOIN team_members tm_a1 ON tm_a1.user_id = a1.id AND tm_a1.team_id = ge.team_id
             LEFT JOIN game_rosters gr_a1 ON gr_a1.game_id = ge.game_id AND gr_a1.player_id = a1.id AND gr_a1.team_id = ge.team_id
+            LEFT JOIN tournament_rosters tr_a1 ON tr_a1.tournament_team_id = tt_ev.id AND tr_a1.player_id = a1.id AND tr_a1.period_end IS NULL
 
             LEFT JOIN users a2 ON ge.assist2_id = a2.id
             LEFT JOIN team_members tm_a2 ON tm_a2.user_id = a2.id AND tm_a2.team_id = ge.team_id
             LEFT JOIN game_rosters gr_a2 ON gr_a2.game_id = ge.game_id AND gr_a2.player_id = a2.id AND gr_a2.team_id = ge.team_id
+            LEFT JOIN tournament_rosters tr_a2 ON tr_a2.tournament_team_id = tt_ev.id AND tr_a2.player_id = a2.id AND tr_a2.period_end IS NULL
             
             WHERE ge.game_id = $1
             ORDER BY 

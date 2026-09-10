@@ -434,7 +434,9 @@ export const getTeamApplications = async (req, res) => {
                            'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at,
                            'first_name', u.first_name, 'last_name', u.last_name, 'middle_name', u.middle_name,
                            'user_avatar_url', u.avatar_url,
-                           'team_member_photo_url', tm.photo_url,
+                           -- Фото в заявке: снимок, снятый в момент допуска. Пока команда не
+                           -- допущена (снимка нет) показываем живое фото из состава команды.
+                           'team_member_photo_url', COALESCE(tr.photo_snapshot_url, tm.photo_url),
 
                            -- Квалификация лиговая (одна на человека во всей лиге), заявка её не хранит.
                            -- qualification_conflict — действующая квалификация не входит в список
@@ -660,6 +662,9 @@ export const addPlayerToApplication = async (req, res) => {
                     UPDATE tournament_rosters AS tr
                     SET period_end = NULL,
                         application_status = 'pending',
+                        -- Возврат в заявку — снова недопущенный, поэтому старый слепок фото гасим
+                        photo_snapshot_prev_url = tr.photo_snapshot_url,
+                        photo_snapshot_url = NULL,
                         position = v.position,
                         jersey_number = v.jersey_number::int,
                         is_captain = v.is_captain::boolean,

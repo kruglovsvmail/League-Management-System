@@ -46,15 +46,56 @@ const assertPersonInApplication = async (appId, userId) => {
     return rowCount > 0;
 };
 
+/**
+ * Допуск игрока — он же момент снятия слепка фотографии.
+ *
+ * Зачем: фото игрока в команде руководитель меняет когда угодно, и без слепка на площадку
+ * под чужим именем мог бы выйти другой человек — в заявке и протоколе лига видела бы уже
+ * новое лицо. Поэтому в момент допуска ссылка на фото фиксируется в заявке, и дальше лига
+ * везде показывает именно её, что бы команда ни меняла у себя.
+ *
+ * Копии файла не делаем: загрузка фото всегда кладёт НОВЫЙ объект с меткой времени в имени,
+ * а прежний не перезаписывается и не удаляется ни при замене, ни при удалении фото. Значит
+ * ссылка, снятая при допуске, вечно показывает ровно то, что допустили.
+ *
+ * Снятие допуска слепок гасит: лига снова видит живое фото команды и сразу замечает подмену
+ * («выключил — фото не изменилось — включил обратно»). Прежнее значение при этом уезжает в
+ * photo_snapshot_prev_url — один слот с перезаписью, чтобы допущенное фото можно было
+ * вернуть руками, если подмену нашли не сразу.
+ */
 export const updateTournamentRosterStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { application_status } = req.body;
 
-        await pool.query(
-            `UPDATE tournament_rosters SET application_status = $1, updated_at = NOW() WHERE id = $2`,
-            [application_status, id]
-        );
+        if (application_status === 'approved') {
+            await pool.query(`
+                UPDATE tournament_rosters tr
+                   SET application_status = $1,
+                       photo_snapshot_prev_url = tr.photo_snapshot_url,
+                       photo_snapshot_url = (
+                           SELECT tm.photo_url
+                             FROM tournament_teams tt
+                             JOIN team_members tm
+                               ON tm.team_id = tt.team_id AND tm.user_id = tr.player_id AND tm.left_at IS NULL
+                            WHERE tt.id = tr.tournament_team_id
+                            ORDER BY tm.id DESC
+                            LIMIT 1
+                       ),
+                       updated_at = NOW()
+                 WHERE tr.id = $2
+            `, [application_status, id]);
+        } else {
+            await pool.query(`
+                UPDATE tournament_rosters
+                   SET application_status = $1,
+                       photo_snapshot_prev_url = photo_snapshot_url,
+                       photo_snapshot_url = NULL,
+                       updated_at = NOW()
+                 WHERE id = $2
+            `, [application_status, id]);
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка смены статуса ростера:', err);

@@ -7,6 +7,7 @@ import {
   PENALTY_SHOT_MINS, PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
 } from './GameDeskShared';
 import { Icon } from '../../ui/Icon';
+import { EquipmentMark } from '../../ui/EquipmentMark';
 
 const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -81,7 +82,7 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
 export const ProtocolSheet = ({ 
   teamId, teamLetter, teamName, teamLogo, roster, teamEvents, oppEvents = [], timerSeconds, 
   onSaveEvent, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving,
-  goalieLog = [], isReadOnly,
+  goalieLog = [], isReadOnly, league,
   // Справочник причин удаления сезона; если лига его не заполнила, сюда приходит
   // встроенный список (см. usePenaltyReasons)
   penaltyReasons = penaltyReasonOptions
@@ -450,7 +451,12 @@ export const ProtocolSheet = ({
                 <tr key={i} className={`even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[34px] ${isLastRow ? 'border-b-2 border-graphite/25' : 'border-b border-graphite/30'}`}>
                   {/* РОСТЕР */}
                   <td className="border-l-2 border-graphite/25 border-r border-graphite/30 font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
-                  <td className="border-r border-graphite/30 text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">{player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}</td>
+                  <td className="border-r border-graphite/30 text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">
+                    {player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}
+                    {/* Значок обязательной экипировки по возрасту: секретарю он нужен прямо
+                        в протоколе — по нему проверяют игрока перед выходом на лёд */}
+                    {player && <EquipmentMark birthDate={player.birth_date} league={league} className="ml-1" />}
+                  </td>
                   <td className="border-r-2 border-graphite/25 text-[11px] text-graphite-light font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
 
                   {/* ВЗЯТИЕ ВОРОТ */}

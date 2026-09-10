@@ -870,6 +870,7 @@ export function GameLiveDesk() {
         <div className="mr-2 flex flex-col gap-6">
 
           <GameFlowAccordion
+            league={activeLeague}
             game={game}
             events={events}
             homeRoster={homeRoster}

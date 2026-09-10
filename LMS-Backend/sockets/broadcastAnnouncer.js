@@ -78,19 +78,24 @@ const EVENTS_QUERY = `
     pt.tts_accusative as penalty_accusative,
     t.id as team_id, t.name as team_name, t.logo_url as team_logo, t.pronunciation as team_pronunciation,
     su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
-    su.pronunciation as primary_pronunciation, tm_su.photo_url as primary_photo_url,
+    su.pronunciation as primary_pronunciation,
+    -- В эфир идёт заявочное фото (снимок на момент допуска), иначе фото в составе команды
+    COALESCE(tr_su.photo_snapshot_url, tm_su.photo_url) as primary_photo_url,
     gr_su.jersey_number as primary_jersey_number, gr_su.position_in_line as primary_position,
     a1.last_name as assist1_last_name, a1.first_name as assist1_first_name, a1.pronunciation as assist1_pronunciation,
     gr_a1.jersey_number as assist1_jersey_number,
     a2.last_name as assist2_last_name, a2.first_name as assist2_first_name, a2.pronunciation as assist2_pronunciation,
     gr_a2.jersey_number as assist2_jersey_number
   FROM game_events ge
+  JOIN games g_ev ON g_ev.id = ge.game_id
   -- Падеж причины для диктора берём из справочника лиги; пункт могли удалить,
   -- тогда останется NULL и сработает встроенный фолбэк (см. ttsShared.js)
   LEFT JOIN penalty_types pt ON pt.id = ge.penalty_reason_id
   LEFT JOIN teams t ON ge.team_id = t.id
   LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id
   LEFT JOIN team_members tm_su ON tm_su.user_id = su.id AND tm_su.team_id = ge.team_id
+  LEFT JOIN tournament_teams tt_ev ON tt_ev.team_id = ge.team_id AND tt_ev.division_id = g_ev.division_id
+  LEFT JOIN tournament_rosters tr_su ON tr_su.tournament_team_id = tt_ev.id AND tr_su.player_id = su.id AND tr_su.period_end IS NULL
   LEFT JOIN game_rosters gr_su ON gr_su.game_id = ge.game_id AND gr_su.player_id = su.id AND gr_su.team_id = ge.team_id
   LEFT JOIN users a1 ON ge.assist1_id = a1.id
   LEFT JOIN game_rosters gr_a1 ON gr_a1.game_id = ge.game_id AND gr_a1.player_id = a1.id AND gr_a1.team_id = ge.team_id

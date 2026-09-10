@@ -148,7 +148,22 @@ export const loadReserveGoaliesForGame = async (db, gameId, teamId) => {
 
     const { rows: poolRows } = await db.query(
         `SELECT drg.id, drg.player_id, drg.jersey_number, drg.note,
-                u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                u.first_name, u.last_name, u.middle_name,
+                -- Личный аватар в лиге не показываем: сначала заявочный снимок в этой лиге,
+                -- иначе последнее фото человека в составе команды
+                COALESCE(
+                    (SELECT tr_ph.photo_snapshot_url
+                       FROM tournament_rosters tr_ph
+                       JOIN tournament_teams tt_ph ON tt_ph.id = tr_ph.tournament_team_id
+                       JOIN divisions d_ph ON d_ph.id = tt_ph.division_id
+                       JOIN seasons s_ph ON s_ph.id = d_ph.season_id
+                      WHERE tr_ph.player_id = u.id AND s_ph.league_id = $2
+                        AND tr_ph.photo_snapshot_url IS NOT NULL
+                      ORDER BY tr_ph.id DESC LIMIT 1),
+                    (SELECT tm_ph.photo_url FROM team_members tm_ph
+                      WHERE tm_ph.user_id = u.id AND tm_ph.photo_url IS NOT NULL
+                      ORDER BY tm_ph.id DESC LIMIT 1)
+                ) AS avatar_url,
                 user_active_disqualifications(drg.player_id, $2) AS active_disqualifications
          FROM division_reserve_goalies drg
          JOIN users u ON u.id = drg.player_id

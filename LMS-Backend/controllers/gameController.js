@@ -106,7 +106,7 @@ export const getPublicGameById = async (req, res) => {
             const leaderQuery = isOfficialGame
                 ? `
                 SELECT u.first_name, u.last_name,
-                       COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+                       COALESCE(tr.photo_snapshot_url, tm.photo_url) as avatar_url,
                        gr.jersey_number,
                        ps.games_played, ps.goals, ps.assists, ps.points, ps.plus_minus, ps.penalty_minutes
                 FROM game_rosters gr
@@ -155,9 +155,11 @@ export const getPublicGameById = async (req, res) => {
             const rosterQuery = `
                 SELECT gr.team_id, u.first_name, u.last_name, gr.jersey_number, 
                        gr.position_in_line, gr.line_number,
+                       -- Дата рождения нужна значкам экипировки по возрасту («ушк» и «к»)
+                       to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                        COALESCE(gr.is_captain, tr.is_captain, false) as is_captain,
                        COALESCE(gr.is_assistant, tr.is_assistant, false) as is_assistant,
-                       COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+                       COALESCE(tr.photo_snapshot_url, tm.photo_url) as avatar_url,
                        COALESCE(ps.games_played, 0) as games_played,
                        COALESCE(ps.goals, 0) as goals,
                        COALESCE(ps.assists, 0) as assists,
@@ -186,7 +188,7 @@ export const getPublicGameById = async (req, res) => {
                        tr.jersey_number, tr.position,
                        COALESCE(tr.is_captain, false) as is_captain,
                        COALESCE(tr.is_assistant, false) as is_assistant,
-                       COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+                       COALESCE(tr.photo_snapshot_url, tm.photo_url) as avatar_url,
                        COALESCE(ps.games_played, 0) as games_played,
                        COALESCE(ps.goals, 0) as goals,
                        COALESCE(ps.assists, 0) as assists,
@@ -1047,7 +1049,10 @@ export const getGameRoster = async (req, res) => {
 
         const [tRosterRes, gRosterRes, staffRes] = await Promise.all([
             pool.query(`
-                SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position, tm.photo_url,
+                SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position,
+                       -- Фото из заявки (снимок на момент допуска), иначе живое фото в составе
+                       COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
+                       to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                        ${dqSubquery('tr.player_id')}
                 FROM tournament_rosters tr
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
@@ -1064,11 +1069,19 @@ export const getGameRoster = async (req, res) => {
             pool.query(`
                 SELECT gr.player_id, gr.jersey_number, gr.position_in_line, gr.is_captain, gr.is_assistant,
                        gr.is_reserve_goalie,
-                       u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
+                       u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                       -- Тот же снимок, что и в заявке; у резервного вратаря заявки в этой
+                       -- команде нет, поэтому у него остаётся фото в составе своей команды
+                       COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
+                       to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                        ${dqSubquery('gr.player_id')}
                 FROM game_rosters gr
                 JOIN users u ON gr.player_id = u.id
+                JOIN games g ON g.id = gr.game_id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
+                LEFT JOIN tournament_teams tt ON tt.team_id = gr.team_id AND tt.division_id = g.division_id
+                LEFT JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id AND tr.player_id = gr.player_id
+                     AND tr.period_end IS NULL
                 WHERE gr.game_id = $1 AND gr.team_id = $2
                 ORDER BY u.last_name
             `, [gameId, teamId, leagueId]),

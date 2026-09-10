@@ -141,7 +141,11 @@ const fetchUserProfile = async (userId) => {
     leaguesResult = await pool.query(`
       SELECT id, name, short_name, city, logo_url, 'admin' as role,
              sec_access_before_hours, sec_access_after_hours, disqualification_mode,
-             reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks
+             reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
+             -- Обозначения экипировки по возрасту («ушк» и «к» в составах) — настройка лиги
+             equip_mark_ushk_enabled, equip_mark_ushk_max_age, equip_mark_mouthguard_enabled,
+             to_char(equip_mark_mouthguard_born_after, 'YYYY-MM-DD') AS equip_mark_mouthguard_born_after,
+             allow_match_jersey_change, allow_match_letters_change
       FROM leagues
     `);
   } else {
@@ -153,6 +157,11 @@ const fetchUserProfile = async (userId) => {
       SELECT l.id, l.name, l.short_name, l.city, l.logo_url,
              l.sec_access_before_hours, l.sec_access_after_hours, l.disqualification_mode,
              l.reserve_goalies_enabled, l.reserve_goalie_dq_games_enabled, l.reserve_goalie_own_dq_blocks,
+             -- Обозначения экипировки по возрасту («ушк» и «к» в составах) — настройка лиги,
+             -- фронт по ней решает, показывать ли значки рядом с фамилией
+             l.equip_mark_ushk_enabled, l.equip_mark_ushk_max_age, l.equip_mark_mouthguard_enabled,
+             to_char(l.equip_mark_mouthguard_born_after, 'YYYY-MM-DD') AS equip_mark_mouthguard_born_after,
+             l.allow_match_jersey_change, l.allow_match_letters_change,
              CONCAT_WS(', ',
                (SELECT string_agg(ls.role, ', ') FROM league_staff ls
                  WHERE ls.league_id = l.id AND ls.user_id = $1 AND ls.end_date IS NULL),

@@ -38,6 +38,8 @@ export const getTournamentTeamRoster = async (req, res) => {
                 tr.id as tournament_roster_id,
                 tr.player_id,
                 tr.application_status,
+                -- Дата рождения нужна значкам экипировки по возрасту («ушк» и «к»)
+                to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                 -- Документы допуска лежат на паре «заявка + человек» (tournament_person_docs):
                 -- у играющего представителя они одни и те же и в составе, и в штабе
                 tpd.insurance_url,
@@ -57,7 +59,10 @@ export const getTournamentTeamRoster = async (req, res) => {
                 u.last_name,
                 u.middle_name,
                 u.avatar_url as user_avatar_url,
-                tm_photo.photo_url as team_member_photo_url,
+                -- Пока игрок допущен, лига везде показывает слепок фотографии, снятый в
+                -- момент допуска: фото в команде руководитель меняет когда угодно, и без
+                -- слепка на площадку под чужим именем мог бы выйти другой человек.
+                COALESCE(tr.photo_snapshot_url, tm_photo.photo_url) as team_member_photo_url,
 
                 -- Квалификация лиговая: одна на человека во всей лиге, заявка её не хранит.
                 -- Поэтому в старом дивизионе бейдж меняется вместе с текущей квалификацией,
@@ -376,6 +381,8 @@ export const getTournamentTeamRosterPool = async (req, res) => {
         const playersRes = await pool.query(`
             SELECT tm.user_id AS player_id, u.first_name, u.last_name, u.middle_name,
                    u.avatar_url, tm.photo_url,
+                   -- Дата рождения нужна значкам экипировки по возрасту («ушк» и «к»)
+                   to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                    tr.position, tr.jersey_number,
                    uq.qualification_id, lq.name AS qualification_name, lq.short_name AS qualification_short_name,
                    user_active_disqualifications(tm.user_id, $2) AS active_disqualifications
@@ -405,8 +412,12 @@ export const getTournamentTeamRosterPool = async (req, res) => {
 
         const rosterRes = await pool.query(`
             SELECT tr.id AS tournament_roster_id, tr.player_id, tr.position, tr.jersey_number,
+                   to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                    tr.is_captain, tr.is_assistant, tr.application_status,
-                   u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+                   u.first_name, u.last_name, u.middle_name, u.avatar_url,
+                   -- Уже заявленного показываем по снимку из заявки; пока команда не допущена
+                   -- (снимка нет) — по живому фото в составе команды
+                   COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url
             FROM tournament_rosters tr
             JOIN users u ON tr.player_id = u.id
             LEFT JOIN team_members tm ON tm.user_id = tr.player_id AND tm.team_id = $2 AND tm.left_at IS NULL
@@ -619,6 +630,9 @@ export const saveTournamentTeamComposition = async (req, res) => {
                 UPDATE tournament_rosters tr
                 SET period_end = NULL,
                     application_status = 'pending',
+                    -- Возврат в заявку — снова недопущенный, поэтому старый слепок фото гасим
+                    photo_snapshot_prev_url = tr.photo_snapshot_url,
+                    photo_snapshot_url = NULL,
                     position = x.position,
                     jersey_number = x.jersey_number,
                     is_captain = x.is_captain,

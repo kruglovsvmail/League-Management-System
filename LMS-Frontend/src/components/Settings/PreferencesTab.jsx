@@ -15,7 +15,7 @@ const DISQUALIFICATION_MODES = [
 ];
 
 export function PreferencesTab({ setToast }) {
-  const { selectedLeague } = useOutletContext(); // Берем ID лиги отсюда
+  const { selectedLeague, onPatchSelectedLeague } = useOutletContext(); // Берем ID лиги отсюда
   const { checkAccess } = useAccess();
   
   const canEdit = checkAccess('SETTINGS_DIVISIONS_EDIT');
@@ -28,7 +28,13 @@ export function PreferencesTab({ setToast }) {
     disqualification_mode: 'light',
     reserve_goalies_enabled: false,
     reserve_goalie_dq_games_enabled: true,
-    reserve_goalie_own_dq_blocks: true
+    reserve_goalie_own_dq_blocks: true,
+    equip_mark_ushk_enabled: false,
+    equip_mark_ushk_max_age: 20,
+    equip_mark_mouthguard_enabled: false,
+    equip_mark_mouthguard_born_after: '1998-12-31',
+    allow_match_jersey_change: false,
+    allow_match_letters_change: false
   });
 
   useEffect(() => {
@@ -48,7 +54,13 @@ export function PreferencesTab({ setToast }) {
             disqualification_mode: data.data.disqualification_mode ?? 'light',
             reserve_goalies_enabled: data.data.reserve_goalies_enabled ?? false,
             reserve_goalie_dq_games_enabled: data.data.reserve_goalie_dq_games_enabled ?? true,
-            reserve_goalie_own_dq_blocks: data.data.reserve_goalie_own_dq_blocks ?? true
+            reserve_goalie_own_dq_blocks: data.data.reserve_goalie_own_dq_blocks ?? true,
+            equip_mark_ushk_enabled: data.data.equip_mark_ushk_enabled ?? false,
+            equip_mark_ushk_max_age: data.data.equip_mark_ushk_max_age ?? 20,
+            equip_mark_mouthguard_enabled: data.data.equip_mark_mouthguard_enabled ?? false,
+            equip_mark_mouthguard_born_after: data.data.equip_mark_mouthguard_born_after ?? '1998-12-31',
+            allow_match_jersey_change: data.data.allow_match_jersey_change ?? false,
+            allow_match_letters_change: data.data.allow_match_letters_change ?? false
           });
         }
       } catch (err) {
@@ -76,14 +88,10 @@ export function PreferencesTab({ setToast }) {
       });
       const data = await res.json();
       if (data.success) {
-        if (selectedLeague) {
-            selectedLeague.sec_access_before_hours = updatedData.sec_access_before_hours;
-            selectedLeague.sec_access_after_hours = updatedData.sec_access_after_hours;
-            selectedLeague.disqualification_mode = updatedData.disqualification_mode;
-            selectedLeague.reserve_goalies_enabled = updatedData.reserve_goalies_enabled;
-            selectedLeague.reserve_goalie_dq_games_enabled = updatedData.reserve_goalie_dq_games_enabled;
-            selectedLeague.reserve_goalie_own_dq_blocks = updatedData.reserve_goalie_own_dq_blocks;
-        }
+        // Раньше поля правились прямо в объекте лиги, по одному перечисленному вручную.
+        // Новая настройка в этот список не попадала и подхватывалась только после F5 —
+        // теперь отдаём весь набор в состояние приложения (см. patchSelectedLeague в App).
+        onPatchSelectedLeague?.(updatedData);
       }
     } catch (err) {
       setToast({ title: 'Ошибка', message: 'Автосохранение не удалось', type: 'error' });
@@ -230,6 +238,120 @@ export function PreferencesTab({ setToast }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+
+        {/* БЛОК: ОБОЗНАЧЕНИЯ ЭКИПИРОВКИ — маленькие буквы рядом с фамилией в составах */}
+        <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px] relative">
+          <div>
+            <h3 className="text-[13px] font-black uppercase text-graphite tracking-wide">Обозначения экипировки</h3>
+            <p className="text-[11px] text-graphite-light mt-1 leading-snug">
+              Маленькие буквы рядом с фамилией в составах: в дивизионе, на странице матча и в панели секретаря.
+              Возраст считается на сегодня.
+            </p>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3" title="Игроку нужна защита ушей и шеи, а также капа">
+              {/* Код показываем тем же бейджем, каким он выглядит в составах, только крупнее —
+                  чтобы в настройке было видно ровно то, что увидят в списках игроков. */}
+              <span className="flex items-center gap-2.5 min-w-0">
+                <span className="inline-flex items-center shrink-0 px-2 py-1 rounded-md bg-orange/10 text-orange text-[14px] font-black leading-none">
+                  ушк
+                </span>
+                <span className="text-[11px] font-bold text-graphite/70 leading-snug">уши, шея, капа</span>
+              </span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.equip_mark_ushk_enabled}
+                  onChange={(e) => handleStepChange('equip_mark_ushk_enabled', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+
+            {formData.equip_mark_ushk_enabled && (
+              <div className="flex items-center justify-between gap-3 animate-zoom-in">
+                <span className="text-[11px] font-bold text-graphite/70 leading-snug">Кому: моложе, лет</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={formData.equip_mark_ushk_max_age}
+                  onChange={(e) => handleStepChange('equip_mark_ushk_max_age', Number(e.target.value) || 0)}
+                  disabled={!canEdit}
+                  className="w-[70px] shrink-0 px-2 py-1.5 rounded-md border border-graphite/20 bg-white text-[13px] font-bold text-graphite text-center outline-none focus:border-orange disabled:opacity-50"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-graphite/10" title="Игроку нужна капа">
+              <span className="flex items-center gap-2.5 min-w-0">
+                <span className="inline-flex items-center shrink-0 px-2 py-1 rounded-md bg-orange/10 text-orange text-[14px] font-black leading-none">
+                  к
+                </span>
+                <span className="text-[11px] font-bold text-graphite/70 leading-snug">капа</span>
+              </span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.equip_mark_mouthguard_enabled}
+                  onChange={(e) => handleStepChange('equip_mark_mouthguard_enabled', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+
+            {formData.equip_mark_mouthguard_enabled && (
+              <div className="flex items-center justify-between gap-3 animate-zoom-in">
+                <span className="text-[11px] font-bold text-graphite/70 leading-snug">Кому: рождённым после</span>
+                <input
+                  type="date"
+                  value={formData.equip_mark_mouthguard_born_after}
+                  onChange={(e) => handleStepChange('equip_mark_mouthguard_born_after', e.target.value)}
+                  disabled={!canEdit}
+                  className="shrink-0 px-2 py-1.5 rounded-md border border-graphite/20 bg-white text-[12px] font-bold text-graphite outline-none focus:border-orange disabled:opacity-50"
+                />
+              </div>
+            )}
+
+            <p className="text-[11px] text-graphite-light leading-snug">
+              Если игрок подпадает под оба правила, показывается только «ушк» — оно уже включает капу.
+            </p>
+          </div>
+        </div>
+
+        {/* БЛОК: ПРАВА КОМАНДЫ НА МАТЧ — что команда может менять в формации в Team-Room */}
+        <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px] relative">
+          <div>
+            <h3 className="text-[13px] font-black uppercase text-graphite tracking-wide">Состав на матч</h3>
+            <p className="text-[11px] text-graphite-light mt-1 leading-snug">
+              Что команда вправе менять в формации на матч в приложении Team&nbsp;Room. Выключено —
+              номер и нашивки берутся из заявки на сезон, а вместо шторки правки команда видит пояснение.
+            </p>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3" title="Команда сможет поставить игроку другой номер именно на этот матч">
+              <span className="text-[11px] font-bold text-graphite/70 leading-snug">Разрешить менять игровой номер</span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.allow_match_jersey_change}
+                  onChange={(e) => handleStepChange('allow_match_jersey_change', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3" title="Команда сможет назначить на этот матч другого капитана и ассистентов">
+              <span className="text-[11px] font-bold text-graphite/70 leading-snug">Разрешить назначать капитана и ассистента</span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.allow_match_letters_change}
+                  onChange={(e) => handleStepChange('allow_match_letters_change', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
           </div>
         </div>
 

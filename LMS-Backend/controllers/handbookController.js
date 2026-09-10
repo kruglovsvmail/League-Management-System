@@ -51,7 +51,9 @@ export const getUsers = async (req, res) => {
           u.middle_name,
           u.birth_date,
           u.avatar_url as user_avatar,
-          tm_latest.photo_url as tm_photo_url,
+          -- Внутри лиги человека показываем по заявочному фото (снимок на момент допуска).
+          -- Нет снимка (или справочник открыт без лиги) — берём последнее фото в составе команды.
+          COALESCE(roster_photo.photo_snapshot_url, tm_latest.photo_url) as tm_photo_url,
           (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'city', t.city, 'logo_url', t.logo_url) ORDER BY t.name)
            FROM team_members tm
            JOIN teams t ON t.id = tm.team_id
@@ -65,6 +67,16 @@ export const getUsers = async (req, res) => {
           SELECT DISTINCT ON (user_id) user_id, photo_url
           FROM team_members WHERE photo_url IS NOT NULL ORDER BY user_id, id DESC
       ) tm_latest ON tm_latest.user_id = u.id
+      LEFT JOIN LATERAL (
+          SELECT tr.photo_snapshot_url
+          FROM tournament_rosters tr
+          JOIN tournament_teams tt ON tt.id = tr.tournament_team_id
+          JOIN divisions div ON div.id = tt.division_id
+          JOIN seasons s ON s.id = div.season_id
+          WHERE tr.player_id = u.id AND s.league_id = $3::int AND tr.photo_snapshot_url IS NOT NULL
+          ORDER BY s.is_active DESC, s.start_date DESC, tr.id DESC
+          LIMIT 1
+      ) roster_photo ON true
       ${whereCondition}
       ORDER BY u.last_name, u.first_name
       LIMIT $1 OFFSET $2

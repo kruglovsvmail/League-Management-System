@@ -16,7 +16,9 @@ export const getTransfers = async (req, res) => {
                 COALESCE(rr.position, last_roster.position) as position,
 
                 u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date,
-                tm.photo_url as member_photo,
+                -- Фото: если человек уже допущен в этот дивизион, показываем снимок из заявки,
+                -- иначе (заявка на добавление) — живое фото из состава команды.
+                COALESCE(last_roster.photo_snapshot_url, tm.photo_url) as member_photo,
                 t.name as team_name, t.logo_url as team_logo,
                 d.name as division_name, d.application_start, d.application_end, d.transfer_start, d.transfer_end
             FROM roster_requests rr
@@ -27,7 +29,7 @@ export const getTransfers = async (req, res) => {
             
             -- Получаем данные из последней заявки только если это не 'add'
             LEFT JOIN LATERAL (
-                SELECT tr.jersey_number, tr.position 
+                SELECT tr.jersey_number, tr.position, tr.photo_snapshot_url
                 FROM tournament_rosters tr 
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id 
                 WHERE tt.division_id = rr.division_id AND tt.team_id = rr.team_id 
@@ -100,6 +102,9 @@ export const handleTransferAction = async (req, res) => {
                         UPDATE tournament_rosters 
                         SET period_end = NULL, 
                             application_status = 'declined', 
+                            -- Возврат в заявку — снова недопущенный, старый слепок фото гасим
+                            photo_snapshot_prev_url = photo_snapshot_url,
+                            photo_snapshot_url = NULL,
                             period_start = $3, 
                             position = $4, 
                             jersey_number = $5,
@@ -193,7 +198,8 @@ export const getTransferPlayers = async (req, res) => {
             players = pRes.rows;
         } else if (type === 'remove') {
             const pRes = await pool.query(`
-                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date, tm.photo_url as member_photo, tr.position, tr.jersey_number
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url, u.birth_date,
+                       COALESCE(tr.photo_snapshot_url, tm.photo_url) as member_photo, tr.position, tr.jersey_number
                 FROM tournament_rosters tr
                 JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
                 JOIN users u ON tr.player_id = u.id

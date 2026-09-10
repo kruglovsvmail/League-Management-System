@@ -45,15 +45,18 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
             const allPhotos = [];
             const seenUrls = new Set();
 
-            if (resData.info.avatar_url) {
-              allPhotos.push({ url: resData.info.avatar_url, type: 'avatar' });
-              seenUrls.add(resData.info.avatar_url);
-            }
-
+            // Личный аватар в лиге не показываем — только фото из заявок (снимок
+            // на момент допуска) и фото игрока в составе команды.
             const teamPhotos = resData.info.team_photos || [];
             teamPhotos.forEach(p => {
               if (p.url && !seenUrls.has(p.url)) {
-                allPhotos.push({ url: p.url, type: 'team', teamLogo: p.teamLogo });
+                allPhotos.push({
+                  url: p.url,
+                  type: 'team',
+                  teamLogo: p.teamLogo,
+                  divisionLogo: p.divisionLogo,
+                  divisionName: p.divisionName,
+                });
                 seenUrls.add(p.url);
               }
             });
@@ -354,6 +357,17 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                 {currentPhoto?.type === 'team' && (
                   <div className="absolute bottom-1 left-1 w-8 h-8 p-1 z-10 flex items-center justify-center">
                     <img src={getImageUrl(currentPhoto.teamLogo || '/default/Logo_team_default.webp')} alt="Лого" className="w-full h-full object-contain" />
+                  </div>
+                )}
+
+                {/* Снимок из заявки — рядом с эмблемой команды лого дивизиона
+                    (0,8 от размера командного), чтобы было видно турнир этого фото. */}
+                {currentPhoto?.type === 'team' && currentPhoto?.divisionLogo && (
+                  <div
+                    className="absolute bottom-1 right-1 w-[1.6rem] h-[1.6rem] p-1 z-10 flex items-center justify-center"
+                    title={currentPhoto.divisionName || ''}
+                  >
+                    <img src={getImageUrl(currentPhoto.divisionLogo)} alt="" className="w-full h-full object-contain" />
                   </div>
                 )}
 

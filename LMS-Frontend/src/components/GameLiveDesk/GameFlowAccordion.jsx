@@ -18,7 +18,9 @@ export const GameFlowAccordion = ({
   onRequestPlusMinus,
   isSaving,
   goalieLog,
-  isReadOnly
+  isReadOnly,
+  // Нужна только значкам экипировки по возрасту в протоколе
+  league
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -47,6 +49,7 @@ export const GameFlowAccordion = ({
                   teamName={game.home_team_name}
                   teamLogo={getImageUrl(game.home_team_logo || game.home_logo_url || game.home_logo)}
                   roster={homeRoster}
+                  league={league}
                   teamEvents={events.filter(e => e.team_id === game.home_team_id)}
                   oppEvents={events.filter(e => e.team_id === game.away_team_id)}
                   timerSeconds={timerSeconds}
@@ -67,6 +70,7 @@ export const GameFlowAccordion = ({
                   teamName={game.away_team_name}
                   teamLogo={getImageUrl(game.away_team_logo || game.away_logo_url || game.away_logo)}
                   roster={awayRoster}
+                  league={league}
                   teamEvents={events.filter(e => e.team_id === game.away_team_id)}
                   oppEvents={events.filter(e => e.team_id === game.home_team_id)}
                   timerSeconds={timerSeconds}

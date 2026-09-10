@@ -29,7 +29,12 @@ export const getLeagueDisqualifications = async (req, res) => {
                 u.middle_name,
                 u.avatar_url,
                 staff_role.tournament_role as staff_role,
-                (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = d.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1) as member_photo,
+                -- Фото: сначала снимок из последней заявки этой команды в лиге (в лиге человека
+                -- узнают по заявочному фото), и только если снимка нет — живое фото в составе команды
+                COALESCE(
+                    roster_photo.photo_snapshot_url,
+                    (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = d.team_id AND tm.photo_url IS NOT NULL ORDER BY id DESC LIMIT 1)
+                ) as member_photo,
                 t.name as team_name,
                 t.logo_url as team_logo,
                 cur_div.name as division_name,
@@ -51,6 +56,18 @@ export const getLeagueDisqualifications = async (req, res) => {
                 ORDER BY s.is_active DESC, s.start_date DESC
                 LIMIT 1
             ) cur_div ON true
+            -- Снимок фото из последней заявки этой команды в лиге (см. member_photo выше)
+            LEFT JOIN LATERAL (
+                SELECT tr.photo_snapshot_url
+                FROM tournament_rosters tr
+                JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                JOIN divisions div ON tt.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE tr.player_id = d.user_id AND tt.team_id = d.team_id AND s.league_id = d.league_id
+                  AND tr.photo_snapshot_url IS NOT NULL
+                ORDER BY s.is_active DESC, s.start_date DESC, tr.id DESC
+                LIMIT 1
+            ) roster_photo ON true
             -- Роль представителя (для отображения), если это дисквалификация представителя команды
             LEFT JOIN LATERAL (
                 SELECT ttr.tournament_role

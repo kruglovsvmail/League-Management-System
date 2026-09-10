@@ -843,7 +843,10 @@ export const getSdkMeetingDecisions = async (req, res) => {
              COALESCE(u.last_name, u2.last_name) as last_name,
              COALESCE(u.middle_name, u2.middle_name) as middle_name,
              COALESCE(u.avatar_url, u2.avatar_url) as user_avatar_url,
+             -- Игрок опознаётся по фото из заявки (снимок на момент допуска); у представителя
+             -- заявочного снимка нет, поэтому для него — живое фото в составе команды
              COALESCE(
+                 tr.photo_snapshot_url,
                  (SELECT photo_url FROM team_members tm WHERE tm.user_id = u.id AND tm.team_id = t.id AND tm.photo_url IS NOT NULL ORDER BY tm.id DESC LIMIT 1),
                  (SELECT photo_url FROM team_members tm WHERE tm.user_id = u2.id AND tm.team_id = t.id AND tm.photo_url IS NOT NULL ORDER BY tm.id DESC LIMIT 1)
              ) as team_member_photo_url,

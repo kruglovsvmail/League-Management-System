@@ -54,7 +54,8 @@ const formatForDB = (date) => {
 };
 
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim();
-const personPhoto = (p) => getImageUrl(p.team_member_photo_url || p.user_avatar_url || '/default/user_default.webp');
+// Личный аватар в лиге не показываем — только заявочное фото или фото в составе команды
+const personPhoto = (p) => getImageUrl(p.team_member_photo_url || '/default/user_default.webp');
 
 export function TeamDocsBulkDrawer({ isOpen, onClose, teamApp, roster = [], staff = [], docTypes = ['medical'], onSaved, showToast }) {
   // Дивизион может требовать и справку, и полис — тогда шторка одна, а тип переключается

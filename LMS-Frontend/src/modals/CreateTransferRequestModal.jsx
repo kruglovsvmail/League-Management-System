@@ -217,7 +217,7 @@ export function CreateTransferRequestModal({ isOpen, onClose, divisions = [], on
                 filteredPlayers.map(p => (
                   <div key={p.id} onClick={() => handlePlayerSelect(p)} className={`flex items-center gap-4 p-3 rounded-md border transition-all duration-300 ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'} ${selectedPlayerId === p.id ? 'border-orange bg-orange/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}>
                     <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
-                      <img src={getImageUrl(p.member_photo || p.avatar_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
+                      <img src={getImageUrl(p.member_photo || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[14px] font-bold text-graphite leading-tight">{p.last_name} {p.first_name} {p.middle_name}</span>

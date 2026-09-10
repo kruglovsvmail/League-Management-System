@@ -94,7 +94,7 @@ export function RosterPickerPanel({
                     {isChecked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><polyline points="20 6 9 17 4 12" /></svg>}
                   </div>
                   <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
-                    <img src={getImageUrl(m.team_member_photo_url || m.user_avatar_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
+                    <img src={getImageUrl(m.team_member_photo_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[14px] font-bold text-graphite leading-tight">{m.last_name} {m.first_name} {m.middle_name}</span>
@@ -132,7 +132,7 @@ export function RosterPickerPanel({
                 className={`flex items-center gap-4 p-3 rounded-md border cursor-pointer transition-all duration-300 ${selectedTeamRoleId === s.tournament_team_role_id ? 'border-status-rejected bg-status-rejected/5 shadow-sm' : 'border-graphite/10 hover:border-graphite/30 bg-white'}`}
               >
                 <div className="w-[42px] h-[42px] rounded-lg bg-graphite/10 overflow-hidden shrink-0 flex items-center justify-center">
-                  <img src={getImageUrl(s.team_member_photo_url || s.user_avatar_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
+                  <img src={getImageUrl(s.team_member_photo_url || '/default/user_default.webp')} alt="avatar" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[14px] font-bold text-graphite leading-tight">{s.last_name} {s.first_name} {s.middle_name}</span>
