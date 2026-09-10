@@ -37,7 +37,7 @@ export const PERMISSIONS = {                                                    
   DIVISIONS_TEAM_QUAL_MODAL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                   // Открытие модального окна для изменения квалификации игроков/команды
   DIVISIONS_TEAM_DOCS_MODAL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                   // Открытие модального окна работы с документами (страховки, справки)
   DIVISIONS_TEAM_FEE_MODAL: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                    // Открытие модального окна для фиксации оплаты турнирных взносов
-  DIVISIONS_PLAYER_ADMIT_TOGGLE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],               // Право вручную допускать конкретного игрока к матчам (тумблер "Допуск")
+  DIVISIONS_PERSON_ADMIT_TOGGLE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],               // Право вручную допускать к матчам конкретного человека в заявке — и игрока, и представителя (тумблер "Допуск"). Допуск у них общий: см. LMS-Backend/utils/personAdmission.js
   DIVISIONS_TEAM_ROSTER_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                // Право самой лиге вести состав заявки команды (дивизионы с league_managed_roster)
 
   // -------------------------------------------------------------------------- 

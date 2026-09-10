@@ -1096,6 +1096,12 @@ export const getGameRoster = async (req, res) => {
                 JOIN games g ON g.division_id = tt.division_id
                    AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
+                -- Штаб попадает в протокол только с допуском лиги — тот же тумблер, что и
+                -- у игроков, только у представителя он лежит в своей таблице (ролей у него
+                -- бывает несколько, а допуск один). Нет строки — значит не допущен.
+                JOIN tournament_staff_admission tsa
+                  ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
+                 AND tsa.is_admitted = true
                 WHERE g.id = $1
                   AND tt.team_id = $2
                   AND ttr.left_at IS NULL

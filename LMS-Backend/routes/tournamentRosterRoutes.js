@@ -5,6 +5,7 @@ import { verifyToken, requirePermission } from '../controllers/authController.js
 
 import {
     updateTournamentRosterStatus,
+    updateTournamentStaffStatus,
     updateTournamentRosterFee,
     uploadTournamentRosterDocs,
     bulkUploadTournamentRosterDocs,
@@ -15,7 +16,12 @@ const router = express.Router();
 
 router.use(verifyToken);
 
-router.patch('/tournament-rosters/:id/status', requirePermission('DIVISIONS_PLAYER_ADMIT_TOGGLE'), updateTournamentRosterStatus);
+router.patch('/tournament-rosters/:id/status', requirePermission('DIVISIONS_PERSON_ADMIT_TOGGLE'), updateTournamentRosterStatus);
+// Тумблер допуска представителя. Адрес — «заявка + человек», а не строка роли: ролей у
+// человека может быть несколько, а допуск один (tournament_staff_admission). Путь через
+// /tournament-teams/:id ещё и резолвит лигу для проверки прав (getLeagueIdFromContext).
+router.patch('/tournament-teams/:id/staff/:userId/status', requirePermission('DIVISIONS_PERSON_ADMIT_TOGGLE'), updateTournamentStaffStatus);
+
 router.patch('/tournament-rosters/:id/fee', requirePermission('DIVISIONS_TEAM_FEE_MODAL'), updateTournamentRosterFee);
 
 // Документы допуска — на человека в заявке, а не на строку состава: представитель может
@@ -32,6 +38,6 @@ router.post('/tournament-teams/:id/person-docs/:userId', upload.fields([
 router.post('/tournament-teams/:id/roster-docs/bulk', upload.single('file'), requirePermission('DIVISIONS_TEAM_DOCS_MODAL'), bulkUploadTournamentRosterDocs);
 
 // ЭНДПОИНТ ДЛЯ ИНЛАЙН-РЕДАКТИРОВАНИЯ ВНУТРИ ЗАЯВКИ
-router.patch('/tournament-rosters/:id', requirePermission('DIVISIONS_PLAYER_ADMIT_TOGGLE'), updateTournamentRosterInline);
+router.patch('/tournament-rosters/:id', requirePermission('DIVISIONS_PERSON_ADMIT_TOGGLE'), updateTournamentRosterInline);
 
 export default router;

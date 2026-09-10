@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
+import { setPersonAdmission } from '../utils/personAdmission.js';
 
 const DOCS_BUCKET = 'hockeyeco-uploads';
 
@@ -62,44 +63,61 @@ const assertPersonInApplication = async (appId, userId) => {
  * («выключил — фото не изменилось — включил обратно»). Прежнее значение при этом уезжает в
  * photo_snapshot_prev_url — один слот с перезаписью, чтобы допущенное фото можно было
  * вернуть руками, если подмену нашли не сразу.
+ *
+ * Сама запись делается в utils/personAdmission.js: тот же человек может быть в заявке ещё и
+ * представителем, и оба его допуска обязаны меняться вместе. Строку ростера здесь только
+ * резолвим в пару «заявка + человек» — фронт по-прежнему шлёт id строки состава.
  */
 export const updateTournamentRosterStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { application_status } = req.body;
 
-        if (application_status === 'approved') {
-            await pool.query(`
-                UPDATE tournament_rosters tr
-                   SET application_status = $1,
-                       photo_snapshot_prev_url = tr.photo_snapshot_url,
-                       photo_snapshot_url = (
-                           SELECT tm.photo_url
-                             FROM tournament_teams tt
-                             JOIN team_members tm
-                               ON tm.team_id = tt.team_id AND tm.user_id = tr.player_id AND tm.left_at IS NULL
-                            WHERE tt.id = tr.tournament_team_id
-                            ORDER BY tm.id DESC
-                            LIMIT 1
-                       ),
-                       updated_at = NOW()
-                 WHERE tr.id = $2
-            `, [application_status, id]);
-        } else {
-            await pool.query(`
-                UPDATE tournament_rosters
-                   SET application_status = $1,
-                       photo_snapshot_prev_url = photo_snapshot_url,
-                       photo_snapshot_url = NULL,
-                       updated_at = NOW()
-                 WHERE id = $2
-            `, [application_status, id]);
+        const { rows } = await pool.query(
+            'SELECT tournament_team_id, player_id FROM tournament_rosters WHERE id = $1',
+            [id]
+        );
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Игрок не найден в заявке' });
         }
+
+        await setPersonAdmission(rows[0].tournament_team_id, rows[0].player_id, application_status);
 
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка смены статуса ростера:', err);
         res.status(500).json({ success: false, error: 'Ошибка смены статуса' });
+    }
+};
+
+/**
+ * Допуск представителя команды — тот же тумблер, но со стороны штаба.
+ *
+ * Адресуется парой «заявка + человек», а не строкой роли: ролей у человека может быть
+ * несколько, а допуск у него один (см. tournament_staff_admission). Значение статуса то же,
+ * что и у игрока, чтобы синхронизация была буквальной: 'approved' допускает, 'declined'
+ * снимает.
+ */
+export const updateTournamentStaffStatus = async (req, res) => {
+    try {
+        const { id, userId } = req.params;
+        const { application_status } = req.body;
+
+        const { rowCount } = await pool.query(`
+            SELECT 1 FROM tournament_team_roles
+             WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+             LIMIT 1
+        `, [id, userId]);
+        if (rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'Представитель не найден в этой заявке' });
+        }
+
+        await setPersonAdmission(id, userId, application_status);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка смены допуска представителя:', err);
+        res.status(500).json({ success: false, error: 'Ошибка смены допуска' });
     }
 };
 

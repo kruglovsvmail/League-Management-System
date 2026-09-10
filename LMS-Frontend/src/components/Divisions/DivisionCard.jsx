@@ -41,7 +41,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
   const canPublishDivision = checkAccess('DIVISIONS_PUBLISH');
   const canDeleteDivision = checkAccess('DIVISIONS_DELETE');
   const canChangeTeamStatus = checkAccess('DIVISIONS_TEAM_STATUS');
-  const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
+  const canTogglePersonAdmit = checkAccess('DIVISIONS_PERSON_ADMIT_TOGGLE');
   const canManageAppRoster = checkAccess('DIVISIONS_TEAM_ROSTER_MANAGE');
   // Общими на команду бывают справка и полис — показываем те, что требует дивизион.
   // Массовая загрузка идёт по тому же праву, что и карточка документов игрока.
@@ -176,7 +176,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
 
   const handleToggleRosterStatus = async (rosterId, currentStatus) => {
     // Проверка прав перед вызовом API
-    if (!canTogglePlayerAdmit) return;
+    if (!canTogglePersonAdmit) return;
 
     const newStatus = currentStatus === 'approved' ? 'declined' : 'approved';
     try {
@@ -185,7 +185,34 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       if (data.success) {
         setRosterData(prev => prev.map(p => p.tournament_roster_id === rosterId ? { ...p, application_status: newStatus } : p));
         setGlobalToast({ title: 'Успешно', message: 'Допуск игрока изменен', type: 'success' });
+        // Играющий тренер заявлен и в составе, и в штабе, а допуск у него общий: сервер
+        // поменял обе записи, поэтому вкладку представителей перечитываем целиком.
+        await loadTeamData(selectedTeam.id);
         onRefresh(true);
+      }
+    } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сети', type: 'error' }); }
+  };
+
+  // Тот же тумблер, но со стороны штаба. Адрес — «заявка + человек»: ролей у представителя
+  // бывает несколько, а допуск один. Строку в таблице правим по player_id, потому что во
+  // вкладке штаба выборка сложена по человеку (см. staffResult в tournamentTeamController).
+  //
+  // Перезагружаем состав целиком, а не одну строку: тот же человек может быть заявлен ещё
+  // и игроком, и тогда сервер поменял ему допуск и во вкладке состава — синхронно.
+  const handleToggleStaffStatus = async (userId, currentAdmitted) => {
+    if (!canTogglePersonAdmit) return;
+
+    const nextStatus = currentAdmitted ? 'declined' : 'approved';
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${selectedTeam.id}/staff/${userId}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ application_status: nextStatus }) });
+      const data = await res.json();
+      if (data.success) {
+        setStaffData(prev => prev.map(p => p.player_id === userId ? { ...p, is_admitted: !currentAdmitted } : p));
+        setGlobalToast({ title: 'Успешно', message: 'Допуск представителя изменен', type: 'success' });
+        await loadTeamData(selectedTeam.id);
+        onRefresh(true);
+      } else {
+        setGlobalToast({ title: 'Ошибка', message: data.error || 'Не удалось изменить допуск', type: 'error' });
       }
     } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сети', type: 'error' }); }
   };
@@ -577,6 +604,7 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                           isStaff={rosterTab === 2} 
                           onOpenModal={(player, type) => { setActivePlayerForModal(player); setPlayerModalType(type); }} 
                           onToggleStatus={handleToggleRosterStatus} 
+                          onToggleStaffStatus={handleToggleStaffStatus}
                           onOpenProfile={(id) => setProfileModalPlayerId(id)} 
                           division={division}
                         />

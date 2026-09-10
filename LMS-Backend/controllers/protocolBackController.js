@@ -39,6 +39,11 @@ const fetchTeamMembers = async (divisionId, homeTeamId, awayTeamId) => {
             SELECT tt.team_id, ttr.user_id, true AS is_staff
             FROM tournament_team_roles ttr
             JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
+            -- Представителем на проверке игроков может быть только допущенный человек:
+            -- тумблер лежит в tournament_staff_admission, отсутствие строки = не допущен.
+            JOIN tournament_staff_admission tsa
+              ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
+             AND tsa.is_admitted = true
             WHERE tt.division_id = $1 AND tt.team_id IN ($2, $3) AND ttr.left_at IS NULL
         )
         SELECT m.team_id, m.user_id AS id, u.last_name, u.first_name, u.middle_name,

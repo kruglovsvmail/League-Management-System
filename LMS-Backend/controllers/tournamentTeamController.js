@@ -143,6 +143,9 @@ export const getTournamentTeamRoster = async (req, res) => {
                 tm.photo_url as team_member_photo_url,
                 string_agg(ttr.tournament_role, ', ') as roles,
                 user_active_disqualifications(ttr.user_id, $2) as active_disqualifications,
+                -- Тумблер допуска представителя. Строка заводится лениво, по первому щелчку,
+                -- поэтому её отсутствие и есть «не допущен» (tournament_staff_admission).
+                COALESCE(BOOL_OR(tsa.is_admitted), false) as is_admitted,
                 -- Дивизион требует документы и с представителей — по тем же флагам,
                 -- что и с игроков. Играющий тренер видит здесь ровно то же, что в составе.
                 MAX(tpd.insurance_url) as insurance_url,
@@ -156,6 +159,8 @@ export const getTournamentTeamRoster = async (req, res) => {
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = ttr.tournament_team_id AND tpd.user_id = ttr.user_id
+            LEFT JOIN tournament_staff_admission tsa
+                   ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
             LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.left_at IS NULL
             WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
             GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url

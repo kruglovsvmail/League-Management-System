@@ -25,10 +25,11 @@ const STAFF_ROLE_MAP = {
   head_coach: 'Тренер команды'
 };
 
-export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenProfile, isStaff, division }) {
+export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleStaffStatus, onOpenProfile, isStaff, division }) {
   // Достаем проверку прав из хука
   const { checkAccess, selectedLeague } = useAccess();
-  const canTogglePlayerAdmit = checkAccess('DIVISIONS_PLAYER_ADMIT_TOGGLE');
+  // Право одно на игроков и представителей: работа лиги в обоих случаях одна и та же
+  const canTogglePersonAdmit = checkAccess('DIVISIONS_PERSON_ADMIT_TOGGLE');
   
   const formatPhone = (phone) => {
     if (!phone) return '-';
@@ -301,8 +302,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
         <div className="flex justify-center">
           <Switch 
             checked={row.application_status === 'approved'} 
-            onChange={() => canTogglePlayerAdmit && onToggleStatus(row.tournament_roster_id, row.application_status)} 
-            disabled={!canTogglePlayerAdmit}
+            onChange={() => canTogglePersonAdmit && onToggleStatus(row.tournament_roster_id, row.application_status)} 
+            disabled={!canTogglePersonAdmit}
           />
         </div>
       )
@@ -377,26 +378,45 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onOpenPro
     },
     ...(totalDocsRequired > 0 ? [docsColumn] : []),
     {
-      label: 'Роль', 
+      label: 'Роль',
       sortKey: 'roles',
-      width: 'w-[900px]',
+      width: 'w-[780px]',
       render: (row) => {
         if (!row.roles) return <span className="text-graphite/50">-</span>;
-        
+
         const translatedRoles = row.roles
           .split(', ')
           .map(role => STAFF_ROLE_MAP[role] || role)
           .join(', ');
 
         return (
-          <span 
-            className="text-[14px] font-medium text-graphite block truncate w-full" 
+          <span
+            className="text-[14px] font-medium text-graphite block truncate w-full"
             title={translatedRoles}
           >
             {translatedRoles}
           </span>
         );
       }
+    },
+    // Тот же тумблер, что и у игроков, и то же право. Допуск принадлежит человеку, а не
+    // роли: у представителя ролей бывает несколько, а строка допуска одна. Поэтому и
+    // адресуется он парой «заявка + человек», а не id роли. Если тот же человек заявлен
+    // ещё и игроком, оба его тумблера ходят вместе — синхронизацию держит сервер
+    // (LMS-Backend/utils/personAdmission.js), поэтому здесь про неё знать не нужно.
+    {
+      label: 'Допуск',
+      sortKey: 'is_admitted',
+      width: 'w-[120px]', align: 'center',
+      render: (row) => (
+        <div className="flex justify-center">
+          <Switch
+            checked={!!row.is_admitted}
+            onChange={() => canTogglePersonAdmit && onToggleStaffStatus && onToggleStaffStatus(row.player_id, row.is_admitted)}
+            disabled={!canTogglePersonAdmit}
+          />
+        </div>
+      )
     }
   ];
 

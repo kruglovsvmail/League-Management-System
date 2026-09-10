@@ -96,12 +96,18 @@ const fetchRawProtocolData = async (gameId) => {
     // Человек может быть заявлен сразу в нескольких ролях (руководитель + тренер + администратор) —
     // это отдельные строки в tournament_team_roles. Группируем по человеку, иначе он попадёт
     // в выпадающие списки подписантов по разу на каждую свою роль.
+    //
+    // Подписать протокол может только допущенный представитель: тумблер допуска лежит в
+    // tournament_staff_admission парой «заявка + человек», строки нет — значит не допущен.
     const signersQuery = `
         SELECT 'home' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name,
                array_agg(DISTINCT ttr.tournament_role) as roles
         FROM tournament_team_roles ttr
         JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
         JOIN users u ON u.id = ttr.user_id
+        JOIN tournament_staff_admission tsa
+          ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
+         AND tsa.is_admitted = true
         WHERE tt.team_id = $2 AND tt.division_id = $1 AND ttr.left_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
         GROUP BY ttr.user_id, u.last_name, u.first_name, u.middle_name
@@ -111,6 +117,9 @@ const fetchRawProtocolData = async (gameId) => {
         FROM tournament_team_roles ttr
         JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
         JOIN users u ON u.id = ttr.user_id
+        JOIN tournament_staff_admission tsa
+          ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
+         AND tsa.is_admitted = true
         WHERE tt.team_id = $3 AND tt.division_id = $1 AND ttr.left_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
         GROUP BY ttr.user_id, u.last_name, u.first_name, u.middle_name
