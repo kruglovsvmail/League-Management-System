@@ -4,6 +4,8 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom' 
 import App from './App.jsx'
 import './assets/global.css'
+// Кадрирование фото 3:4 в квадратных рамках — глобально, см. utils/photoCrop.js
+import './utils/photoCrop.js';
 
 // --- ДОБАВЛЯЕМ НАСТРОЙКУ DAYJS СЮДА ---
 import dayjs from 'dayjs';
