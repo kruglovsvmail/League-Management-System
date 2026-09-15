@@ -25,7 +25,7 @@ export function GameCard({
     isEditMode,
     editingRowIds,
     setEditingRowIds,
-    approvedTeams,
+    scheduleTeams,
     arenas,
     gamesList,
     brackets = [], 
@@ -151,8 +151,8 @@ onUpdate(game.id, updates);
             homeOptions = [game.home_team_name || 'Хозяева', 'Очистите события и составы'];
             awayOptions = [game.away_team_name || 'Гости', 'Очистите события и составы'];
         } else {
-            homeOptions = ['Хозяева', ...approvedTeams.filter(t => t.team_id !== game.away_team_id).map(t => t.name)];
-            awayOptions = ['Гости', ...approvedTeams.filter(t => t.team_id !== game.home_team_id).map(t => t.name)];
+            homeOptions = ['Хозяева', ...scheduleTeams.filter(t => t.team_id !== game.away_team_id).map(t => t.name)];
+            awayOptions = ['Гости', ...scheduleTeams.filter(t => t.team_id !== game.home_team_id).map(t => t.name)];
         }
 
         const currentArenaIdStr = game.arena_id ? String(game.arena_id) : 'none';
@@ -358,7 +358,7 @@ onUpdate(game.id, updates);
                                 if (val === 'Хозяева' || val === 'Не выбрано') {
                                     handleFieldChange('home_team_id', null);
                                 } else {
-                                    const t = approvedTeams.find(team => team.name === val);
+                                    const t = scheduleTeams.find(team => team.name === val);
                                     handleFieldChange('home_team_id', t ? t.team_id : null);
                                 }
                             }}
@@ -406,7 +406,7 @@ onUpdate(game.id, updates);
                                 if (val === 'Гости' || val === 'Не выбрано') {
                                     handleFieldChange('away_team_id', null);
                                 } else {
-                                    const t = approvedTeams.find(team => team.name === val);
+                                    const t = scheduleTeams.find(team => team.name === val);
                                     handleFieldChange('away_team_id', t ? t.team_id : null);
                                 }
                             }}

@@ -324,7 +324,7 @@ export function GamePage() {
     const totalPlayers = roster.length;
 
     const rosterColumns = [
-      { label: 'Фото', width: 'w-[80px]', align: 'left', render: (r) => ( <img src={getImageUrl(r.photo_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" /> )},
+      { label: 'Фото', width: 'w-[80px]', align: 'left', render: (r) => ( <div className="w-7 h-7 rounded overflow-hidden bg-graphite/10 shrink-0"><img src={getImageUrl(r.photo_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="" /></div> )},
       { label: 'Игрок',  align: 'left',  render: (r) => (
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={() => setSelectedPlayerId(r.player_id)} className="text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors flex items-center gap-1 truncate text-left">
@@ -344,7 +344,7 @@ export function GamePage() {
     ];
 
     const staffColumns = [
-      { label: 'Фото', width: 'w-[80px]', render: (r) => ( <img src={getImageUrl(r.photo_url || '/default/user_default.webp')} className="w-7 h-7 rounded object-cover bg-graphite/5" alt="" /> )},
+      { label: 'Фото', width: 'w-[80px]', render: (r) => ( <div className="w-7 h-7 rounded overflow-hidden bg-graphite/5 shrink-0"><img src={getImageUrl(r.photo_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="" /></div> )},
       { label: 'Представитель', render: (r) => (
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-semibold text-graphite/85">{r.last_name} {r.first_name}</span>
@@ -447,7 +447,9 @@ export function GamePage() {
     // поэтому имя усекается только когда места действительно не хватает.
     const goalieColumns = [
       { label: 'Фото', width: 'w-12 !pl-4 !pr-1', align: 'left', render: (r) => (
-        <img src={photoSrc(r)} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" />
+        <div className="w-7 h-7 rounded overflow-hidden bg-graphite/10 shrink-0">
+          <img src={photoSrc(r)} className="w-full h-full object-cover" alt="" />
+        </div>
       )},
       { label: 'Вратарь', width: '!pl-1', align: 'left', headerAlign: 'center', render: (r) => (
         <button onClick={() => setSelectedPlayerId(r.player_id)} className="block w-full text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">
@@ -469,7 +471,9 @@ export function GamePage() {
 
     const skaterColumns = [
       { label: 'Фото', width: 'w-12 !pl-4 !pr-1', align: 'left', render: (r) => (
-        <img src={photoSrc(r)} className="w-7 h-7 rounded object-cover bg-graphite/10" alt="" />
+        <div className="w-7 h-7 rounded overflow-hidden bg-graphite/10 shrink-0">
+          <img src={photoSrc(r)} className="w-full h-full object-cover" alt="" />
+        </div>
       )},
       { label: 'Игрок', width: '!pl-1', align: 'left', headerAlign: 'center', render: (r) => (
         <button onClick={() => setSelectedPlayerId(r.player_id)} className="block w-full text-[13px] font-semibold text-graphite/85 hover:text-orange transition-colors truncate text-left">

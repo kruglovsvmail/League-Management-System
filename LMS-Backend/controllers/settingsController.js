@@ -579,3 +579,54 @@ export const removeLeagueOwner = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// --- ГЛОБАЛЬНЫЕ ПАРАМЕТРЫ ЛИГИ ---
+// Настройки лиги, которые её руководство менять не должно: они меняют правила работы
+// с чужими данными (общая база пользователей, составы команд), поэтому живут не на
+// вкладке «Параметры» лиги, а в разделе «Команды → Лиги» у глобального администратора.
+// Право LEAGUE_GLOBAL_PARAMS_MANAGE с пустым списком ролей — как у владельцев лиги.
+//
+// league_roster_global_search — шторка «Состав заявки» в дивизионах, где состав ведёт
+// лига, ищет игроков по всей базе пользователей, а не только по игровому составу
+// команды. Найденного вне команды сервер сам добавляет в команду и её игровой состав
+// (см. tournamentTeamController.saveTournamentTeamComposition).
+
+export const getLeagueGlobalParams = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const { rows } = await pool.query(
+      'SELECT league_roster_global_search FROM leagues WHERE id = $1',
+      [leagueId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Лига не найдена' });
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+export const updateLeagueGlobalParams = async (req, res) => {
+  try {
+    const { leagueId } = req.params;
+    const { league_roster_global_search } = req.body;
+
+    // Поле не прислали — не трогаем: карточка шлёт только то, что переключила
+    const toggle = (value) => (value === undefined ? null : !!value);
+
+    const { rows } = await pool.query(
+      `UPDATE leagues
+          SET league_roster_global_search = COALESCE($1, league_roster_global_search)
+        WHERE id = $2
+        RETURNING league_roster_global_search`,
+      [toggle(league_roster_global_search), leagueId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Лига не найдена' });
+    }
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};

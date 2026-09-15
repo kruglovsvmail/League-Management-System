@@ -10,6 +10,7 @@ import {
     deleteTournamentTeamLeaguePaper,
     getTournamentTeamRoster,
     getTournamentTeamRosterPool,
+    searchTournamentTeamRosterCandidates,
     saveTournamentTeamComposition
 } from '../controllers/tournamentTeamController.js';
 
@@ -33,6 +34,8 @@ router.delete('/tournament-teams/:id/paper_league', requirePermission('DIVISIONS
 // Ведение состава заявки самой лигой (дивизионы с league_managed_roster).
 // Контекст лиги для проверки прав резолвится по /tournament-teams/:id автоматически.
 router.get('/tournament-teams/:id/roster-pool', requirePermission('DIVISIONS_TEAM_ROSTER_MANAGE'), getTournamentTeamRosterPool);
+// Поиск игроков по всей базе пользователей — только в лигах с league_roster_global_search
+router.get('/tournament-teams/:id/roster-candidates', requirePermission('DIVISIONS_TEAM_ROSTER_MANAGE'), searchTournamentTeamRosterCandidates);
 router.put('/tournament-teams/:id/roster-composition', requirePermission('DIVISIONS_TEAM_ROSTER_MANAGE'), saveTournamentTeamComposition);
 
 export default router;

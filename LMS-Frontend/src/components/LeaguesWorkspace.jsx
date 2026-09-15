@@ -6,17 +6,23 @@ import { Loader } from '../ui/Loader';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { Icon } from '../ui/Icon';
+import { Switch } from '../ui/Switch';
 
 /**
  * Вкладка «Лиги» раздела управления командами (только глобальный админ).
  *
- * Пока здесь одно — владельцы лиги. Владелец стоит выше любой штатной роли: внутри своей
- * лиги ему можно всё, включая правку матчей вне окна управления, состава заявки вне
- * заявочной кампании и смену статуса заявки в любом её состоянии. За пределы лиги права
- * не выходят: разделы платформы остаются за глобальным администратором.
+ * Здесь два блока. Первый — владельцы лиги. Владелец стоит выше любой штатной роли:
+ * внутри своей лиги ему можно всё, включая правку матчей вне окна управления, состава
+ * заявки вне заявочной кампании и смену статуса заявки в любом её состоянии. За пределы
+ * лиги права не выходят: разделы платформы остаются за глобальным администратором.
  *
  * Владельцев у лиги сколько угодно. В самой лиге факт владения нигде не подписывается —
  * штат про владельцев не знает, они просто всё могут.
+ *
+ * Второй блок — глобальные параметры лиги: настройки, которые меняют правила работы
+ * с чужими данными (общая база пользователей, составы команд) и потому не отдаются
+ * руководству лиги на вкладке «Параметры». Сейчас параметр один — «Состав заявки из
+ * общей базы» (leagues.league_roster_global_search).
  */
 
 const formatPhoneDisplay = (raw) => {
@@ -56,8 +62,14 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
   const [pendingRemove, setPendingRemove] = useState(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
+  // Глобальные параметры лиги. null — ещё не загружены: тумблер до ответа не рисуем,
+  // иначе он мигнёт выключенным у лиги, где параметр включён.
+  const [globalParams, setGlobalParams] = useState(null);
+  const [isParamsSaving, setIsParamsSaving] = useState(false);
+
   const authHeaders = { 'Authorization': `Bearer ${getToken()}` };
   const baseUrl = `${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague?.id}/owners`;
+  const paramsUrl = `${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague?.id}/global-params`;
 
   // Выбор лиги хранит страница: кнопка возврата у неё в шапке. Здесь только сбрасываем
   // то, что относится к прежней лиге.
@@ -65,7 +77,52 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
     setOwners([]);
     setPhoneRaw('');
     setFoundUser(null);
+    setGlobalParams(null);
     onSelectLeague?.(league);
+  };
+
+  useEffect(() => {
+    if (!selectedLeague?.id) return;
+    let cancelled = false;
+
+    fetch(`${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague.id}/global-params`, { headers: authHeaders })
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        if (data.success) setGlobalParams(data.data || {});
+        else showToast?.('Ошибка', data.error, 'error');
+      })
+      .catch(() => { if (!cancelled) showToast?.('Ошибка', 'Сбой загрузки параметров лиги', 'error'); });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLeague?.id]);
+
+  // Тумблер сохраняется сразу, без отдельной кнопки — как параметры на вкладке лиги.
+  // Шлём только переключённое поле: сервер остальные не трогает.
+  const handleParamToggle = async (field, value) => {
+    const prev = globalParams;
+    setGlobalParams({ ...prev, [field]: value });
+    setIsParamsSaving(true);
+    try {
+      const res = await fetch(paramsUrl, {
+        method: 'PUT',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGlobalParams(data.data || { ...prev, [field]: value });
+      } else {
+        setGlobalParams(prev);
+        showToast?.('Ошибка', data.error, 'error');
+      }
+    } catch (err) {
+      setGlobalParams(prev);
+      showToast?.('Ошибка', 'Не удалось сохранить параметр', 'error');
+    } finally {
+      setIsParamsSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -248,6 +305,52 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
         <div className="min-w-0">
           <span className="block font-black text-graphite text-[18px] truncate">{selectedLeague.name}</span>
           <span className="block text-[12px] text-graphite-light mt-0.5">{selectedLeague.city || 'Город не указан'}</span>
+        </div>
+      </div>
+
+      {/* ГЛОБАЛЬНЫЕ ПАРАМЕТРЫ ЛИГИ — раскладка карточек та же, что на вкладке «Параметры» лиги */}
+      <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6">
+        <div className="mb-5 pb-4 border-b border-graphite/10">
+          <h3 className="text-[16px] font-black uppercase text-graphite tracking-wide">Глобальные параметры</h3>
+          <p className="text-[12px] font-medium text-graphite-light mt-1">Правила работы лиги с общей базой платформы. Руководству лиги эти настройки не показываются</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px] relative">
+            {isParamsSaving && (
+              <div className="absolute top-4 right-4 flex items-center gap-1.5 text-[10px] font-bold text-orange uppercase tracking-widest animate-pulse">
+                <Icon name="refresh" className="w-3 h-3 animate-spin" /> Сохранение
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Icon name="user_plus" className="w-4 h-4 text-graphite/40" />
+                <h4 className="text-[13px] font-black uppercase text-graphite tracking-tight">Состав заявки из общей базы</h4>
+              </div>
+              <p className="text-[11px] text-graphite-light leading-relaxed pr-8">
+                В дивизионах, где состав заявки ведёт лига, шторка «Состав заявки» ищет игроков по всем
+                пользователям платформы, а не по игровому составу команды. Найденного вне команды сервер
+                сам добавляет в команду и её игровой состав (первый свободный номер, нападающий),
+                а владельцы и руководитель команды получают push и окно с подробностями в Team-Room.
+                Представители по-прежнему выбираются из штаба команды.
+              </p>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <span className="text-[11px] font-bold text-graphite/70">Использовать</span>
+              <div className="shrink-0">
+                {globalParams ? (
+                  <Switch
+                    checked={!!globalParams.league_roster_global_search}
+                    onChange={(e) => handleParamToggle('league_roster_global_search', e.target.checked)}
+                    disabled={isParamsSaving}
+                  />
+                ) : (
+                  <div className="w-[40px] h-[22px] rounded-pill bg-graphite/10 animate-pulse" />
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

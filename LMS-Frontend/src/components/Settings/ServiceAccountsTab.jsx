@@ -201,11 +201,13 @@ export function ServiceAccountsTab({ setToast }) {
       label: '', 
       width: 'w-[100px]', 
       render: (row) => (
-        <img 
-          src={getImageUrl(row.photo_url || '/default/user_default.webp')} 
-          className="w-10 h-10 rounded-lg object-cover bg-graphite/5 border border-graphite/10" 
-          alt="avatar" 
-        />
+        <div className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10 shrink-0">
+          <img
+            src={getImageUrl(row.photo_url || '/default/user_default.webp')}
+            className="w-full h-full object-cover"
+            alt="avatar"
+          />
+        </div>
       )
     },
     { label: 'Название / Логин', sortKey: 'name', render: (row) => (

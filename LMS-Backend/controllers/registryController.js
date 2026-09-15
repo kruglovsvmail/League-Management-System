@@ -3,6 +3,7 @@ import s3 from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
 import * as xlsx from 'xlsx';
+import { syncClubMembershipOnTeamJoin } from '../utils/clubMembership.js';
 
 // --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: Генерация 5-значного кода ---
 const generateVirtualCode = () => {
@@ -611,9 +612,144 @@ export const deleteRegistryFile = async (req, res) => {
 // ==========================================
 //               ИМПОРТ ИЗ EXCEL
 // ==========================================
-// Шаг 1/2 импорта: парсит Excel и подбирает совпадения по ФИ для каждой строки,
-// НИЧЕГО не пишет в базу. Фронт показывает ревью (тёзки — на explicit решение
-// Добавить/Пропустить по каждой), затем шлёт финальный список в confirmUserImport.
+// Файл формы: Фамилия, Имя, Отчество, Дата рождения, Рост, Вес, Телефон, Email,
+// Команда, Виртуальный. Порядок колонок роли не играет — строки разбираются по
+// заголовкам, английские ключи (first_name, phone, team_id...) тоже принимаются.
+
+// Телефон — это логин, поэтому в базе он строго +7XXXXXXXXXX. В файле же разрешаем
+// всё, что похоже на российский номер: 79220005675, +7 (922) 000-56-75, 89220005675,
+// 9220005675. Excel часто отдаёт номер числом — String() у 11-значного числа даёт
+// цифры без экспоненты. А вот «7,922E+10» текстом — уже потерянные цифры, это ошибка.
+const normalizeImportPhone = (raw) => {
+    if (raw === null || raw === undefined || String(raw).trim() === '') return { phone: null, error: null };
+    const str = typeof raw === 'number' ? String(Math.round(raw)) : String(raw).trim();
+    const digits = str.replace(/\D/g, '');
+    if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) {
+        return { phone: `+7${digits.slice(1)}`, error: null };
+    }
+    if (digits.length === 10) {
+        return { phone: `+7${digits}`, error: null };
+    }
+    return { phone: null, error: `Некорректный телефон «${str}» — нужно 11 цифр, например 79220005675` };
+};
+
+// Колонка «Команда» — id команды из реестра. Пусто — без привязки.
+const parseImportTeamId = (raw) => {
+    if (raw === null || raw === undefined || String(raw).trim() === '') return { teamId: null, error: null };
+    const str = String(raw).trim();
+    const id = Number(str.replace(/\s/g, ''));
+    if (!Number.isInteger(id) || id <= 0) {
+        return { teamId: null, error: `Некорректный id команды «${str}» — нужно целое число из реестра команд` };
+    }
+    return { teamId: id, error: null };
+};
+
+// Excel хранит дату числом дней с 1900 года, но человек может вписать и текстом
+// «25.08.1990» (или через «/», «-», пробел; год из двух цифр — как 20xx).
+const parseImportBirthDate = (raw) => {
+    if (!raw) return null;
+    if (typeof raw === 'number') {
+        const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+        return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+    }
+    if (typeof raw === 'string') {
+        // Уже ISO (так строки приходят обратно с ревью) — отдаём как есть
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim();
+        const parts = raw.trim().split(/[.,/ -]/);
+        if (parts.length === 3) {
+            let [day, month, year] = parts;
+            if (year.length === 2) year = '20' + year;
+            if (year.length === 4) return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+    }
+    return null;
+};
+
+const parseImportInt = (raw) => {
+    if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+    const n = parseInt(String(raw).replace(/\D/g, ''), 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+// Одна строка файла -> карточка пользователя + ошибки разбора (телефон, команда).
+// Общая для предпросмотра и подтверждения: на втором шаге фронт присылает уже
+// разобранные строки, но сервер разбирает их заново — доверять клиенту незачем.
+const parseImportRow = (row) => {
+    const get = (...keys) => {
+        for (const key of keys) {
+            if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') return row[key];
+        }
+        return null;
+    };
+
+    const errors = [];
+    const { phone, error: phoneError } = normalizeImportPhone(get('Телефон', 'phone'));
+    if (phoneError) errors.push(phoneError);
+    const { teamId, error: teamError } = parseImportTeamId(get('Команда', 'team_id'));
+    if (teamError) errors.push(teamError);
+
+    const rawVirtual = get('Виртуальный', 'is_virtual');
+    const isVirtual = rawVirtual === true || String(rawVirtual || '').trim().toLowerCase() === 'да';
+
+    const email = get('Email', 'email');
+
+    return {
+        first_name: String(get('Имя', 'first_name') || 'БезИмени').trim(),
+        last_name: String(get('Фамилия', 'last_name') || 'БезФамилии').trim(),
+        middle_name: get('Отчество', 'middle_name') ? String(get('Отчество', 'middle_name')).trim() : null,
+        email: email ? String(email).trim() : null,
+        phone,
+        is_virtual: isVirtual,
+        birth_date: parseImportBirthDate(get('Дата рождения', 'birth_date')),
+        height: parseImportInt(get('Рост', 'height')),
+        weight: parseImportInt(get('Вес', 'weight')),
+        team_id: teamId,
+        errors,
+    };
+};
+
+// Ошибки, которые видны только на всём наборе строк: несуществующие команды,
+// повторы телефона и email внутри файла. Дописывает errors и team_name прямо в строки.
+const validateImportRows = async (db, rows) => {
+    const teamIds = [...new Set(rows.map(r => r.team_id).filter(Boolean))];
+    const teamNames = new Map();
+    if (teamIds.length > 0) {
+        const { rows: teams } = await db.query('SELECT id, name FROM teams WHERE id = ANY($1::int[])', [teamIds]);
+        teams.forEach(t => teamNames.set(t.id, t.name));
+    }
+
+    const phoneRows = new Map();
+    const emailRows = new Map();
+    rows.forEach((row, idx) => {
+        if (row.phone) phoneRows.set(row.phone, [...(phoneRows.get(row.phone) || []), idx]);
+        if (row.email) emailRows.set(row.email.toLowerCase(), [...(emailRows.get(row.email.toLowerCase()) || []), idx]);
+    });
+
+    // Номер строки в файле: заголовок — первая, данные начинаются со второй
+    const fileLine = (idx) => idx + 2;
+
+    rows.forEach((row, idx) => {
+        row.team_name = row.team_id ? (teamNames.get(row.team_id) || null) : null;
+        if (row.team_id && !teamNames.has(row.team_id)) {
+            row.errors.push(`Команда с id ${row.team_id} не найдена в реестре`);
+        }
+        if (row.phone && phoneRows.get(row.phone).length > 1) {
+            const others = phoneRows.get(row.phone).filter(i => i !== idx).map(fileLine);
+            row.errors.push(`Телефон ${row.phone} повторяется в файле (строка ${others.join(', ')})`);
+        }
+        if (row.email && emailRows.get(row.email.toLowerCase()).length > 1) {
+            const others = emailRows.get(row.email.toLowerCase()).filter(i => i !== idx).map(fileLine);
+            row.errors.push(`Email ${row.email} повторяется в файле (строка ${others.join(', ')})`);
+        }
+    });
+};
+
+// Шаг 1/2 импорта: парсит Excel и подбирает совпадения для каждой строки, НИЧЕГО
+// не пишет в базу. Фронт показывает ревью: строки с ошибками разбора блокируют
+// импорт целиком (файл надо исправить), строки с уже занятым телефоном пропускаются
+// (телефон — уникальный логин, второго такого быть не может), тёзки по ФИ — на
+// явное решение Добавить/Пропустить по каждой. Затем финальный список уходит
+// в confirmUserImport.
 export const previewUserImport = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
@@ -656,54 +792,10 @@ export const previewUserImport = async (req, res) => {
             return cleanRow;
         });
 
-        const parsedRows = rows.map(row => {
-            const firstName = row['Имя'] || row['first_name'] || 'БезИмени';
-            const lastName = row['Фамилия'] || row['last_name'] || 'БезФамилии';
-            const middleName = row['Отчество'] || row['middle_name'] || null;
-            let email = row['Email'] || row['email'] || null;
-            const phone = row['Телефон'] || row['phone'] || null;
-            const isVirtual = String(row['Виртуальный'] || '').toLowerCase() === 'да' || row['is_virtual'] === true;
+        const parsedRows = rows.map(parseImportRow);
+        await validateImportRows(pool, parsedRows);
 
-            const rawBirthDate = row['Дата рождения'] || row['birth_date'] || null;
-            let parsedBirthDate = null;
-
-            if (rawBirthDate) {
-                if (typeof rawBirthDate === 'number') {
-                    const d = new Date(Math.round((rawBirthDate - 25569) * 86400 * 1000));
-                    if (!isNaN(d.getTime())) {
-                        parsedBirthDate = d.toISOString().split('T')[0];
-                    }
-                } else if (typeof rawBirthDate === 'string') {
-                    const parts = rawBirthDate.split(/[.,/ -]/);
-                    if (parts.length === 3) {
-                        let [day, month, year] = parts;
-                        if (year.length === 2) year = '20' + year;
-                        if (year.length === 4) {
-                            parsedBirthDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-                        }
-                    }
-                }
-            }
-
-            const rawHeight = row['Рост'] || row['height'] || null;
-            const parsedHeight = rawHeight ? parseInt(String(rawHeight).replace(/\D/g, ''), 10) : null;
-
-            const rawWeight = row['Вес'] || row['weight'] || null;
-            const parsedWeight = rawWeight ? parseInt(String(rawWeight).replace(/\D/g, ''), 10) : null;
-
-            return {
-                first_name: firstName,
-                last_name: lastName,
-                middle_name: middleName,
-                email: email || null,
-                phone: phone ? String(phone) : null,
-                is_virtual: isVirtual,
-                birth_date: parsedBirthDate,
-                height: parsedHeight || null,
-                weight: parsedWeight || null,
-            };
-        });
-
+        // Тёзки по Фамилии+Имени — предупреждение, решает админ
         const dupRows = await findNameDuplicates(pool, parsedRows.map(r => ({
             first_name: r.first_name, last_name: r.last_name,
         })));
@@ -717,10 +809,41 @@ export const previewUserImport = async (req, res) => {
             });
         });
 
-        const resultRows = parsedRows.map((row, idx) => ({
-            ...row,
-            matches: matchesByIdx[String(idx)] || [],
-        }));
+        // Занятые телефоны и email — это уже не тёзка, а тот же человек (телефон — логин).
+        // Такие строки в базу не пойдут, но админу надо видеть, кто это.
+        const phones = [...new Set(parsedRows.map(r => r.phone).filter(Boolean))];
+        const emails = [...new Set(parsedRows.map(r => r.email && r.email.toLowerCase()).filter(Boolean))];
+        const takenByPhone = new Map();
+        const takenByEmail = new Map();
+        if (phones.length > 0 || emails.length > 0) {
+            const { rows: existing } = await pool.query(`
+                SELECT u.id, u.first_name, u.last_name, u.middle_name, u.birth_date, u.phone, u.email, u.virtual_code,
+                       COALESCE((SELECT json_agg(t.name ORDER BY t.name)
+                                   FROM team_members tm JOIN teams t ON t.id = tm.team_id
+                                  WHERE tm.user_id = u.id), '[]') AS teams
+                FROM users u
+                WHERE u.phone = ANY($1::text[]) OR LOWER(u.email) = ANY($2::text[])
+            `, [phones, emails]);
+            existing.forEach(u => {
+                if (u.phone) takenByPhone.set(u.phone, u);
+                if (u.email) takenByEmail.set(u.email.toLowerCase(), u);
+            });
+        }
+
+        const resultRows = parsedRows.map((row, idx) => {
+            const phoneMatch = row.phone ? takenByPhone.get(row.phone) || null : null;
+            const emailMatch = row.email ? takenByEmail.get(row.email.toLowerCase()) || null : null;
+            return {
+                ...row,
+                matches: matchesByIdx[String(idx)] || [],
+                phone_match: phoneMatch,
+                // Занятый email при свободном телефоне — это, скорее всего, опечатка в
+                // файле, а не тот же человек: блокируем как ошибку строки
+                errors: emailMatch && !phoneMatch
+                    ? [...row.errors, `Email ${row.email} уже зарегистрирован (${emailMatch.last_name} ${emailMatch.first_name}, ID ${emailMatch.id})`]
+                    : row.errors,
+            };
+        });
 
         res.json({ success: true, rows: resultRows });
     } catch (err) {
@@ -729,19 +852,36 @@ export const previewUserImport = async (req, res) => {
     }
 };
 
-// Шаг 2/2 импорта: принимает уже разобранный и отревьюженный на фронте список
-// строк (только те, что реально нужно создать — новые + подтверждённые тёзки)
-// и вставляет их одной транзакцией, как раньше делал одношаговый importUsers.
+// Шаг 2/2 импорта: принимает отревьюженный на фронте список строк (новые + явно
+// подтверждённые тёзки) и вставляет их одной транзакцией. Строки разбираются и
+// проверяются заново: телефон снова нормализуется, команды перепроверяются — если
+// что-то не сходится, импорт отменяется целиком с указанием строки, как и при
+// дубле телефона в базе.
 export const confirmUserImport = async (req, res) => {
     const client = await pool.connect();
     try {
-        const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-        if (!rows.length) {
-            client.release();
+        // Клиент отдаётся в пул в finally — освобождать его в ранних return нельзя,
+        // повторный release роняет процесс уже после отправки ответа
+        const incoming = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (!incoming.length) {
             return res.status(400).json({ success: false, error: 'Нет строк для импорта' });
         }
 
+        // Строки уже в разобранном виде (ключи first_name, phone, team_id...) — parseImportRow
+        // понимает и их. Порядок строк в списке — не порядок в файле (часть отфильтрована
+        // на ревью), поэтому в сообщениях называем человека, а не номер строки.
+        const rows = incoming.map(parseImportRow);
+        await validateImportRows(client, rows);
+        const broken = rows.find(r => r.errors.length > 0);
+        if (broken) {
+            return res.status(400).json({
+                success: false,
+                error: `${broken.last_name} ${broken.first_name}: ${broken.errors[0]}. Импорт отменён.`
+            });
+        }
+
         let importedCount = 0;
+        let boundCount = 0;
         await client.query('BEGIN');
 
         for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
@@ -764,7 +904,7 @@ export const confirmUserImport = async (req, res) => {
                     [row.first_name, row.last_name, row.middle_name || null, email, row.phone || null, virtual_code, row.birth_date || null, row.height || null, row.weight || null]
                 );
             } catch (insertErr) {
-                insertErr._rowNum = rowIdx;
+                insertErr._who = `${row.last_name} ${row.first_name}`;
                 insertErr._phone = row.phone || '';
                 throw insertErr;
             }
@@ -780,20 +920,33 @@ export const confirmUserImport = async (req, res) => {
                 await client.query('UPDATE users SET email = $1 WHERE id = $2', [finalEmail, newId]);
             }
 
+            // Колонка «Команда»: только в базу команды (team_members), без игрового состава
+            // и штаба — их команда ведёт сама. Команда в клубе тянет человека и в базу клуба.
+            if (row.team_id) {
+                await client.query(
+                    'INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, CURRENT_DATE)',
+                    [row.team_id, newId]
+                );
+                await syncClubMembershipOnTeamJoin(row.team_id, newId, client);
+                boundCount++;
+            }
+
             importedCount++;
         }
 
         await client.query('COMMIT');
-        res.json({ success: true, count: importedCount, message: `Успешно импортировано ${importedCount} пользователей` });
+        const boundNote = boundCount > 0 ? `, привязано к командам: ${boundCount}` : '';
+        res.json({ success: true, count: importedCount, message: `Успешно импортировано ${importedCount} пользователей${boundNote}` });
 
     } catch (err) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         if (err.constraint === 'users_phone_unique') {
-            return res.status(400).json({ success: false, error: `Строка ${(err._rowNum || 0) + 1}: номер телефона ${err._phone || ''} уже зарегистрирован в системе. Импорт отменён.` });
+            return res.status(400).json({ success: false, error: `${err._who || 'Строка'}: номер телефона ${err._phone || ''} уже зарегистрирован в системе. Импорт отменён.` });
         }
         if (err.constraint === 'users_email_key') {
-            return res.status(400).json({ success: false, error: `Строка ${(err._rowNum || 0) + 1}: email уже зарегистрирован в системе. Импорт отменён.` });
+            return res.status(400).json({ success: false, error: `${err._who || 'Строка'}: email уже зарегистрирован в системе. Импорт отменён.` });
         }
+        console.error('Ошибка импорта пользователей:', err);
         res.status(500).json({ success: false, error: err.message });
     } finally {
         client.release();

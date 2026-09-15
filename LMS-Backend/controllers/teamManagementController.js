@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import ExcelJS from 'exceljs';
 import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
 import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
 
@@ -19,9 +20,27 @@ const normalizeTournamentRoles = (roles) => {
     return [...new Set(roles.map(toTournamentRole))].filter(r => TOURNAMENT_ROLES.includes(r));
 };
 
+// Сортировки карточек команд. Ключи приходят из выпадающего списка в шапке раздела,
+// всё остальное — по названию. Выражения ссылаются на колонки уже собранной строки
+// (подзапросы обёрнуты во внешний SELECT), поэтому можно считать долю активации.
+const TEAM_SORTS = {
+    name: 'x.name ASC',
+    // Доля активированных; пустые команды (некого активировать) — в конец в обе стороны
+    activation_desc: '(CASE WHEN x.base_count > 0 THEN x.activated_count::float / x.base_count ELSE -1 END) DESC, x.name ASC',
+    activation_asc: '(CASE WHEN x.base_count > 0 THEN x.activated_count::float / x.base_count ELSE 2 END) ASC, x.name ASC',
+    games: 'x.games_count DESC, x.name ASC',
+    trainings: 'x.trainings_count DESC, x.name ASC',
+    meetings: 'x.meetings_count DESC, x.name ASC',
+    activity: 'x.last_activity DESC NULLS LAST, x.name ASC',
+    members: 'x.base_count DESC, x.name ASC',
+    // Команды без владельца — в начало: их надо назначить
+    no_owner: '(x.owners::text = \'[]\') DESC, x.name ASC',
+};
+
 export const searchTeams = async (req, res) => {
     try {
         const { q } = req.query;
+        const orderBy = TEAM_SORTS[req.query.sort] || TEAM_SORTS.name;
         // Команд в системе больше, чем помещается на экран — отдаём страницами
         // и вместе с ними общее количество, чтобы фронт нарисовал пагинацию
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
@@ -44,6 +63,17 @@ export const searchTeams = async (req, res) => {
                 ), '[]'::json) AS owners,
                 (SELECT COUNT(*)::int FROM team_members tm
                  WHERE tm.team_id = t.id AND tm.left_at IS NULL) AS base_count,
+                -- Активированные — те, кто задал пароль, то есть хоть раз вошёл сам.
+                -- Тот же критерий, что у «виртуальных» в базе команды и в Метрике.
+                (SELECT COUNT(*)::int FROM team_members tm
+                 JOIN users u ON u.id = tm.user_id
+                 WHERE tm.team_id = t.id AND tm.left_at IS NULL AND u.password_hash IS NOT NULL) AS activated_count,
+                -- Насколько команда живёт в Team-Room: матчи всех типов (официальные,
+                -- товарищеские, внешние турниры) без отменённых, тренировки и собрания
+                (SELECT COUNT(*)::int FROM games g
+                 WHERE (g.home_team_id = t.id OR g.away_team_id = t.id) AND g.status <> 'cancelled') AS games_count,
+                (SELECT COUNT(*)::int FROM team_training ttr WHERE ttr.team_id = t.id) AS trainings_count,
+                (SELECT COUNT(*)::int FROM team_meeting tmt WHERE tmt.team_id = t.id) AS meetings_count,
                 (SELECT COUNT(*)::int FROM team_rosters tr
                  JOIN team_members tm ON tr.member_id = tm.id
                  WHERE tr.team_id = t.id AND tr.left_at IS NULL AND tm.left_at IS NULL) AS roster_count,
@@ -63,7 +93,9 @@ export const searchTeams = async (req, res) => {
             values.push(`%${q}%`);
         }
         query += where;
-        query += ` ORDER BY t.name ASC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+        // Внешний SELECT нужен сортировке: по колонкам-подзапросам (активация, матчи)
+        // напрямую в ORDER BY не отсортировать
+        query = `SELECT * FROM (${query}) x ORDER BY ${orderBy} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
 
         const [result, countResult] = await Promise.all([
             pool.query(query, [...values, limit, offset]),
@@ -762,3 +794,109 @@ export const removeStaffFromApplication = async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 };
+
+// ==========================================
+//   ВЫГРУЗКА СЕКРЕТНЫХ КОДОВ КОМАНДЫ (EXCEL)
+// ==========================================
+// Лист для раздачи кодов активации игрокам: база команды с телефоном и кодом.
+// Оформление один в один повторяет файл, который админ до этого собирал руками
+// («Секретные коды - ХК ...xlsx»): ширины колонок, высоты строк, шрифты, цвета,
+// зебра через строку, масштаб 145%. Порядок людей — как добавляли в команду:
+// коды у виртуальных выдавались в том же порядке, так их проще сверять.
+
+// +79220005675 -> «+7 922 000 56 75», как в исходном файле
+const formatCodesPhone = (phone) => {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (digits.length !== 11) return phone || '—';
+    return `+${digits[0]} ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 9)} ${digits.slice(9, 11)}`;
+};
+
+export const exportTeamSecretCodes = async (req, res) => {
+    try {
+        const { teamId } = req.params;
+
+        const teamRes = await pool.query('SELECT name FROM teams WHERE id = $1', [teamId]);
+        if (teamRes.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Команда не найдена' });
+        }
+        const teamName = teamRes.rows[0].name;
+
+        const { rows: members } = await pool.query(`
+            SELECT u.last_name, u.first_name, u.phone, u.virtual_code
+            FROM team_members tm
+            JOIN users u ON u.id = tm.user_id
+            WHERE tm.team_id = $1 AND tm.left_at IS NULL
+            ORDER BY tm.joined_at, tm.id
+        `, [teamId]);
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'HockeyEco';
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet('Лист1', {
+            pageSetup: { paperSize: 9, orientation: 'portrait' },
+            views: [{ zoomScale: 145 }],
+        });
+
+        sheet.columns = [{ width: 28.71 }, { width: 28.71 }, { width: 13 }];
+
+        const thin = { style: 'thin' };
+        const border = { top: thin, left: thin, bottom: thin, right: thin };
+
+        // Строка 1: название команды на всю ширину
+        const title = sheet.addRow([String(teamName || '').toUpperCase()]);
+        sheet.mergeCells('A1:C1');
+        title.height = 18.75;
+        title.getCell(1).font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FF000000' } };
+        title.getCell(1).alignment = { horizontal: 'center' };
+
+        // Строка 2: подписи колонок — мелкие и серые, как в исходнике
+        const head = sheet.addRow(['Пользователь', 'Номер телефона в базе', 'Секретный код']);
+        head.height = 15;
+        head.eachCell(cell => {
+            cell.font = { name: 'Aptos Narrow', size: 9, color: { argb: 'FF747474' } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+
+        // Строки 3+: игрок, телефон, код. Зебра — заливка на нечётных строках данных
+        members.forEach((m, idx) => {
+            const row = sheet.addRow([
+                [m.last_name, m.first_name].filter(Boolean).join(' '),
+                formatCodesPhone(m.phone),
+                // Кода нет — аккаунт уже активирован, вводить нечего
+                m.virtual_code || '—',
+            ]);
+            row.height = 24.95;
+
+            const name = row.getCell(1);
+            name.font = { name: 'Calibri', size: 12, color: { argb: 'FF000000' } };
+            name.alignment = { horizontal: 'left', vertical: 'middle' };
+
+            const phone = row.getCell(2);
+            phone.font = { name: 'Arial', size: 11 };
+            phone.alignment = { horizontal: 'center', vertical: 'middle' };
+            phone.numFmt = '@';
+
+            const code = row.getCell(3);
+            code.font = { name: 'Consolas', size: 14, bold: true, color: { argb: 'FFFF6432' } };
+            code.alignment = { horizontal: 'center', vertical: 'middle' };
+
+            row.eachCell({ includeEmpty: true }, cell => {
+                cell.border = border;
+                if (idx % 2 === 0) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+                }
+            });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        // Кириллица в имени файла — через filename* (RFC 5987), простой filename её не переживает
+        const fileName = `Секретные коды - ${String(teamName || '').toUpperCase()}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="codes.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        res.send(Buffer.from(buffer));
+    } catch (err) {
+        console.error('Ошибка выгрузки секретных кодов команды:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+

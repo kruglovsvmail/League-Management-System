@@ -4,6 +4,7 @@ import s3 from '../config/s3.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { assertApplicationRosterAllowed, assertPlayersAllowedInDivision, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
 import { isLeagueOwner } from '../utils/leagueOwners.js';
+import { syncClubMembershipOnTeamJoin } from '../utils/clubMembership.js';
 
 /**
  * Роли представителя в турнирной заявке — те же три, что и в Team-Room
@@ -310,6 +311,14 @@ export const deleteTournamentTeamLeaguePaper = async (req, res) => {
 // Статусы: 'pending' и 'approved' — это время лиги. В 'revision' заявка
 // возвращена команде (исправить скан, номера и документы), и состав в этот
 // момент не редактирует никто.
+//
+// Откуда берутся игроки — решает глобальный параметр лиги leagues.league_roster_global_search
+// (Команды → Лиги у глобального админа). Выключен: только из игрового состава команды.
+// Включён: поиск по всей базе пользователей; найденного вне игрового состава сервер
+// сам вводит в команду и её состав (enrollPlayerIntoTeam), пишет об этом текстовый
+// журнал league_roster_additions (journalLeagueAdditions), а владельцам и руководителю
+// команды уходит push и окно в Team-Room (notifyTeamAboutLeagueAdditions).
+// Представители в обоих режимах — только из штаба команды.
 
 const COMPOSITION_EDITABLE_STATUSES = ['pending', 'approved'];
 const POSITIONS = ['goalie', 'defense', 'forward'];
@@ -319,6 +328,11 @@ const MANAGED_APP_SQL = `
            d.name AS division_name, d.digital_applications_only, d.league_managed_roster,
            d.application_start, d.application_end, d.transfer_start, d.transfer_end,
            s.league_id,
+           s.name AS season_name,
+           l.name AS league_name,
+           -- Глобальный параметр лиги (Команды → Лиги у глобального админа): шторка ищет
+           -- игроков по всей базе пользователей, а не по игровому составу команды
+           l.league_roster_global_search,
            t.name AS team_name,
            -- Как только в дивизионе сыгран хотя бы один матч (любой командой), строку из
            -- заявки больше не удаляем: на неё смотрят протоколы и статистика. Вместо
@@ -327,6 +341,7 @@ const MANAGED_APP_SQL = `
     FROM tournament_teams tt
     JOIN divisions d ON tt.division_id = d.id
     JOIN seasons s ON d.season_id = s.id
+    JOIN leagues l ON l.id = s.league_id
     JOIN teams t ON tt.team_id = t.id
     WHERE tt.id = $1
 `;
@@ -465,6 +480,9 @@ export const getTournamentTeamRosterPool = async (req, res) => {
                 division_name: app.division_name,
                 status: app.status,
                 division_has_games: app.division_has_games,
+                // Режим общей базы: слева вместо игрового состава команды — поиск по всем
+                // пользователям платформы (см. searchTournamentTeamRosterCandidates)
+                global_search: !!app.league_roster_global_search,
                 block_reason: compositionBlockReason(app, { isOwner: await isLeagueOwner(pool, app.league_id, req.user?.id) })
             },
             players,
@@ -475,6 +493,261 @@ export const getTournamentTeamRosterPool = async (req, res) => {
     } catch (err) {
         console.error('Ошибка загрузки состава команды для заявки:', err);
         res.status(500).json({ success: false, error: 'Ошибка загрузки состава команды' });
+    }
+};
+
+/**
+ * GET /tournament-teams/:id/roster-candidates?q=
+ * Поиск игроков для шторки «Состав заявки» по всей базе пользователей платформы.
+ * Работает только в лигах с league_roster_global_search: в обычном режиме кандидаты —
+ * это игровой состав команды, и он целиком приходит из roster-pool.
+ *
+ * Ищем по ФИО: каждое слово запроса должно найтись в фамилии, имени или отчестве.
+ * К каждому найденному отдаём его команды (для логотипов с подсказкой) и положение
+ * в ЭТОЙ команде: в игровом составе / в команде без состава / не в команде. Последние
+ * два при сохранении заявки попадут в команду и её игровой состав автоматически.
+ * Тех, кто уже в действующем составе этой заявки, не показываем — они справа.
+ */
+export const searchTournamentTeamRosterCandidates = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const appRes = await pool.query(MANAGED_APP_SQL, [id]);
+        if (appRes.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Заявка не найдена' });
+        }
+        const app = appRes.rows[0];
+        if (!app.league_roster_global_search) {
+            return res.status(400).json({ success: false, error: 'В этой лиге поиск по общей базе пользователей выключен' });
+        }
+
+        // Без запроса список не отдаём: общая база — это все пользователи платформы.
+        // Слов берём не больше четырёх: фамилия, имя, отчество — больше в ФИО не бывает.
+        const words = String(req.query.q || '').trim().split(/\s+/).filter(Boolean).slice(0, 4);
+        if (words.join('').length < 2) {
+            return res.json({ success: true, data: [] });
+        }
+
+        const params = [app.team_id, app.league_id, app.division_id, id];
+        const wordConditions = words.map(word => {
+            // % и _ внутри ILIKE — маски, а не буквы; экранируем, чтобы «Ив_» не стало шаблоном
+            params.push(`%${word.replace(/[\\%_]/g, '\\$&')}%`);
+            const n = params.length;
+            return `(u.last_name ILIKE $${n} OR u.first_name ILIKE $${n} OR u.middle_name ILIKE $${n})`;
+        });
+
+        const { rows } = await pool.query(`
+            SELECT u.id AS player_id, u.first_name, u.last_name, u.middle_name,
+                   u.avatar_url, u.phone,
+                   to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
+                   -- Фото в составе этой команды есть только у её членов; остальным — аватар
+                   tm.photo_url,
+                   (tm.id IS NOT NULL) AS in_team,
+                   (tr.id IS NOT NULL) AS in_team_roster,
+                   tr.position, tr.jersey_number,
+                   uq.qualification_id, lq.name AS qualification_name, lq.short_name AS qualification_short_name,
+                   user_active_disqualifications(u.id, $2) AS active_disqualifications,
+                   -- Все команды человека — логотипами с подсказкой «название, город»
+                   COALESCE((
+                       SELECT json_agg(json_build_object(
+                                  'id', t.id, 'name', t.name, 'city', t.city, 'logo_url', t.logo_url
+                              ) ORDER BY t.name)
+                       FROM team_members tmx
+                       JOIN teams t ON t.id = tmx.team_id
+                       WHERE tmx.user_id = u.id AND tmx.left_at IS NULL
+                   ), '[]'::json) AS teams,
+                   -- Уже заявлен за другую команду этого дивизиона: не запрет, а пометка —
+                   -- решение за лигой, как и у резервных вратарей
+                   (SELECT json_agg(DISTINCT t.name)
+                      FROM tournament_rosters trx
+                      JOIN tournament_teams ttx ON ttx.id = trx.tournament_team_id
+                      JOIN teams t ON t.id = ttx.team_id
+                     WHERE trx.player_id = u.id
+                       AND ttx.division_id = $3
+                       AND ttx.id <> $4
+                       AND trx.period_end IS NULL) AS division_teams
+            FROM users u
+            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $1 AND tm.left_at IS NULL
+            LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+            LEFT JOIN user_qualifications uq
+                   ON uq.user_id = u.id AND uq.league_id = $2 AND uq.ended_at IS NULL
+            LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
+            WHERE u.status <> 'banned'
+              AND ${wordConditions.join(' AND ')}
+              AND NOT EXISTS (
+                  SELECT 1 FROM tournament_rosters trc
+                  WHERE trc.tournament_team_id = $4 AND trc.player_id = u.id AND trc.period_end IS NULL
+              )
+            ORDER BY u.last_name, u.first_name, u.middle_name
+            LIMIT 25
+        `, params);
+
+        // Та же подсказка о квалификации, что и у игрового состава в roster-pool
+        const qualRules = await loadDivisionQualificationRules(pool, app.division_id);
+        const allowedQualIds = new Set((qualRules?.allowed || []).map(q => q.id));
+        const data = rows.map(person => {
+            if (!qualRules?.enabled) return { ...person, qual_block_reason: null };
+            const isAllowed = person.qualification_id
+                ? allowedQualIds.has(person.qualification_id)
+                : qualRules.allowsNone;
+            return {
+                ...person,
+                qual_block_reason: isAllowed ? null : `${person.qualification_name || 'Квалификации нет'} — не допускается`
+            };
+        });
+
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('Ошибка поиска игроков по общей базе для заявки:', err);
+        res.status(500).json({ success: false, error: 'Ошибка поиска' });
+    }
+};
+
+/**
+ * Лига вводит человека в команду и её игровой состав (режим league_roster_global_search).
+ * Членство создаётся или переоткрывается, команда в клубе тянет его и в базу клуба.
+ * Номер в игровом составе — первый свободный (1..99); амплуа — то, что лига поставила
+ * в заявке. Уже состоящему в игровом составе сюда попадать незачем: вызывающий код
+ * зовёт хелпер только для тех, кого в составе нет.
+ */
+const enrollPlayerIntoTeam = async (client, teamId, userId, position) => {
+    const tmRes = await client.query(
+        'SELECT id, left_at FROM team_members WHERE team_id = $1 AND user_id = $2',
+        [teamId, userId]
+    );
+    let memberId;
+    if (tmRes.rows.length === 0) {
+        const ins = await client.query(
+            'INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, CURRENT_DATE) RETURNING id',
+            [teamId, userId]
+        );
+        memberId = ins.rows[0].id;
+    } else {
+        memberId = tmRes.rows[0].id;
+        if (tmRes.rows[0].left_at !== null) {
+            await client.query(
+                'UPDATE team_members SET left_at = NULL, joined_at = CURRENT_DATE WHERE id = $1',
+                [memberId]
+            );
+        }
+    }
+    await syncClubMembershipOnTeamJoin(teamId, userId, client);
+
+    // Первый свободный номер среди действующих строк игрового состава. Все 99 заняты —
+    // случай невозможный на практике, но тогда номер останется пустым, а не упадёт запрос.
+    const numRes = await client.query(`
+        SELECT g.n
+        FROM generate_series(1, 99) AS g(n)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM team_rosters tr
+            WHERE tr.team_id = $1 AND tr.left_at IS NULL AND tr.jersey_number = g.n
+        )
+        ORDER BY g.n
+        LIMIT 1
+    `, [teamId]);
+    const jerseyNumber = numRes.rows[0]?.n ?? null;
+
+    const teamRes = await client.query('SELECT club_id FROM teams WHERE id = $1', [teamId]);
+    const clubId = teamRes.rows[0]?.club_id || null;
+
+    // Строка ростера уникальна по членству: у ранее выведенного из состава она осталась
+    // с датой в left_at — переоткрываем её, а не заводим вторую
+    await client.query(`
+        INSERT INTO team_rosters (club_id, team_id, member_id, position, jersey_number, joined_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (member_id) DO UPDATE
+        SET left_at = NULL, club_id = EXCLUDED.club_id, team_id = EXCLUDED.team_id,
+            position = EXCLUDED.position, jersey_number = EXCLUDED.jersey_number,
+            is_captain = false, is_assistant = false, joined_at = NOW()
+    `, [clubId, teamId, memberId, position, jerseyNumber]);
+
+    return { memberId, jerseyNumber };
+};
+
+/**
+ * Журнал league_roster_additions: кого лига ввела в команду из LMS, кто это сделал и
+ * когда. Только для тех, кого в игровом составе команды не было, — обычное внесение
+ * в заявку сюда не пишется. Нигде не показывается, нужен, чтобы потом найти концы.
+ *
+ * Всё текстом, без ссылок на id: уведомления (league_roster_notices) уходят вместе
+ * с заявкой, аккаунты удаляются, команды переименовываются — а журнал должен читаться
+ * и через год. Телефоны — потому что это логин: по ФИО тёзок не различить.
+ */
+const journalLeagueAdditions = async (client, app, playerIds, addedBy) => {
+    const playersRes = await client.query(
+        `SELECT id, last_name, first_name, middle_name, phone
+           FROM users WHERE id = ANY($1::int[])
+          ORDER BY last_name, first_name`,
+        [playerIds]
+    );
+    const staffRes = addedBy
+        ? await client.query('SELECT last_name, first_name, middle_name, phone FROM users WHERE id = $1', [addedBy])
+        : { rows: [] };
+    const staff = staffRes.rows[0] || null;
+    const person = (u) => [u.last_name, u.first_name, u.middle_name].filter(Boolean).join(' ').trim();
+
+    for (const player of playersRes.rows) {
+        await client.query(`
+            INSERT INTO league_roster_additions
+                (league_name, season_name, division_name, team_name,
+                 player_name, player_phone, added_by_name, added_by_phone)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [
+            app.league_name, app.season_name, app.division_name, app.team_name,
+            person(player), player.phone || null,
+            staff ? person(staff) : null, staff?.phone || null
+        ]);
+    }
+};
+
+/**
+ * Команда должна узнать, что лига ввела к ней людей без её участия. Два канала:
+ *  - push владельцам и руководителю команды — через очередь scheduled_notifications,
+ *    которую разбирает Team-Room (у LMS своего web-push нет, а ключи VAPID — у TR);
+ *  - окно при первом заходе в Team-Room (league_roster_notices) — с подробностями,
+ *    кто, кого и в какую заявку добавил. Строка на каждого получателя: у владельца и
+ *    руководителя окно показывается независимо.
+ * Всё внутри транзакции сохранения: если состав откатился, уведомлять не о чем.
+ */
+const notifyTeamAboutLeagueAdditions = async (client, app, playerIds, addedBy) => {
+    const recipientsRes = await client.query(`
+        SELECT DISTINCT user_id FROM (
+            SELECT tow.user_id FROM team_owners tow WHERE tow.team_id = $1
+            UNION
+            SELECT tm.user_id
+            FROM team_roles trole
+            JOIN team_members tm ON tm.id = trole.member_id
+            WHERE tm.team_id = $1 AND tm.left_at IS NULL
+              AND trole.left_at IS NULL AND trole.role = 'team_manager'
+        ) r
+    `, [app.team_id]);
+    if (recipientsRes.rows.length === 0) return;
+
+    const namesRes = await client.query(
+        `SELECT last_name, first_name FROM users WHERE id = ANY($1::int[]) ORDER BY last_name, first_name`,
+        [playerIds]
+    );
+    const names = namesRes.rows.map(u => `${u.last_name || ''} ${u.first_name || ''}`.trim());
+    // В push длинный список не лезет: три фамилии, остальных — числом
+    const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ` и ещё ${names.length - 3}` : '');
+    const payload = JSON.stringify({
+        title: names.length === 1 ? 'Новый игрок от лиги' : 'Новые игроки от лиги',
+        body: names.length === 1
+            ? `В вашу команду «${app.team_name}» администрация лиги добавила игрока ${shown}`
+            : `В вашу команду «${app.team_name}» администрация лиги добавила игроков: ${shown}`,
+        url: '/my-team',
+        tag: `league-roster-${app.id}-${Date.now()}`
+    });
+
+    for (const { user_id } of recipientsRes.rows) {
+        await client.query(`
+            INSERT INTO scheduled_notifications (type, target_user_id, team_id, send_at, payload)
+            VALUES ('league_player_added', $1, $2, NOW(), $3)
+        `, [user_id, app.team_id, payload]);
+        await client.query(`
+            INSERT INTO league_roster_notices (recipient_user_id, tournament_team_id, player_ids, added_by)
+            VALUES ($1, $2, $3::int[], $4)
+        `, [user_id, app.id, playerIds, addedBy || null]);
     }
 };
 
@@ -570,10 +843,36 @@ export const saveTournamentTeamComposition = async (req, res) => {
         const teamPositions = new Map(teamRosterRes.rows.map(r => [r.user_id, r.position]));
 
         const strangers = incomingPlayers.filter(p => !teamPositions.has(p.player_id));
+        // Кого лига только что ввела в игровой состав команды — о них команде сообщаем
+        const joinedTeamIds = [];
         if (strangers.length > 0) {
-            const err = new Error('В заявку можно внести только игроков из игрового состава команды');
-            err.status = 400;
-            throw err;
+            if (!app.league_roster_global_search) {
+                const err = new Error('В заявку можно внести только игроков из игрового состава команды');
+                err.status = 400;
+                throw err;
+            }
+
+            // Режим общей базы: человека вне игрового состава лига добавляет в команду сама.
+            // Заблокированный аккаунт в команду не попадёт — вход ему всё равно закрыт.
+            const strangerIds = strangers.map(p => p.player_id);
+            const usersRes = await client.query(
+                `SELECT id FROM users WHERE id = ANY($1::int[]) AND status <> 'banned'`,
+                [strangerIds]
+            );
+            if (usersRes.rows.length !== strangerIds.length) {
+                const err = new Error('Пользователь не найден или заблокирован');
+                err.status = 400;
+                throw err;
+            }
+
+            // Допуск по квалификации отдельно не проверяем: ниже он проверяется для всех,
+            // кто попадает в заявку, а отказ откатывает транзакцию вместе с членством.
+            for (const player of strangers) {
+                const position = player.position || 'forward';
+                await enrollPlayerIntoTeam(client, app.team_id, player.player_id, position);
+                teamPositions.set(player.player_id, position);
+                joinedTeamIds.push(player.player_id);
+            }
         }
 
         // Амплуа не пришло — берём из состава команды (лига может его переопределить:
@@ -702,8 +1001,15 @@ export const saveTournamentTeamComposition = async (req, res) => {
             `, [id, staffJson]);
         }
 
+        // Введённые в команду люди: запись в журнал (найти концы), затем команде — push
+        // и окно в Team-Room
+        if (joinedTeamIds.length > 0) {
+            await journalLeagueAdditions(client, app, joinedTeamIds, req.user?.id);
+            await notifyTeamAboutLeagueAdditions(client, app, joinedTeamIds, req.user?.id);
+        }
+
         await client.query('COMMIT');
-        res.json({ success: true, added: addedIds.length, removed: removedIds.length });
+        res.json({ success: true, added: addedIds.length, removed: removedIds.length, joined_team: joinedTeamIds.length });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Ошибка сохранения состава заявки лигой:', err);

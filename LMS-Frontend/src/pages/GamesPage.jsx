@@ -170,7 +170,11 @@ export function GamesPage() {
     };
 
     const activeDivision = divisions.find(d => d.id === selectedDivisionId);
-    const approvedTeams = activeDivision ? (activeDivision.teams || []).filter(t => t.status === 'approved') : [];
+    // Команды для выбора в матче — заявки на проверке, на исправлении и допущенные:
+    // расписание составляют заранее, пока лига ещё проверяет заявки. Черновик — команда
+    // заявку даже не подала, отклонённая — в турнире не участвует; им в календаре не место.
+    const SCHEDULE_TEAM_STATUSES = ['pending', 'revision', 'approved'];
+    const scheduleTeams = activeDivision ? (activeDivision.teams || []).filter(t => SCHEDULE_TEAM_STATUSES.includes(t.status)) : [];
 
     // Выключение глобального режима редактирования — подстраховка синхронизации:
     // гарантированно закрывает и точечно открытые строки (editingRowIds), чтобы
@@ -221,12 +225,12 @@ export function GamesPage() {
 }
         
         if ('home_team_id' in updatesObj) {
-            const t = approvedTeams.find(t => t.team_id === updatesObj.home_team_id);
+            const t = scheduleTeams.find(t => t.team_id === updatesObj.home_team_id);
             if (t) { extraUpdates.home_team_name = t.name; extraUpdates.home_team_logo = t.logo_url; }
             else { extraUpdates.home_team_name = 'Не выбрано'; extraUpdates.home_team_logo = ''; }
         }
         if ('away_team_id' in updatesObj) {
-            const t = approvedTeams.find(t => t.team_id === updatesObj.away_team_id);
+            const t = scheduleTeams.find(t => t.team_id === updatesObj.away_team_id);
             if (t) { extraUpdates.away_team_name = t.name; extraUpdates.away_team_logo = t.logo_url; }
             else { extraUpdates.away_team_name = 'Не выбрано'; extraUpdates.away_team_logo = ''; }
         }
@@ -438,7 +442,7 @@ export function GamesPage() {
                                         isEditMode={isEditMode}
                                         editingRowIds={editingRowIds}
                                         setEditingRowIds={setEditingRowIds}
-                                        approvedTeams={approvedTeams}
+                                        scheduleTeams={scheduleTeams}
                                         arenas={arenas}
                                         gamesList={games}
                                         brackets={brackets}

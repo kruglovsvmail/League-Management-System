@@ -11,6 +11,7 @@ import { Loader } from '../ui/Loader';
 import { SegmentButton } from '../ui/SegmentButton';
 import { Pagination } from '../ui/Pagination';
 import { Uploader } from '../ui/Uploader'; 
+import { Icon } from '../ui/Icon';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { DOCUMENT_ACCEPT, DOCUMENT_ACCEPT_HINT } from '../utils/uploadFormats';
 import { AddMemberDrawer } from '../modals/AddMemberDrawer';
@@ -56,6 +57,29 @@ const TOURNAMENT_ROLE_MAP = Object.fromEntries(TOURNAMENT_ROLES.map(r => [r.id, 
 // Роль в команде -> роль в заявке (главный тренер схлопывается в тренера)
 const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
 
+// Сортировки списка команд — ключи совпадают с TEAM_SORTS на сервере
+const TEAM_SORT_OPTIONS = [
+  { value: 'name', label: 'По названию' },
+  { value: 'activation_desc', label: 'Активация: сначала высокая' },
+  { value: 'activation_asc', label: 'Активация: сначала низкая' },
+  { value: 'games', label: 'Больше матчей' },
+  { value: 'trainings', label: 'Больше тренировок' },
+  { value: 'meetings', label: 'Больше собраний' },
+  { value: 'activity', label: 'Недавняя активность' },
+  { value: 'members', label: 'Больше людей в базе' },
+  { value: 'no_owner', label: 'Сначала без владельца' },
+];
+
+// Склонение для счётчиков на карточке команды: 1 матч, 2 матча, 5 матчей
+const plural = (n, one, few, many) => {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last > 1 && last < 5) return few;
+  if (last === 1) return one;
+  return many;
+};
+
 // Подпись квалификации в шторках выбора игроков. Пишем полное название, а не сокращение:
 // в списке нет колонки-легенды, и «МС» рядом с фамилией ни о чём не говорит. Тем, кого
 // дивизион не пропускает, дописываем причину прямо в ту же строку.
@@ -71,6 +95,8 @@ export function TeamManagementPage() {
   const activeTab = searchParams.get('tab') || 'base';
   const appFilter = searchParams.get('filter') || 'current';
   const teamSearchQuery = searchParams.get('q') || '';
+  // Сортировка карточек живёт в адресе, как и поиск: переживает перезагрузку и «назад»
+  const teamSort = TEAM_SORT_OPTIONS.some(o => o.value === searchParams.get('sort')) ? searchParams.get('sort') : 'name';
 
   // Раздел делится на три вкладки: команды, клубы (организации над командами) и лиги.
   // Держим выбор в адресе — так он переживает перезагрузку и возврат назад.
@@ -115,6 +141,14 @@ export function TeamManagementPage() {
     }, { replace: true });
   };
 
+  const setTeamSort = (val) => {
+    setSearchParams(prev => {
+      if (val && val !== 'name') prev.set('sort', val);
+      else prev.delete('sort');
+      return prev;
+    }, { replace: true });
+  };
+
   const [selectedTeam, setSelectedTeamState] = useState(() => {
     const saved = sessionStorage.getItem('tm_selected_team_data');
     return saved ? JSON.parse(saved) : null;
@@ -136,6 +170,7 @@ export function TeamManagementPage() {
   };
 
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
+  const [isExportingCodes, setIsExportingCodes] = useState(false);
   
   const [base, setBase] = useState([]);
   const [roster, setRoster] = useState([]);
@@ -181,6 +216,32 @@ export function TeamManagementPage() {
 
   const showToast = (title, message, type = 'error') => setToastInfo({ title, message, type });
 
+  // Excel с секретными кодами активации — для раздачи игрокам. Эндпоинт закрыт токеном,
+  // поэтому тянем через fetch и отдаём blob ссылке, а не подставляем URL в href.
+  const handleExportCodes = async () => {
+    if (!selectedTeam?.id) return;
+    setIsExportingCodes(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/export-codes`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      if (!res.ok) throw new Error('export');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Секретные коды - ${String(selectedTeam.name || '').toUpperCase()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast('Ошибка', 'Не удалось скачать файл с кодами');
+    } finally {
+      setIsExportingCodes(false);
+    }
+  };
+
   const formatPhone = (phone) => {
     if (!phone) return '-';
     const cleaned = ('' + phone).replace(/\D/g, '');
@@ -211,14 +272,14 @@ export function TeamManagementPage() {
 
   // Новый запрос всегда начинается с первой страницы, иначе после сужения поиска
   // можно оказаться на несуществующей странице и увидеть пустой список
-  useEffect(() => { setTeamsPage(1); }, [teamSearchQuery]);
+  useEffect(() => { setTeamsPage(1); }, [teamSearchQuery, teamSort]);
 
   useEffect(() => {
     if (!selectedTeam) {
       const fetchTeams = async () => {
         setIsSearchingTeams(true);
         try {
-          const params = new URLSearchParams({ q: teamSearchQuery || '', page: teamsPage, limit: TEAMS_PER_PAGE });
+          const params = new URLSearchParams({ q: teamSearchQuery || '', page: teamsPage, limit: TEAMS_PER_PAGE, sort: teamSort });
           const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/search?${params}`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
           const data = await res.json();
           if (data.success) {
@@ -230,7 +291,7 @@ export function TeamManagementPage() {
       const timer = setTimeout(fetchTeams, 300);
       return () => clearTimeout(timer);
     }
-  }, [teamSearchQuery, teamsPage, selectedTeam]);
+  }, [teamSearchQuery, teamsPage, selectedTeam, teamSort]);
 
   const duplicateJerseys = useMemo(() => {
     const counts = {};
@@ -530,8 +591,9 @@ export function TeamManagementPage() {
         }
       />
 
-      {/* Переключатель раздела: команды или клубы */}
-      <div className="px-10 pt-8 relative z-10">
+      {/* Переключатель раздела: команды, клубы или лиги. Рядом — сортировка карточек,
+          она есть только у списка команд */}
+      <div className="px-10 pt-8 relative z-10 flex items-center gap-5 flex-wrap">
         <div className="w-[320px]">
           <SegmentButton
             options={['Команды', 'Клубы', 'Лиги']}
@@ -539,6 +601,17 @@ export function TeamManagementPage() {
             onChange={(idx) => setSection(SECTIONS[idx] || 'teams')}
           />
         </div>
+        {section === 'teams' && !selectedTeam && (
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-graphite-light">Сортировка</span>
+            <Select
+              options={TEAM_SORT_OPTIONS}
+              value={teamSort}
+              onChange={(val) => setTeamSort(val)}
+              className="w-[260px] h-10 px-3 text-[13px] bg-white border border-graphite/20"
+            />
+          </div>
+        )}
       </div>
 
       {section === 'leagues' ? (
@@ -618,10 +691,56 @@ export function TeamManagementPage() {
                           <span className="text-[12px] text-graphite-light mt-1 truncate">{t.city || 'Город не указан'}</span>
                         </div>
                       </div>
+                      {/* Активация аккаунтов — главное, что админу нужно видеть по команде:
+                          сколько людей из базы уже вошли сами (задали пароль). Крупно —
+                          процент, рядом — счёт, ниже — полоса. */}
+                      {(() => {
+                        const total = Number(t.base_count) || 0;
+                        const activated = Number(t.activated_count) || 0;
+                        const pct = total > 0 ? Math.round((activated / total) * 100) : 0;
+                        const tone = total === 0 ? 'text-graphite/30'
+                          : pct >= 75 ? 'text-status-accepted'
+                          : pct >= 25 ? 'text-orange'
+                          : 'text-status-rejected';
+                        const bar = total === 0 ? 'bg-graphite/20'
+                          : pct >= 75 ? 'bg-status-accepted'
+                          : pct >= 25 ? 'bg-orange'
+                          : 'bg-status-rejected';
+                        return (
+                          <div className="pt-3 border-t border-graphite/10" title="Активированные аккаунты: человек хотя бы раз вошёл сам и задал пароль">
+                            <div className="flex items-end justify-between gap-3">
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-graphite-light">Активировано</span>
+                                <span className={`text-[26px] font-black leading-none mt-1 ${tone}`}>{total > 0 ? `${pct}%` : '—'}</span>
+                              </div>
+                              <span className="text-[13px] font-bold text-graphite pb-0.5">
+                                {activated} <span className="text-graphite-light font-semibold">из {total}</span>
+                              </span>
+                            </div>
+                            <div className="mt-2 h-1.5 rounded-full bg-graphite/10 overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${bar}`} style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Жизнь команды в Team-Room: матчи (все типы, без отменённых),
+                          тренировки и собрания */}
+                      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-graphite/10">
+                        {[
+                          { n: Number(t.games_count) || 0, forms: ['матч', 'матча', 'матчей'] },
+                          { n: Number(t.trainings_count) || 0, forms: ['тренировка', 'тренировки', 'тренировок'] },
+                          { n: Number(t.meetings_count) || 0, forms: ['собрание', 'собрания', 'собраний'] },
+                        ].map(stat => (
+                          <div key={stat.forms[2]} className="flex flex-col items-center rounded-md bg-graphite/[0.04] px-2 py-2">
+                            <span className={`text-[18px] font-black leading-none ${stat.n > 0 ? 'text-graphite' : 'text-graphite/30'}`}>{stat.n}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-graphite-light mt-1">{plural(stat.n, ...stat.forms)}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Размер базы здесь не дублируем — он уже виден в блоке активации («12 из 15») */}
                       <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-graphite/10">
-                        <span className="text-[11px] font-bold px-2 py-1 rounded bg-graphite/5 text-graphite-light" title="Игроков в составе / всего в базе">
-                          Состав: {t.roster_count ?? 0} / {t.base_count ?? 0}
-                        </span>
                         {Number(t.active_apps_count) > 0 && (
                           <span className="text-[11px] font-bold px-2 py-1 rounded bg-orange/10 text-orange" title="Активные заявки в лиги">
                             Лиги: {t.active_apps_count}
@@ -633,16 +752,21 @@ export function TeamManagementPage() {
                         >
                           {t.last_activity ? `Актив: ${dayjs(t.last_activity).format('D MMM')}` : 'Не заходили'}
                         </span>
-                        {/* Фамилии владельцев прямо на карточке: админу нужен не факт
-                            «есть владелец», а кто именно им числится. Их бывает двое. */}
-                        <span
-                          className={`text-[11px] font-bold px-2 py-1 rounded ${t.owners?.length ? 'bg-status-accepted/10 text-status-accepted' : 'bg-status-rejected/10 text-status-rejected'}`}
-                          title={t.owners?.length ? 'Владельцы команды' : 'Владелец команды не назначен'}
-                        >
-                          {t.owners?.length
-                            ? t.owners.map(o => `${o.last_name} ${o.first_name}`).join(', ')
-                            : 'Без владельца'}
-                        </span>
+                      </div>
+
+                      {/* Владельцы — всегда последней строкой карточки, отдельно от плашек:
+                          админу нужен не факт «есть владелец», а кто именно им числится.
+                          Их бывает двое — каждому свой бейдж. */}
+                      <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-graphite/10 mt-auto">
+                        {t.owners?.length ? t.owners.map(o => (
+                          <span key={o.user_id} className="text-[11px] font-bold px-2 py-1 rounded bg-status-accepted/10 text-status-accepted" title="Владелец команды">
+                            {o.last_name} {o.first_name}
+                          </span>
+                        )) : (
+                          <span className="text-[11px] font-bold px-2 py-1 rounded bg-status-rejected/10 text-status-rejected" title="Владелец команды не назначен">
+                            Без владельца
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -670,7 +794,22 @@ export function TeamManagementPage() {
                   </h3>
                   
                   {activeTab !== 'tournaments' && (
-                    <Button onClick={() => setIsAddDrawerOpen(true)}>+ Добавить {activeTab === 'base' ? '' : ''}</Button>
+                    <div className="flex items-center gap-3">
+                      {/* Выгрузка кодов — только на базе команды: коды раздают всем членам,
+                          а не только игровому составу */}
+                      {activeTab === 'base' && (
+                        <Button
+                          onClick={handleExportCodes}
+                          isLoading={isExportingCodes}
+                          loadingText="Формируем..."
+                          className="bg-graphite/10 text-graphite hover:bg-graphite/20 shadow-none"
+                        >
+                          <Icon name="download" className="w-4 h-4" />
+                          Выгрузка кодов
+                        </Button>
+                      )}
+                      <Button onClick={() => setIsAddDrawerOpen(true)}>+ Добавить</Button>
+                    </div>
                   )}
 
                   {activeTab === 'tournaments' && (

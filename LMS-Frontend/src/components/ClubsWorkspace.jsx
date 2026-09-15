@@ -278,7 +278,9 @@ export function ClubsWorkspace({ showToast, onOpenProfile }) {
   const teamColumns = [
     { label: '№', width: 'w-[40px]', render: (_, idx) => <span className="font-bold text-graphite/40">{idx + 1}</span> },
     { label: 'Лого', width: 'w-[60px]', render: (r) => (
-      <img src={getImageUrl(r.logo_url) || '/default/Logo_team_default.webp'} className="w-10 h-10 object-contain" />
+      <div className="w-10 h-10 shrink-0">
+        <img src={getImageUrl(r.logo_url) || '/default/Logo_team_default.webp'} className="w-full h-full object-contain" />
+      </div>
     )},
     { label: 'Команда', sortKey: 'name', render: (r) => (
       <div>

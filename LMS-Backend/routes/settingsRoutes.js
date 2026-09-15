@@ -2,6 +2,7 @@ import express from 'express';
 import { 
   lookupUserByPhone, getLeagueStaff, updateLeagueStaff,
   getLeagueOwnersList, addLeagueOwner, removeLeagueOwner,
+  getLeagueGlobalParams, updateLeagueGlobalParams,
   getSettingsQualifications, createQualification, deleteQualification, reorderQualifications, updateQualificationsDisplay,
   getAllSettingsArenas, getLeagueSettingsArenas, toggleLeagueArena,
   getLeagueServiceAccounts, createLeagueServiceAccount, updateLeagueServiceAccount, deleteLeagueServiceAccount,
@@ -38,6 +39,10 @@ router.post('/leagues/:leagueId/settings-staff', express.json(), requirePermissi
 router.get('/leagues/:leagueId/owners', requirePermission('LEAGUE_OWNERS_MANAGE'), getLeagueOwnersList);
 router.post('/leagues/:leagueId/owners', express.json(), requirePermission('LEAGUE_OWNERS_MANAGE'), addLeagueOwner);
 router.delete('/leagues/:leagueId/owners/:userId', requirePermission('LEAGUE_OWNERS_MANAGE'), removeLeagueOwner);
+
+// ГЛОБАЛЬНЫЕ ПАРАМЕТРЫ ЛИГИ — тоже только глобальный админ (Команды → Лиги)
+router.get('/leagues/:leagueId/global-params', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), getLeagueGlobalParams);
+router.put('/leagues/:leagueId/global-params', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateLeagueGlobalParams);
 
 // КВАЛИФИКАЦИИ
 router.get('/leagues/:leagueId/settings-qualifications', requirePermission('SETTINGS_QUAL_VIEW'), getSettingsQualifications);

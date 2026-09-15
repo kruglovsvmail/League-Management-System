@@ -6,6 +6,7 @@ import {
     searchTeams,
     searchUsers,
     getTeamMembers,
+    exportTeamSecretCodes,
     setTeamOwners,
     addTeamMember,
     uploadMemberPhoto,
@@ -30,6 +31,8 @@ router.use('/teams-manage', verifyToken, requirePermission('TEAM_MANAGEMENT_ACCE
 router.get('/teams-manage/search', searchTeams);
 router.get('/teams-manage/users/search', searchUsers);
 router.get('/teams-manage/:teamId/members', getTeamMembers);
+// Excel с секретными кодами активации для раздачи игрокам (база команды)
+router.get('/teams-manage/:teamId/export-codes', exportTeamSecretCodes);
 router.post('/teams-manage/:teamId/members', addTeamMember);
 
 // Владелец команды. Текущий владелец приходит в ответе /members, здесь только запись

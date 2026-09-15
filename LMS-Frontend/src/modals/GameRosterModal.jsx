@@ -243,7 +243,11 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     { 
       label: 'Фото', 
       width: 'w-[80px]', 
-      render: (p) => ( <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-8 h-8 rounded-md object-cover bg-graphite/5 shrink-0" alt="av" /> )
+      render: (p) => (
+        <div className="w-8 h-8 rounded-md overflow-hidden bg-graphite/5 shrink-0">
+          <img src={getImageUrl(p.photo_url || '/default/user_default.webp')} className="w-full h-full object-cover" alt="av" />
+        </div>
+      )
     },
     {
       label: 'Игрок',

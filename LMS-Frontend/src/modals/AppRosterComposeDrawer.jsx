@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Table } from '../ui/Table2';
+import { Tooltip } from '../ui/Tooltip';
 import { DisqualificationBadge } from '../ui/DisqualificationBadge';
 import { AccessFallback } from '../ui/AccessFallback';
 import { EquipmentMark } from '../ui/EquipmentMark';
@@ -15,6 +16,13 @@ import { getImageUrl, getToken } from '../utils/helpers';
 //
 // Заявка собирается локально и уходит на сервер целиком одной кнопкой: лига переносит
 // два десятка человек за раз, и поштучные запросы тут только мешали бы.
+//
+// Откуда берутся игроки, решает глобальный параметр лиги «Состав заявки из общей базы»
+// (leagues.league_roster_global_search, приходит из roster-pool как application.global_search).
+// Выключен — слева игровой состав команды. Включён — слева поиск по всем пользователям
+// платформы; найденного вне игрового состава сервер при сохранении сам вводит в команду
+// и её состав, а владельцам и руководителю команды уходит уведомление. Представители
+// в обоих режимах берутся из штаба команды.
 
 const POSITION_MAP = { goalie: 'Вр', defense: 'Защ', forward: 'Нап' };
 const POSITION_ORDER = { goalie: 1, defense: 2, forward: 3 };
@@ -33,6 +41,24 @@ const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : te
 const personPhoto = (p) => getImageUrl(p.photo_url || '/default/user_default.webp');
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim();
 
+// Найденный по общей базе может быть вовсе не из этой команды — фото в составе у него
+// нет, показываем аватар: иначе весь список превратился бы в одинаковые заглушки
+const candidatePhoto = (p) => getImageUrl(p.photo_url || p.avatar_url || '/default/user_default.webp');
+
+const formatPhone = (raw) => {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D/g, '');
+  const match = digits.match(/^(7|8)?(\d{3})(\d{3})(\d{2})(\d{2})$/);
+  return match ? `+7 (${match[2]}) ${match[3]}-${match[4]}-${match[5]}` : raw;
+};
+
+// birth_date приходит строкой YYYY-MM-DD
+const formatBirthDate = (iso) => {
+  if (!iso) return null;
+  const [y, m, d] = String(iso).split('-');
+  return y && m && d ? `${d}.${m}.${y}` : iso;
+};
+
 export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, showToast, league }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -46,10 +72,17 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
   const [blockReason, setBlockReason] = useState(null);
   const [hasGames, setHasGames] = useState(false);
 
+  // Режим общей базы (см. шапку файла): слева поиск по всем пользователям вместо состава
+  const [globalSearch, setGlobalSearch] = useState(false);
+  const [candidates, setCandidates] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimer = useRef(null);
+
   useEffect(() => {
     if (!isOpen || !teamApp?.id) {
       setTeamPlayers([]); setTeamStaff([]); setSelectedPlayers([]); setSelectedStaff([]);
       setSearch(''); setError(''); setBlockReason(null); setHasGames(false);
+      setGlobalSearch(false); setCandidates([]); setIsSearching(false);
       return;
     }
 
@@ -66,6 +99,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
         setTeamStaff(data.staff || []);
         setBlockReason(data.application?.block_reason || null);
         setHasGames(!!data.application?.division_has_games);
+        setGlobalSearch(!!data.application?.global_search);
 
         // Правое поле собираем из заявки, а карточку человека (фото, ФИО) берём оттуда же:
         // в заявке может стоять тот, кого команда уже вывела из игрового состава.
@@ -106,6 +140,42 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
   const availablePlayers = teamPlayers.filter(p => !selectedPlayerIds.has(p.player_id) && matchesSearch(p));
   const availableStaff = teamStaff.filter(s => !selectedStaffIds.has(s.user_id) && matchesSearch(s));
 
+  // Поиск по общей базе с задержкой: база большая, дёргать её на каждую букву незачем.
+  // Уже внесённых в заявку сервер отсекает по сохранённому составу, а добавленных только
+  // что (до сохранения) — отсекаем здесь по selectedPlayerIds.
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!isOpen || !globalSearch || !teamApp?.id) return;
+
+    const query = search.trim();
+    if (query.length < 2) {
+      setCandidates([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/tournament-teams/${teamApp.id}/roster-candidates?q=${encodeURIComponent(query)}`,
+          { headers: { 'Authorization': `Bearer ${getToken()}` } }
+        );
+        const data = await res.json();
+        setCandidates(data.success ? (data.data || []) : []);
+      } catch (err) {
+        setCandidates([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 350);
+
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [search, globalSearch, isOpen, teamApp?.id]);
+
+  const availableCandidates = candidates.filter(c => !selectedPlayerIds.has(c.player_id));
+  const joiningTeamCount = selectedPlayers.filter(p => p.joins_team).length;
+
   const sortedSelected = useMemo(
     () => [...selectedPlayers].sort((a, b) => {
       const byPos = (POSITION_ORDER[a.position] || 99) - (POSITION_ORDER[b.position] || 99);
@@ -137,6 +207,26 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
       jersey_number: player.jersey_number ?? '',
       is_captain: false,
       is_assistant: false
+    }]);
+  };
+
+  // Из общей базы человек заявляется нападающим без номера: номер в заявке лига
+  // проставит сама, а в игровом составе команды его назначит сервер при сохранении.
+  // joins_team — метка «его ещё нет в игровом составе команды»: справа она подсвечивается,
+  // чтобы лига видела, кого вводит в команду, а не только в заявку.
+  const addCandidate = (person) => {
+    if (readOnly || person.qual_block_reason) return;
+    setSelectedPlayers(prev => [...prev, {
+      id: person.player_id,
+      player_id: person.player_id,
+      first_name: person.first_name, last_name: person.last_name, middle_name: person.middle_name,
+      photo_url: person.photo_url, avatar_url: person.avatar_url,
+      birth_date: person.birth_date,
+      position: 'forward',
+      jersey_number: '',
+      is_captain: false,
+      is_assistant: false,
+      joins_team: !person.in_team_roster
     }]);
   };
 
@@ -240,8 +330,15 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
 
   const selectedColumns = [
     {
-      label: 'Фото', width: 'w-[60px]',
-      render: (p) => <img src={personPhoto(p)} className="w-9 h-9 rounded-md object-cover bg-graphite/5 shrink-0" alt="av" />
+      // 68px = 36px фото + отступы ячейки по 16px с каждой стороны. При 60px ячейке на
+      // картинку оставалось 28px, и preflight-ное max-width:100% сплющивало её по ширине.
+      // Обёртка с жёстким размером — чтобы фото не зависело от раскладки таблицы.
+      label: 'Фото', width: 'w-[68px]',
+      render: (p) => (
+        <div className="w-9 h-9 rounded-md overflow-hidden bg-graphite/5 shrink-0">
+          <img src={personPhoto(p)} className="w-full h-full object-cover" alt="av" />
+        </div>
+      )
     },
     {
       label: 'Игрок',
@@ -254,6 +351,11 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
             <span className="truncate">{p.middle_name || ''}</span>
             <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
           </span>
+          {p.joins_team && (
+            <span className="text-[10px] font-bold text-orange leading-tight mt-0.5 block truncate" title="При сохранении сервер добавит его в команду и её игровой состав">
+              будет добавлен в команду
+            </span>
+          )}
         </div>
       )
     },
@@ -380,10 +482,104 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
     </div>
   );
 
+  // Строка результата поиска по общей базе — карточка с рамкой: фото, ФИО, дата рождения
+  // с телефоном, ниже логотипы команд (подсказка с названием и городом — по клику) и
+  // короткая плашка-статус вместо предложения. Что произойдёт при сохранении, объясняет
+  // одна подсказка внизу списка — повторять её под каждой строкой было шумно.
+  const renderCandidateRow = (person) => {
+    const blockedReason = person.qual_block_reason;
+    const status = person.in_team_roster
+      ? {
+          tone: 'muted',
+          text: [
+            'В составе',
+            POSITION_MAP[person.position] || null,
+            person.jersey_number != null ? `№${person.jersey_number}` : null
+          ].filter(Boolean).join(' · ')
+        }
+      : person.in_team
+        ? { tone: 'orange', text: 'В команде, без состава' }
+        : { tone: 'orange', text: 'Новый в команде' };
+    // Красные предупреждения — отдельной строкой и только когда есть
+    const warnings = [
+      person.division_teams?.length > 0 ? `Уже заявлен в этом дивизионе: ${person.division_teams.join(', ')}` : null,
+      blockedReason
+    ].filter(Boolean);
+
+    return (
+      <div
+        key={`candidate-${person.player_id}`}
+        className={`flex items-center gap-3 p-3 mb-1.5 rounded-md bg-white border transition-colors ${
+          blockedReason ? 'border-graphite/10 opacity-70' : 'border-graphite/10 hover:border-orange/40'
+        }`}
+      >
+        <img src={candidatePhoto(person)} className="w-14 h-14 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
+
+        <div className="min-w-0 flex-1 flex flex-col">
+          <span className="flex items-center min-w-0 text-[13px] font-bold text-graphite leading-tight">
+            <span className="truncate">{person.last_name} {person.first_name} {person.middle_name || ''}</span>
+            <EquipmentMark birthDate={person.birth_date} league={league} className="ml-1.5" />
+          </span>
+          <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
+            {[formatBirthDate(person.birth_date), formatPhone(person.phone), person.qualification_short_name || null]
+              .filter(Boolean).join(' · ') || 'Нет данных'}
+          </span>
+
+          <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+            {(person.teams || []).map(team => (
+              <Tooltip
+                key={team.id}
+                trigger="click"
+                noUnderline
+                logo={getImageUrl(team.logo_url || '/default/Logo_team_default.webp')}
+                title={team.name}
+                subtitle={team.city || 'Город не указан'}
+              >
+                <span className="w-6 h-6 rounded-md bg-white border border-graphite/10 p-0.5 flex items-center justify-center hover:border-orange/40 transition-colors" title={team.name}>
+                  <img src={getImageUrl(team.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" alt="" />
+                </span>
+              </Tooltip>
+            ))}
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold leading-snug ${
+              status.tone === 'orange' ? 'bg-orange/10 text-orange' : 'bg-graphite/5 text-graphite/60'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${status.tone === 'orange' ? 'bg-orange' : 'bg-graphite/40'}`} />
+              {status.text}
+            </span>
+          </div>
+
+          {warnings.map(warning => (
+            <span key={warning} className="block text-[11px] font-semibold text-status-rejected leading-snug mt-1">{warning}</span>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {person.active_disqualifications?.length > 0 && (
+            <DisqualificationBadge activeDisqualifications={person.active_disqualifications} />
+          )}
+          <button
+            onClick={() => addCandidate(person)}
+            disabled={readOnly || !!blockedReason}
+            title={blockedReason || 'Добавить в заявку'}
+            className={`w-8 h-8 flex items-center justify-center rounded-md shrink-0 transition-colors ${
+              readOnly || blockedReason
+                ? 'bg-graphite/5 text-graphite/20 cursor-not-allowed'
+                : 'bg-graphite/5 text-graphite hover:bg-orange hover:text-white'
+            }`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const drawerContent = (
     <div className={`fixed inset-0 z-[35] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
       <div className="absolute inset-0 bg-graphite/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className={`absolute top-0 right-0 h-full w-full max-w-[1100px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* 1200px: было 1100, добавка целиком ушла левой панели — колонки 5/11 и 6/11 дают
+          правой те же ~600px, что были при 2/5 и 3/5 на 1100 */}
+      <div className={`absolute top-0 right-0 h-full w-full max-w-[1200px] bg-[#F8F9FA] transform transition-transform duration-300 flex flex-col shadow-2xl ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
 
         <div className="flex items-center justify-between px-8 py-5 border-b border-graphite/10 bg-white shrink-0">
           <div className="flex flex-col">
@@ -414,14 +610,16 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
               <span className="text-graphite-light font-bold">Загрузка состава команды...</span>
             </div>
           ) : (
-            <div className="grid grid-cols-5 gap-8 flex-1 overflow-hidden h-full">
+            <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-8 flex-1 overflow-hidden h-full">
 
               {/* Левая панель: кого можно внести в заявку */}
-              <div className="col-span-2 flex flex-col bg-white border border-graphite/10 rounded-2xl shadow-sm overflow-hidden h-full">
+              <div className="flex flex-col bg-white border border-graphite/10 rounded-2xl shadow-sm overflow-hidden h-full">
                 <div className="p-5 border-b border-graphite/10 bg-graphite/[0.02] shrink-0">
-                  <h3 className="text-[14px] font-black uppercase text-graphite mb-4">Состав команды</h3>
+                  <h3 className="text-[14px] font-black uppercase text-graphite mb-4">
+                    {globalSearch ? 'Поиск игроков' : 'Состав команды'}
+                  </h3>
                   <Input
-                    placeholder="Поиск по ФИО..."
+                    placeholder={globalSearch ? 'Фамилия, имя — по всей базе пользователей...' : 'Поиск по ФИО...'}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full px-2 py-2 text-[12px]"
@@ -429,26 +627,52 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                  <div className="px-3 pb-2 pt-1">
-                    <div className="text-[12px] font-black uppercase text-graphite tracking-wide">
-                      Игровой состав ({availablePlayers.length})
-                    </div>
-                  </div>
+                  {globalSearch ? (
+                    <>
+                      {/* Режим общей базы: игровой состав команды не показываем — только
+                          результаты поиска по всем пользователям платформы */}
+                      <div className="px-3 pb-2 pt-1">
+                        <div className="text-[12px] font-black uppercase text-graphite tracking-wide">
+                          Общая база{search.trim().length >= 2 && !isSearching ? ` (${availableCandidates.length})` : ''}
+                        </div>
+                      </div>
 
-                  {availablePlayers.length === 0 ? (
-                    <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">
-                      {search ? 'По запросу никого нет' : 'Все игроки уже в заявке'}
-                    </div>
-                  ) : availablePlayers.map(p => renderPoolRow(p, `player-${p.player_id}`, {
-                    onAdd: () => addPlayer(p),
-                    blockedReason: p.qual_block_reason,
-                    subtitle: [
-                      p.middle_name,
-                      POSITION_MAP[p.position] || null,
-                      p.jersey_number != null ? `№${p.jersey_number}` : null,
-                      p.qualification_short_name || null
-                    ].filter(Boolean).join(' | ')
-                  }))}
+                      {search.trim().length < 2 ? (
+                        <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">
+                          Введите фамилию или имя — минимум 2 символа
+                        </div>
+                      ) : isSearching ? (
+                        <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">Ищем…</div>
+                      ) : availableCandidates.length === 0 ? (
+                        <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">
+                          Никого не нашли. Либо этот человек уже в заявке.
+                        </div>
+                      ) : availableCandidates.map(renderCandidateRow)}
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-3 pb-2 pt-1">
+                        <div className="text-[12px] font-black uppercase text-graphite tracking-wide">
+                          Игровой состав ({availablePlayers.length})
+                        </div>
+                      </div>
+
+                      {availablePlayers.length === 0 ? (
+                        <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">
+                          {search ? 'По запросу никого нет' : 'Все игроки уже в заявке'}
+                        </div>
+                      ) : availablePlayers.map(p => renderPoolRow(p, `player-${p.player_id}`, {
+                        onAdd: () => addPlayer(p),
+                        blockedReason: p.qual_block_reason,
+                        subtitle: [
+                          p.middle_name,
+                          POSITION_MAP[p.position] || null,
+                          p.jersey_number != null ? `№${p.jersey_number}` : null,
+                          p.qualification_short_name || null
+                        ].filter(Boolean).join(' | ')
+                      }))}
+                    </>
+                  )}
 
                   {/* Штаб команды отдельным блоком: он уходит в другой раздел заявки —
                       представители, а не игроки. Один человек может попасть в оба. */}
@@ -478,13 +702,15 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
                   </div>
 
                   <div className="px-3 pt-4 pb-2 text-[11px] text-graphite-light/80 leading-snug">
-                    Нужного человека нет в списке? Команда должна сначала добавить его в игровой состав или штаб у себя.
+                    {globalSearch
+                      ? 'Игрока вне игрового состава сервер при сохранении добавит в команду и её состав (первый свободный номер), а владельцы и руководитель команды получат уведомление. Представителя команда должна сначала добавить в штаб у себя.'
+                      : 'Нужного человека нет в списке? Команда должна сначала добавить его в игровой состав или штаб у себя.'}
                   </div>
                 </div>
               </div>
 
               {/* Правая панель: что уйдёт в заявку */}
-              <div className="col-span-3 flex flex-col bg-white border-2 border-orange/30 rounded-2xl shadow-md overflow-hidden h-full">
+              <div className="flex flex-col bg-white border-2 border-orange/30 rounded-2xl shadow-md overflow-hidden h-full">
                 <div className="p-4 border-b border-graphite/10 bg-orange/5 flex justify-between items-center shrink-0">
                   <h3 className="text-[14px] font-black uppercase text-graphite">В заявке</h3>
                   <div className="flex gap-3 text-[11px] font-bold">
@@ -500,7 +726,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
                 <div className="flex-1 overflow-y-auto custom-scrollbar">
                   {selectedPlayers.length === 0 ? (
                     <div className="py-10 flex items-center justify-center text-[13px] font-bold text-graphite/40 text-center px-10">
-                      Игроков пока нет.<br />Выберите их из состава команды слева.
+                      Игроков пока нет.<br />{globalSearch ? 'Найдите их по общей базе слева.' : 'Выберите их из состава команды слева.'}
                     </div>
                   ) : (
                     <Table columns={selectedColumns} data={sortedSelected} hideHeader={true} />
@@ -566,6 +792,13 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
                     {hasGames && (
                       <span className="text-[11px] text-graphite-light leading-snug">
                         В дивизионе уже сыграны матчи: убранные игроки не удаляются, а попадают в «Отзаявленные».
+                      </span>
+                    )}
+                    {joiningTeamCount > 0 && (
+                      <span className="text-[11px] font-semibold text-orange leading-snug">
+                        {joiningTeamCount === 1
+                          ? 'Один игрок будет добавлен в команду и её игровой состав — команда получит уведомление.'
+                          : `Игроков, которые будут добавлены в команду и её игровой состав: ${joiningTeamCount} — команда получит уведомление.`}
                       </span>
                     )}
                     <Button

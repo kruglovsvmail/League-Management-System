@@ -484,7 +484,7 @@ export function GlobalRegistryPage() {
   const allColumns = [
     [ // 0: Leagues
       { label: 'ID', key: 'id', width: 'w-14' },
-      { label: 'Лого', width: 'w-14', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_league_default.webp')} className="w-8 h-8 object-contain" /> },
+      { label: 'Лого', width: 'w-14', render: (r) => <div className="w-8 h-8 shrink-0"><img src={getCachedImageUrl(r.logo_url || '/default/Logo_league_default.webp')} className="w-full h-full object-contain" /></div> },
       { label: 'Название', key: 'name' },
       { label: 'Город', key: 'city', width: 'w-40' }
     ],
@@ -496,14 +496,14 @@ export function GlobalRegistryPage() {
     ],
     [ // 2: Teams
       { label: 'ID', key: 'id', width: 'w-14' },
-      { label: 'Лого', width: 'w-14', render: (r) => <img src={getCachedImageUrl(r.logo_url || '/default/Logo_team_default.webp')} className="w-8 h-8 object-contain" /> },
+      { label: 'Лого', width: 'w-14', render: (r) => <div className="w-8 h-8 shrink-0"><img src={getCachedImageUrl(r.logo_url || '/default/Logo_team_default.webp')} className="w-full h-full object-contain" /></div> },
       { label: 'Название', key: 'name' },
       { label: 'Город', key: 'city', width: 'w-36' },
       { label: 'Тип', width: 'w-24', render: (r) => <Badge type={r.is_virtual ? 'empty' : 'filled'} label={r.is_virtual ? 'ВИРТ' : 'РЕАЛ'} /> }
     ],
     [ // 3: Users
       { label: 'ID', key: 'id', width: 'w-14' },
-      { label: 'Аватар', width: 'w-16', render: (r) => <img src={getCachedImageUrl(r.avatar_url || '/default/user_default.webp')} className="w-10 h-10 bg-black/10 rounded-md object-cover shadow-sm" /> },
+      { label: 'Аватар', width: 'w-16', render: (r) => <div className="w-10 h-10 bg-black/10 rounded-md overflow-hidden shadow-sm shrink-0"><img src={getCachedImageUrl(r.avatar_url || '/default/user_default.webp')} className="w-full h-full object-cover" /></div> },
       { label: 'ФИО', render: (r) => (
         <div className="flex flex-col">
           <span className="font-bold leading-tight">{r.last_name} {r.first_name}</span>
