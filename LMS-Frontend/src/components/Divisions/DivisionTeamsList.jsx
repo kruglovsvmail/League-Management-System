@@ -124,21 +124,19 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     // КОЛОНКА "ЗАЯВКА" - Выводится ТОЛЬКО если дивизион не является "Только цифровым"
     ...(!division || !division.digital_applications_only ? [{
       label: 'Заявка', width: 'w-[80px]', align: 'center', render: (row) => {
-        let type = 'empty'; 
-        
-        // Корректная проверка на 1/2 (любой из документов делает бейдж заполненным наполовину)
-        if (row.paper_roster_team_url && row.paper_roster_league_url) type = 'filled';
-        else if (row.paper_roster_team_url || row.paper_roster_league_url) type = 'half';
+        // Два сегмента в порядке блоков окна: слева заявка от команды, справа утверждённая
+        // лигой. По закрашенной половине видно, какого из файлов не хватает.
+        const segments = [!!row.paper_roster_team_url, !!row.paper_roster_league_url];
 
         return (
-          <div 
-            onClick={(e) => { 
-              e.stopPropagation(); 
-              setPaperModalApp(row); 
-            }} 
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              setPaperModalApp(row);
+            }}
             className="inline-block cursor-pointer hover:scale-105 transition-transform"
           >
-            <Badge label="Заявка" type={type} />
+            <Badge label="Заявка" segments={segments} />
           </div>
         );
       }
@@ -146,14 +144,15 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
 
     { label: 'Форма', width: 'w-[80px]', align: 'center', render: (row) => {
       const hasLight = !!(row.custom_jersey_light_url || row.jersey_light_url); const hasDark = !!(row.custom_jersey_dark_url || row.jersey_dark_url);
-      let badgeType = 'empty'; if (hasLight && hasDark) badgeType = 'filled'; else if (hasLight || hasDark) badgeType = 'half';
-      
+      // Сегменты в порядке блоков окна формы: слева тёмная (домашняя), справа светлая (гостевая)
+      const segments = [hasDark, hasLight];
+
       return (
-        <div 
-          onClick={() => onOpenModal(row, 'uniform')} 
+        <div
+          onClick={() => onOpenModal(row, 'uniform')}
           className="inline-block cursor-pointer hover:scale-105 transition-transform"
         >
-          <Badge label="Форма" type={badgeType} />
+          <Badge label="Форма" segments={segments} />
         </div>
       );
     }},

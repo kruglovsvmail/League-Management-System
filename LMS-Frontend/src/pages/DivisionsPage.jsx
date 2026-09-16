@@ -140,6 +140,7 @@ export function DivisionsPage() {
                 key={div.id} 
                 division={div} 
                 leagueId={selectedLeague?.id} 
+                seasonName={currentSeasonName}
                 // Убрали передачу userRole, DivisionCard будет работать автономно через useAccess
                 onDelete={() => setConfirmDeleteId(div.id)} 
                 onRefresh={fetchDivisions} 

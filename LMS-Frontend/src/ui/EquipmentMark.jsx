@@ -7,11 +7,12 @@ import { getEquipmentMark } from '../utils/equipmentMarks';
  * Маленькие строчные буквы, по нажатию — подсказка с пояснением.
  *
  * Правило и его пороги задаёт лига («Настройки → Параметры»), поэтому компоненту нужны
- * дата рождения и настройки текущей лиги. Никаких значков, если правила выключены или
- * игрок под них не подпадает — см. getEquipmentMark.
+ * дата рождения и настройки текущей лиги. Позиция — чтобы не помечать вратарей: они
+ * играют в полной маске. Никаких значков, если правила выключены или игрок под них
+ * не подпадает — см. getEquipmentMark.
  */
-export function EquipmentMark({ birthDate, league, className = '' }) {
-  const mark = getEquipmentMark(birthDate, league);
+export function EquipmentMark({ birthDate, league, position, className = '' }) {
+  const mark = getEquipmentMark(birthDate, league, position);
   if (!mark) return null;
 
   // Клик глушим на обёртке: значок часто стоит внутри строки, которая сама куда-то ведёт

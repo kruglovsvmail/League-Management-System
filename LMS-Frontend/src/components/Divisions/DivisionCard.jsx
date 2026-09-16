@@ -33,7 +33,7 @@ const TOURNAMENT_TYPES = {
   mixed: 'Регулярный + Плей-офф'
 };
 
-export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGlobalToast }) {
+export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefresh, setGlobalToast }) {
   // Используем useAccess для проверки прав
   const { checkAccess, hasFullLeagueAccess, selectedLeague } = useAccess();
   
@@ -49,6 +49,9 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
     .filter(([, meta]) => division[meta.reqKey] ?? true)
     .map(([type]) => type);
   const canBulkTeamDocs = checkAccess('DIVISIONS_TEAM_DOCS_MODAL') && teamDocTypes.length > 0;
+  // Заявочный лист в Excel — те же права, что у просмотра заявочных листов
+  const canExportApplication = checkAccess('DIVISIONS_TEAM_ROSTERS_MODAL');
+  const [isExportingApplication, setIsExportingApplication] = useState(false);
 
   const initialExpanded = getExpiringStorage(`div_${division.id}_expanded`) === true;
   const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTab`)) || 0;
@@ -106,6 +109,33 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
       .catch(console.error);
     }
   }, [leagueId]);
+
+  // Заявочный лист по образцу лиги: только допущенные игроки и представители.
+  // Эндпоинт закрыт токеном, поэтому тянем через fetch и отдаём blob ссылке.
+  const handleExportApplication = async () => {
+    if (!selectedTeam?.id) return;
+    setIsExportingApplication(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${selectedTeam.id}/export-application`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      if (!res.ok) throw new Error('export');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Имя файла собираем здесь же: имя из заголовка ответа браузер через blob не читает
+      a.download = `Заявка - ${selectedTeam.name || 'команда'} - ${division.name || 'дивизион'}${seasonName ? ` - ${seasonName}` : ''}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setGlobalToast({ title: 'Ошибка', message: 'Не удалось скачать заявочный лист', type: 'error' });
+    } finally {
+      setIsExportingApplication(false);
+    }
+  };
 
   const loadTeamData = async (teamId) => {
     setIsRosterLoading(true);
@@ -608,6 +638,26 @@ export function DivisionCard({ division, leagueId, onDelete, onRefresh, setGloba
                           onOpenProfile={(id) => setProfileModalPlayerId(id)} 
                           division={division}
                         />
+
+                        {/* Выгрузка заявочного листа — под списком игроков и под представителями.
+                            Отзаявленным не место в листе, на их вкладке кнопки нет. */}
+                        {canExportApplication && rosterTab !== 1 && (
+                          <div className="flex justify-end mt-4">
+                            <button
+                              onClick={handleExportApplication}
+                              disabled={isExportingApplication}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${
+                                isExportingApplication
+                                  ? 'border-graphite/5 text-graphite/40 bg-graphite/5 cursor-wait'
+                                  : 'border-graphite/10 text-graphite-light hover:text-orange hover:border-orange/30 hover:bg-orange/5 cursor-pointer'
+                              }`}
+                              title="Excel по образцу заявочного листа лиги: только допущенные игроки и представители"
+                            >
+                              <Icon name="download" className="w-4 h-4" />
+                              {isExportingApplication ? 'Формируем...' : 'Выгрузить заявочный лист'}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

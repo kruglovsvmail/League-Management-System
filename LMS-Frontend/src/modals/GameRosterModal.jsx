@@ -261,7 +261,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                 обрезался бы вместе с длинной фамилией */}
             <span className="text-[11px] text-graphite-light flex items-center min-w-0 mt-[2px]">
               <span className="truncate">{p.middle_name || ''}</span>
-              <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
+              <EquipmentMark birthDate={p.birth_date} league={league} position={p.position} className="ml-1.5" />
             </span>
           </div>
           {p.is_reserve_goalie && (
@@ -425,7 +425,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                                 p.jersey_number ? `№${p.jersey_number}` : null
                               ].filter(Boolean).join(' | ')}
                             </span>
-                            <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
+                            <EquipmentMark birthDate={p.birth_date} league={league} position={p.position} className="ml-1.5" />
                           </span>
                         </div>
                       </div>

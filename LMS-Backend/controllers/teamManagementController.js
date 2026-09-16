@@ -453,7 +453,10 @@ export const getTeamApplications = async (req, res) => {
             SELECT tt.id, tt.status, tt.created_at, tt.paper_roster_team_url, tt.paper_roster_league_url,
                    tt.division_id,
                    d.name as division_name, d.end_date as division_end_date, d.digital_applications_only,
-                   s.name as season_name, 
+                   -- Какие документы требует дивизион: по ним бейдж «Документы» делится на
+                   -- сегменты, а окно документов показывает только нужные блоки
+                   d.req_med_cert, d.req_insurance, d.req_consent,
+                   s.name as season_name,
                    l.name as league_name, l.logo_url as league_logo,
                    
                    -- Игроки

@@ -26,6 +26,12 @@ const getPreviewExt = (url) => {
   return match ? match[1].toLowerCase() : '';
 };
 
+// Роли у загруженного файла разведены так: превью — посмотреть (открывается в новой
+// вкладке, как раньше делала ссылка «Скачать»), кнопка «Заменить» — выбрать другой файл,
+// «Сбросить» — убрать. Раньше превью открывало выбор файла, и чтобы просто взглянуть на
+// документ, приходилось искать маленькую ссылку под ним. Смотреть можно и без прав на
+// изменение — read-only прячет только «Заменить» и «Сбросить».
+//
 // confirmClear — текст предупреждения перед сбросом уже сохранённого файла. Не задан
 // (по умолчанию) — «Сбросить» срабатывает сразу, как и раньше во всех остальных местах.
 // Задан — сначала спрашиваем. Нужно там, где за сбросом стоит безвозвратное удаление
@@ -36,12 +42,22 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
 
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(initialUrl || null);
+  // Локальная ссылка на только что выбранный файл — по ней превью открывает его в новой
+  // вкладке, пока он ещё не сохранён (у документов previewUrl — это метка doc:<ext>,
+  // а не адрес, и открыть по ней нечего)
+  const [localFileUrl, setLocalFileUrl] = useState(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!file) setPreviewUrl(initialUrl || null);
   }, [initialUrl, file]);
+
+  // Объектную ссылку браузер держит до закрытия вкладки — отпускаем при смене файла
+  useEffect(() => {
+    if (!localFileUrl) return undefined;
+    return () => URL.revokeObjectURL(localFileUrl);
+  }, [localFileUrl]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -50,16 +66,25 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
     setFile(selectedFile);
     if (onFileSelect) onFileSelect(selectedFile, false);
 
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setLocalFileUrl(objectUrl);
+
     const ext = (selectedFile.name.split('.').pop() || '').toLowerCase();
     if (DOCUMENT_EXTENSIONS.includes(ext)) setPreviewUrl(`doc:${ext}`);
-    else setPreviewUrl(URL.createObjectURL(selectedFile));
+    else setPreviewUrl(objectUrl);
   };
 
   const applyClear = () => {
     setFile(null);
     setPreviewUrl(null);
+    setLocalFileUrl(null);
     if (onFileSelect) onFileSelect(null, true);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleReplace = (e) => {
+    e.stopPropagation();
+    if (!isDisabled) fileInputRef.current.click();
   };
 
   const handleClear = (e) => {
@@ -77,6 +102,10 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
   const previewExt = getPreviewExt(previewUrl);
   const isDocument = Boolean(previewUrl) && (previewUrl.startsWith('doc:') || DOCUMENT_EXTENSIONS.includes(previewExt));
   const documentColor = DOCUMENT_COLORS[previewExt] || 'text-graphite-light';
+
+  // Что открывает тап по превью: только что выбранный файл — по локальной ссылке,
+  // сохранённый — по своему адресу
+  const openUrl = file ? localFileUrl : initialUrl;
 
   return (
     <div className={`w-full font-sans flex flex-col ${heightClass} ${isDisabled ? 'opacity-100' : ''}`}>
@@ -106,13 +135,22 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
 
       {(file || previewUrl) && (
         <div className="flex-1 flex flex-col items-center gap-2 animate-zoom-in w-full h-full">
-          <div 
-            className={`group flex-1 w-full relative flex items-center justify-center ${isDisabled ? 'cursor-default' : 'cursor-pointer'} ${isDefaultPreview ? 'rounded-2xl' : 'rounded-md'} ${isDocument ? 'bg-transparent transition-all duration-300' : 'bg-transparent bg-contain bg-no-repeat bg-center'}`}
+          {/* Превью — ссылка на файл в новой вкладке. Атрибут download оставлен только у
+              сохранённого файла, как было у ссылки «Скачать»: файлы лежат на другом домене,
+              и браузер его игнорирует — просто открывает вкладку. У локальной ссылки на
+              свежевыбранный файл он, наоборот, заставил бы сохранять вместо показа. */}
+          <a
+            href={openUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={file ? undefined : true}
+            title="Открыть в новой вкладке"
+            onClick={(e) => e.stopPropagation()}
+            className={`group flex-1 w-full relative flex items-center justify-center cursor-pointer ${isDefaultPreview ? 'rounded-2xl' : 'rounded-md'} ${isDocument ? 'bg-transparent transition-all duration-300' : 'bg-transparent bg-contain bg-no-repeat bg-center'}`}
             style={!isDocument ? { backgroundImage: `url(${previewUrl})` } : {}}
-            onClick={() => !isDisabled && fileInputRef.current.click()}
           >
             {isDocument && (
-              <div className={`flex flex-col items-center justify-center w-full h-full gap-2 transition-transform duration-300 ${isDisabled ? '' : 'group-hover:scale-110'}`}>
+              <div className="flex flex-col items-center justify-center w-full h-full gap-2 transition-transform duration-300 group-hover:scale-110">
                 <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={`${documentColor} drop-shadow-sm`}>
                   <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
                   <path d="M14 2v5h5" />
@@ -122,25 +160,17 @@ export function Uploader({ label, accept = "*/*", heightClass = "h-[152px]", isD
                 <span className={`text-[13px] font-black uppercase tracking-widest ${documentColor}`}>{previewExt || 'файл'}</span>
               </div>
             )}
-          </div>
-          
+          </a>
+
           <div className="flex gap-4 items-center justify-center h-[20px] shrink-0 relative z-10">
-            {/* Скачивание всегда доступно, чтобы пользователи с правами на чтение могли просмотреть файл */}
-            {initialUrl && !file && (
-              <a 
-                href={initialUrl} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                download
-                onClick={(e) => e.stopPropagation()} 
-                className="bg-none border-none text-[11px] font-semibold cursor-pointer transition-colors duration-200 underline underline-offset-[3px] text-status-pending hover:text-status-pending-hover"
-              >
-                Скачать
-              </a>
+            {/* Обе кнопки — только с правами на изменение; посмотреть файл можно и без них, по превью */}
+            {!isDisabled && (
+              <button type="button" onClick={handleReplace} className="bg-none border-none text-[11px] font-semibold cursor-pointer transition-colors duration-200 underline underline-offset-[3px] text-status-pending hover:text-status-pending-hover">
+                Заменить
+              </button>
             )}
-            {/* А вот удаление файла жестко скрываем, если нет прав */}
             {(file || (initialUrl && canClear)) && !isDisabled && (
-              <button onClick={handleClear} className="bg-none border-none text-[11px] font-semibold cursor-pointer transition-colors duration-200 underline underline-offset-[3px] text-status-rejected hover:text-status-rejected-hover">
+              <button type="button" onClick={handleClear} className="bg-none border-none text-[11px] font-semibold cursor-pointer transition-colors duration-200 underline underline-offset-[3px] text-status-rejected hover:text-status-rejected-hover">
                 Сбросить
               </button>
             )}

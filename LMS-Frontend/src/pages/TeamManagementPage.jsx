@@ -863,7 +863,15 @@ export function TeamManagementPage() {
                       onDeleteApp={() => requestRemove(app.id, 'application')}
                       onDeletePlayer={(rosterId) => requestRemove(rosterId, 'app_roster', { appId: app.id })}
                       onDeleteStaff={(userId, role) => requestRemove(userId, 'app_staff', { appId: app.id, role })}
-                      onOpenDocs={(player) => setAppDocsModalPlayer({ ...player, appStatus: app.status })}
+                      onOpenDocs={(player) => setAppDocsModalPlayer({
+                        ...player,
+                        appStatus: app.status,
+                        // Окно показывает только блоки требуемых документов — столько же,
+                        // сколько сегментов у бейджа, по которому его открыли
+                        reqMed: app.req_med_cert ?? true,
+                        reqIns: app.req_insurance ?? true,
+                        reqConsent: app.req_consent ?? true,
+                      })}
                       onAddPlayer={() => { setAddPlayerModalAppId(app.id); setIsAddPlayerDrawerOpen(true); }}
                       onAddStaff={() => { setAddStaffModalAppId(app.id); setIsAddStaffDrawerOpen(true); }}
                       onOpenProfile={(id) => setProfileModalUserId(id)}
@@ -923,9 +931,12 @@ export function TeamManagementPage() {
         initialMedExp={appDocsModalPlayer?.medical_expires_at} 
         initialInsExp={appDocsModalPlayer?.insurance_expires_at} 
         initialConsentExp={appDocsModalPlayer?.consent_expires_at} 
-        onSave={handleAppDocsSave} 
-        isSaving={isAppDocsSaving} 
+        onSave={handleAppDocsSave}
+        isSaving={isAppDocsSaving}
         readOnly={['pending', 'approved', 'rejected'].includes(appDocsModalPlayer?.appStatus)}
+        reqMed={appDocsModalPlayer?.reqMed ?? true}
+        reqIns={appDocsModalPlayer?.reqIns ?? true}
+        reqConsent={appDocsModalPlayer?.reqConsent ?? true}
       />
       
       {toastInfo && <Toast title={toastInfo.title} message={toastInfo.message} type={toastInfo.type} onClose={() => setToastInfo(null)} />}
@@ -1007,18 +1018,23 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
         </div>
       );
     }},
-    { label: 'Документы', width: 'w-[100px]', render: (r) => { 
+    { label: 'Документы', width: 'w-[100px]', render: (r) => {
       const hasMed = !!r.medical_url;
       const hasIns = !!r.insurance_url;
       const hasConsent = !!r.consent_url;
 
+      // Какие документы требует дивизион — приходит вместе с заявкой. Бейдж делится на
+      // сегменты по одному на требуемый документ, в порядке блоков окна документов:
+      // медсправка → страховка → согласие (то же, что в составе дивизиона у лиги).
+      const reqMed = app.req_med_cert ?? true;
+      const reqIns = app.req_insurance ?? true;
+      const reqConsent = app.req_consent ?? true;
+      const segments = [[reqMed, hasMed], [reqIns, hasIns], [reqConsent, hasConsent]]
+        .filter(([required]) => required)
+        .map(([, has]) => has);
+
       let type = 'empty';
       let text = 'Док.';
-
-      const count = [hasMed, hasIns, hasConsent].filter(Boolean).length;
-      if (count === 3) type = 'filled';
-      else if (count === 2) type = 'twoThirds';
-      else if (count === 1) type = 'oneThird';
 
       const today = dayjs().startOf('day');
       let isExpired = false;
@@ -1036,10 +1052,13 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
         }
       };
 
-      if (hasMed) checkExp(r.medical_expires_at);
-      if (hasIns) checkExp(r.insurance_expires_at);
-      if (hasConsent) checkExp(r.consent_expires_at);
+      // Сроки проверяем только у требуемых документов
+      if (reqMed && hasMed) checkExp(r.medical_expires_at);
+      if (reqIns && hasIns) checkExp(r.insurance_expires_at);
+      if (reqConsent && hasConsent) checkExp(r.consent_expires_at);
 
+      // Просроченный или истекающий документ важнее, чем какой именно пропущен:
+      // бейдж целиком уходит в цвет статуса, сегменты в этом случае не рисуются
       if (isExpired) {
         type = 'expired';
         text = 'Истек';
@@ -1050,7 +1069,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
 
       return (
         <div onClick={() => onOpenDocs(r)} className="cursor-pointer inline-block hover:scale-105">
-          <Badge label={text} type={type} />
+          <Badge label={text} type={type} segments={segments} />
         </div>
       );
     }},

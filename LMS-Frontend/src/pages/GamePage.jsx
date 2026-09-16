@@ -333,7 +333,7 @@ export function GamePage() {
             {r.is_assistant && <span className="text-orange text-[12px] font-bold ml-1">А</span>}
           </button>
           {/* Значок обязательной экипировки по возрасту — включается в параметрах лиги */}
-          <EquipmentMark birthDate={r.birth_date} league={selectedLeague} />
+          <EquipmentMark birthDate={r.birth_date} league={selectedLeague} position={r.position_in_line} />
           {renderDsqBadge(r.active_disqualifications)}
         </div>
       )},

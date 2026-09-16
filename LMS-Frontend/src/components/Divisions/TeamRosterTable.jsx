@@ -56,7 +56,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
     <DisqualificationBadge activeDisqualifications={activeDisqualifications} className="ml-5" />
   );
 
-  // Считаем сколько всего документов требуется в этом дивизионе
+  // Какие документы требует этот дивизион. Если никаких — колонки документов
+  // в таблицах нет вовсе (см. totalDocsRequired ниже)
   const reqMed = division?.req_med_cert ?? true;
   const reqIns = division?.req_insurance ?? true;
   const reqConsent = division?.req_consent ?? true;
@@ -72,27 +73,17 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
         const hasMed = !!row.medical_url;
         const hasIns = !!row.insurance_url;
         const hasConsent = !!row.consent_url;
-        
-        // Считаем только те документы, которые ТРЕБУЮТСЯ в настройках дивизиона
-        let providedCount = 0;
-        if (reqMed && hasMed) providedCount++;
-        if (reqIns && hasIns) providedCount++;
-        if (reqConsent && hasConsent) providedCount++;
-        
+
+        // Бейдж делится на сегменты — по одному на ТРЕБУЕМЫЙ документ, в том же порядке,
+        // что блоки в окне документов: медсправка → страховка → согласие. Закрашен
+        // сегмент того документа, который приложен, так что видно не только «сколько»,
+        // но и «какой именно». Ненужные дивизиону документы сегмента не получают.
+        const segments = [[reqMed, hasMed], [reqIns, hasIns], [reqConsent, hasConsent]]
+          .filter(([required]) => required)
+          .map(([, has]) => has);
+
         let type = 'empty';
         let text = 'Док.';
-        
-        // Логика закрашивания бейджа:
-        if (providedCount === totalDocsRequired) type = 'filled'; // 2/2, 3/3, 1/1
-        else if (providedCount === 0) type = 'empty';             // 0/1, 0/2, 0/3
-        else {
-          if (totalDocsRequired === 3) {
-            if (providedCount === 1) type = 'oneThird'; // 1/3
-            if (providedCount === 2) type = 'twoThirds'; // 2/3
-          } else if (totalDocsRequired === 2) {
-            if (providedCount === 1) type = 'half'; // 1/2
-          }
-        }
 
         const today = dayjs().startOf('day');
         let isExpired = false;
@@ -115,6 +106,8 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
         if (reqIns && hasIns) checkExp(row.insurance_expires_at);
         if (reqConsent && hasConsent) checkExp(row.consent_expires_at);
 
+        // Просроченный или истекающий документ важнее, чем какой именно пропущен:
+        // бейдж целиком уходит в цвет статуса, сегменты в этом случае не рисуются
         if (isExpired) {
           type = 'expired';
           text = 'Истек';
@@ -122,10 +115,10 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
           type = 'expiring';
           text = `${minDaysLeft} дн.`;
         }
-        
+
         return (
           <div onClick={() => onOpenModal(row, 'docs')} className="cursor-pointer hover:scale-105 inline-block transition-transform">
-            <Badge label={text} type={type} />
+            <Badge label={text} type={type} segments={segments} />
           </div>
         );
       }
@@ -157,7 +150,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
         const dsqBadge = renderDsqBadge(row.active_disqualifications);
         // Значок экипировки живёт во второй строке, после отчества: в первой строке
         // фамилия обрезается по ширине колонки и он вместе с ней пропадал бы из виду.
-        const mark = <EquipmentMark birthDate={row.birth_date} league={selectedLeague} className="ml-1.5" />;
+        const mark = <EquipmentMark birthDate={row.birth_date} league={selectedLeague} position={row.position} className="ml-1.5" />;
 
         return (
           <div className="flex items-center min-w-0 w-full group">

@@ -455,7 +455,7 @@ export const ProtocolSheet = ({
                     {player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}
                     {/* Значок обязательной экипировки по возрасту: секретарю он нужен прямо
                         в протоколе — по нему проверяют игрока перед выходом на лёд */}
-                    {player && <EquipmentMark birthDate={player.birth_date} league={league} className="ml-1" />}
+                    {player && <EquipmentMark birthDate={player.birth_date} league={league} position={player.position_in_line || player.position} className="ml-1" />}
                   </td>
                   <td className="border-r-2 border-graphite/25 text-[11px] text-graphite-light font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
 

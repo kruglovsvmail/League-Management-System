@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import ExcelJS from 'exceljs';
 import s3 from '../config/s3.js';
 import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { assertApplicationRosterAllowed, assertPlayersAllowedInDivision, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
@@ -1022,3 +1023,239 @@ export const saveTournamentTeamComposition = async (req, res) => {
         client.release();
     }
 };
+
+// ============================================================================
+// ВЫГРУЗКА ЗАЯВОЧНОГО ЛИСТА (EXCEL)
+// ============================================================================
+// Официальный заявочный лист команды в дивизион — файл, который лига печатает и
+// подписывает. Оформление повторяет образец лиги («ОБР.xlsx») один в один: шрифты,
+// размеры, ширины колонок, высоты строк, объединения, параметры печати. Внутри —
+// только допущенные: игроки с application_status = 'approved' и не отзаявленные,
+// представители с тумблером допуска. Кого лига не допустила, того в листе нет.
+
+const APP_EXPORT_POSITION = { goalie: 'ВР', defense: 'ЗЩ', forward: 'НАП' };
+const APP_EXPORT_ROLES = [
+    { role: 'team_manager', label: 'Руководитель команды (подписант)' },
+    { role: 'team_admin', label: 'Администратор команды (помощник руководителя/тренера)' },
+    { role: 'coach', label: 'Тренер команды' },
+];
+
+// +79630688109 -> «8 (963) 068-81-09», как в образце
+const formatAppExportPhone = (phone) => {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (digits.length !== 11) return phone || '';
+    return `8 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
+};
+
+// Дата в Excel — число дней, и ExcelJS считает его от UTC-полуночи: собираем дату
+// через Date.UTC, иначе часовой пояс контейнера сдвинет день рождения на сутки
+const excelDate = (iso) => {
+    if (!iso) return null;
+    const [y, m, d] = String(iso).split('-').map(Number);
+    return y && m && d ? new Date(Date.UTC(y, m - 1, d)) : null;
+};
+
+// Документы: все обязательные на месте — «✓», не все — дробью «в порядке / обязательных»
+// (1/2, 0/3) мелким шрифтом. В порядке — документ есть и не просрочен; обязательные —
+// по настройкам дивизиона. Дивизион без требований — «-».
+const docsMark = (row, app, today) => {
+    const ok = (url, expires) => !!url && (!expires || String(expires) >= today);
+    const checks = [];
+    if (app.req_med_cert) checks.push(ok(row.medical_url, row.medical_expires_at));
+    if (app.req_insurance) checks.push(ok(row.insurance_url, row.insurance_expires_at));
+    if (app.req_consent) checks.push(ok(row.consent_url, row.consent_expires_at));
+    if (checks.length === 0) return { text: '-', small: false };
+    const okCount = checks.filter(Boolean).length;
+    if (okCount === checks.length) return { text: '✓', small: false };
+    return { text: `${okCount}/${checks.length}`, small: true };
+};
+
+// Имя листа Excel: не длиннее 31 символа и без запрещённых знаков
+const sheetTitle = (name) => (String(name || 'ЗАЯВКА').toUpperCase().replace(/[\[\]:*?\/\\]/g, ' ').trim().slice(0, 31)) || 'ЗАЯВКА';
+
+export const exportTournamentTeamApplication = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const appRes = await pool.query(`
+            SELECT tt.id, t.name AS team_name,
+                   d.name AS division_name, d.req_med_cert, d.req_insurance, d.req_consent,
+                   s.name AS season_name, s.league_id
+            FROM tournament_teams tt
+            JOIN teams t ON t.id = tt.team_id
+            JOIN divisions d ON d.id = tt.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE tt.id = $1
+        `, [id]);
+        if (appRes.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Заявка не найдена' });
+        }
+        const app = appRes.rows[0];
+
+        // Порядок как в заявочном листе: вратари, защитники, нападающие; внутри — по алфавиту
+        const { rows: players } = await pool.query(`
+            SELECT tr.jersey_number, tr.position,
+                   u.last_name, u.first_name, u.middle_name, u.height, u.weight,
+                   to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
+                   tpd.medical_url, to_char(tpd.medical_expires_at, 'YYYY-MM-DD') AS medical_expires_at,
+                   tpd.insurance_url, to_char(tpd.insurance_expires_at, 'YYYY-MM-DD') AS insurance_expires_at,
+                   tpd.consent_url, to_char(tpd.consent_expires_at, 'YYYY-MM-DD') AS consent_expires_at,
+                   lq.name AS qualification_name
+            FROM tournament_rosters tr
+            JOIN users u ON u.id = tr.player_id
+            LEFT JOIN tournament_person_docs tpd
+                   ON tpd.tournament_team_id = tr.tournament_team_id AND tpd.user_id = tr.player_id
+            LEFT JOIN user_qualifications uq
+                   ON uq.user_id = u.id AND uq.league_id = $2 AND uq.ended_at IS NULL
+            LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
+            WHERE tr.tournament_team_id = $1
+              AND tr.period_end IS NULL
+              AND tr.application_status = 'approved'
+            ORDER BY CASE tr.position WHEN 'goalie' THEN 1 WHEN 'defense' THEN 2 ELSE 3 END,
+                     u.last_name, u.first_name, u.middle_name
+        `, [id, app.league_id]);
+
+        // Представители — только допущенные (tournament_staff_admission), по строке на роль
+        const { rows: staff } = await pool.query(`
+            SELECT ttr.tournament_role, u.last_name, u.first_name, u.middle_name, u.phone,
+                   to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date
+            FROM tournament_team_roles ttr
+            JOIN users u ON u.id = ttr.user_id
+            JOIN tournament_staff_admission tsa
+                 ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id AND tsa.is_admitted
+            WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
+            ORDER BY u.last_name, u.first_name
+        `, [id]);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const fullName = (p) => [p.last_name, p.first_name, p.middle_name].filter(Boolean).join(' ');
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'HockeyEco';
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet(sheetTitle(app.division_name), {
+            pageSetup: {
+                paperSize: 9, orientation: 'landscape',
+                margins: { left: 0.25, right: 0.25, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 },
+            },
+            views: [{ zoomScale: 160 }],
+        });
+        sheet.columns = [
+            { width: 8.71 }, { width: 8.71 }, { width: 8.71 }, { width: 40.71 },
+            { width: 15.71 }, { width: 12.71 }, { width: 12.71 }, { width: 13.71 }, { width: 20.71 },
+        ];
+
+        const thin = { style: 'thin' };
+        const box = { top: thin, left: thin, bottom: thin, right: thin };
+        const font = (bold = false) => ({ name: 'Calibri', size: 12, bold });
+        const center = { horizontal: 'center', vertical: 'middle' };
+        const centerTop = { horizontal: 'center', vertical: 'top' };
+        const leftTop = { horizontal: 'left', vertical: 'top' };
+
+        // Строка 1: шапка листа. Название соревнования лига вписывает руками — так и в
+        // образце. Заглушку красим жёлтым, чтобы её не забыли: фон у части ячейки Excel
+        // не умеет, поэтому жёлтый — цвет шрифта этого фрагмента (rich text).
+        const title = sheet.addRow(['']);
+        sheet.mergeCells('A1:I1');
+        title.height = 50.1;
+        title.getCell(1).value = {
+            richText: [
+                { font: font(true), text: `ЗАЯВОЧНЫЙ ЛИСТ КОМАНДЫ ${String(app.team_name).toUpperCase()} ПРИНИМАЮЩЕЙ УЧАСТИЕ В ` },
+                { font: { ...font(true), color: { argb: 'FFFFFF00' } }, text: '[ЗАПОЛНЯЕТСЯ ВРУЧНУЮ ЛИГОЙ]' },
+                { font: font(true), text: `, СЕЗОН ${app.season_name}, ДИВИЗИОН ${String(app.division_name).toUpperCase()}` },
+            ],
+        };
+        title.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+        // Строка 2: заголовки таблицы игроков
+        const head = sheet.addRow(['№п', '№м', 'Амплуа', 'ФИО полностью', 'Д/р полная', 'Рост', 'Вес', 'Док-ты', 'Квалификация']);
+        head.height = 20.45;
+        head.eachCell({ includeEmpty: true }, (cell, col) => {
+            cell.font = font(true);
+            cell.border = box;
+            cell.alignment = col === 2 ? center : (col >= 8 ? { ...centerTop, wrapText: true } : centerTop);
+        });
+
+        // Игроки. Чего нет — прочерк, пустых клеток в листе не оставляем
+        players.forEach((p, idx) => {
+            const docs = docsMark(p, app, today);
+            const row = sheet.addRow([
+                idx + 1,
+                p.jersey_number ?? '-',
+                APP_EXPORT_POSITION[p.position] || '-',
+                fullName(p) || '-',
+                excelDate(p.birth_date) || '-',
+                p.height ?? '-',
+                p.weight ?? '-',
+                docs.text,
+                p.qualification_name || '-',
+            ]);
+            row.height = 15.75;
+            row.eachCell({ includeEmpty: true }, (cell, col) => {
+                // Дробь по документам — мелко, чтобы не спорила с галочками
+                cell.font = col === 8 && docs.small ? { ...font(), size: 9 } : font();
+                cell.border = box;
+                cell.alignment = col === 4 ? leftTop : center;
+                if (col === 5) cell.numFmt = 'mm-dd-yy';
+                if (col === 6 || col === 7) cell.numFmt = '0';
+            });
+        });
+
+        // Полоса «ДОПУСК» — место для визы лиги. Ровно 113 подчёркиваний: столько
+        // влезает в ширину листа, 121 из образца уже не помещались
+        const admit = sheet.addRow([`    ДОПУСК${'_'.repeat(113)}`]);
+        admit.height = 15.75;
+        sheet.mergeCells(`A${admit.number}:I${admit.number}`);
+        admit.getCell(1).font = font(true);
+        admit.getCell(1).alignment = { horizontal: 'center' };
+        admit.eachCell({ includeEmpty: true }, cell => { cell.border = box; });
+
+        // Заголовки блока представителей: колонка даты в образце без подписи
+        const staffHead = sheet.addRow(['Занимаемая должность в команде', '', '', '', 'ФИО полностью', '', '', '', '№ телефона']);
+        staffHead.height = 15.75;
+        sheet.mergeCells(`A${staffHead.number}:D${staffHead.number}`);
+        sheet.mergeCells(`E${staffHead.number}:G${staffHead.number}`);
+        staffHead.eachCell({ includeEmpty: true }, (cell, col) => {
+            cell.font = font(true);
+            cell.border = box;
+            // Пустая ячейка над датой в образце без горизонтального выравнивания
+            cell.alignment = col === 8 ? { vertical: 'top' } : centerTop;
+        });
+
+        // Представители: строка на каждого допущенного, роли в порядке образца. Роль без
+        // людей всё равно печатается — пустой строкой, чтобы вписать от руки
+        APP_EXPORT_ROLES.forEach(({ role, label }) => {
+            const people = staff.filter(s => s.tournament_role === role);
+            const lines = people.length > 0 ? people : [null];
+            lines.forEach(person => {
+                const row = sheet.addRow([
+                    label, '', '', '',
+                    (person && fullName(person)) || '-', '', '',
+                    (person && excelDate(person.birth_date)) || '-',
+                    (person && formatAppExportPhone(person.phone)) || '-',
+                ]);
+                row.height = 15.75;
+                sheet.mergeCells(`A${row.number}:D${row.number}`);
+                sheet.mergeCells(`E${row.number}:G${row.number}`);
+                row.eachCell({ includeEmpty: true }, (cell, col) => {
+                    cell.font = font();
+                    cell.border = box;
+                    cell.alignment = col <= 7 ? leftTop : center;
+                    if (col === 8) cell.numFmt = 'mm-dd-yy';
+                });
+            });
+        });
+
+        sheet.pageSetup.printArea = `A1:I${sheet.rowCount}`;
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const fileName = `Заявка - ${app.team_name} - ${app.division_name} - ${app.season_name}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="application.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        res.send(Buffer.from(buffer));
+    } catch (err) {
+        console.error('Ошибка выгрузки заявочного листа:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+

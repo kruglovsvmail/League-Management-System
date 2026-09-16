@@ -349,7 +349,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
               обрезается по ширине колонки и он пропадал бы вместе с ней */}
           <span className="text-[11px] text-graphite-light flex items-center min-w-0 mt-[2px]">
             <span className="truncate">{p.middle_name || ''}</span>
-            <EquipmentMark birthDate={p.birth_date} league={league} className="ml-1.5" />
+            <EquipmentMark birthDate={p.birth_date} league={league} position={p.position} className="ml-1.5" />
           </span>
           {p.joins_team && (
             <span className="text-[10px] font-bold text-orange leading-tight mt-0.5 block truncate" title="При сохранении сервер добавит его в команду и её игровой состав">
@@ -452,7 +452,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
           <span className="block text-[13px] font-bold text-graphite leading-tight truncate">{person.last_name} {person.first_name}</span>
           <span className="flex items-center min-w-0 text-[11px] font-medium text-graphite-light mt-[2px]">
             <span className="truncate">{subtitle}</span>
-            <EquipmentMark birthDate={person.birth_date} league={league} className="ml-1.5" />
+            <EquipmentMark birthDate={person.birth_date} league={league} position={person.position} className="ml-1.5" />
           </span>
           {blockedReason && (
             <span className="block text-[11px] font-semibold text-status-rejected leading-snug mt-1">{blockedReason}</span>
@@ -518,7 +518,7 @@ export function AppRosterComposeDrawer({ isOpen, onClose, teamApp, onSaved, show
         <div className="min-w-0 flex-1 flex flex-col">
           <span className="flex items-center min-w-0 text-[13px] font-bold text-graphite leading-tight">
             <span className="truncate">{person.last_name} {person.first_name} {person.middle_name || ''}</span>
-            <EquipmentMark birthDate={person.birth_date} league={league} className="ml-1.5" />
+            <EquipmentMark birthDate={person.birth_date} league={league} position={person.position} className="ml-1.5" />
           </span>
           <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
             {[formatBirthDate(person.birth_date), formatPhone(person.phone), person.qualification_short_name || null]

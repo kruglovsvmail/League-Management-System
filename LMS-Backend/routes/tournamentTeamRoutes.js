@@ -9,6 +9,7 @@ import {
     uploadTournamentTeamFile,
     deleteTournamentTeamLeaguePaper,
     getTournamentTeamRoster,
+    exportTournamentTeamApplication,
     getTournamentTeamRosterPool,
     searchTournamentTeamRosterCandidates,
     saveTournamentTeamComposition
@@ -20,6 +21,8 @@ router.use(verifyToken);
 
 // Получение заявки (ростера) конкретной команды турнира (доступно всем)
 router.get('/tournament-teams/:id/roster', getTournamentTeamRoster);
+// Заявочный лист в Excel по образцу лиги — только допущенные игроки и представители
+router.get('/tournament-teams/:id/export-application', requirePermission('DIVISIONS_TEAM_ROSTERS_MODAL'), exportTournamentTeamApplication);
 
 // Управление командами внутри турнира
 router.patch('/tournament-teams/:id/status', requirePermission('DIVISIONS_TEAM_STATUS'), updateTournamentTeamStatus);
