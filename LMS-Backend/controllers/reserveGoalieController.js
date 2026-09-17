@@ -119,14 +119,15 @@ export const getReserveGoalies = async (req, res) => {
                         bool_or(r.data_incomplete)                            AS data_incomplete,
                         (SELECT json_agg(json_build_object(
                                     'team_id', x.team_id,
-                                    'team_name', COALESCE(t.short_name, t.name),
+                                    'team_name', COALESCE(tt2.snap_short_name, tt2.snap_name, t.short_name, t.name),
                                     'games', x.cnt
-                                ) ORDER BY x.cnt DESC, COALESCE(t.short_name, t.name))
+                                ) ORDER BY x.cnt DESC, COALESCE(tt2.snap_short_name, tt2.snap_name, t.short_name, t.name))
                            FROM (SELECT r2.team_id, COUNT(*)::int AS cnt
                                    FROM reserve_goalie_game_statistics r2
                                   WHERE r2.division_id = r.division_id AND r2.player_id = r.player_id
                                   GROUP BY r2.team_id) x
-                           JOIN teams t ON t.id = x.team_id)                  AS teams,
+                           JOIN teams t ON t.id = x.team_id
+                           LEFT JOIN tournament_teams tt2 ON tt2.division_id = r.division_id AND tt2.team_id = x.team_id) AS teams,
                         EXISTS (SELECT 1 FROM division_reserve_goalies drg
                                  WHERE drg.division_id = r.division_id AND drg.player_id = r.player_id) AS in_pool
                  FROM reserve_goalie_game_statistics r
@@ -179,7 +180,7 @@ export const getReserveGoalieCandidates = async (req, res) => {
                        JOIN teams t ON t.id = tm.team_id
                       WHERE tm.user_id = u.id AND tm.left_at IS NULL)        AS current_teams,
                     -- Заявлен ли он прямо сейчас за команду ЭТОГО дивизиона
-                    (SELECT json_agg(DISTINCT COALESCE(t.short_name, t.name))
+                    (SELECT json_agg(DISTINCT COALESCE(tt.snap_short_name, tt.snap_name, t.short_name, t.name))
                        FROM tournament_rosters tr
                        JOIN tournament_teams tt ON tt.id = tr.tournament_team_id
                        JOIN teams t ON t.id = tt.team_id

@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { computeTeamSnapshotDiff } from './tournamentTeamController.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
@@ -95,10 +96,25 @@ export const getDivisions = async (req, res) => {
                     'id', tt.id,
                     'team_id', t.id,
                     'status', tt.status,
-                    'name', t.name,
-                    'short_name', t.short_name,
-                    'city', t.city,
-                    'logo_url', t.logo_url,
+                    -- Название, аббревиатура, город, лого — по слепку заявки (snap_*), пока его
+                    -- нет — живое из teams. Живые значения отдаём отдельно под live_*: по ним
+                    -- считается, что команда изменила после допуска (computeTeamSnapshotDiff)
+                    'name', COALESCE(tt.snap_name, t.name),
+                    'short_name', COALESCE(tt.snap_short_name, t.short_name),
+                    'city', COALESCE(tt.snap_city, t.city),
+                    'logo_url', COALESCE(tt.snap_logo_url, t.logo_url),
+                    'snapshot_at', tt.snapshot_at,
+                    'snap_name', tt.snap_name, 'snap_short_name', tt.snap_short_name,
+                    'snap_logo_url', tt.snap_logo_url, 'snap_city', tt.snap_city,
+                    'snap_pronunciation', tt.snap_pronunciation,
+                    'snap_color_home_1', tt.snap_color_home_1, 'snap_color_home_2', tt.snap_color_home_2,
+                    'snap_color_away_1', tt.snap_color_away_1, 'snap_color_away_2', tt.snap_color_away_2,
+                    'live_name', t.name, 'live_short_name', t.short_name, 'live_city', t.city,
+                    'live_logo_url', t.logo_url, 'live_pronunciation', t.pronunciation,
+                    'live_color_home_1', t.color_home_1, 'live_color_home_2', t.color_home_2,
+                    'live_color_away_1', t.color_away_1, 'live_color_away_2', t.color_away_2,
+                    'live_jersey_light_url', t.jersey_light_url, 'live_jersey_dark_url', t.jersey_dark_url,
+                    'live_description', t.description, 'live_team_photo_url', t.team_photo_url,
                     'paper_roster_team_url', tt.paper_roster_team_url,
                     'paper_roster_league_url', tt.paper_roster_league_url,
                     'custom_jersey_light_url', tt.custom_jersey_light_url,
@@ -136,7 +152,7 @@ export const getDivisions = async (req, res) => {
                           AND d.league_id = (SELECT league_id FROM seasons WHERE id = $1)
                           AND d.status = 'active'
                     )
-                ) ORDER BY t.name) as teams
+                ) ORDER BY COALESCE(tt.snap_name, t.name)) as teams
                 FROM tournament_teams tt
                 JOIN teams t ON tt.team_id = t.id
                 GROUP BY tt.division_id
@@ -162,6 +178,15 @@ export const getDivisions = async (req, res) => {
             WHERE d.season_id = $1
             ORDER BY d.id
         `, [seasonId]);
+
+        // Что команда изменила после допуска — список для плашки в карточке и галочек
+        // в окне статуса. Считаем здесь, чтобы у фронта был один источник правды.
+        for (const division of result.rows) {
+            division.teams = (division.teams || []).map(team => ({
+                ...team,
+                snapshot_diff: computeTeamSnapshotDiff(team),
+            }));
+        }
         res.json({ success: true, data: result.rows });
     } catch (err) {
         console.error('Ошибка получения дивизиона:', err);
@@ -380,11 +405,11 @@ export const getDivisionTeams = async (req, res) => {
     try {
         const { id } = req.params;
         const result = await pool.query(`
-            SELECT tt.id, tt.team_id, t.name 
+            SELECT tt.id, tt.team_id, COALESCE(tt.snap_name, t.name) AS name
             FROM tournament_teams tt
             JOIN teams t ON tt.team_id = t.id
             WHERE tt.division_id = $1 AND tt.status = 'approved'
-            ORDER BY t.name
+            ORDER BY COALESCE(tt.snap_name, t.name)
         `, [id]);
         res.json({ success: true, teams: result.rows });
     } catch (err) {
@@ -401,7 +426,10 @@ export const getDivisionStandings = async (req, res) => {
                 ds.id, ds.team_id, ds.games_played, ds.wins_reg, ds.wins_ot, ds.draws,
                 ds.losses_ot, ds.losses_reg, ds.goals_for, ds.goals_against, ds.points, ds.rank,
                 (ds.goals_for - ds.goals_against) as goals_diff,
-                t.name as team_name, t.short_name, t.logo_url
+                -- Команда в таблице — по слепку заявки, а не по текущему профилю
+                COALESCE(tt.snap_name, t.name) as team_name,
+                COALESCE(tt.snap_short_name, t.short_name) as short_name,
+                COALESCE(tt.snap_logo_url, t.logo_url) as logo_url
             FROM division_standings ds
             JOIN teams t ON ds.team_id = t.id
             JOIN tournament_teams tt ON tt.team_id = t.id AND tt.division_id = ds.division_id
@@ -428,17 +456,21 @@ export const getPlayoffBracket = async (req, res) => {
             b.rounds = roundsRes.rows;
 
             const matchupsRes = await pool.query(`
-                SELECT m.*, 
-                       t1.name as team1_name, t1.short_name as team1_short, t1.logo_url as team1_logo,
-                       t2.name as team2_name, t2.short_name as team2_short, t2.logo_url as team2_logo,
-                       tw.name as winner_name
+                SELECT m.*,
+                       COALESCE(tt1.snap_name, t1.name) as team1_name, COALESCE(tt1.snap_short_name, t1.short_name) as team1_short, COALESCE(tt1.snap_logo_url, t1.logo_url) as team1_logo,
+                       COALESCE(tt2.snap_name, t2.name) as team2_name, COALESCE(tt2.snap_short_name, t2.short_name) as team2_short, COALESCE(tt2.snap_logo_url, t2.logo_url) as team2_logo,
+                       COALESCE(ttw.snap_name, tw.name) as winner_name
                 FROM playoff_matchups m
                 LEFT JOIN teams t1 ON m.team1_id = t1.id
                 LEFT JOIN teams t2 ON m.team2_id = t2.id
                 LEFT JOIN teams tw ON m.winner_id = tw.id
+                -- Слепок команды из заявки в этот дивизион
+                LEFT JOIN tournament_teams tt1 ON tt1.team_id = m.team1_id AND tt1.division_id = $2
+                LEFT JOIN tournament_teams tt2 ON tt2.team_id = m.team2_id AND tt2.division_id = $2
+                LEFT JOIN tournament_teams ttw ON ttw.team_id = m.winner_id AND ttw.division_id = $2
                 WHERE m.round_id IN (SELECT id FROM playoff_rounds WHERE bracket_id = $1)
                 ORDER BY m.matchup_number ASC
-            `, [b.id]);
+            `, [b.id, id]);
             
             b.rounds.forEach(r => {
                 r.matchups = matchupsRes.rows.filter(m => m.round_id === r.id);
@@ -446,11 +478,11 @@ export const getPlayoffBracket = async (req, res) => {
         }
         
         const teamsRes = await pool.query(`
-            SELECT t.id, t.name, t.logo_url
+            SELECT t.id, COALESCE(tt.snap_name, t.name) AS name, COALESCE(tt.snap_logo_url, t.logo_url) AS logo_url
             FROM tournament_teams tt
             JOIN teams t ON tt.team_id = t.id
             WHERE tt.division_id = $1 AND tt.status = 'approved'
-            ORDER BY t.name
+            ORDER BY COALESCE(tt.snap_name, t.name)
         `, [id]);
 
         const gamesRes = await pool.query(`

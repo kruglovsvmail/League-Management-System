@@ -18,15 +18,17 @@ export const getPublicGameById = async (req, res) => {
                    g.game_date, g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
                    g.home_jersey_type, g.away_jersey_type,
                    g.division_id, g.home_team_id, g.away_team_id,
-                   t1.name as home_team_name, 
-                   t1.short_name as home_short_name,
-                   t1.logo_url as home_team_logo,
-                   t1.color_home_1 as home_color_1, t1.color_home_2 as home_color_2,
-                   t2.name as away_team_name,
-                   t2.short_name as away_short_name,
-                   t2.logo_url as away_team_logo,
-                   t2.color_away_1 as away_color_1, t2.color_away_2 as away_color_2,
-                   -- Джерси: приоритет tournament_teams → teams → дефолт
+                   -- Команды — по слепку заявки в дивизион (snap_*), живое из teams только
+                   -- пока слепка нет; у матчей без дивизиона слепка не бывает
+                   COALESCE(tt_home.snap_name, t1.name) as home_team_name,
+                   COALESCE(tt_home.snap_short_name, t1.short_name) as home_short_name,
+                   COALESCE(tt_home.snap_logo_url, t1.logo_url) as home_team_logo,
+                   COALESCE(tt_home.snap_color_home_1, t1.color_home_1) as home_color_1, COALESCE(tt_home.snap_color_home_2, t1.color_home_2) as home_color_2,
+                   COALESCE(tt_away.snap_name, t2.name) as away_team_name,
+                   COALESCE(tt_away.snap_short_name, t2.short_name) as away_short_name,
+                   COALESCE(tt_away.snap_logo_url, t2.logo_url) as away_team_logo,
+                   COALESCE(tt_away.snap_color_away_1, t2.color_away_1) as away_color_1, COALESCE(tt_away.snap_color_away_2, t2.color_away_2) as away_color_2,
+-- Джерси: приоритет tournament_teams → teams → дефолт
                    COALESCE(tt_home.custom_jersey_dark_url,  t1.jersey_dark_url)  as home_jersey_dark_url,
                    COALESCE(tt_home.custom_jersey_light_url, t1.jersey_light_url) as home_jersey_light_url,
                    COALESCE(tt_away.custom_jersey_dark_url,  t2.jersey_dark_url)  as away_jersey_dark_url,
@@ -372,8 +374,8 @@ export const getGames = async (req, res) => {
                 g.home_team_id, g.away_team_id, g.arena_id,
                 a.name as location_text,
                 a.timezone as arena_timezone,
-                ht.name as home_team_name, ht.logo_url as home_team_logo,
-                at.name as away_team_name, at.logo_url as away_team_logo,
+                COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_logo_url, ht.logo_url) as home_team_logo,
+                COALESCE(tt_away.snap_name, at.name) as away_team_name, COALESCE(tt_away.snap_logo_url, at.logo_url) as away_team_logo,
                 d.name as division_name,
                 gt.periods_count, gt.auto_stop_on_event,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
@@ -397,6 +399,9 @@ export const getGames = async (req, res) => {
             LEFT JOIN game_timers gt ON g.id = gt.game_id
             LEFT JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN teams at ON g.away_team_id = at.id
+            -- Слепок команды из заявки в дивизион матча
+            LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
+            LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
             JOIN divisions d ON g.division_id = d.id
             LEFT JOIN arenas a ON g.arena_id = a.id
             WHERE d.season_id = $1
@@ -456,8 +461,8 @@ export const getGameById = async (req, res) => {
                 COALESCE(d.track_timer_log, false) AS track_timer_log,
                 a.name as location_text,
                 a.timezone as arena_timezone,
-                ht.name as home_team_name, ht.logo_url as home_team_logo, 
-                at.name as away_team_name, at.logo_url as away_team_logo,
+                COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_logo_url, ht.logo_url) as home_team_logo,
+                COALESCE(tt_away.snap_name, at.name) as away_team_name, COALESCE(tt_away.snap_logo_url, at.logo_url) as away_team_logo,
                 d.name as division_name,
                 -- Сезон дивизиона нужен странице матча: по ссылке «К списку матчей»
                 -- надо вернуться к тому же дивизиону того же сезона, а не к тому,
@@ -698,13 +703,15 @@ export const createGame = async (req, res) => {
                 g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
                 g.home_team_id, g.away_team_id, g.arena_id,
                 a.name as location_text,
-                ht.name as home_team_name, ht.logo_url as home_team_logo,
-                at.name as away_team_name, at.logo_url as away_team_logo,
+                COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_logo_url, ht.logo_url) as home_team_logo,
+                COALESCE(tt_away.snap_name, at.name) as away_team_name, COALESCE(tt_away.snap_logo_url, at.logo_url) as away_team_logo,
                 d.name as division_name,
                 false as has_protocol
             FROM games g
             LEFT JOIN teams ht ON g.home_team_id = ht.id
             LEFT JOIN teams at ON g.away_team_id = at.id
+            LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
+            LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
             JOIN divisions d ON g.division_id = d.id
             LEFT JOIN arenas a ON g.arena_id = a.id
             WHERE g.id = $1
@@ -1259,10 +1266,12 @@ export const getGameReserveGoalies = async (req, res) => {
         const { rows } = await pool.query(`
             SELECT gr.player_id, gr.team_id, gr.jersey_number,
                    u.first_name, u.last_name, u.middle_name, u.avatar_url,
-                   COALESCE(t.short_name, t.name) AS team_name
+                   COALESCE(tt.snap_short_name, t.short_name, tt.snap_name, t.name) AS team_name
             FROM game_rosters gr
+            JOIN games g ON g.id = gr.game_id
             JOIN users u ON u.id = gr.player_id
             LEFT JOIN teams t ON t.id = gr.team_id
+            LEFT JOIN tournament_teams tt ON tt.team_id = gr.team_id AND tt.division_id = g.division_id
             WHERE gr.game_id = $1 AND gr.is_reserve_goalie
             ORDER BY u.last_name, u.first_name
         `, [gameId]);

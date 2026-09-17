@@ -88,8 +88,8 @@ export const exportTimerLog = async (req, res) => {
              d.name AS division_name,
              s.name AS season_name,
              l.name AS league_name,
-             ht.name AS home_team_name,
-             at.name AS away_team_name,
+             COALESCE(tt_home.snap_name, ht.name) AS home_team_name,
+             COALESCE(tt_away.snap_name, at.name) AS away_team_name,
              to_char(g.game_date AT TIME ZONE COALESCE(a.timezone, 'UTC'), 'DD.MM.YYYY HH24:MI') AS game_started
       FROM games g
       LEFT JOIN arenas a ON a.id = g.arena_id
@@ -98,6 +98,8 @@ export const exportTimerLog = async (req, res) => {
       LEFT JOIN leagues l ON l.id = s.league_id
       LEFT JOIN teams ht ON ht.id = g.home_team_id
       LEFT JOIN teams at ON at.id = g.away_team_id
+      LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
+      LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
       WHERE g.id = $1
     `, [gameId]);
     if (infoRes.rows.length === 0) {

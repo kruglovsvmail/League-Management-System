@@ -8,6 +8,102 @@ import { isLeagueOwner } from '../utils/leagueOwners.js';
 import { syncClubMembershipOnTeamJoin } from '../utils/clubMembership.js';
 import { alignPersonAdmission } from '../utils/personAdmission.js';
 
+// ============================================================================
+// СЛЕПОК КОМАНДЫ В ЗАЯВКЕ
+// ============================================================================
+// Название, аббревиатура, логотип, город, произношение и цвета живут в teams и меняются
+// командой когда угодно — и до появления слепка это меняло прошлые сезоны задним числом:
+// переименовалась команда — переименовалась во всех старых таблицах и протоколах.
+// Поэтому при допуске заявки лига фиксирует эти поля в самой заявке (snap_*), а форма,
+// описание и общее фото при этом дописываются в уже существующие custom_*, если лига
+// не заполнила их сама. Дальше везде, где команда показывается в контексте дивизиона,
+// читается COALESCE(слепок, живое) — см. запросы матчей, таблиц, протоколов, сайта ТФХ.
+//
+// Пересохранение статуса «Допущена» слепок не трогает само по себе: окно статуса
+// показывает, что команда изменила после допуска, и лига отмечает галочками, что принять.
+// Это защита от случайного «Сохранить» вместо крестика.
+//
+// Файлы (лого, форма, фото) в слепок копировать не нужно: и LMS, и Team-Room кладут
+// каждую загрузку новым объектом с меткой времени и старый не трогают, поэтому ссылка
+// в слепке вечно показывает то, что допустили.
+
+// Поле слепка: колонка в tournament_teams, колонка в teams, подпись для окна статуса,
+// вид значения (text | image | color) — по нему окно рисует «было → стало»
+export const TEAM_SNAPSHOT_FIELDS = [
+    { key: 'name',          app: 'snap_name',              team: 'name',             label: 'Название',        kind: 'text' },
+    { key: 'short_name',    app: 'snap_short_name',        team: 'short_name',       label: 'Аббревиатура',    kind: 'text' },
+    { key: 'logo_url',      app: 'snap_logo_url',          team: 'logo_url',         label: 'Логотип',         kind: 'image' },
+    { key: 'city',          app: 'snap_city',              team: 'city',             label: 'Город',           kind: 'text' },
+    { key: 'pronunciation', app: 'snap_pronunciation',     team: 'pronunciation',    label: 'Произношение',    kind: 'text' },
+    { key: 'color_home',    app: ['snap_color_home_1', 'snap_color_home_2'], team: ['color_home_1', 'color_home_2'], label: 'Цвета домашней формы', kind: 'color' },
+    { key: 'color_away',    app: ['snap_color_away_1', 'snap_color_away_2'], team: ['color_away_1', 'color_away_2'], label: 'Цвета гостевой формы', kind: 'color' },
+    { key: 'jersey_dark',   app: 'custom_jersey_dark_url',  team: 'jersey_dark_url',  label: 'Форма домашняя',  kind: 'image' },
+    { key: 'jersey_light',  app: 'custom_jersey_light_url', team: 'jersey_light_url', label: 'Форма гостевая',  kind: 'image' },
+    { key: 'description',   app: 'custom_description',      team: 'description',      label: 'Описание',        kind: 'text' },
+    { key: 'team_photo',    app: 'custom_team_photo_url',   team: 'team_photo_url',   label: 'Общее фото',      kind: 'image' },
+];
+const SNAPSHOT_FIELD_BY_KEY = Object.fromEntries(TEAM_SNAPSHOT_FIELDS.map(f => [f.key, f]));
+const asList = (v) => (Array.isArray(v) ? v : [v]);
+const nullIfEmpty = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : v);
+
+/**
+ * Снять слепок в заявку из текущего профиля команды.
+ * keys — какие поля обновить; без keys — все. Для custom_* без keys заполняются только
+ * пустые: лига могла уже положить туда свою форму или описание, и это её версия.
+ */
+export const takeTeamSnapshot = async (db, appId, keys = null) => {
+    const fields = keys ? keys.map(k => SNAPSHOT_FIELD_BY_KEY[k]).filter(Boolean) : TEAM_SNAPSHOT_FIELDS;
+    if (fields.length === 0) return;
+
+    const sets = [];
+    for (const f of fields) {
+        const appCols = asList(f.app);
+        const teamCols = asList(f.team);
+        appCols.forEach((appCol, i) => {
+            const isCustom = appCol.startsWith('custom_');
+            // Полный слепок при допуске: custom_* не затираем, если лига их уже заполнила
+            sets.push(isCustom && !keys
+                ? `${appCol} = COALESCE(tt.${appCol}, t.${teamCols[i]})`
+                : `${appCol} = t.${teamCols[i]}`);
+        });
+    }
+    if (!keys) sets.push('snapshot_at = NOW()');
+
+    await db.query(`
+        UPDATE tournament_teams tt
+           SET ${sets.join(', ')}, updated_at = NOW()
+          FROM teams t
+         WHERE t.id = tt.team_id AND tt.id = $1::int
+    `, [appId]);
+};
+
+/**
+ * Что команда изменила после допуска: список полей, где живое значение из teams
+ * не совпадает со слепком. Для заявки без слепка — пусто. Считается по строке, в которой
+ * есть и колонки слепка (snap_… и custom_…), и живые поля команды под именами live_…
+ * (см. getDivisions в divisionController).
+ */
+export const computeTeamSnapshotDiff = (row) => {
+    if (!row || !row.snapshot_at) return [];
+    const diff = [];
+    for (const f of TEAM_SNAPSHOT_FIELDS) {
+        const appCols = asList(f.app);
+        const teamCols = asList(f.team);
+        const snapVals = appCols.map(c => nullIfEmpty(row[c]));
+        const liveVals = teamCols.map(c => nullIfEmpty(row[`live_${c}`]));
+        // Пустой custom_* у допущенной заявки — слепок ещё не заполнен, сравнивать не с чем
+        if (snapVals.every(v => v === null)) continue;
+        if (snapVals.some((v, i) => v !== liveVals[i])) {
+            diff.push({
+                key: f.key, label: f.label, kind: f.kind,
+                old: snapVals.length === 1 ? snapVals[0] : snapVals,
+                new: liveVals.length === 1 ? liveVals[0] : liveVals,
+            });
+        }
+    }
+    return diff;
+};
+
 /**
  * Роли представителя в турнирной заявке — те же три, что и в Team-Room
  * (см. MgrSeasonController.TOURNAMENT_ROLES). Главный тренер команды (head_coach)
@@ -189,6 +285,11 @@ export const updateTournamentTeamStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
+        // Какие изменения команды лига принимает в слепок при повторном допуске (ключи
+        // TEAM_SNAPSHOT_FIELDS). Без списка слепок не трогается — см. шапку раздела.
+        const accept = Array.isArray(req.body.accept)
+            ? req.body.accept.filter(k => SNAPSHOT_FIELD_BY_KEY[k])
+            : [];
 
         // Допуск команды — последняя точка, где состав ещё можно не пропустить. К этому
         // моменту он мог перестать соответствовать правилам: и квалификацию игроку, и список
@@ -198,9 +299,18 @@ export const updateTournamentTeamStatus = async (req, res) => {
         }
 
         const { rows } = await pool.query(
-            `UPDATE tournament_teams SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING division_id`,
+            `UPDATE tournament_teams SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING division_id, snapshot_at`,
             [status, id]
         );
+
+        // Слепок команды: первый допуск снимает его целиком, повторный — только отмеченное
+        if (status === 'approved' && rows[0]) {
+            if (!rows[0].snapshot_at) {
+                await takeTeamSnapshot(pool, id);
+            } else if (accept.length > 0) {
+                await takeTeamSnapshot(pool, id, accept);
+            }
+        }
 
         // Смена статуса заявки команды (допуск/отклонение) меняет состав дивизиона,
         // поэтому таблицу нужно пересчитать сразу, а не ждать следующего сыгранного матча.
@@ -228,7 +338,23 @@ export const updateTournamentTeamStatus = async (req, res) => {
 export const updateTournamentTeamCustomData = async (req, res) => {
     try {
         const { id } = req.params;
-        const { custom_description, custom_jersey_light_url, custom_jersey_dark_url, custom_team_photo_url } = req.body;
+        let { custom_description, custom_jersey_light_url, custom_jersey_dark_url, custom_team_photo_url } = req.body;
+
+        // У допущенной заявки custom_* — часть слепка. «Сбросить» там значит не «показывать
+        // живое из команды» (иначе история снова поплывёт), а «взять текущую версию команды
+        // в слепок». Поэтому null у заявки со слепком заменяем на живое значение.
+        const snapRes = await pool.query(`
+            SELECT tt.snapshot_at, t.description, t.jersey_light_url, t.jersey_dark_url, t.team_photo_url
+              FROM tournament_teams tt JOIN teams t ON t.id = tt.team_id
+             WHERE tt.id = $1
+        `, [id]);
+        const live = snapRes.rows[0];
+        if (live?.snapshot_at) {
+            if (custom_description === null) custom_description = live.description;
+            if (custom_jersey_light_url === null) custom_jersey_light_url = live.jersey_light_url;
+            if (custom_jersey_dark_url === null) custom_jersey_dark_url = live.jersey_dark_url;
+            if (custom_team_photo_url === null) custom_team_photo_url = live.team_photo_url;
+        }
         
         let updates = [];
         let values = [];
@@ -343,7 +469,7 @@ const MANAGED_APP_SQL = `
            -- Глобальный параметр лиги (Команды → Лиги у глобального админа): шторка ищет
            -- игроков по всей базе пользователей, а не по игровому составу команды
            l.league_roster_global_search,
-           t.name AS team_name,
+           COALESCE(tt.snap_name, t.name) AS team_name,
            -- Как только в дивизионе сыгран хотя бы один матч (любой командой), строку из
            -- заявки больше не удаляем: на неё смотрят протоколы и статистика. Вместо
            -- удаления — отзаявка через period_end.
@@ -1091,7 +1217,7 @@ export const exportTournamentTeamApplication = async (req, res) => {
         const { id } = req.params;
 
         const appRes = await pool.query(`
-            SELECT tt.id, t.name AS team_name,
+            SELECT tt.id, COALESCE(tt.snap_name, t.name) AS team_name,
                    d.name AS division_name, d.req_med_cert, d.req_insurance, d.req_consent,
                    s.name AS season_name, s.league_id, s.id AS season_id
             FROM tournament_teams tt

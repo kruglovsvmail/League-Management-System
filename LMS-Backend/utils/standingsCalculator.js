@@ -42,7 +42,7 @@ export const recalculateDivisionStandings = async (divisionId) => {
 
         // 3. Инициализируем статистику
         const teamsRes = await client.query(`
-            SELECT tt.team_id, t.name
+            SELECT tt.team_id, COALESCE(tt.snap_name, t.name) AS name
             FROM tournament_teams tt
             JOIN teams t ON t.id = tt.team_id
             WHERE tt.division_id = $1 AND tt.status = 'approved'

@@ -45,10 +45,12 @@ const CTX_SQL = `
 const PREV_GAME_SQL = `
     SELECT pg.id,
            pg.game_date,
-           COALESCE(t.short_name, t.name) AS opponent_name
+           COALESCE(tt.snap_short_name, tt.snap_name, t.short_name, t.name) AS opponent_name
     FROM games pg
     LEFT JOIN teams t
            ON t.id = CASE WHEN pg.home_team_id = $2 THEN pg.away_team_id ELSE pg.home_team_id END
+    LEFT JOIN tournament_teams tt
+           ON tt.division_id = pg.division_id AND tt.team_id = t.id
     WHERE pg.division_id = $3
       AND (pg.home_team_id = $2 OR pg.away_team_id = $2)
       AND pg.id <> $1

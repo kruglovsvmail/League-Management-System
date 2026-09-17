@@ -647,7 +647,7 @@ export const getSdkInviteeCandidates = async (req, res) => {
       SELECT u.id, u.first_name, u.last_name, u.middle_name, u.avatar_url,
              'team_staff' AS kind,
              string_agg(DISTINCT ttr.tournament_role, ', ') AS roles,
-             string_agg(DISTINCT t.name, ', ') AS teams
+             string_agg(DISTINCT COALESCE(tt.snap_name, t.name), ', ') AS teams
       FROM tournament_team_roles ttr
       JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
       JOIN divisions dv ON dv.id = tt.division_id
@@ -838,7 +838,8 @@ export const getSdkMeetingDecisions = async (req, res) => {
              ), '[]'::json) as members,
              COALESCE(dec.violation_code_snapshot, vt.code) as violation_code,
              COALESCE(dec.violation_title_snapshot, vt.title) as violation_title,
-             t.name as team_name, t.logo_url as team_logo, div.name as division_name,
+             -- Команда — по слепку заявки (snap_*), снятому при допуске
+             COALESCE(tt.snap_name, t.name) as team_name, COALESCE(tt.snap_logo_url, t.logo_url) as team_logo, div.name as division_name,
              COALESCE(u.first_name, u2.first_name) as first_name,
              COALESCE(u.last_name, u2.last_name) as last_name,
              COALESCE(u.middle_name, u2.middle_name) as middle_name,

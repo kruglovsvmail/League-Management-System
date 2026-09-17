@@ -374,8 +374,11 @@ export default function setupTimerSockets(io) {
       gr_a1.jersey_number as assist1_jersey_number,
       a2.last_name as assist2_last_name, a2.first_name as assist2_first_name, a2.pronunciation as assist2_pronunciation,
       gr_a2.jersey_number as assist2_jersey_number,
-      t.name as team_name, t.pronunciation as team_pronunciation
+      COALESCE(tt_ev.snap_name, t.name) as team_name, COALESCE(tt_ev.snap_pronunciation, t.pronunciation) as team_pronunciation
     FROM game_events ge
+    JOIN games g_ev ON g_ev.id = ge.game_id
+    -- Слепок команды из заявки в дивизион матча: название и произношение как при допуске
+    LEFT JOIN tournament_teams tt_ev ON tt_ev.team_id = ge.team_id AND tt_ev.division_id = g_ev.division_id
     -- Падеж причины для диктора из справочника лиги (NULL -> встроенный фолбэк)
     LEFT JOIN penalty_types pt ON pt.id = ge.penalty_reason_id
     LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id

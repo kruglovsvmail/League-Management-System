@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 // Импортируем заглушку
 import { AccessFallback } from '../ui/AccessFallback';
 
-export function TeamPhotoModal({ isOpen, onClose, onSave, initialPhoto, isSaving = false, canClearPhoto = true, readOnly = false }) {
+export function TeamPhotoModal({ isOpen, onClose, onSave, initialPhoto, isSaving = false, canClearPhoto = true, snapshotMode = false, readOnly = false }) {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoCleared, setPhotoCleared] = useState(false);
 
@@ -28,10 +28,18 @@ export function TeamPhotoModal({ isOpen, onClose, onSave, initialPhoto, isSaving
         <AccessFallback variant="readonly" message="Режим просмотра. Изменение фото недоступно." />
       )}
 
+      {/* У допущенной заявки фото — часть слепка: «Сбросить» подставляет текущее фото
+          из профиля команды (см. updateTournamentTeamCustomData). */}
+      {snapshotMode && !readOnly && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-status-pending/10 border border-status-pending/30 text-[12px] text-graphite leading-snug">
+          Заявка допущена — фото зафиксировано в заявке. «Сбросить» подставит текущее фото из профиля команды.
+        </div>
+      )}
+
       <div className="mb-6 mt-2">
-        <Uploader 
-          id="team_photo_upload" 
-          label="Загрузите групповое фото" 
+        <Uploader
+          id="team_photo_upload"
+label="Загрузите групповое фото" 
           heightClass="h-[232px]" 
           accept=".jpg,.png,.webp" 
           onFileSelect={(f, cleared) => { setPhotoFile(f); setPhotoCleared(cleared); }} 

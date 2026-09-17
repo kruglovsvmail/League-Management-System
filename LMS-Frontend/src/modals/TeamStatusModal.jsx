@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Button } from '../ui/Button';
+import { Checkbox } from '../ui/Checkbox';
+import { getImageUrl } from '../utils/helpers';
 
 // Импортируем заглушку
 import { AccessFallback } from '../ui/AccessFallback';
@@ -48,12 +50,47 @@ const STATUS_OPTIONS = [
   }
 ];
 
-export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSave, isSaving = false, readOnly = false }) {
+// Одно значение поля слепка для строки «было → стало»: текст, картинка или пара цветов
+function SnapshotValue({ kind, value }) {
+  if (kind === 'image') {
+    return value
+      ? <img src={getImageUrl(value)} alt="" className="w-10 h-10 object-contain rounded border border-graphite/10 bg-white" />
+      : <span className="text-graphite-light">—</span>;
+  }
+  if (kind === 'color') {
+    const colors = Array.isArray(value) ? value : [value];
+    return (
+      <span className="inline-flex items-center gap-1">
+        {colors.map((c, i) => c
+          ? <span key={i} className="w-5 h-5 rounded border border-graphite/20 inline-block" style={{ backgroundColor: c }} title={c} />
+          : <span key={i} className="text-graphite-light">—</span>
+        )}
+      </span>
+    );
+  }
+  const text = value === null || value === undefined || value === '' ? '—' : String(value);
+  return <span className="break-words" title={text}>{text.length > 60 ? `${text.slice(0, 60)}…` : text}</span>;
+}
+
+export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSave, isSaving = false, readOnly = false, hasSnapshot = false, snapshotDiff = [] }) {
   const [selectedStatus, setSelectedStatus] = useState(currentStatus || 'pending');
+  // Какие изменения профиля команды принять в слепок заявки. По умолчанию — ничего:
+  // «Сохранить» вместо крестика не должно молча переписать зафиксированные данные.
+  const [accepted, setAccepted] = useState([]);
 
   useEffect(() => {
-    if (isOpen) setSelectedStatus(currentStatus || 'pending');
+    if (isOpen) {
+      setSelectedStatus(currentStatus || 'pending');
+      setAccepted([]);
+    }
   }, [isOpen, currentStatus]);
+
+  const toggleAccepted = (key) =>
+    setAccepted(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
+
+  // Блок расхождений — только у заявки со слепком, только при выборе «Допущена»
+  // и только если команда что-то изменила после допуска
+  const showDiff = hasSnapshot && selectedStatus === 'approved' && snapshotDiff.length > 0;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Статус команды" size="medium">
@@ -92,11 +129,41 @@ export function TeamStatusModal({ isOpen, onClose, currentStatus, teamName, onSa
         ))}
       </div>
 
+      {showDiff && (
+        <div className="mb-6 font-sans">
+          <div className="px-3 py-2 rounded-md bg-status-pending/10 border border-status-pending/30 text-[12px] text-graphite leading-snug mb-3">
+            Команда изменила профиль после допуска. Данные в заявке зафиксированы на момент допуска
+            и сами не меняются. Отметьте, какие изменения принять в заявку; без отметки всё останется как было.
+          </div>
+          <div className="flex flex-col gap-2">
+            {snapshotDiff.map(d => (
+              <div key={d.key} className="px-3 py-2 rounded-md border border-graphite/10 bg-white/50">
+                <Checkbox
+                  className=""
+                  checked={accepted.includes(d.key)}
+                  onChange={() => !readOnly && toggleAccepted(d.key)}
+                  label={(
+                    <span className="flex flex-col gap-1 text-[13px]">
+                      <span className="font-bold text-graphite">{d.label}</span>
+                      <span className="flex items-center gap-2 text-graphite-light">
+                        <SnapshotValue kind={d.kind} value={d.old} />
+                        <span className="text-graphite/40">→</span>
+                        <SnapshotValue kind={d.kind} value={d.new} />
+                      </span>
+                    </span>
+                  )}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!readOnly && (
         <div className="flex justify-end pt-5 border-t border-graphite/10">
-          <Button 
-            onClick={() => onSave(selectedStatus)} 
-            isLoading={isSaving} 
+          <Button
+            onClick={() => onSave(selectedStatus, showDiff ? accepted : [])}
+isLoading={isSaving} 
             disabled={isSaving} 
             className="w-full sm:w-auto bg-orange text-white border-none transition-all duration-300 hover:bg-orange-hover"
           >

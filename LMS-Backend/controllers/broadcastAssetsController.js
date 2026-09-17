@@ -403,10 +403,12 @@ export const getGameLogos = async (req, res) => {
     const { gameId } = req.params;
     const q = await pool.query(`
       SELECT l.logo_url AS league, d.logo_url AS division,
-             t1.logo_url AS home, t2.logo_url AS away
+             COALESCE(tt1.snap_logo_url, t1.logo_url) AS home, COALESCE(tt2.snap_logo_url, t2.logo_url) AS away
       FROM games g
       LEFT JOIN teams t1 ON g.home_team_id = t1.id
       LEFT JOIN teams t2 ON g.away_team_id = t2.id
+      LEFT JOIN tournament_teams tt1 ON tt1.team_id = g.home_team_id AND tt1.division_id = g.division_id
+      LEFT JOIN tournament_teams tt2 ON tt2.team_id = g.away_team_id AND tt2.division_id = g.division_id
       LEFT JOIN divisions d ON g.division_id = d.id
       LEFT JOIN seasons s ON d.season_id = s.id
       LEFT JOIN leagues l ON s.league_id = l.id

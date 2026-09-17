@@ -120,10 +120,12 @@ export async function calculateNomination(nomination) {
             FROM agg
         )` : ''}
         SELECT a.player_id, a.first_name, a.last_name, a.avatar_url,
-               a.team_id, t.name AS team_name, t.logo_url AS team_logo_url,
+               a.team_id, COALESCE(tt.snap_name, t.name) AS team_name, COALESCE(tt.snap_logo_url, t.logo_url) AS team_logo_url,
                a.games_played, ${valueCast} AS value
         FROM ${isTeamScope ? '(SELECT * FROM ranked WHERE rn = 1) a' : 'agg a'}
         LEFT JOIN teams t ON t.id = a.team_id
+        -- Слепок команды из заявки в этот дивизион ($1 — division_id)
+        LEFT JOIN tournament_teams tt ON tt.team_id = a.team_id AND tt.division_id = $1
         ORDER BY ${orderParts}
     `;
 

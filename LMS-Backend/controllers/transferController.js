@@ -19,12 +19,14 @@ export const getTransfers = async (req, res) => {
                 -- Фото: если человек уже допущен в этот дивизион, показываем снимок из заявки,
                 -- иначе (заявка на добавление) — живое фото из состава команды.
                 COALESCE(last_roster.photo_snapshot_url, tm.photo_url) as member_photo,
-                t.name as team_name, t.logo_url as team_logo,
+                COALESCE(tt_app.snap_name, t.name) as team_name, COALESCE(tt_app.snap_logo_url, t.logo_url) as team_logo,
                 d.name as division_name, d.application_start, d.application_end, d.transfer_start, d.transfer_end
             FROM roster_requests rr
             JOIN users u ON rr.player_id = u.id
             JOIN teams t ON rr.team_id = t.id
             JOIN divisions d ON rr.division_id = d.id
+            -- Слепок команды из её заявки в этот дивизион
+            LEFT JOIN tournament_teams tt_app ON tt_app.team_id = rr.team_id AND tt_app.division_id = rr.division_id
             LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = rr.team_id
             
             -- Получаем данные из последней заявки только если это не 'add'

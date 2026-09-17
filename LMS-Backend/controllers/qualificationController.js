@@ -34,7 +34,7 @@ const ACTIVE_DIVISIONS_SQL = `
            d.is_tournament,
            s.name                     AS season_name,
            s.is_active                AS is_current_season,
-           t.name                     AS team_name,
+           COALESCE(tt.snap_name, t.name) AS team_name,
            COALESCE((
                SELECT array_agg(dq.qualification_id)
                FROM division_qualifications dq

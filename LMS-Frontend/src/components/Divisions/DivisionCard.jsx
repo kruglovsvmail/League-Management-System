@@ -19,6 +19,7 @@ import { TeamDescriptionModal } from '../../modals/TeamDescriptionModal';
 import { TeamPhotoModal } from '../../modals/TeamPhotoModal';
 import { PublishStatusModal } from '../../modals/PublishStatusModal';
 import { TeamStatusModal } from '../../modals/TeamStatusModal';
+import { TeamSnapshotBadge } from './TeamSnapshotBadge';
 import { AppRosterComposeDrawer } from '../../modals/AppRosterComposeDrawer';
 import { TeamDocsBulkDrawer, TEAM_DOC_META } from '../../modals/TeamDocsBulkDrawer';
 
@@ -308,11 +309,13 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
     } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой обновления', type: 'error' }); } finally { setIsPublishSaving(false); }
   };
 
-  const handleTeamStatusSave = async (newStatus) => {
+  // accept — ключи полей слепка, которые лига решила принять из профиля команды при
+  // повторном допуске (галочки в окне статуса). Без них слепок не трогается.
+  const handleTeamStatusSave = async (newStatus, accept = []) => {
     if (!activeTeamForModal || !canChangeTeamStatus) return;
     setIsDataSaving(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${activeTeamForModal.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ status: newStatus }) });
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournament-teams/${activeTeamForModal.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` }, body: JSON.stringify({ status: newStatus, accept }) });
       const data = await res.json();
       if (data.success) { 
         setGlobalToast({ title: 'Успешно', message: 'Статус изменен', type: 'success' }); 
@@ -370,6 +373,13 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
 
   const openModal = (team, type) => { setActiveTeamForModal(team); setModalType(type); };
   const closeModals = () => { setActiveTeamForModal(null); setModalType(null); };
+
+  // Строка для окна — свежая из дивизиона: слепок и расхождения с профилем команды
+  // (snapshot_at, snapshot_diff) приходят с ним, а activeTeamForModal мог устареть.
+  const activeTeamLive = activeTeamForModal
+    ? (teams.find(t => t.id === activeTeamForModal.id) || activeTeamForModal)
+    : null;
+  const activeTeamHasSnapshot = !!activeTeamLive?.snapshot_at;
 
   const now = new Date();
   const appStart = division.application_start ? new Date(division.application_start) : null;
@@ -610,6 +620,8 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
                         </button>
                       )}
 
+                      <TeamSnapshotBadge diff={selectedTeamLive?.snapshot_diff} className="ml-4 shrink-0 self-center" />
+
                       <button
                         onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
                         className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, isStatusClickable)}`}
@@ -685,35 +697,47 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
       </div>
 
       <PublishStatusModal isOpen={isPublishModalOpen} onClose={() => setIsPublishModalOpen(false)} isPublished={division.is_published} onSave={handlePublishSave} isSaving={isPublishSaving} />
-      <TeamStatusModal isOpen={modalType === 'status'} onClose={closeModals} currentStatus={activeTeamForModal?.status} teamName={activeTeamForModal?.name} onSave={handleTeamStatusSave} isSaving={isDataSaving} />
+      <TeamStatusModal
+        isOpen={modalType === 'status'}
+        onClose={closeModals}
+        currentStatus={activeTeamForModal?.status}
+        teamName={activeTeamForModal?.name}
+        hasSnapshot={activeTeamHasSnapshot}
+        snapshotDiff={activeTeamLive?.snapshot_diff || []}
+        onSave={handleTeamStatusSave}
+        isSaving={isDataSaving}
+      />
       
       <TeamUniformModal 
         isOpen={modalType === 'uniform'} 
         onClose={closeModals} 
         initialLight={activeTeamForModal?.custom_jersey_light_url ? `${getImageUrl(activeTeamForModal.custom_jersey_light_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_light_url ? getImageUrl(activeTeamForModal.jersey_light_url) : null)} 
         initialDark={activeTeamForModal?.custom_jersey_dark_url ? `${getImageUrl(activeTeamForModal.custom_jersey_dark_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_dark_url ? getImageUrl(activeTeamForModal.jersey_dark_url) : null)} 
-        canClearLight={!!activeTeamForModal?.custom_jersey_light_url} 
-        canClearDark={!!activeTeamForModal?.custom_jersey_dark_url} 
-        onSave={handleUniformSave} 
-        isSaving={isDataSaving} 
-        readOnly={!checkAccess('DIVISIONS_TEAM_UNIFORM_MODAL')} 
+        canClearLight={!!activeTeamForModal?.custom_jersey_light_url}
+        canClearDark={!!activeTeamForModal?.custom_jersey_dark_url}
+        snapshotMode={activeTeamHasSnapshot}
+        onSave={handleUniformSave}
+        isSaving={isDataSaving}
+        readOnly={!checkAccess('DIVISIONS_TEAM_UNIFORM_MODAL')}
       />
-      <TeamDescriptionModal 
+<TeamDescriptionModal 
         isOpen={modalType === 'desc'} 
         onClose={closeModals} 
-        initialText={activeTeamForModal?.custom_description || activeTeamForModal?.description || ''} 
-        onSave={handleDescSave} 
-        isSaving={isDataSaving} 
-        readOnly={!checkAccess('DIVISIONS_TEAM_DESC_MODAL')} 
+        initialText={activeTeamForModal?.custom_description || activeTeamForModal?.description || ''}
+        snapshotMode={activeTeamHasSnapshot}
+        onSave={handleDescSave}
+        isSaving={isDataSaving}
+        readOnly={!checkAccess('DIVISIONS_TEAM_DESC_MODAL')}
       />
-      <TeamPhotoModal 
+<TeamPhotoModal 
         isOpen={modalType === 'photo'} 
         onClose={closeModals} 
         initialPhoto={activeTeamForModal?.custom_team_photo_url ? `${getImageUrl(activeTeamForModal.custom_team_photo_url)}?t=${Date.now()}` : (activeTeamForModal?.team_photo_url ? getImageUrl(activeTeamForModal.team_photo_url) : null)} 
-        canClearPhoto={!!activeTeamForModal?.custom_team_photo_url} 
-        onSave={handlePhotoSave} 
-        isSaving={isDataSaving} 
-        readOnly={!checkAccess('DIVISIONS_TEAM_PHOTO_MODAL')} 
+        canClearPhoto={!!activeTeamForModal?.custom_team_photo_url}
+        snapshotMode={activeTeamHasSnapshot}
+        onSave={handlePhotoSave}
+        isSaving={isDataSaving}
+        readOnly={!checkAccess('DIVISIONS_TEAM_PHOTO_MODAL')}
       />
 
       <QualSelectModal

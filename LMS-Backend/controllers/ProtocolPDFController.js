@@ -23,7 +23,7 @@ const fetchRawProtocolData = async (gameId) => {
         s.league_id,
         a.name as arena_name,
         a.timezone, 
-            ht.name as home_team_name, at.name as away_team_name,
+            COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_away.snap_name, at.name) as away_team_name,
             g.division_id, g.home_team_id, g.away_team_id,
             g.home_score, g.away_score,
             g.actual_start_time, g.actual_end_time, g.spectators
@@ -33,6 +33,9 @@ const fetchRawProtocolData = async (gameId) => {
         LEFT JOIN arenas a ON g.arena_id = a.id
         LEFT JOIN teams ht ON g.home_team_id = ht.id
         LEFT JOIN teams at ON g.away_team_id = at.id
+        -- Названия команд в протоколе — по слепку заявки на момент допуска
+        LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
+        LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
         WHERE g.id = $1
     `;
     const gameResult = await pool.query(gameQuery, [gameId]);

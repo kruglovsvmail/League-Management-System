@@ -113,11 +113,14 @@ export const broadcastRosterAnnouncement = async (req, res) => {
 
         const gameRes = await pool.query(`
             SELECT g.id, g.home_team_id, g.away_team_id,
-                   ht.name as home_team_name, ht.pronunciation as home_team_pronunciation,
-                   at.name as away_team_name, at.pronunciation as away_team_pronunciation
+                   COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_pronunciation, ht.pronunciation) as home_team_pronunciation,
+                   COALESCE(tt_away.snap_name, at.name) as away_team_name, COALESCE(tt_away.snap_pronunciation, at.pronunciation) as away_team_pronunciation
             FROM games g
             JOIN teams ht ON g.home_team_id = ht.id
             JOIN teams at ON g.away_team_id = at.id
+            -- Название и произношение — по слепку заявки в дивизион матча
+            LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
+            LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
             WHERE g.id = $1
         `, [gameId]);
 

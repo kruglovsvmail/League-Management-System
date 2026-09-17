@@ -76,7 +76,7 @@ const EVENTS_QUERY = `
     ge.id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength,
     ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
     pt.tts_accusative as penalty_accusative,
-    t.id as team_id, t.name as team_name, t.logo_url as team_logo, t.pronunciation as team_pronunciation,
+    t.id as team_id, COALESCE(tt_ev.snap_name, t.name) as team_name, COALESCE(tt_ev.snap_logo_url, t.logo_url) as team_logo, COALESCE(tt_ev.snap_pronunciation, t.pronunciation) as team_pronunciation,
     su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
     su.pronunciation as primary_pronunciation,
     -- В эфир идёт заявочное фото (снимок на момент допуска), иначе фото в составе команды

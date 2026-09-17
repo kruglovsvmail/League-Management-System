@@ -229,16 +229,16 @@ export const getPlayerProfile = async (req, res) => {
         g.home_team_id,
         g.away_team_id,
         
-        t_home.short_name as home_team,
-        t_home.name as home_team_full,
-        t_home.logo_url as home_team_logo,
-        t_home.city as home_team_city,
-        
-        t_away.short_name as away_team,
-        t_away.name as away_team_full,
-        t_away.logo_url as away_team_logo,
-        t_away.city as away_team_city,
-        
+        COALESCE(tt_home.snap_short_name, t_home.short_name) as home_team,
+        COALESCE(tt_home.snap_name, t_home.name) as home_team_full,
+        COALESCE(tt_home.snap_logo_url, t_home.logo_url) as home_team_logo,
+        COALESCE(tt_home.snap_city, t_home.city) as home_team_city,
+
+        COALESCE(tt_away.snap_short_name, t_away.short_name) as away_team,
+        COALESCE(tt_away.snap_name, t_away.name) as away_team_full,
+        COALESCE(tt_away.snap_logo_url, t_away.logo_url) as away_team_logo,
+        COALESCE(tt_away.snap_city, t_away.city) as away_team_city,
+
         gr.team_id as player_team_id,
         gr.position_in_line as position
       FROM game_rosters gr
@@ -248,6 +248,9 @@ export const getPlayerProfile = async (req, res) => {
       LEFT JOIN leagues l ON s.league_id = l.id
       JOIN teams t_home ON g.home_team_id = t_home.id
       LEFT JOIN teams t_away ON g.away_team_id = t_away.id
+      -- История матчей: команды как они назывались в том сезоне (слепок заявки)
+      LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
+      LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id
       WHERE gr.player_id = $1 AND g.status = 'finished'
       ORDER BY g.game_date DESC
     `;

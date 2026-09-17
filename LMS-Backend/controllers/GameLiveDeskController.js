@@ -90,8 +90,8 @@ export const getGameEvents = async (req, res) => {
                 ge.penalty_violation, ge.penalty_violation_code, ge.penalty_reason_id,
                 ge.penalty_minutes, ge.penalty_class, ge.penalty_end_time,
                 ge.against_goalie_id, ge.from_shot, ge.linked_event_id,
-                t.id as team_id, t.name as team_name, t.logo_url as team_logo,
-                t.pronunciation as team_pronunciation,
+                t.id as team_id, COALESCE(tt_ev.snap_name, t.name) as team_name, COALESCE(tt_ev.snap_logo_url, t.logo_url) as team_logo,
+                COALESCE(tt_ev.snap_pronunciation, t.pronunciation) as team_pronunciation,
 
                 su.id as primary_player_id, su.last_name as primary_last_name,
                 su.first_name as primary_first_name, su.avatar_url as primary_avatar_url,
