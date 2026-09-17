@@ -110,35 +110,37 @@ export const alignPersonAdmission = async (client, appId) => {
                    SELECT tm.photo_url
                      FROM team_members tm
                      JOIN tournament_teams tt ON tt.team_id = tm.team_id
-                    WHERE tt.id = $1 AND tm.user_id = tr.player_id AND tm.left_at IS NULL
+                    WHERE tt.id = $1::int AND tm.user_id = tr.player_id AND tm.left_at IS NULL
                     ORDER BY tm.id DESC
                     LIMIT 1
                ),
                updated_at = NOW()
-         WHERE tr.tournament_team_id = $1
+         WHERE tr.tournament_team_id = $1::int
            AND tr.period_end IS NULL
            AND tr.application_status IS DISTINCT FROM 'approved'
            AND EXISTS (
                SELECT 1 FROM tournament_staff_admission tsa
-                WHERE tsa.tournament_team_id = $1 AND tsa.user_id = tr.player_id AND tsa.is_admitted
+                WHERE tsa.tournament_team_id = $1::int AND tsa.user_id = tr.player_id AND tsa.is_admitted
            )
            AND EXISTS (
                SELECT 1 FROM tournament_team_roles ttr
-                WHERE ttr.tournament_team_id = $1 AND ttr.user_id = tr.player_id AND ttr.left_at IS NULL
+                WHERE ttr.tournament_team_id = $1::int AND ttr.user_id = tr.player_id AND ttr.left_at IS NULL
            )
     `, [appId]);
 
-    // Представитель, который как игрок уже допущен, — заводим или включаем его строку допуска
+    // Представитель, который как игрок уже допущен, — заводим или включаем его строку допуска.
+    // $1 в списке выборки встречается раньше, чем в WHERE, и без явного ::int Postgres не
+    // выводит его тип («inconsistent types deduced for parameter $1»)
     await client.query(`
         INSERT INTO tournament_staff_admission (tournament_team_id, user_id, is_admitted)
-        SELECT DISTINCT $1, ttr.user_id, true
+        SELECT DISTINCT $1::int, ttr.user_id, true
           FROM tournament_team_roles ttr
           JOIN tournament_rosters tr
             ON tr.tournament_team_id = ttr.tournament_team_id
            AND tr.player_id = ttr.user_id
            AND tr.period_end IS NULL
            AND tr.application_status = 'approved'
-         WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
+         WHERE ttr.tournament_team_id = $1::int AND ttr.left_at IS NULL
         ON CONFLICT ON CONSTRAINT tournament_staff_admission_unique
         DO UPDATE SET is_admitted = true, updated_at = NOW()
         WHERE tournament_staff_admission.is_admitted = false
