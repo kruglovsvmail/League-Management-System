@@ -18,53 +18,52 @@ const personDocKey = (appId, userId, type) => `uploads/tournament_person_${appId
 // Ключ файлов, загруженных до переезда документов на человека: они лежат от строки ростера.
 const legacyDocKey = (type) => new RegExp(`^uploads/tournament_rosters_\\d+_${type}`);
 
-// Согласие на ПД принадлежит паре «человек + лига» (user_league_consents) и переезжает
+// Согласие на ПД принадлежит паре «человек + сезон» (user_season_consents) и переезжает
 // с человеком между командами, поэтому прежний файл мог быть загружен под другой заявкой.
 // Своим считаем любой файл согласия этого человека, номер заявки в ключе не важен.
 const consentDocKey = (userId) => new RegExp(`^uploads/tournament_person_\\d+_${userId}_consent`);
 
-// Лига заявки — адрес согласия
-const loadApplicationLeagueId = async (appId) => {
+// Сезон заявки — адрес согласия
+const loadApplicationSeasonId = async (appId) => {
     const { rows } = await pool.query(`
-        SELECT s.league_id
+        SELECT d.season_id
           FROM tournament_teams tt
           JOIN divisions d ON d.id = tt.division_id
-          JOIN seasons s ON s.id = d.season_id
          WHERE tt.id = $1
     `, [appId]);
-    return rows[0]?.league_id ?? null;
+    return rows[0]?.season_id ?? null;
 };
 
 /**
- * Запись согласия в user_league_consents. url === null — согласие очищено, строка удаляется.
+ * Запись согласия в user_season_consents. url === null — согласие очищено, строка удаляется.
  * expires === undefined — срок не присылали, не трогаем.
  *
  * Старые колонки consent_* в tournament_person_docs пишутся параллельно — это страховка на
  * время переезда: откат кода читал бы их и ничего бы не потерял. Читать их уже никто не должен.
  */
-const saveLeagueConsent = async (leagueId, userId, { url, expires }, source = 'lms') => {
-    if (!leagueId) return;
+const saveSeasonConsent = async (seasonId, userId, { url, expires }, source = 'lms') => {
+    if (!seasonId) return;
     if (url === null) {
-        await pool.query('DELETE FROM user_league_consents WHERE user_id = $1 AND league_id = $2', [userId, leagueId]);
+        await pool.query('DELETE FROM user_season_consents WHERE user_id = $1 AND season_id = $2', [userId, seasonId]);
         return;
     }
     if (url !== undefined) {
         await pool.query(`
-            INSERT INTO user_league_consents (user_id, league_id, consent_url, consent_expires_at, source)
+            INSERT INTO user_season_consents (user_id, season_id, consent_url, consent_expires_at, source)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_id, league_id)
+            ON CONFLICT (user_id, season_id)
             DO UPDATE SET consent_url = EXCLUDED.consent_url,
-                          consent_expires_at = CASE WHEN $6::boolean THEN EXCLUDED.consent_expires_at ELSE user_league_consents.consent_expires_at END,
+                          consent_expires_at = CASE WHEN $6::boolean THEN EXCLUDED.consent_expires_at ELSE user_season_consents.consent_expires_at END,
                           source = EXCLUDED.source,
                           updated_at = NOW()
-        `, [userId, leagueId, url, expires === undefined ? null : (expires || null), source, expires !== undefined]);
+        `, [userId, seasonId, url, expires === undefined ? null : (expires || null), source, expires !== undefined]);
         return;
     }
     if (expires !== undefined) {
         await pool.query(`
-            UPDATE user_league_consents SET consent_expires_at = $3, updated_at = NOW()
-             WHERE user_id = $1 AND league_id = $2
-        `, [userId, leagueId, expires || null]);
+            UPDATE user_season_consents SET consent_expires_at = $3, updated_at = NOW()
+             WHERE user_id = $1 AND season_id = $2
+        `, [userId, seasonId, expires || null]);
     }
 };
 
@@ -212,16 +211,16 @@ export const uploadTournamentRosterDocs = async (req, res) => {
 
         // Ссылки на текущие файлы читаем до записи: после UPDATE узнать, что лежало
         // раньше, уже неоткуда, а старые объекты надо убрать из бакета. Согласие —
-        // из своей таблицы: оно на человека в лиге, а не на заявку.
-        const leagueId = await loadApplicationLeagueId(appId);
+        // из своей таблицы: оно на человека в сезоне, а не на заявку.
+        const seasonId = await loadApplicationSeasonId(appId);
         const previousRes = await pool.query(
-            `SELECT tpd.insurance_url, tpd.medical_url, ulc.consent_url
+            `SELECT tpd.insurance_url, tpd.medical_url, usc.consent_url
                FROM (SELECT $1::int AS app_id, $2::int AS user_id) k
                LEFT JOIN tournament_person_docs tpd
                       ON tpd.tournament_team_id = k.app_id AND tpd.user_id = k.user_id
-               LEFT JOIN user_league_consents ulc
-                      ON ulc.user_id = k.user_id AND ulc.league_id = $3`,
-            [appId, userId, leagueId]
+               LEFT JOIN user_season_consents usc
+                      ON usc.user_id = k.user_id AND usc.season_id = $3`,
+            [appId, userId, seasonId]
         );
         const previous = previousRes.rows[0] || {};
 
@@ -266,9 +265,9 @@ export const uploadTournamentRosterDocs = async (req, res) => {
                 DO UPDATE SET ${updates.join(', ')}, updated_at = NOW()
             `, values);
 
-            // Согласие — в user_league_consents (старые колонки выше записаны как страховка)
+            // Согласие — в user_season_consents (старые колонки выше записаны как страховка)
             if ('consent_url' in patch || 'consent_expires_at' in patch) {
-                await saveLeagueConsent(leagueId, userId, {
+                await saveSeasonConsent(seasonId, userId, {
                     url: 'consent_url' in patch ? patch.consent_url : undefined,
                     expires: 'consent_expires_at' in patch ? patch.consent_expires_at : undefined,
                 });

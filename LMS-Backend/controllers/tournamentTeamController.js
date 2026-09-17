@@ -26,13 +26,14 @@ export const getTournamentTeamRoster = async (req, res) => {
         // заявке), поэтому сперва резолвим лигу этой турнирной команды — она одна на весь
         // запрос. Дивизион нужен для пометки о расхождении с его списком допуска.
         const leagueRes = await pool.query(`
-            SELECT s.league_id, div.id AS division_id
+            SELECT s.league_id, s.id AS season_id, div.id AS division_id
             FROM tournament_teams tt
             JOIN divisions div ON tt.division_id = div.id
             JOIN seasons s ON div.season_id = s.id
             WHERE tt.id = $1
         `, [id]);
         const leagueId = leagueRes.rows[0]?.league_id || null;
+        const seasonId = leagueRes.rows[0]?.season_id || null;
         const divisionId = leagueRes.rows[0]?.division_id || null;
 
         // 1. Получаем игроков ростера (с оптимизированным получением фото и дисквалификаций)
@@ -45,14 +46,14 @@ export const getTournamentTeamRoster = async (req, res) => {
                 to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                 -- Документы допуска лежат на паре «заявка + человек» (tournament_person_docs):
                 -- у играющего представителя они одни и те же и в составе, и в штабе.
-                -- Согласие на ПД — исключение: оно принадлежит паре «человек + лига»
-                -- (user_league_consents) и переезжает с человеком из команды в команду.
+                -- Согласие на ПД — исключение: оно принадлежит паре «человек + сезон»
+                -- (user_season_consents) и переезжает с человеком из команды в команду.
                 tpd.insurance_url,
                 tpd.insurance_expires_at,
                 tpd.medical_url,
                 tpd.medical_expires_at,
-                ulc.consent_url,
-                ulc.consent_expires_at,
+                usc.consent_url,
+                usc.consent_expires_at,
                 tr.is_fee_paid,
                 tr.jersey_number,
                 tr.position,
@@ -97,8 +98,8 @@ export const getTournamentTeamRoster = async (req, res) => {
             JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = tr.tournament_team_id AND tpd.user_id = tr.player_id
-            LEFT JOIN user_league_consents ulc
-                   ON ulc.user_id = tr.player_id AND ulc.league_id = $2
+            LEFT JOIN user_season_consents usc
+                   ON usc.user_id = tr.player_id AND usc.season_id = $4
             LEFT JOIN user_qualifications uq
                    ON uq.user_id = tr.player_id AND uq.league_id = $2 AND uq.ended_at IS NULL
             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
@@ -135,7 +136,7 @@ export const getTournamentTeamRoster = async (req, res) => {
                     ELSE 4
                 END,
                 u.last_name, u.first_name, u.middle_name
-        `, [id, leagueId, divisionId]);
+        `, [id, leagueId, divisionId, seasonId]);
 
         // 2. Получаем представителей (staff) команды из ТУРНИРНОЙ заявки (tournament_team_roles)
         const staffResult = await pool.query(`
@@ -159,23 +160,23 @@ export const getTournamentTeamRoster = async (req, res) => {
                 MAX(tpd.insurance_expires_at) as insurance_expires_at,
                 MAX(tpd.medical_url) as medical_url,
                 MAX(tpd.medical_expires_at) as medical_expires_at,
-                -- Согласие — на человека в лиге (user_league_consents), не на заявку
-                MAX(ulc.consent_url) as consent_url,
-                MAX(ulc.consent_expires_at) as consent_expires_at
+                -- Согласие — на человека в сезоне (user_season_consents), не на заявку
+                MAX(usc.consent_url) as consent_url,
+                MAX(usc.consent_expires_at) as consent_expires_at
             FROM tournament_team_roles ttr
             JOIN users u ON ttr.user_id = u.id
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = ttr.tournament_team_id AND tpd.user_id = ttr.user_id
-            LEFT JOIN user_league_consents ulc
-                   ON ulc.user_id = ttr.user_id AND ulc.league_id = $2
+            LEFT JOIN user_season_consents usc
+                   ON usc.user_id = ttr.user_id AND usc.season_id = $3
             LEFT JOIN tournament_staff_admission tsa
                    ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
             LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.left_at IS NULL
             WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
             GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url
             ORDER BY u.last_name, u.first_name
-        `, [id, leagueId]);
+        `, [id, leagueId, seasonId]);
 
         res.json({ success: true, data: result.rows, staff: staffResult.rows });
     } catch (err) {
@@ -1092,7 +1093,7 @@ export const exportTournamentTeamApplication = async (req, res) => {
         const appRes = await pool.query(`
             SELECT tt.id, t.name AS team_name,
                    d.name AS division_name, d.req_med_cert, d.req_insurance, d.req_consent,
-                   s.name AS season_name, s.league_id
+                   s.name AS season_name, s.league_id, s.id AS season_id
             FROM tournament_teams tt
             JOIN teams t ON t.id = tt.team_id
             JOIN divisions d ON d.id = tt.division_id
@@ -1111,14 +1112,14 @@ export const exportTournamentTeamApplication = async (req, res) => {
                    to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                    tpd.medical_url, to_char(tpd.medical_expires_at, 'YYYY-MM-DD') AS medical_expires_at,
                    tpd.insurance_url, to_char(tpd.insurance_expires_at, 'YYYY-MM-DD') AS insurance_expires_at,
-                   ulc.consent_url, to_char(ulc.consent_expires_at, 'YYYY-MM-DD') AS consent_expires_at,
+                   usc.consent_url, to_char(usc.consent_expires_at, 'YYYY-MM-DD') AS consent_expires_at,
                    lq.name AS qualification_name
             FROM tournament_rosters tr
             JOIN users u ON u.id = tr.player_id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = tr.tournament_team_id AND tpd.user_id = tr.player_id
-            LEFT JOIN user_league_consents ulc
-                   ON ulc.user_id = tr.player_id AND ulc.league_id = $2
+            LEFT JOIN user_season_consents usc
+                   ON usc.user_id = tr.player_id AND usc.season_id = $3
             LEFT JOIN user_qualifications uq
                    ON uq.user_id = u.id AND uq.league_id = $2 AND uq.ended_at IS NULL
             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
@@ -1127,7 +1128,7 @@ export const exportTournamentTeamApplication = async (req, res) => {
               AND tr.application_status = 'approved'
             ORDER BY CASE tr.position WHEN 'goalie' THEN 1 WHEN 'defense' THEN 2 ELSE 3 END,
                      u.last_name, u.first_name, u.middle_name
-        `, [id, app.league_id]);
+        `, [id, app.league_id, app.season_id]);
 
         // Представители — только допущенные (tournament_staff_admission), по строке на роль
         const { rows: staff } = await pool.query(`
