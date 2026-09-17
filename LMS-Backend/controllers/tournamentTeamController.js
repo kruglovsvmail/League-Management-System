@@ -6,6 +6,7 @@ import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 import { assertApplicationRosterAllowed, assertPlayersAllowedInDivision, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
 import { isLeagueOwner } from '../utils/leagueOwners.js';
 import { syncClubMembershipOnTeamJoin } from '../utils/clubMembership.js';
+import { alignPersonAdmission } from '../utils/personAdmission.js';
 
 /**
  * Роли представителя в турнирной заявке — те же три, что и в Team-Room
@@ -43,13 +44,15 @@ export const getTournamentTeamRoster = async (req, res) => {
                 -- Дата рождения нужна значкам экипировки по возрасту («ушк» и «к»)
                 to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                 -- Документы допуска лежат на паре «заявка + человек» (tournament_person_docs):
-                -- у играющего представителя они одни и те же и в составе, и в штабе
+                -- у играющего представителя они одни и те же и в составе, и в штабе.
+                -- Согласие на ПД — исключение: оно принадлежит паре «человек + лига»
+                -- (user_league_consents) и переезжает с человеком из команды в команду.
                 tpd.insurance_url,
                 tpd.insurance_expires_at,
                 tpd.medical_url,
                 tpd.medical_expires_at,
-                tpd.consent_url,
-                tpd.consent_expires_at,
+                ulc.consent_url,
+                ulc.consent_expires_at,
                 tr.is_fee_paid,
                 tr.jersey_number,
                 tr.position,
@@ -94,6 +97,8 @@ export const getTournamentTeamRoster = async (req, res) => {
             JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = tr.tournament_team_id AND tpd.user_id = tr.player_id
+            LEFT JOIN user_league_consents ulc
+                   ON ulc.user_id = tr.player_id AND ulc.league_id = $2
             LEFT JOIN user_qualifications uq
                    ON uq.user_id = tr.player_id AND uq.league_id = $2 AND uq.ended_at IS NULL
             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
@@ -154,13 +159,16 @@ export const getTournamentTeamRoster = async (req, res) => {
                 MAX(tpd.insurance_expires_at) as insurance_expires_at,
                 MAX(tpd.medical_url) as medical_url,
                 MAX(tpd.medical_expires_at) as medical_expires_at,
-                MAX(tpd.consent_url) as consent_url,
-                MAX(tpd.consent_expires_at) as consent_expires_at
+                -- Согласие — на человека в лиге (user_league_consents), не на заявку
+                MAX(ulc.consent_url) as consent_url,
+                MAX(ulc.consent_expires_at) as consent_expires_at
             FROM tournament_team_roles ttr
             JOIN users u ON ttr.user_id = u.id
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = ttr.tournament_team_id AND tpd.user_id = ttr.user_id
+            LEFT JOIN user_league_consents ulc
+                   ON ulc.user_id = ttr.user_id AND ulc.league_id = $2
             LEFT JOIN tournament_staff_admission tsa
                    ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
             LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.left_at IS NULL
@@ -1002,6 +1010,10 @@ export const saveTournamentTeamComposition = async (req, res) => {
             `, [id, staffJson]);
         }
 
+        // Играющий тренер: если у человека в этой заявке уже стоит допуск по одной сущности,
+        // вторая, только что добавленная, подтягивается к нему (см. alignPersonAdmission)
+        await alignPersonAdmission(client, id);
+
         // Введённые в команду люди: запись в журнал (найти концы), затем команде — push
         // и окно в Team-Room
         if (joinedTeamIds.length > 0) {
@@ -1099,12 +1111,14 @@ export const exportTournamentTeamApplication = async (req, res) => {
                    to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                    tpd.medical_url, to_char(tpd.medical_expires_at, 'YYYY-MM-DD') AS medical_expires_at,
                    tpd.insurance_url, to_char(tpd.insurance_expires_at, 'YYYY-MM-DD') AS insurance_expires_at,
-                   tpd.consent_url, to_char(tpd.consent_expires_at, 'YYYY-MM-DD') AS consent_expires_at,
+                   ulc.consent_url, to_char(ulc.consent_expires_at, 'YYYY-MM-DD') AS consent_expires_at,
                    lq.name AS qualification_name
             FROM tournament_rosters tr
             JOIN users u ON u.id = tr.player_id
             LEFT JOIN tournament_person_docs tpd
                    ON tpd.tournament_team_id = tr.tournament_team_id AND tpd.user_id = tr.player_id
+            LEFT JOIN user_league_consents ulc
+                   ON ulc.user_id = tr.player_id AND ulc.league_id = $2
             LEFT JOIN user_qualifications uq
                    ON uq.user_id = u.id AND uq.league_id = $2 AND uq.ended_at IS NULL
             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
