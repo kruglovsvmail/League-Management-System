@@ -28,7 +28,7 @@ export const getPublicGameById = async (req, res) => {
                    COALESCE(tt_away.snap_short_name, t2.short_name) as away_short_name,
                    COALESCE(tt_away.snap_logo_url, t2.logo_url) as away_team_logo,
                    COALESCE(tt_away.snap_color_away_1, t2.color_away_1) as away_color_1, COALESCE(tt_away.snap_color_away_2, t2.color_away_2) as away_color_2,
--- Джерси: приоритет tournament_teams → teams → дефолт
+                   -- Джерси: приоритет tournament_teams → teams → дефолт
                    COALESCE(tt_home.custom_jersey_dark_url,  t1.jersey_dark_url)  as home_jersey_dark_url,
                    COALESCE(tt_home.custom_jersey_light_url, t1.jersey_light_url) as home_jersey_light_url,
                    COALESCE(tt_away.custom_jersey_dark_url,  t2.jersey_dark_url)  as away_jersey_dark_url,

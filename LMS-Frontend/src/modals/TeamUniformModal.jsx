@@ -7,7 +7,7 @@ import { getImageUrl } from '../utils/helpers';
 // Импортируем нашу заглушку
 import { AccessFallback } from '../ui/AccessFallback';
 
-export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initialDark, isSaving = false, canClearLight = true, canClearDark = true, snapshotMode = false, readOnly = false }) {
+export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initialDark, isSaving = false, canClearLight = true, canClearDark = true, readOnly = false }) {
   const [lightFile, setLightFile] = useState(null);
   const [darkFile, setDarkFile] = useState(null);
   const [lightCleared, setLightCleared] = useState(false);
@@ -29,14 +29,6 @@ export function TeamUniformModal({ isOpen, onClose, onSave, initialLight, initia
       
       {readOnly && (
         <AccessFallback variant="readonly" message="Режим просмотра. Изменение экипировки недоступно." />
-      )}
-
-      {/* У допущенной заявки форма — часть слепка: «Сбросить» не убирает её, а подставляет
-          текущую версию из профиля команды (см. updateTournamentTeamCustomData). */}
-      {snapshotMode && !readOnly && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-status-pending/10 border border-status-pending/30 text-[12px] text-graphite leading-snug">
-          Заявка допущена — форма зафиксирована в заявке. «Сбросить» подставит текущую форму из профиля команды.
-        </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-[30px] mb-6 mt-2">

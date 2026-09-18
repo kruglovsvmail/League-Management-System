@@ -19,7 +19,7 @@ import { TeamDescriptionModal } from '../../modals/TeamDescriptionModal';
 import { TeamPhotoModal } from '../../modals/TeamPhotoModal';
 import { PublishStatusModal } from '../../modals/PublishStatusModal';
 import { TeamStatusModal } from '../../modals/TeamStatusModal';
-import { TeamSnapshotBadge } from './TeamSnapshotBadge';
+import { TeamSnapshotDot } from './TeamSnapshotDot';
 import { AppRosterComposeDrawer } from '../../modals/AppRosterComposeDrawer';
 import { TeamDocsBulkDrawer, TEAM_DOC_META } from '../../modals/TeamDocsBulkDrawer';
 
@@ -620,15 +620,15 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
                         </button>
                       )}
 
-                      <TeamSnapshotBadge diff={selectedTeamLive?.snapshot_diff} className="ml-4 shrink-0 self-center" />
-
                       <button
                         onClick={() => isStatusClickable && openModal(selectedTeam, 'status')}
-                        className={`ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, isStatusClickable)}`}
+                        className={`relative ml-4 shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border transition-all duration-300 text-[13px] font-bold shadow-sm ${getStatusButtonStyle(selectedTeam.status, isStatusClickable)}`}
                         title={isStatusClickable ? "Изменить статус команды" : "Изменение статуса недоступно"}
                       >
                         <Icon name="swap" className="w-4 h-4" />
                         {STATUS_LABELS[selectedTeam.status] || 'Статус команды'}
+                        {/* Расхождения с профилем команды принимаются в этом окне — точка на кнопке */}
+                        <TeamSnapshotDot diff={selectedTeamLive?.snapshot_diff} />
                       </button>
                     </div>
                     {/* Пока состав грузится, область держим не ниже самого лоудера: у него
@@ -715,26 +715,23 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
         initialDark={activeTeamForModal?.custom_jersey_dark_url ? `${getImageUrl(activeTeamForModal.custom_jersey_dark_url)}?t=${Date.now()}` : (activeTeamForModal?.jersey_dark_url ? getImageUrl(activeTeamForModal.jersey_dark_url) : null)} 
         canClearLight={!!activeTeamForModal?.custom_jersey_light_url}
         canClearDark={!!activeTeamForModal?.custom_jersey_dark_url}
-        snapshotMode={activeTeamHasSnapshot}
         onSave={handleUniformSave}
         isSaving={isDataSaving}
         readOnly={!checkAccess('DIVISIONS_TEAM_UNIFORM_MODAL')}
       />
-<TeamDescriptionModal 
-        isOpen={modalType === 'desc'} 
-        onClose={closeModals} 
+      <TeamDescriptionModal
+        isOpen={modalType === 'desc'}
+        onClose={closeModals}
         initialText={activeTeamForModal?.custom_description || activeTeamForModal?.description || ''}
-        snapshotMode={activeTeamHasSnapshot}
         onSave={handleDescSave}
         isSaving={isDataSaving}
         readOnly={!checkAccess('DIVISIONS_TEAM_DESC_MODAL')}
       />
-<TeamPhotoModal 
-        isOpen={modalType === 'photo'} 
-        onClose={closeModals} 
+      <TeamPhotoModal
+        isOpen={modalType === 'photo'}
+        onClose={closeModals}
         initialPhoto={activeTeamForModal?.custom_team_photo_url ? `${getImageUrl(activeTeamForModal.custom_team_photo_url)}?t=${Date.now()}` : (activeTeamForModal?.team_photo_url ? getImageUrl(activeTeamForModal.team_photo_url) : null)} 
         canClearPhoto={!!activeTeamForModal?.custom_team_photo_url}
-        snapshotMode={activeTeamHasSnapshot}
         onSave={handlePhotoSave}
         isSaving={isDataSaving}
         readOnly={!checkAccess('DIVISIONS_TEAM_PHOTO_MODAL')}

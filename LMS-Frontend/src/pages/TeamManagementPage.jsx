@@ -18,6 +18,7 @@ import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { TeamOwnerDrawer } from '../modals/TeamOwnerDrawer';
 import { ClubsWorkspace } from '../components/ClubsWorkspace';
 import { LeaguesWorkspace } from '../components/LeaguesWorkspace';
+import { TeamProfileEditor } from '../components/TeamProfileEditor';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
 import { ConfirmModal } from '../modals/ConfirmModal';
@@ -156,7 +157,7 @@ export function TeamManagementPage() {
 
   const setSelectedTeam = (team) => {
     setSelectedTeamState(team);
-    setOwner(undefined);
+    setOwners(undefined);
     if (team) {
       sessionStorage.setItem('tm_selected_team_data', JSON.stringify(team));
     } else {
@@ -654,6 +655,8 @@ export function TeamManagementPage() {
             </button>
 
             {[
+              // Профиль — свойства самой команды (название, лого, форма, фото), счётчика у него нет
+              { id: 'profile', label: 'Профиль команды' },
               { id: 'base', label: 'База команды', count: base.length },
               { id: 'roster', label: 'Игровой состав', count: roster.length },
               { id: 'staff', label: 'Персонал (Штаб)', count: staff.length },
@@ -661,9 +664,11 @@ export function TeamManagementPage() {
             ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`text-left px-4 py-3 rounded-md font-bold transition-all flex items-center justify-between gap-2 ${activeTab === tab.id ? 'bg-white text-orange shadow-sm' : 'text-graphite-light hover:bg-white/40'}`}>
                 <span>{tab.label}</span>
-                <span className={`text-[12px] font-black px-2 py-0.5 rounded-full shrink-0 ${activeTab === tab.id ? 'bg-orange/10 text-orange' : 'bg-graphite/10 text-graphite-light'}`}>
-                  {tab.count}
-                </span>
+                {tab.count !== undefined && (
+                  <span className={`text-[12px] font-black px-2 py-0.5 rounded-full shrink-0 ${activeTab === tab.id ? 'bg-orange/10 text-orange' : 'bg-graphite/10 text-graphite-light'}`}>
+                    {tab.count}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -790,10 +795,10 @@ export function TeamManagementPage() {
               <div className={`bg-white/85 rounded-lg shadow-sm border border-graphite/10 p-8 animate-zoom-in ${activeTab === 'tournaments' ? 'mb-6' : ''}`}>
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-2xl font-black text-graphite uppercase tracking-wide">
-                    {activeTab === 'base' ? 'База команды' : activeTab === 'roster' ? 'Игровой состав' : activeTab === 'staff' ? 'Штаб команды' : 'Заявки в лигу'}
+                    {activeTab === 'profile' ? 'Профиль команды' : activeTab === 'base' ? 'База команды' : activeTab === 'roster' ? 'Игровой состав' : activeTab === 'staff' ? 'Штаб команды' : 'Заявки в лигу'}
                   </h3>
-                  
-                  {activeTab !== 'tournaments' && (
+
+                  {activeTab !== 'tournaments' && activeTab !== 'profile' && (
                     <div className="flex items-center gap-3">
                       {/* Выгрузка кодов — только на базе команды: коды раздают всем членам,
                           а не только игровому составу */}
@@ -849,6 +854,15 @@ export function TeamManagementPage() {
                   </div>
                 )}
 
+                {activeTab === 'profile' && (
+                  <TeamProfileEditor
+                    teamId={selectedTeam.id}
+                    showToast={showToast}
+                    // Шапка слева и карточка в списке показывают название, город и логотип —
+                    // обновляем выбранную команду, чтобы они не отставали от сохранённого
+                    onSaved={(team) => setSelectedTeam({ ...selectedTeam, name: team.name, short_name: team.short_name, city: team.city, logo_url: team.logo_url })}
+                  />
+                )}
                 {activeTab === 'base' && <Table columns={baseColumns} data={base} />}
                 {activeTab === 'roster' && <Table columns={rosterColumns} data={roster} />}
                 {activeTab === 'staff' && <Table columns={staffColumns} data={staff} />}

@@ -23,6 +23,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'default' }) {
     normal: 'max-w-[500px]',
     medium: 'max-w-[550px]',
     wide: 'max-w-[800px]',
+    'wide-lg': 'max-w-[1000px]',
     wide2: 'max-w-[1100px]',
     'extra-wide': 'max-w-[1200px]',
   };
@@ -36,7 +37,9 @@ export function Modal({ isOpen, onClose, title, children, size = 'default' }) {
       />
       
       {/* Контейнер модального окна */}
-      <div className={`relative w-full ${sizeClasses[size]} bg-white/80 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg flex flex-col max-h-full animate-zoom-in`}>
+      {/* transition на max-width — чтобы окно плавно растягивалось, если size меняется
+          уже открытым (окно статуса команды раскрывает блок расхождений справа) */}
+      <div className={`relative w-full ${sizeClasses[size]} bg-white/80 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg flex flex-col max-h-[calc(100%-50px)] animate-zoom-in transition-[max-width] duration-300 ease-out`}>
         {/* Шапка */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-graphite/10 bg-white/40 rounded-t-xxl shrink-0">
           <h2 className="text-xl font-black text-graphite uppercase tracking-wide">{title}</h2>

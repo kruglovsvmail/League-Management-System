@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 // Импортируем нашу новую заглушку
 import { AccessFallback } from '../ui/AccessFallback';
 
-export function TeamDescriptionModal({ isOpen, onClose, onSave, initialText = '', isSaving = false, snapshotMode = false, readOnly = false }) {
+export function TeamDescriptionModal({ isOpen, onClose, onSave, initialText = '', isSaving = false, readOnly = false }) {
   const [text, setText] = useState(initialText);
 
   useEffect(() => {
@@ -18,14 +18,6 @@ export function TeamDescriptionModal({ isOpen, onClose, onSave, initialText = ''
       {/* Выводим баннер "Только чтение", если нет прав на редактирование */}
       {readOnly && (
         <AccessFallback variant="readonly" message="Режим просмотра. Редактирование описания недоступно." />
-      )}
-
-      {/* У допущенной заявки описание — часть слепка: пустое поле не обнуляет его, а
-          подставляет текущее описание из профиля команды (см. updateTournamentTeamCustomData). */}
-      {snapshotMode && !readOnly && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-status-pending/10 border border-status-pending/30 text-[12px] text-graphite leading-snug">
-          Заявка допущена — описание зафиксировано в заявке. Пустое поле при сохранении заменится текущим описанием из профиля команды.
-        </div>
       )}
 
       <div className="mb-6 flex flex-col font-sans">

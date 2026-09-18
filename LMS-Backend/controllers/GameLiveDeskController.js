@@ -271,7 +271,7 @@ export const updateGameEvent = async (req, res) => {
         // для прочих типов оставляем true (default БД).
         const fromShotValue = isGoalEvent ? (from_shot !== false) : true;
 
-await client.query(`
+        await client.query(`
     UPDATE game_events SET
         period = $1, time_seconds = $2, team_id = $3,
         scorer_id = $4, assist1_id = $5, assist2_id = $6, goal_strength = $7,

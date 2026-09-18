@@ -207,6 +207,93 @@ export const getTeamMembers = async (req, res) => {
  */
 export const MAX_TEAM_OWNERS = 2;
 
+// ============================================================================
+// ПРОФИЛЬ КОМАНДЫ — вкладка «Профиль команды» в разделе «Команды»
+// ============================================================================
+// Те же поля, что команда правит у себя в Team-Room, плюс произношение и виртуальность
+// из реестра. Файлы кладутся новым ключом с меткой времени, старый объект не трогается —
+// на этом держится слепок команды в заявках (см. tournamentTeamController).
+
+const TEAM_PROFILE_COLUMNS = `id, name, short_name, city, description, pronunciation, is_virtual, ui_color,
+       color_home_1, color_home_2, color_away_1, color_away_2,
+       logo_url, jersey_dark_url, jersey_light_url, team_photo_url`;
+
+// Тип файла из адреса → колонка teams
+const TEAM_PROFILE_FILES = {
+    logo: 'logo_url',
+    jersey_dark: 'jersey_dark_url',
+    jersey_light: 'jersey_light_url',
+    team_photo: 'team_photo_url',
+};
+
+const emptyToNull = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : v);
+
+export const getTeamProfile = async (req, res) => {
+    try {
+        const { rows } = await pool.query(`SELECT ${TEAM_PROFILE_COLUMNS} FROM teams WHERE id = $1`, [req.params.teamId]);
+        if (!rows[0]) return res.status(404).json({ success: false, error: 'Команда не найдена' });
+        res.json({ success: true, data: rows[0] });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+};
+
+export const updateTeamProfile = async (req, res) => {
+    try {
+        const { teamId } = req.params;
+        const {
+            name, short_name, city, description, pronunciation, is_virtual,
+            ui_color, color_home_1, color_home_2, color_away_1, color_away_2
+        } = req.body;
+        if (!name || !String(name).trim()) {
+            return res.status(400).json({ success: false, error: 'Укажите название команды' });
+        }
+        const { rows } = await pool.query(`
+            UPDATE teams
+               SET name = $1, short_name = $2, city = $3, description = $4, pronunciation = $5,
+                   is_virtual = $6, ui_color = $7,
+                   color_home_1 = $8, color_home_2 = $9, color_away_1 = $10, color_away_2 = $11,
+                   updated_at = NOW()
+             WHERE id = $12
+             RETURNING ${TEAM_PROFILE_COLUMNS}
+        `, [
+            String(name).trim(), emptyToNull(short_name), emptyToNull(city), emptyToNull(description),
+            emptyToNull(pronunciation), !!is_virtual, emptyToNull(ui_color),
+            emptyToNull(color_home_1), emptyToNull(color_home_2), emptyToNull(color_away_1), emptyToNull(color_away_2),
+            teamId
+        ]);
+        if (!rows[0]) return res.status(404).json({ success: false, error: 'Команда не найдена' });
+        res.json({ success: true, data: rows[0] });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+};
+
+export const uploadTeamProfileFile = async (req, res) => {
+    try {
+        const { teamId, type } = req.params;
+        const column = TEAM_PROFILE_FILES[type];
+        if (!column) return res.status(400).json({ success: false, error: 'Неизвестный тип файла' });
+        if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
+
+        const ext = req.file.originalname.split('.').pop();
+        const fileName = `uploads/teams_${teamId}_${type}_${Date.now()}.${ext}`;
+        await s3.send(new PutObjectCommand({
+            Bucket: 'hockeyeco-uploads', Key: fileName, Body: req.file.buffer, ContentType: req.file.mimetype
+        }));
+
+        const shortUrl = `/${fileName}`;
+        await pool.query(`UPDATE teams SET ${column} = $1, updated_at = NOW() WHERE id = $2`, [shortUrl, teamId]);
+        res.json({ success: true, url: shortUrl });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+};
+
+export const deleteTeamProfileFile = async (req, res) => {
+    try {
+        const { teamId, type } = req.params;
+        const column = TEAM_PROFILE_FILES[type];
+        if (!column) return res.status(400).json({ success: false, error: 'Неизвестный тип файла' });
+        await pool.query(`UPDATE teams SET ${column} = NULL, updated_at = NOW() WHERE id = $1`, [teamId]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+};
+
 export const setTeamOwners = async (req, res) => {
     const client = await pool.connect();
     try {

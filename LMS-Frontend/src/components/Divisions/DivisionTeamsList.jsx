@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { PaperApplicationModal } from '../../modals/PaperApplicationModal';
 import { Badge } from '../../ui/Badge';
 import { DisqualificationBadge } from '../../ui/DisqualificationBadge';
-import { TeamSnapshotBadge } from './TeamSnapshotBadge';
 import { Icon } from '../../ui/Icon';
 import { Table } from '../../ui/Table2';
 import { Tabs } from '../../ui/Tabs';
@@ -114,7 +113,6 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
             {row.name}
           </span>
           {fineBadge}
-          <TeamSnapshotBadge diff={row.snapshot_diff} className="ml-2" />
         </div>
       );
     }},
@@ -217,11 +215,11 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
               position="left"
               noUnderline={true}
             >
-              <div 
+              <div
                 onClick={() => onTeamSelect && onTeamSelect(row)}
                 className={`w-[66px] h-[40px] flex items-center justify-center p-[2px] rounded-lg cursor-pointer duration-100 ${
-                  isSelected 
-                    ? 'border-[1.5px] border-orange' 
+                  isSelected
+                    ? 'border-[1.5px] border-orange'
                     : 'hover:opacity-60 hover:opacity-100'
                 }`}
               >

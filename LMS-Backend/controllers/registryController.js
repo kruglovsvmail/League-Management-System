@@ -84,6 +84,7 @@ const FILE_MAP = {
     'teams:logo': ['teams', 'logo_url'],
     'teams:jersey_light': ['teams', 'jersey_light_url'],
     'teams:jersey_dark': ['teams', 'jersey_dark_url'],
+    'teams:team_photo': ['teams', 'team_photo_url'],
     'users:avatar': ['users', 'avatar_url']
 };
 

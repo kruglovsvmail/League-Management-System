@@ -7,6 +7,10 @@ import {
     searchUsers,
     getTeamMembers,
     exportTeamSecretCodes,
+    getTeamProfile,
+    updateTeamProfile,
+    uploadTeamProfileFile,
+    deleteTeamProfileFile,
     setTeamOwners,
     addTeamMember,
     uploadMemberPhoto,
@@ -38,6 +42,12 @@ router.post('/teams-manage/:teamId/members', addTeamMember);
 // Владелец команды. Текущий владелец приходит в ответе /members, здесь только запись
 // Список владельцев целиком: пусто, один или два — ровно эти люди и станут владельцами
 router.put('/teams-manage/:teamId/owners', setTeamOwners);
+
+// Профиль команды: название, город, описание, цвета, файлы (логотип, форма, общее фото)
+router.get('/teams-manage/:teamId/profile', getTeamProfile);
+router.put('/teams-manage/:teamId/profile', updateTeamProfile);
+router.post('/teams-manage/:teamId/profile/file/:type', upload.single('file'), uploadTeamProfileFile);
+router.delete('/teams-manage/:teamId/profile/file/:type', deleteTeamProfileFile);
 
 // Эндпоинты для фото члена команды
 router.post('/teams-manage/:teamId/members/:userId/photo', upload.single('file'), uploadMemberPhoto);
