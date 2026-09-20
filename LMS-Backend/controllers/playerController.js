@@ -224,20 +224,31 @@ export const getPlayerProfile = async (req, res) => {
         d.short_name as division_short_name,
         d.logo_url as division_logo,
         g.stage_type,
-        g.home_score, 
+        -- Матчи вне лиг (division_id IS NULL) команды создают сами в Team-Room:
+        -- товарищеские friendly_pwa / friendly_ext и внешние турниры tournament_ext.
+        -- Лиги и дивизиона у них нет — фронт подписывает их по game_type, а у внешнего
+        -- турнира вместо лиги показывает его название из справочника команды.
+        g.game_type,
+        g.external_title,
+        ext_tour.name as external_tournament_name,
+        ext_tour.short_name as external_tournament_short_name,
+        ext_tour.logo_url as external_tournament_logo,
+        ext_tour.city as external_tournament_city,
+        g.home_score,
         g.away_score,
         g.home_team_id,
         g.away_team_id,
-        
+
         COALESCE(tt_home.snap_short_name, t_home.short_name) as home_team,
         COALESCE(tt_home.snap_name, t_home.name) as home_team_full,
         COALESCE(tt_home.snap_logo_url, t_home.logo_url) as home_team_logo,
         COALESCE(tt_home.snap_city, t_home.city) as home_team_city,
 
-        COALESCE(tt_away.snap_short_name, t_away.short_name) as away_team,
-        COALESCE(tt_away.snap_name, t_away.name) as away_team_full,
-        COALESCE(tt_away.snap_logo_url, t_away.logo_url) as away_team_logo,
-        COALESCE(tt_away.snap_city, t_away.city) as away_team_city,
+        -- Внешний соперник (away_external_id) всегда гость — своей команды в teams у него нет
+        COALESCE(tt_away.snap_short_name, t_away.short_name, eo.short_name) as away_team,
+        COALESCE(tt_away.snap_name, t_away.name, eo.name) as away_team_full,
+        COALESCE(tt_away.snap_logo_url, t_away.logo_url, eo.logo_url) as away_team_logo,
+        COALESCE(tt_away.snap_city, t_away.city, eo.city) as away_team_city,
 
         gr.team_id as player_team_id,
         gr.position_in_line as position
@@ -248,6 +259,8 @@ export const getPlayerProfile = async (req, res) => {
       LEFT JOIN leagues l ON s.league_id = l.id
       JOIN teams t_home ON g.home_team_id = t_home.id
       LEFT JOIN teams t_away ON g.away_team_id = t_away.id
+      LEFT JOIN external_opponents eo ON g.away_external_id = eo.id
+      LEFT JOIN team_external_tournaments ext_tour ON g.external_tournament_id = ext_tour.id
       -- История матчей: команды как они назывались в том сезоне (слепок заявки)
       LEFT JOIN tournament_teams tt_home ON tt_home.team_id = g.home_team_id AND tt_home.division_id = g.division_id
       LEFT JOIN tournament_teams tt_away ON tt_away.team_id = g.away_team_id AND tt_away.division_id = g.division_id

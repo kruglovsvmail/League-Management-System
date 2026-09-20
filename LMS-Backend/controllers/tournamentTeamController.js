@@ -7,6 +7,7 @@ import { assertApplicationRosterAllowed, assertPlayersAllowedInDivision, loadDiv
 import { isLeagueOwner } from '../utils/leagueOwners.js';
 import { syncClubMembershipOnTeamJoin } from '../utils/clubMembership.js';
 import { alignPersonAdmission } from '../utils/personAdmission.js';
+import { logPersonEvents, cardDiff, CARD_FIELDS } from '../utils/personLog.js';
 
 // ============================================================================
 // СЛЕПОК КОМАНДЫ В ЗАЯВКЕ
@@ -156,7 +157,18 @@ export const getTournamentTeamRoster = async (req, res) => {
                 tr.is_captain,
                 tr.is_assistant,
                 tr.period_end,
-                tr.updated_at,
+                -- «Обновлено» — последнее событие журнала по человеку (tournament_person_log),
+                -- а для строк без записей (всё, что было до журнала) — самая поздняя из
+                -- меток самой строки, документов, согласия и квалификации. Колонки
+                -- timestamp без пояса приводятся к timestamptz той же сессией, что их
+                -- писала через NOW(): иначе pg в Node читал бы их как UTC-контейнера и
+                -- отдавал фронту время на три часа позже.
+                GREATEST(last_log.created_at, stamp.ts) AS updated_at,
+                -- Подпись под датой («допуск», «взнос»…) — только если дата и есть это
+                -- событие: подписание согласия на сайте ТФХ до правки функции в журнал не
+                -- попадает, и подписывать его чужим событием нельзя
+                CASE WHEN stamp.ts IS NULL OR last_log.created_at >= stamp.ts THEN last_log.action END AS last_action,
+                CASE WHEN stamp.ts IS NULL OR last_log.created_at >= stamp.ts THEN last_log.details END AS last_details,
                 u.first_name,
                 u.last_name,
                 u.middle_name,
@@ -220,6 +232,23 @@ export const getTournamentTeamRoster = async (req, res) => {
                 ORDER BY id DESC LIMIT 1
             ) tm_photo ON true
 
+            -- Последняя запись журнала по человеку в этой заявке
+            LEFT JOIN LATERAL (
+                SELECT l.created_at, l.action, l.details
+                FROM tournament_person_log l
+                WHERE l.tournament_team_id = tr.tournament_team_id AND l.user_id = tr.player_id
+                ORDER BY l.id DESC LIMIT 1
+            ) last_log ON true
+            -- Самая поздняя метка вне журнала (GREATEST пропускает NULL)
+            LEFT JOIN LATERAL (
+                SELECT GREATEST(
+                    tr.updated_at::timestamptz,
+                    tpd.updated_at::timestamptz,
+                    usc.updated_at::timestamptz,
+                    uq.assigned_at
+                ) AS ts
+            ) stamp ON true
+
             WHERE tr.tournament_team_id = $1
             -- Порядок по умолчанию — как в протоколе: вратари, защитники, нападающие,
             -- внутри группы по алфавиту ФИО. Игроки без позиции падают в конец.
@@ -258,7 +287,12 @@ export const getTournamentTeamRoster = async (req, res) => {
                 MAX(tpd.medical_expires_at) as medical_expires_at,
                 -- Согласие — на человека в сезоне (user_season_consents), не на заявку
                 MAX(usc.consent_url) as consent_url,
-                MAX(usc.consent_expires_at) as consent_expires_at
+                MAX(usc.consent_expires_at) as consent_expires_at,
+                -- «Обновлено» и подпись к нему — так же, как у игроков (см. выше): журнал,
+                -- а без записей — метки допуска, документов и согласия
+                GREATEST(last_log.created_at, stamp.ts) AS updated_at,
+                CASE WHEN stamp.ts IS NULL OR last_log.created_at >= stamp.ts THEN last_log.action END AS last_action,
+                CASE WHEN stamp.ts IS NULL OR last_log.created_at >= stamp.ts THEN last_log.details END AS last_details
             FROM tournament_team_roles ttr
             JOIN users u ON ttr.user_id = u.id
             JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id
@@ -269,8 +303,22 @@ export const getTournamentTeamRoster = async (req, res) => {
             LEFT JOIN tournament_staff_admission tsa
                    ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
             LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.left_at IS NULL
+            LEFT JOIN LATERAL (
+                SELECT l.created_at, l.action, l.details
+                FROM tournament_person_log l
+                WHERE l.tournament_team_id = ttr.tournament_team_id AND l.user_id = ttr.user_id
+                ORDER BY l.id DESC LIMIT 1
+            ) last_log ON true
+            LEFT JOIN LATERAL (
+                SELECT GREATEST(
+                    tsa.updated_at::timestamptz,
+                    tpd.updated_at::timestamptz,
+                    usc.updated_at::timestamptz
+                ) AS ts
+            ) stamp ON true
             WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
-            GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url
+            GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.phone, u.avatar_url, tm.photo_url,
+                     last_log.created_at, last_log.action, last_log.details, stamp.ts
             ORDER BY u.last_name, u.first_name
         `, [id, leagueId, seasonId]);
 
@@ -278,6 +326,30 @@ export const getTournamentTeamRoster = async (req, res) => {
     } catch (err) {
         console.error('Ошибка получения ростера:', err);
         res.status(500).json({ success: false, error: 'Ошибка загрузки состава' });
+    }
+};
+
+/**
+ * GET /tournament-teams/:id/persons/:userId/log
+ * История изменений по человеку в заявке — окно «История» из колонки «Обновлено».
+ * Новые записи сверху. Коды действий и состав details описаны в utils/personLog.js;
+ * в текст их переводит фронт (utils/personLog.js там же).
+ */
+export const getTournamentPersonLog = async (req, res) => {
+    try {
+        const { id, userId } = req.params;
+        const { rows } = await pool.query(`
+            SELECT l.id, l.action, l.details, l.source, l.created_at,
+                   TRIM(CONCAT_WS(' ', au.last_name, au.first_name)) AS actor_name
+              FROM tournament_person_log l
+              LEFT JOIN users au ON au.id = l.actor_id
+             WHERE l.tournament_team_id = $1 AND l.user_id = $2
+             ORDER BY l.id DESC
+        `, [id, userId]);
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('Ошибка загрузки истории по человеку в заявке:', err);
+        res.status(500).json({ success: false, error: 'Ошибка загрузки истории' });
     }
 };
 
@@ -1031,11 +1103,14 @@ export const saveTournamentTeamComposition = async (req, res) => {
         }
 
         // --- Разбор изменений -----------------------------------------------
+        // Карточка нужна целиком: по ней в журнал пишется «было → стало» у тех, кто в
+        // заявке остался
         const currentRes = await client.query(
-            `SELECT player_id, period_end FROM tournament_rosters WHERE tournament_team_id = $1`,
+            `SELECT player_id, period_end, ${CARD_FIELDS.join(', ')} FROM tournament_rosters WHERE tournament_team_id = $1`,
             [id]
         );
-        const activeIds = new Set(currentRes.rows.filter(r => r.period_end === null).map(r => r.player_id));
+        const activeRows = new Map(currentRes.rows.filter(r => r.period_end === null).map(r => [r.player_id, r]));
+        const activeIds = new Set(activeRows.keys());
 
         const incomingIds = new Set(incomingPlayers.map(p => p.player_id));
         const removedIds = [...activeIds].filter(playerId => !incomingIds.has(playerId));
@@ -1044,6 +1119,19 @@ export const saveTournamentTeamComposition = async (req, res) => {
         const addedIds = incomingPlayers.filter(p => !activeIds.has(p.player_id)).map(p => p.player_id);
         if (addedIds.length > 0) {
             await assertPlayersAllowedInDivision(client, app.division_id, addedIds);
+        }
+
+        // Журнал по каждому, кого коснулось сохранение (utils/personLog.js). Копится по
+        // ходу и пишется одним INSERT в конце, той же транзакцией.
+        const actorId = req.user?.id;
+        const logEvents = [];
+        const logEvent = (userId, action, details = null) => logEvents.push({ appId: id, userId, action, details, actorId });
+
+        // Оставшиеся в заявке: что изменилось в карточке
+        for (const player of incomingPlayers) {
+            const before = activeRows.get(player.player_id);
+            const diff = before && cardDiff(before, player);
+            if (diff) logEvent(player.player_id, 'card', diff);
         }
 
         const playersJson = JSON.stringify(incomingPlayers);
@@ -1066,7 +1154,7 @@ export const saveTournamentTeamComposition = async (req, res) => {
             // Ранее отзаявленные: возвращаем в состав непропущенными. Допуск лига ставит
             // отдельно, тумблером в составе дивизиона: внесение в заявку и допуск к матчам —
             // разные решения, и второе не должно проставляться само.
-            await client.query(`
+            const returned = await client.query(`
                 UPDATE tournament_rosters tr
                 SET period_end = NULL,
                     application_status = 'pending',
@@ -1081,11 +1169,13 @@ export const saveTournamentTeamComposition = async (req, res) => {
                 FROM jsonb_to_recordset($2::jsonb)
                      AS x(player_id int, position varchar, jersey_number int, is_captain boolean, is_assistant boolean)
                 WHERE tr.tournament_team_id = $1 AND tr.player_id = x.player_id AND tr.period_end IS NOT NULL
+                RETURNING tr.player_id
             `, [id, playersJson]);
+            for (const row of returned.rows) logEvent(row.player_id, 'returned');
 
             // application_status не указываем — новый игрок заводится недопущенным, как и при
             // добавлении из Team-Room. Допуск лига проставляет отдельно.
-            await client.query(`
+            const inserted = await client.query(`
                 INSERT INTO tournament_rosters
                     (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
                 SELECT $1, x.player_id, x.position, x.jersey_number, x.is_captain, x.is_assistant
@@ -1095,22 +1185,30 @@ export const saveTournamentTeamComposition = async (req, res) => {
                     SELECT 1 FROM tournament_rosters tr
                     WHERE tr.tournament_team_id = $1 AND tr.player_id = x.player_id
                 )
+                RETURNING player_id
             `, [id, playersJson]);
+            for (const row of inserted.rows) logEvent(row.player_id, 'added');
         }
 
         if (removedIds.length > 0) {
             if (app.division_has_games) {
                 // Матчи уже сыграны: строку сохраняем, игрок уходит в «Отзаявленные».
-                await client.query(`
+                const removed = await client.query(`
                     UPDATE tournament_rosters
                     SET period_end = CURRENT_DATE, updated_at = NOW()
                     WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
+                    RETURNING player_id
                 `, [id, removedIds]);
+                for (const row of removed.rows) logEvent(row.player_id, 'removed');
             } else {
-                await client.query(`
+                // Запись журнала переживает удаление строки: журнал привязан к паре
+                // «заявка + человек», а не к строке состава
+                const deleted = await client.query(`
                     DELETE FROM tournament_rosters
                     WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
+                    RETURNING player_id
                 `, [id, removedIds]);
+                for (const row of deleted.rows) logEvent(row.player_id, 'deleted');
             }
         }
 
@@ -1118,7 +1216,7 @@ export const saveTournamentTeamComposition = async (req, res) => {
         // Приводим состояние к присланному набору пар «человек + роль»: лишние роли
         // закрываем, недостающие открываем (повторное добавление переоткрывает ту же строку).
         const staffJson = JSON.stringify(staffPairs);
-        await client.query(`
+        const closedRoles = await client.query(`
             UPDATE tournament_team_roles ttr
             SET left_at = NOW()
             WHERE ttr.tournament_team_id = $1 AND ttr.left_at IS NULL
@@ -1126,20 +1224,36 @@ export const saveTournamentTeamComposition = async (req, res) => {
                   SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(user_id int, role varchar)
                   WHERE x.user_id = ttr.user_id AND x.role = ttr.tournament_role
               )
+            RETURNING ttr.user_id, ttr.tournament_role
         `, [id, staffJson]);
 
+        let openedRoles = { rows: [] };
         if (staffPairs.length > 0) {
-            await client.query(`
+            // RETURNING отдаёт вставленные и переоткрытые строки. Условие WHERE в DO UPDATE
+            // отсекает роли, которые и так были открыты: они не менялись, и в журнал им не надо
+            openedRoles = await client.query(`
                 INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
                 SELECT $1, x.user_id, x.role
                 FROM jsonb_to_recordset($2::jsonb) AS x(user_id int, role varchar)
                 ON CONFLICT (tournament_team_id, user_id, tournament_role) DO UPDATE SET left_at = NULL
+                WHERE tournament_team_roles.left_at IS NOT NULL
+                RETURNING user_id, tournament_role
             `, [id, staffJson]);
         }
 
+        // Журнал штаба: по записи на человека с только изменившимися ролями
+        const rolesByUser = (rows) => rows.reduce((acc, r) => {
+            (acc[r.user_id] ||= []).push(r.tournament_role);
+            return acc;
+        }, {});
+        for (const [userId, roles] of Object.entries(rolesByUser(openedRoles.rows))) logEvent(Number(userId), 'staff_added', { roles });
+        for (const [userId, roles] of Object.entries(rolesByUser(closedRoles.rows))) logEvent(Number(userId), 'staff_removed', { roles });
+
+        await logPersonEvents(client, logEvents);
+
         // Играющий тренер: если у человека в этой заявке уже стоит допуск по одной сущности,
         // вторая, только что добавленная, подтягивается к нему (см. alignPersonAdmission)
-        await alignPersonAdmission(client, id);
+        await alignPersonAdmission(client, id, { actorId });
 
         // Введённые в команду люди: запись в журнал (найти концы), затем команде — push
         // и окно в Team-Room

@@ -27,6 +27,7 @@ import { TeamDocsBulkDrawer, TEAM_DOC_META } from '../../modals/TeamDocsBulkDraw
 import { QualSelectModal } from '../../modals/QualSelectModal';
 import { MedicalDocsModal } from '../../modals/MedicalDocsModal';
 import { FeeModal } from '../../modals/FeeModal';
+import { PersonLogModal } from '../../modals/PersonLogModal';
 
 const TOURNAMENT_TYPES = {
   regular: 'Регулярный чемпионат',
@@ -266,6 +267,8 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
         setRosterData(prev => prev.map(p => p.tournament_roster_id === activePlayerForModal.tournament_roster_id ? { ...p, is_fee_paid: isPaid } : p));
         setGlobalToast({ title: 'Успешно', message: 'Статус взноса обновлен', type: 'success' });
         setPlayerModalType(null);
+        // «Обновлено» и подпись к нему считает сервер по журналу — перечитываем состав
+        await loadTeamData(selectedTeam.id);
       }
     } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сохранения', type: 'error' }); } finally { setIsPlayerSaving(false); }
   };
@@ -775,6 +778,14 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
         reqConsent={division.req_consent ?? true}
       />
       
+      {/* История изменений по человеку в заявке — из колонки «Обновлено» (состав и штаб) */}
+      <PersonLogModal
+        isOpen={playerModalType === 'log'}
+        onClose={() => setPlayerModalType(null)}
+        appId={selectedTeam?.id}
+        person={activePlayerForModal}
+      />
+
       <PlayerProfileModal isOpen={!!profileModalPlayerId} onClose={() => setProfileModalPlayerId(null)} playerId={profileModalPlayerId} />
 
       <TeamDocsBulkDrawer

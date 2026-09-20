@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 import { assertPlayersAllowedInDivision } from '../utils/qualificationAccess.js';
+import { logPersonEvent } from '../utils/personLog.js';
 
 // 1. Получение списка всех трансферов
 export const getTransfers = async (req, res) => {
@@ -84,6 +85,13 @@ export const handleTransferAction = async (req, res) => {
             if (trEnd) targetDate = new Date(trEnd.getTime());
         }
 
+        // Журнал по человеку в заявке (utils/personLog.js): заявки на трансфер сами по себе
+        // состав не меняют, поэтому пишется только принятие и откат
+        const logTransfer = (action, extra = {}) => tr.tournament_team_id && logPersonEvent(client, {
+            appId: tr.tournament_team_id, userId: tr.player_id, action, actorId: userId,
+            details: { request_id: Number(id), type: tr.request_type, ...extra },
+        });
+
         if (action === 'accept') {
             if (!isTransferWindowOpen && !isAdmin) throw new Error('Нет прав: трансферное окно закрыто');
             
@@ -119,14 +127,16 @@ export const handleTransferAction = async (req, res) => {
                         VALUES ($1, $2, 'declined', $3, $4, $5)
                     `, [tr.tournament_team_id, tr.player_id, targetDate, tr.position, tr.jersey_number]);
                 }
+                await logTransfer('transfer_in', { position: tr.position, jersey_number: tr.jersey_number });
             } else if (tr.request_type === 'remove') {
                 await client.query(`
-                    UPDATE tournament_rosters SET period_end = $1 
+                    UPDATE tournament_rosters SET period_end = $1, updated_at = NOW()
                     WHERE tournament_team_id = $2 AND player_id = $3 AND period_end IS NULL
                 `, [targetDate, tr.tournament_team_id, tr.player_id]);
+                await logTransfer('transfer_out');
             }
             await client.query(`UPDATE roster_requests SET status = 'approved', resolved_at = NOW() WHERE id = $1`, [id]);
-        } 
+        }
         else if (action === 'reject') {
             await client.query(`UPDATE roster_requests SET status = 'rejected', resolved_at = NOW() WHERE id = $1`, [id]);
         }
@@ -142,22 +152,23 @@ export const handleTransferAction = async (req, res) => {
 
                 if (historyCheck.rows.length > 0) {
                     await client.query(`
-                        DELETE FROM tournament_rosters 
+                        DELETE FROM tournament_rosters
                         WHERE id = (
-                            SELECT id FROM tournament_rosters 
-                            WHERE tournament_team_id = $1 AND player_id = $2 
+                            SELECT id FROM tournament_rosters
+                            WHERE tournament_team_id = $1 AND player_id = $2
                             ORDER BY id DESC LIMIT 1
                         )
                     `, [tr.tournament_team_id, tr.player_id]);
                 }
             } else if (tr.request_type === 'remove') {
                 if (!isAdmin) throw new Error('Нет прав: только администратор может откатывать трансферы');
-                
+
                 await client.query(`
-                    UPDATE tournament_rosters SET period_end = NULL 
+                    UPDATE tournament_rosters SET period_end = NULL, updated_at = NOW()
                     WHERE tournament_team_id = $1 AND player_id = $2
                 `, [tr.tournament_team_id, tr.player_id]);
             }
+            await logTransfer('transfer_revert');
             await client.query(`UPDATE roster_requests SET status = 'pending', resolved_at = NULL WHERE id = $1`, [id]);
         }
 

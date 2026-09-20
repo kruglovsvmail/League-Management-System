@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Modal } from './Modal';
 import { Loader } from '../ui/Loader';
@@ -8,6 +8,24 @@ import { Select } from '../ui/Select';
 import { Badge } from '../ui/Badge';
 import { Tooltip } from '../ui/Tooltip';
 import { getImageUrl, getToken, formatAge } from '../utils/helpers';
+
+// Матчи вне лиг команды создают сами в Team-Room: товарищеские (friendly_pwa —
+// с командой платформы, friendly_ext — с внешним соперником) и матчи внешних
+// турниров (tournament_ext). Лиги и дивизиона у них нет, поэтому в истории они
+// подписываются по типу, а в фильтре лиг собираются в две отдельные группы.
+const FRIENDLY_LEAGUE_LABEL = 'Товарищеские';
+const EXTERNAL_LEAGUE_LABEL = 'Внешние турниры';
+
+const isFriendlyMatch = (m) => m.game_type === 'friendly_pwa' || m.game_type === 'friendly_ext' || m.stage_type === 'friendly';
+const isExternalTournamentMatch = (m) => m.game_type === 'tournament_ext';
+
+// Под какой пункт фильтра лиг попадает матч: своя лига, либо одна из двух групп вне лиг
+const leagueGroupOf = (m) => {
+  if (m.league_name) return m.league_name;
+  if (isFriendlyMatch(m)) return FRIENDLY_LEAGUE_LABEL;
+  if (isExternalTournamentMatch(m)) return EXTERNAL_LEAGUE_LABEL;
+  return null;
+};
 
 export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   const navigate = useNavigate();
@@ -22,7 +40,10 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   const [filterLeague, setFilterLeague] = useState('Все лиги');
   const [filterOpponent, setFilterOpponent] = useState('Все соперники');
   const [matchPage, setMatchPage] = useState(1);
-  const MATCHES_PER_PAGE = 7;
+  // Строк истории на страницу — сколько влезает в область таблицы без прокрутки.
+  // Считается по её реальной высоте (см. эффект ниже), 7 — стартовое значение до замера
+  const [matchesPerPage, setMatchesPerPage] = useState(7);
+  const matchesAreaRef = useRef(null);
 
   useEffect(() => {
     if (isOpen && playerId) {
@@ -84,6 +105,29 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
         .finally(() => setLoading(false));
     }
   }, [isOpen, playerId]);
+
+  // Сколько строк истории влезает в область таблицы без прокрутки: высота области
+  // минус её отступы и шапка таблицы, делённая на высоту строки. Область растёт
+  // вместе с окном (модалка берёт всю высоту экрана), поэтому следим за ней
+  // ResizeObserver'ом, а не считаем один раз. Меньше трёх строк не показываем —
+  // на совсем маленьком экране лучше короткая прокрутка, чем страница из одной строки.
+  useEffect(() => {
+    const el = matchesAreaRef.current;
+    if (!el) return;
+    const AREA_PADDING = 32; // p-4 сверху и снизу
+    const TABLE_HEADER = 52; // th: py-4 + подпись + нижняя граница
+    const ROW_HEIGHT = 46;   // td: py-2 + бейдж счёта + нижняя граница
+
+    const compute = () => {
+      const rows = Math.floor((el.clientHeight - AREA_PADDING - TABLE_HEADER) / ROW_HEIGHT);
+      setMatchesPerPage(Math.max(3, rows));
+    };
+    compute();
+
+    const observer = new ResizeObserver(compute);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeTab, loading, data]);
 
   // Смена роли/фильтра истории матчей — всегда сбрасываем на первую страницу,
   // иначе легко зависнуть на несуществующей странице после сужения списка.
@@ -182,7 +226,27 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
     { label: 'Сезон', width: 'w-[20px] text-center', render: r => (
       <span className="text-[13px] text-graphite">{r.season_name || '-'}</span> 
     )},
-    { label: 'Лига / Дивизион', width: 'w-[180px]', render: r => (
+    { label: 'Лига / Дивизион', width: 'w-[180px]', render: r => {
+        // Товарищеский: лиги и дивизиона нет — вместо прочерков пишем, что это за матч
+        if (isFriendlyMatch(r)) {
+          return (
+            <span className="text-[13px] text-graphite-light whitespace-nowrap" title={r.external_title || undefined}>Товарищеский матч</span>
+          );
+        }
+        // Внешний турнир: вместо лиги — название турнира из справочника команды
+        if (isExternalTournamentMatch(r)) {
+          const name = r.external_tournament_short_name || r.external_tournament_name || 'Внешний турнир';
+          return (
+            <div className="whitespace-nowrap flex gap-1.5 items-center">
+              <Tooltip logo={getImageUrl(r.external_tournament_logo || '/default/Logo_league_default.webp')} title={r.external_tournament_name || 'Внешний турнир'} subtitle={r.external_tournament_city || 'Внешний турнир'}>
+                <span className="text-[13px] text-graphite hover:text-orange">{name}</span>
+              </Tooltip>
+              <span className="text-graphite/40">/</span>
+              <span className="text-graphite-light text-[13px]">внешний</span>
+            </div>
+          );
+        }
+        return (
         <div className="whitespace-nowrap flex gap-1.5 items-center">
            <Tooltip logo={getImageUrl(r.league_logo || '/default/Logo_league_default.webp')} title={r.league_full_name || r.league_name} subtitle={r.league_city}>
              <span className="text-[13px] text-graphite hover:text-orange">{r.league_name || '-'}</span>
@@ -192,8 +256,13 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
              <span className="text-graphite-light text-[13px] hover:text-orange transition-colors">{r.division_short_name || r.division_name || '-'}</span>
            </Tooltip>
         </div>
+        );
+    }},
+    { label: 'Тип', width: 'w-[40px] text-center', render: r => (
+      <span className="text-[13px] text-graphite" title={isFriendlyMatch(r) ? 'Товарищеский матч' : r.stage_type === 'playoff' ? 'Плей-офф' : 'Регулярный этап'}>
+        {isFriendlyMatch(r) ? 'Тов.' : r.stage_type === 'playoff' ? 'ПО' : 'Рег.'}
+      </span>
     )},
-    { label: 'Тип', width: 'w-[40px] text-center', render: r => <span className="text-[13px] text-graphite">{r.stage_type === 'playoff' ? 'ПО' : 'Рег.'}</span> },
     { label: 'Команда', width: 'w-[250px] text-right', render: r => {
       const [full, logo, city] = r.player_team_id === r.home_team_id ? [r.home_team_full, r.home_team_logo, r.home_team_city] : [r.away_team_full, r.away_team_logo, r.away_team_city];
       return (
@@ -309,14 +378,21 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
 
   const uniqueSeasons = [...new Set(availableRoleMatches.map(m => m.season_name).filter(Boolean))];
   const seasonOptions = ['Все сезоны', ...uniqueSeasons];
-  const uniqueLeagues = [...new Set(availableRoleMatches.map(m => m.league_name).filter(Boolean))];
+  // Лиги — по названию, а матчи вне лиг двумя группами в конце списка, чтобы
+  // «Товарищеские» не вклинивались между настоящими лигами
+  const leagueGroups = [...new Set(availableRoleMatches.map(leagueGroupOf).filter(Boolean))];
+  const outsideGroups = [FRIENDLY_LEAGUE_LABEL, EXTERNAL_LEAGUE_LABEL];
+  const uniqueLeagues = [
+    ...leagueGroups.filter(l => !outsideGroups.includes(l)),
+    ...outsideGroups.filter(l => leagueGroups.includes(l)),
+  ];
   const leagueOptions = ['Все лиги', ...uniqueLeagues];
   const uniqueOpponents = [...new Set(availableRoleMatches.map(m => m.player_team_id === m.home_team_id ? m.away_team_full : m.home_team_full).filter(Boolean))].sort();
   const opponentOptions = ['Все соперники', ...uniqueOpponents];
 
   const filteredMatches = availableRoleMatches.filter(m => {
     if (filterSeason !== 'Все сезоны' && m.season_name !== filterSeason) return false;
-    if (filterLeague !== 'Все лиги' && m.league_name !== filterLeague) return false;
+    if (filterLeague !== 'Все лиги' && leagueGroupOf(m) !== filterLeague) return false;
     if (filterOpponent !== 'Все соперники') {
       const opponentFull = m.player_team_id === m.home_team_id ? m.away_team_full : m.home_team_full;
       if (opponentFull !== filterOpponent) return false;
@@ -327,9 +403,9 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   // Пагинация на клиенте — весь список уже загружен и отфильтрован, просто
   // рендерим кусок в 7 строк за раз (иначе история на 100+ матчей превращается
   // в бесконечный скролл внутри и так небольшой модалки).
-  const matchTotalPages = Math.max(1, Math.ceil(filteredMatches.length / MATCHES_PER_PAGE));
+  const matchTotalPages = Math.max(1, Math.ceil(filteredMatches.length / matchesPerPage));
   const safeMatchPage = Math.min(matchPage, matchTotalPages);
-  const pagedMatches = filteredMatches.slice((safeMatchPage - 1) * MATCHES_PER_PAGE, safeMatchPage * MATCHES_PER_PAGE);
+  const pagedMatches = filteredMatches.slice((safeMatchPage - 1) * matchesPerPage, safeMatchPage * matchesPerPage);
 
   const StatItem = ({ value }) => (
     <span className="text-[14px] font-black text-graphite/50">{value || '-'}</span>
@@ -337,7 +413,10 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="extra-wide" title="Профиль игрока">
-      <div className="flex flex-col w-full h-[700px] max-h-[calc(100vh-170px)] min-h-0 overflow-hidden px-0 pb-0 pt-0 font-sans">
+      {/* Высота — от экрана, а не фиксированная: 230px уходят на отступы окна, шапку
+          модалки и её внутренние поля. Меньше — и у тела модалки вылезает своя
+          прокрутка поверх внутренних; на больших экранах ограничиваем 900px */}
+      <div className="flex flex-col w-full h-[calc(100vh-230px)] max-h-[900px] min-h-0 overflow-hidden px-0 pb-0 pt-0 font-sans">
         
         {loading ? (
           <div className="flex-1 flex items-center justify-center"><Loader /></div>
@@ -480,7 +559,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
                     )}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 relative z-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
+                  <div ref={matchesAreaRef} className="flex-1 overflow-y-auto p-4 relative z-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-graphite/15 hover:[&::-webkit-scrollbar-thumb]:bg-graphite/25 [&::-webkit-scrollbar-thumb]:rounded-full">
                     {pagedMatches.length > 0 ? (
                       <Table columns={matchColumns} data={pagedMatches} />
                     ) : (

@@ -5,6 +5,7 @@ import { DisqualificationBadge } from '../../ui/DisqualificationBadge';
 import { Switch } from '../../ui/Switch';
 import dayjs from 'dayjs';
 import { getImageUrl } from '../../utils/helpers';
+import { shortLogLabel } from '../../utils/personLog';
 
 // Импортируем новую систему прав
 import { useAccess } from '../../hooks/useAccess';
@@ -124,16 +125,39 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
       }
   };
 
+  // «Обновлено» — последнее событие журнала по человеку в заявке: дата, время и что именно
+  // случилось. Время — в поясе браузера (с сервера приходит момент с поясом). Щелчок
+  // открывает окно истории (PersonLogModal). Колонка одна на игроков и представителей:
+  // журнал ведётся по человеку в заявке, а не по строке состава.
+  const updatedColumn = {
+    label: 'Обновлено',
+    sortKey: 'updated_at',
+    width: 'w-[150px]', align: 'right',
+    render: (row) => (
+      <div
+        onClick={() => onOpenModal(row, 'log')}
+        title="История изменений"
+        className="flex flex-col text-[12px] text-graphite/70 cursor-pointer hover:text-orange transition-colors"
+      >
+        <span>{row.updated_at ? dayjs(row.updated_at).format('DD.MM.YYYY') : '-'}</span>
+        <span>{row.updated_at ? dayjs(row.updated_at).format('HH:mm') : ''}</span>
+        {row.last_action && (
+          <span className="text-[11px] text-graphite/50 truncate">{shortLogLabel(row.last_action, row.last_details)}</span>
+        )}
+      </div>
+    )
+  };
+
   const playerColumns = [
-    { 
-      label: 'Фото', 
-      width: 'w-[60px] text-center', 
+    {
+      label: 'Фото',
+      width: 'w-[60px] text-center',
       render: (row) => {
         // Личный аватар сюда не подставляем: в лиге человека показываем только по
         // заявочному фото (снимок на момент допуска) или по фото в составе команды.
         const src = getImageUrl(row.team_member_photo_url || '/default/user_default.webp');
         return (
-          <div 
+          <div
             onClick={() => onOpenProfile && onOpenProfile(row.player_id)}
             className="w-10 h-10 rounded-lg overflow-hidden bg-graphite/5 border border-graphite/10 mx-auto cursor-pointer hover:scale-105 transition-transform shadow-sm"
           >
@@ -276,19 +300,9 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
         </div>
       )
     },
-    { 
-      label: 'Обновлено', 
-      sortKey: 'updated_at',
-      width: 'w-[150px]', align: 'right', 
-      render: (row) => (
-        <div className="flex flex-col text-[12px] text-graphite/70">
-          <span>{row.updated_at ? dayjs(row.updated_at).format('DD.MM.YYYY') : '-'}</span>
-          <span>{row.updated_at ? dayjs(row.updated_at).format('HH:mm') : ''}</span>
-        </div>
-      )
-    },
-    { 
-      label: 'Допуск', 
+    updatedColumn,
+    {
+      label: 'Допуск',
       sortKey: 'application_status',
       width: 'w-[120px]', align: 'center',
       render: (row) => (
@@ -392,6 +406,7 @@ export function TeamRosterTable({ roster, onOpenModal, onToggleStatus, onToggleS
         );
       }
     },
+    updatedColumn,
     // Тот же тумблер, что и у игроков, и то же право. Допуск принадлежит человеку, а не
     // роли: у представителя ролей бывает несколько, а строка допуска одна. Поэтому и
     // адресуется он парой «заявка + человек», а не id роли. Если тот же человек заявлен

@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { setPersonAdmission } from '../utils/personAdmission.js';
+import { logPersonEvent, logPersonEvents, cardDiff, CARD_FIELDS } from '../utils/personLog.js';
 
 const DOCS_BUCKET = 'hockeyeco-uploads';
 
@@ -132,7 +133,7 @@ export const updateTournamentRosterStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: 'Игрок не найден в заявке' });
         }
 
-        await setPersonAdmission(rows[0].tournament_team_id, rows[0].player_id, application_status);
+        await setPersonAdmission(rows[0].tournament_team_id, rows[0].player_id, application_status, { actorId: req.user?.id });
 
         res.json({ success: true });
     } catch (err) {
@@ -163,7 +164,7 @@ export const updateTournamentStaffStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: 'Представитель не найден в этой заявке' });
         }
 
-        await setPersonAdmission(id, userId, application_status);
+        await setPersonAdmission(id, userId, application_status, { actorId: req.user?.id });
 
         res.json({ success: true });
     } catch (err) {
@@ -180,11 +181,22 @@ export const updateTournamentRosterFee = async (req, res) => {
     try {
         const { id } = req.params;
         const { is_fee_paid } = req.body;
-        
-        await pool.query(
-            'UPDATE tournament_rosters SET is_fee_paid = $1, updated_at = NOW() WHERE id = $2', 
+
+        // Окно взноса сохраняет и без изменения: в журнал такое не пишем, иначе каждое
+        // «Сохранить» плодило бы пустые записи «взнос оплачен → взнос оплачен»
+        const { rows } = await pool.query(
+            `UPDATE tournament_rosters SET is_fee_paid = $1, updated_at = NOW()
+              WHERE id = $2 AND is_fee_paid IS DISTINCT FROM $1
+              RETURNING tournament_team_id, player_id`,
             [is_fee_paid, id]
         );
+        if (rows.length > 0) {
+            await logPersonEvent(pool, {
+                appId: rows[0].tournament_team_id, userId: rows[0].player_id,
+                action: is_fee_paid ? 'fee_on' : 'fee_off',
+                actorId: req.user?.id,
+            });
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка сохранения статуса взноса:', err);
@@ -273,6 +285,22 @@ export const uploadTournamentRosterDocs = async (req, res) => {
                 });
             }
 
+            // Журнал: по записи на каждый тронутый документ — новый файл, сдвиг срока или очистка
+            await logPersonEvents(pool, DOC_TYPES
+                .filter(type => `${type}_url` in patch || `${type}_expires_at` in patch)
+                .map(type => ({
+                    appId, userId, action: 'doc', actorId: req.user?.id,
+                    // Срок в записи только если его присылали: иначе он не менялся, и в
+                    // истории должен остаться прежний, а не «без срока»
+                    details: urls[type] === null
+                        ? { type, cleared: true }
+                        : {
+                            type,
+                            file: !!urls[type],
+                            expires_at: `${type}_expires_at` in patch ? patch[`${type}_expires_at`] : undefined,
+                        },
+                })));
+
             for (const type of DOC_TYPES) {
                 if (urls[type] !== undefined) {
                     await deleteReplacedDoc(previous[`${type}_url`], urls[type], appId, userId, type);
@@ -302,17 +330,36 @@ export const updateTournamentRosterInline = async (req, res) => {
         if (is_assistant !== undefined) { updates.push(`is_assistant = $${counter++}`); values.push(is_assistant); }
 
         if (updates.length > 0) {
+            // Прежние значения — для записи «было → стало» в журнале
+            const { rows: beforeRows } = await pool.query(
+                `SELECT tournament_team_id, player_id, ${CARD_FIELDS.join(', ')} FROM tournament_rosters WHERE id = $1`,
+                [id]
+            );
+            const before = beforeRows[0];
+
             values.push(id);
             await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${counter}`, values);
-            
-            // Если игрок стал капитаном, убираем капитанство у остальных в этой же заявке
-            if (is_captain === true) {
-                await pool.query(`
-                    UPDATE tournament_rosters SET is_captain = false 
-                    WHERE tournament_team_id = (SELECT tournament_team_id FROM tournament_rosters WHERE id = $1) 
-                    AND id != $1
-                `, [id]);
+
+            const events = [];
+            const diff = before && cardDiff(before, { position, jersey_number, is_captain, is_assistant });
+            if (diff) {
+                events.push({ appId: before.tournament_team_id, userId: before.player_id, action: 'card', details: diff, actorId: req.user?.id });
             }
+
+            // Если игрок стал капитаном, убираем капитанство у остальных в этой же заявке —
+            // и это тоже правка их карточки, поэтому каждому прежнему капитану своя запись
+            if (is_captain === true) {
+                const { rows: dethroned } = await pool.query(`
+                    UPDATE tournament_rosters SET is_captain = false
+                    WHERE tournament_team_id = (SELECT tournament_team_id FROM tournament_rosters WHERE id = $1)
+                    AND id != $1 AND is_captain = true
+                    RETURNING tournament_team_id, player_id
+                `, [id]);
+                for (const row of dethroned) {
+                    events.push({ appId: row.tournament_team_id, userId: row.player_id, action: 'card', details: { is_captain: [true, false] }, actorId: req.user?.id });
+                }
+            }
+            await logPersonEvents(pool, events);
         }
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: 'Ошибка сохранения данных игрока' }); }
@@ -400,6 +447,12 @@ export const bulkUploadTournamentRosterDocs = async (req, res) => {
                           ${type}_expires_at = EXCLUDED.${type}_expires_at,
                           updated_at = NOW()
         `, [id, expires_at || null, targets.map(t => t.userId), targets.map(t => `/${t.key}`)]);
+
+        // Одна бумага — но у каждого это его личный документ: журнал по человеку
+        await logPersonEvents(pool, targets.map(t => ({
+            appId: id, userId: t.userId, action: 'doc', actorId: req.user?.id,
+            details: { type, file: true, expires_at: expires_at || null, bulk: true },
+        })));
 
         // Только после успешной записи: сбой на INSERT оставил бы заявку со ссылками на удалённое
         for (const t of targets) {

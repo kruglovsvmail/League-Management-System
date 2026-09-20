@@ -38,18 +38,17 @@ const formatPhone = (phone) => {
 /**
  * Вкладка «Клубы» раздела управления командами (только глобальный админ).
  * Клуб — организация над командами: общая база людей, штаб, владелец и набор команд.
+ *
+ * Выбранный клуб живёт на странице (selectedClub / onSelectClub), а не здесь:
+ * кнопка «Вернуться к выбору клуба» рисуется в шапке рядом с заголовком, как у
+ * команд и лиг, и страница должна уметь сбросить выбор сама.
  */
-export function ClubsWorkspace({ showToast, onOpenProfile }) {
+export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelectClub }) {
   const [clubsList, setClubsList] = useState([]);
   const [clubsTotal, setClubsTotal] = useState(0);
   const [clubsPage, setClubsPage] = useState(1);
   const [clubSearchQuery, setClubSearchQuery] = useState('');
   const [isSearchingClubs, setIsSearchingClubs] = useState(false);
-
-  const [selectedClub, setSelectedClubState] = useState(() => {
-    const saved = sessionStorage.getItem('cm_selected_club_data');
-    return saved ? JSON.parse(saved) : null;
-  });
 
   const [activeTab, setActiveTab] = useState('members');
 
@@ -66,18 +65,6 @@ export function ClubsWorkspace({ showToast, onOpenProfile }) {
 
   const [confirmState, setConfirmState] = useState(null);
   const [isConfirming, setIsConfirming] = useState(false);
-
-  const setSelectedClub = (club) => {
-    setSelectedClubState(club);
-    setOwner(undefined);
-    setActiveTab('members');
-    if (club) {
-      sessionStorage.setItem('cm_selected_club_data', JSON.stringify(club));
-    } else {
-      sessionStorage.removeItem('cm_selected_club_data');
-      setMembers([]); setStaff([]); setTeams([]);
-    }
-  };
 
   // ── Список клубов ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -116,13 +103,18 @@ export function ClubsWorkspace({ showToast, onOpenProfile }) {
         setTeams(data.teams || []);
         setOwner(data.owner || null);
         // Название и логотип могли поменяться в Team-Room — освежаем карточку слева
-        if (data.club) setSelectedClubState(prev => (prev ? { ...prev, ...data.club } : prev));
+        if (data.club) onSelectClub(prev => (prev ? { ...prev, ...data.club } : prev));
       }
     } catch (err) { console.error('Ошибка загрузки клуба:', err); }
     setIsLoadingDetails(false);
-  }, []);
+  }, [onSelectClub]);
 
+  // Смена клуба (в том числе сброс из шапки) — чистим всё, что относилось к прежнему,
+  // и грузим новый; иначе до ответа сервера мигал бы чужой владелец и состав
   useEffect(() => {
+    setOwner(undefined);
+    setActiveTab('members');
+    setMembers([]); setStaff([]); setTeams([]);
     if (selectedClub?.id) fetchClubDetails(selectedClub.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClub?.id]);
@@ -317,7 +309,7 @@ export function ClubsWorkspace({ showToast, onOpenProfile }) {
         {isSearchingClubs ? <Loader text="Поиск..." /> : (
           <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5 mt-6">
             {clubsList.map(c => (
-              <div key={c.id} onClick={() => setSelectedClub(c)} className="flex flex-col gap-3 p-5 bg-white rounded-md border cursor-pointer hover:border-orange shadow-sm group">
+              <div key={c.id} onClick={() => onSelectClub(c)} className="flex flex-col gap-3 p-5 bg-white rounded-md border cursor-pointer hover:border-orange shadow-sm group">
                 <div className="flex items-center gap-4">
                   <img src={getImageUrl(c.logo_url) || '/default/Logo_team_default.webp'} className="w-12 h-12 object-contain shrink-0" />
                   <div className="flex flex-col min-w-0">
@@ -372,13 +364,6 @@ export function ClubsWorkspace({ showToast, onOpenProfile }) {
           <span className="font-black text-[16px] leading-tight">{selectedClub.name}</span>
           {selectedClub.city && <span className="text-[12px] font-bold text-graphite-light mt-1">{selectedClub.city}</span>}
         </div>
-
-        <button
-          onClick={() => setSelectedClub(null)}
-          className="text-left px-4 py-2 mb-1 rounded-md text-[13px] font-bold text-graphite-light hover:text-orange"
-        >
-          ← Вернуться к выбору клуба
-        </button>
 
         {/* Владелец клуба — свойство самого клуба, поэтому виден с любой вкладки */}
         <button

@@ -18,6 +18,7 @@ import { AddMemberDrawer } from '../modals/AddMemberDrawer';
 import { TeamOwnerDrawer } from '../modals/TeamOwnerDrawer';
 import { ClubsWorkspace } from '../components/ClubsWorkspace';
 import { LeaguesWorkspace } from '../components/LeaguesWorkspace';
+import { CommunitiesWorkspace } from '../components/CommunitiesWorkspace';
 import { TeamProfileEditor } from '../components/TeamProfileEditor';
 import { PlayerAvatarModal } from '../modals/PlayerAvatarModal';
 import { PlayerProfileModal } from '../modals/PlayerProfileModal';
@@ -99,9 +100,10 @@ export function TeamManagementPage() {
   // Сортировка карточек живёт в адресе, как и поиск: переживает перезагрузку и «назад»
   const teamSort = TEAM_SORT_OPTIONS.some(o => o.value === searchParams.get('sort')) ? searchParams.get('sort') : 'name';
 
-  // Раздел делится на три вкладки: команды, клубы (организации над командами) и лиги.
+  // Раздел делится на четыре вкладки: команды, клубы (организации над командами), лиги
+  // и сообщества (открытые группы Team-Room — тренировки и солянки).
   // Держим выбор в адресе — так он переживает перезагрузку и возврат назад.
-  const SECTIONS = ['teams', 'clubs', 'leagues'];
+  const SECTIONS = ['teams', 'clubs', 'leagues', 'communities'];
   const sectionParam = searchParams.get('section');
   const section = SECTIONS.includes(sectionParam) ? sectionParam : 'teams';
 
@@ -125,6 +127,28 @@ export function TeamManagementPage() {
     if (league) sessionStorage.setItem('lm_selected_league_data', JSON.stringify(league));
     else sessionStorage.removeItem('lm_selected_league_data');
   };
+
+  // Выбранный клуб и сообщество — по той же причине на странице: их кнопки «Вернуться
+  // к выбору» тоже в шапке. Воркспейсы получают значение и сеттер, сеттер принимает и
+  // функцию-обновление (освежить название/лого после загрузки деталей).
+  const [selectedClub, setSelectedClub] = useState(() => {
+    const saved = sessionStorage.getItem('cm_selected_club_data');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [selectedCommunity, setSelectedCommunity] = useState(() => {
+    const saved = sessionStorage.getItem('cmm_selected_community_data');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  useEffect(() => {
+    if (selectedClub) sessionStorage.setItem('cm_selected_club_data', JSON.stringify(selectedClub));
+    else sessionStorage.removeItem('cm_selected_club_data');
+  }, [selectedClub]);
+
+  useEffect(() => {
+    if (selectedCommunity) sessionStorage.setItem('cmm_selected_community_data', JSON.stringify(selectedCommunity));
+    else sessionStorage.removeItem('cmm_selected_community_data');
+  }, [selectedCommunity]);
 
   const setActiveTab = (tab) => {
     setSearchParams(prev => { prev.set('tab', tab); return prev; }, { replace: true });
@@ -582,22 +606,26 @@ export function TeamManagementPage() {
   return (
     <div className="flex flex-col min-h-screen pb-12 relative">
       <Header
-        title={section === 'clubs' ? 'Управление клубами' : section === 'leagues' ? 'Управление лигами' : 'Управление командой'}
+        title={section === 'clubs' ? 'Управление клубами' : section === 'leagues' ? 'Управление лигами' : section === 'communities' ? 'Управление сообществами' : 'Управление командой'}
         subtitle={
           section === 'teams' && selectedTeam
             ? ( <button onClick={() => setSelectedTeam(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange cursor-pointer">←  Вернуться к выбору команды</button> )
+            : section === 'clubs' && selectedClub
+              ? ( <button onClick={() => setSelectedClub(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange cursor-pointer">←  Вернуться к выбору клуба</button> )
             : section === 'leagues' && selectedOwnersLeague
               ? ( <button onClick={() => selectOwnersLeague(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange cursor-pointer">←  Вернуться к выбору лиги</button> )
+            : section === 'communities' && selectedCommunity
+              ? ( <button onClick={() => setSelectedCommunity(null)} className="flex items-center gap-2 text-[15px] font-bold text-graphite-light hover:text-orange cursor-pointer">←  Вернуться к выбору сообщества</button> )
               : null
         }
       />
 
-      {/* Переключатель раздела: команды, клубы или лиги. Рядом — сортировка карточек,
+      {/* Переключатель раздела: команды, клубы, лиги или сообщества. Рядом — сортировка карточек,
           она есть только у списка команд */}
       <div className="px-10 pt-8 relative z-10 flex items-center gap-5 flex-wrap">
-        <div className="w-[320px]">
+        <div className="w-[440px]">
           <SegmentButton
-            options={['Команды', 'Клубы', 'Лиги']}
+            options={['Команды', 'Клубы', 'Лиги', 'Сообщества']}
             defaultIndex={SECTIONS.indexOf(section)}
             onChange={(idx) => setSection(SECTIONS[idx] || 'teams')}
           />
@@ -621,7 +649,11 @@ export function TeamManagementPage() {
         </div>
       ) : section === 'clubs' ? (
         <div className="px-10 pt-6 relative z-10">
-          <ClubsWorkspace showToast={showToast} onOpenProfile={(id) => setProfileModalUserId(id)} />
+          <ClubsWorkspace showToast={showToast} onOpenProfile={(id) => setProfileModalUserId(id)} selectedClub={selectedClub} onSelectClub={setSelectedClub} />
+        </div>
+      ) : section === 'communities' ? (
+        <div className="px-10 pt-6 relative z-10">
+          <CommunitiesWorkspace showToast={showToast} onOpenProfile={(id) => setProfileModalUserId(id)} selectedCommunity={selectedCommunity} onSelectCommunity={setSelectedCommunity} />
         </div>
       ) : (
       <div className="flex items-start px-10 pt-6 gap-8 relative z-10">

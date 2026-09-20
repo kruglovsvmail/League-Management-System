@@ -110,9 +110,11 @@ export const setUserQualification = async (req, res) => {
         await client.query('BEGIN');
 
         const { rows: currentRows } = await client.query(
-            `SELECT id, qualification_id FROM user_qualifications
-             WHERE user_id = $1 AND league_id = $2 AND ended_at IS NULL
-             FOR UPDATE`,
+            `SELECT uq.id, uq.qualification_id, lq.short_name
+               FROM user_qualifications uq
+               LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
+              WHERE uq.user_id = $1 AND uq.league_id = $2 AND uq.ended_at IS NULL
+              FOR UPDATE OF uq`,
             [userId, leagueId]
         );
         const current = currentRows[0] || null;
@@ -135,6 +137,23 @@ export const setUserQualification = async (req, res) => {
                 [userId, leagueId, qualId, req.user.id, reason?.trim() || null]
             );
         }
+
+        // Квалификация одна на лигу, а журнал ведётся по заявкам (tournament_person_log):
+        // событие раскладывается по всем действующим заявкам человека в лиге — игроком или
+        // представителем, — чтобы в каждой история была полной. Прошлые сезоны не трогаем:
+        // там человек уже не в составе.
+        await client.query(`
+            INSERT INTO tournament_person_log (tournament_team_id, user_id, action, details, actor_id, source)
+            SELECT tt.id, $1, 'qualification', $3::jsonb, $4, 'lms'
+              FROM tournament_teams tt
+              JOIN divisions d ON d.id = tt.division_id
+              JOIN seasons s ON s.id = d.season_id
+             WHERE s.league_id = $2
+               AND (EXISTS (SELECT 1 FROM tournament_rosters tr
+                             WHERE tr.tournament_team_id = tt.id AND tr.player_id = $1 AND tr.period_end IS NULL)
+                 OR EXISTS (SELECT 1 FROM tournament_team_roles ttr
+                             WHERE ttr.tournament_team_id = tt.id AND ttr.user_id = $1 AND ttr.left_at IS NULL))
+        `, [userId, leagueId, JSON.stringify({ from: current?.short_name ?? null, to: shortName, reason: reason?.trim() || null }), req.user.id]);
 
         await client.query('COMMIT');
         res.json({ success: true, qualification_id: qualId, qualification_short_name: shortName });

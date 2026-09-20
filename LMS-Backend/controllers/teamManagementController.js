@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
 import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
 import { alignPersonAdmission } from '../utils/personAdmission.js';
+import { logPersonEvent, logPersonEvents } from '../utils/personLog.js';
 
 /**
  * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
@@ -667,13 +668,15 @@ export const createTeamApplication = async (req, res) => {
         }
 
         if (playerIds && playerIds.length > 0) {
-            await client.query(`
+            const { rows } = await client.query(`
                 INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
-                SELECT $1, tm.user_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant 
-                FROM team_rosters tr 
+                SELECT $1, tm.user_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
+                FROM team_rosters tr
                 JOIN team_members tm ON tr.member_id = tm.id
                 WHERE tm.team_id = $2 AND tm.user_id = ANY($3::int[])
+                RETURNING player_id
             `, [appId, teamId, playerIds]);
+            await logPersonEvents(client, rows.map(r => ({ appId, userId: r.player_id, action: 'added', actorId: req.user?.id })));
         }
 
         await client.query('COMMIT');
@@ -786,7 +789,7 @@ export const addPlayerToApplication = async (req, res) => {
             }
 
             if (updateValues.length > 0) {
-                await client.query(`
+                const { rows } = await client.query(`
                     UPDATE tournament_rosters AS tr
                     SET period_end = NULL,
                         application_status = 'pending',
@@ -800,18 +803,22 @@ export const addPlayerToApplication = async (req, res) => {
                         updated_at = NOW()
                     FROM (VALUES ${updateValues.join(', ')}) AS v(app_id, pid, position, jersey_number, is_captain, is_assistant)
                     WHERE tr.tournament_team_id = v.app_id::int AND tr.player_id = v.pid::int
+                    RETURNING tr.player_id
                 `, updateParams);
+                await logPersonEvents(client, rows.map(r => ({ appId, userId: r.player_id, action: 'returned', actorId: req.user?.id })));
             }
 
             if (insertValues.length > 0) {
-                await client.query(`
+                const { rows } = await client.query(`
                     INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
                     VALUES ${insertValues.join(', ')}
+                    RETURNING player_id
                 `, insertParams);
+                await logPersonEvents(client, rows.map(r => ({ appId, userId: r.player_id, action: 'added', actorId: req.user?.id })));
             }
         }
         // Уже допущенный представитель, внесённый в состав, допускается и как игрок
-        await alignPersonAdmission(client, appId);
+        await alignPersonAdmission(client, appId, { actorId: req.user?.id });
         await client.query('COMMIT');
         res.json({ success: true });
     } catch (err) {
@@ -827,7 +834,14 @@ export const addPlayerToApplication = async (req, res) => {
 export const removePlayerFromApplication = async (req, res) => {
     try {
         const { rosterId } = req.params;
-        await pool.query(`DELETE FROM tournament_rosters WHERE id = $1`, [rosterId]);
+        // Запись журнала переживает удаление строки: журнал привязан к паре «заявка + человек»
+        const { rows } = await pool.query(
+            `DELETE FROM tournament_rosters WHERE id = $1 RETURNING tournament_team_id, player_id`,
+            [rosterId]
+        );
+        if (rows.length > 0) {
+            await logPersonEvent(pool, { appId: rows[0].tournament_team_id, userId: rows[0].player_id, action: 'deleted', actorId: req.user?.id });
+        }
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
@@ -847,25 +861,36 @@ export const addStaffToApplication = async (req, res) => {
         // Пустой набор = убрать из заявки совсем.
         const nextRoles = normalizeTournamentRoles(roles);
 
-        await client.query(`
+        const closed = await client.query(`
             UPDATE tournament_team_roles
             SET left_at = NOW()
             WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
               AND NOT (tournament_role = ANY($3::varchar[]))
+            RETURNING tournament_role
         `, [appId, userId, nextRoles]);
 
+        let opened = { rows: [] };
         if (nextRoles.length > 0) {
             // Уникальность по тройке заявка+человек+роль: повторное добавление ранее снятой
-            // роли переоткрывает ту же строку вместо создания дубля.
-            await client.query(`
+            // роли переоткрывает ту же строку вместо создания дубля. Условие в DO UPDATE
+            // отсекает и так открытые роли — они не менялись, и в журнал им не надо.
+            opened = await client.query(`
                 INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
                 SELECT $1, $2, r FROM unnest($3::varchar[]) AS r
                 ON CONFLICT (tournament_team_id, user_id, tournament_role) DO UPDATE SET left_at = NULL
+                WHERE tournament_team_roles.left_at IS NOT NULL
+                RETURNING tournament_role
             `, [appId, userId, nextRoles]);
         }
 
+        // Журнал: только изменившиеся роли
+        await logPersonEvents(client, [
+            opened.rows.length > 0 && { appId, userId, action: 'staff_added', details: { roles: opened.rows.map(r => r.tournament_role) }, actorId: req.user?.id },
+            closed.rows.length > 0 && { appId, userId, action: 'staff_removed', details: { roles: closed.rows.map(r => r.tournament_role) }, actorId: req.user?.id },
+        ].filter(Boolean));
+
         // Уже допущенный игрок, внесённый в штаб, допускается и как представитель
-        await alignPersonAdmission(client, appId);
+        await alignPersonAdmission(client, appId, { actorId: req.user?.id });
         await client.query('COMMIT');
         res.json({ success: true });
     } catch (err) {
@@ -882,12 +907,16 @@ export const removeStaffFromApplication = async (req, res) => {
     try {
         const { appId, userId, role } = req.params;
         const roleFilter = TOURNAMENT_ROLES.includes(role) ? role : null;
-        await pool.query(`
+        const { rows } = await pool.query(`
             UPDATE tournament_team_roles
             SET left_at = NOW()
             WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
               AND ($3::varchar IS NULL OR tournament_role = $3)
+            RETURNING tournament_role
         `, [appId, userId, roleFilter]);
+        if (rows.length > 0) {
+            await logPersonEvent(pool, { appId, userId, action: 'staff_removed', details: { roles: rows.map(r => r.tournament_role) }, actorId: req.user?.id });
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка удаления персонала из заявки:', err);

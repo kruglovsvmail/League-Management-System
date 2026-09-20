@@ -23,6 +23,7 @@
  * видит живое фото команды.
  */
 import pool from '../config/db.js';
+import { logPersonEvent, logPersonEvents } from './personLog.js';
 
 /**
  * Ставит допуск человеку в заявке разом в обеих таблицах.
@@ -31,8 +32,10 @@ import pool from '../config/db.js';
  * любое другое ('declined' от тумблера, 'pending' от автосброса) снимает. Строка
  * представителю заводится лениво, по первому щелчку, и только если он реально в штабе:
  * у игрока без ролей ей взяться неоткуда и не из чего.
+ *
+ * actorId — кто щёлкнул тумблер: уходит в журнал (utils/personLog.js) той же транзакцией.
  */
-export const setPersonAdmission = async (appId, userId, status) => {
+export const setPersonAdmission = async (appId, userId, status, { actorId = null } = {}) => {
     const admitted = status === 'approved';
     const client = await pool.connect();
 
@@ -77,6 +80,13 @@ export const setPersonAdmission = async (appId, userId, status) => {
             DO UPDATE SET is_admitted = EXCLUDED.is_admitted, updated_at = NOW()
         `, [appId, userId, admitted]);
 
+        // Одна запись на человека, а не на таблицу: допуск у него один
+        await logPersonEvent(client, {
+            appId, userId,
+            action: admitted ? 'admission_on' : 'admission_off',
+            actorId,
+        });
+
         await client.query('COMMIT');
     } catch (err) {
         await client.query('ROLLBACK');
@@ -98,11 +108,14 @@ export const setPersonAdmission = async (appId, userId, status) => {
  * сущности сбрасывает допуск обеим, как и любая правка команды.
  *
  * Вызывать внутри той же транзакции, что и запись состава. Идемпотентна.
+ *
+ * actorId — кто сохранял состав: в журнал событие уходит с пометкой auto, чтобы в истории
+ * было видно, что допуск подтянулся сам, а не тумблером.
  */
-export const alignPersonAdmission = async (client, appId) => {
+export const alignPersonAdmission = async (client, appId, { actorId = null } = {}) => {
     // Игрок, который как представитель уже допущен, — допускаем и строку состава,
     // со слепком фото, как при ручном допуске
-    await client.query(`
+    const alignedPlayers = await client.query(`
         UPDATE tournament_rosters tr
            SET application_status = 'approved',
                photo_snapshot_prev_url = tr.photo_snapshot_url,
@@ -126,12 +139,13 @@ export const alignPersonAdmission = async (client, appId) => {
                SELECT 1 FROM tournament_team_roles ttr
                 WHERE ttr.tournament_team_id = $1::int AND ttr.user_id = tr.player_id AND ttr.left_at IS NULL
            )
+        RETURNING tr.player_id AS user_id
     `, [appId]);
 
     // Представитель, который как игрок уже допущен, — заводим или включаем его строку допуска.
     // $1 в списке выборки встречается раньше, чем в WHERE, и без явного ::int Postgres не
     // выводит его тип («inconsistent types deduced for parameter $1»)
-    await client.query(`
+    const alignedStaff = await client.query(`
         INSERT INTO tournament_staff_admission (tournament_team_id, user_id, is_admitted)
         SELECT DISTINCT $1::int, ttr.user_id, true
           FROM tournament_team_roles ttr
@@ -144,6 +158,14 @@ export const alignPersonAdmission = async (client, appId) => {
         ON CONFLICT ON CONSTRAINT tournament_staff_admission_unique
         DO UPDATE SET is_admitted = true, updated_at = NOW()
         WHERE tournament_staff_admission.is_admitted = false
+        RETURNING user_id
     `, [appId]);
+
+    // RETURNING отдаёт только реально изменённые строки (пропущенные условием WHERE в
+    // DO UPDATE сюда не попадают), поэтому в журнал уходят лишь те, кому допуск подтянули
+    const userIds = [...new Set([...alignedPlayers.rows, ...alignedStaff.rows].map(r => r.user_id))];
+    await logPersonEvents(client, userIds.map(userId => ({
+        appId, userId, action: 'admission_on', details: { auto: 'align' }, actorId,
+    })));
 };
 
