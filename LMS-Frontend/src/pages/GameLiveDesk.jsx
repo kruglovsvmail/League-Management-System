@@ -17,7 +17,7 @@ import {
   getPeriodLimits,
   calculatePenaltyTimelines,
   calculatePeriodFromTime,
-  PS_PENDING, PS_FAILED, isScoredFromPlay
+  PS_PENDING, PS_FAILED, isScoredFromPlay, sortRosterByPosition
 } from '../components/GameLiveDesk/GameDeskShared';
 import { ProtocolViewerModal } from '../components/GameLiveDesk/ProtocolViewerModal';
 import { Button } from '../ui/Button';
@@ -307,8 +307,8 @@ export function GameLiveDesk() {
         ]);
         const [dataHome, dataAway] = await Promise.all([resHome.json(), resAway.json()]);
         
-        setHomeRoster((dataHome.gameRoster || []).sort((a,b)=>a.jersey_number - b.jersey_number));
-        setAwayRoster((dataAway.gameRoster || []).sort((a,b)=>a.jersey_number - b.jersey_number));
+        setHomeRoster(sortRosterByPosition(dataHome.gameRoster || []));
+        setAwayRoster(sortRosterByPosition(dataAway.gameRoster || []));
       }
     } catch (err) { console.error(err); }
   };

@@ -37,6 +37,17 @@ export const localizePosition = (pos) => {
   return pos;
 };
 
+// Порядок состава в панели секретаря: вратари → защитники → нападающие, внутри
+// амплуа по алфавиту. Амплуа берём то же, что показываем в протоколе, —
+// позицию в звене на этот матч, а не из профиля игрока.
+const POSITION_GROUP = { 'Вр.': 1, 'Защ.': 2, 'Нап.': 3 };
+export const sortRosterByPosition = (roster) => [...roster].sort((a, b) => {
+  const byPos = (POSITION_GROUP[localizePosition(a.position_in_line || a.position)] || 99)
+              - (POSITION_GROUP[localizePosition(b.position_in_line || b.position)] || 99);
+  if (byPos !== 0) return byPos;
+  return `${a.last_name || ''} ${a.first_name || ''}`.localeCompare(`${b.last_name || ''} ${b.first_name || ''}`, 'ru');
+});
+
 // --- Логика таймеров и штрафов ---
 export const getPeriodLimits = (period, pLen, otLen, pCount = 3) => {
   const p = parseInt(pLen, 10) || 20;

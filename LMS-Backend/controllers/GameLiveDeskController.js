@@ -16,8 +16,10 @@ import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.j
  *
  * Строка не самостоятельна: её порождает штраф вида «ШБ» (penalty_class =
  * 'penalty_shot') у команды-нарушителя, и linked_event_id хранит ссылку на него.
- * Правка времени штрафа двигает строку, удаление штрафа удаляет строку — иначе
- * во «Взятии ворот» останется бросок, которого никто не назначал.
+ * Правка времени штрафа двигает строку, удаление штрафа или его переквалификация
+ * в обычное удаление убирает строку — иначе во «Взятии ворот» останется бросок,
+ * которого никто не назначал. Обратная переквалификация (минуты → ШБ) строку
+ * заводит, как и создание штрафа.
  */
 const PENALTY_SHOT_ROW_TYPES = ['pending_ps', 'failed_ps'];
 
@@ -53,6 +55,25 @@ const shiftGameScore = async (client, gameId, teamId, delta) => {
         `UPDATE games SET ${column} = GREATEST(${column} + $2, 0) WHERE id = $1`,
         [gameId, delta]
     );
+};
+
+/**
+ * Убирает строки броска, привязанные к штрафу. Удаляем явно, а не каскадом БД, —
+ * реализованный бросок это гол, и счёт матча надо уменьшить. Дёргается и при
+ * удалении штрафа «ШБ», и при его переквалификации в обычный: в обоих случаях
+ * назначения броска больше нет.
+ */
+const deletePenaltyShotRows = async (client, gameId, penaltyEventId) => {
+    const linkedRes = await client.query(
+        'SELECT id, event_type, team_id FROM game_events WHERE linked_event_id = $1',
+        [penaltyEventId]
+    );
+    for (const linked of linkedRes.rows) {
+        if (linked.event_type === 'goal') {
+            await shiftGameScore(client, gameId, linked.team_id, -1);
+        }
+        await client.query('DELETE FROM game_events WHERE id = $1', [linked.id]);
+    }
 };
 
 /**
@@ -247,7 +268,7 @@ export const updateGameEvent = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const oldEvRes = await client.query('SELECT event_type, team_id FROM game_events WHERE id = $1', [eventId]);
+        const oldEvRes = await client.query('SELECT event_type, team_id, penalty_class FROM game_events WHERE id = $1', [eventId]);
         if (oldEvRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Событие не найдено' });
@@ -290,9 +311,23 @@ export const updateGameEvent = async (req, res) => {
     penalty_violation_code || null, penalty_reason_id || null
 ]);
 
-        // Секретарь поправил время штрафа «ШБ» — строка броска обязана поехать
-        // следом, иначе бросок окажется в другом периоде, чем нарушение.
-        if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
+        // Строка броска живёт ровно столько, сколько штраф остаётся «ШБ».
+        // Смотрим на переход класса, а не только на новое значение: секретарь
+        // может переквалифицировать штраф в обе стороны.
+        const wasPenaltyShot = oldEvent.event_type === 'penalty' && oldEvent.penalty_class === 'penalty_shot';
+        const isPenaltyShot = event_type === 'penalty' && penalty_class === 'penalty_shot';
+
+        if (wasPenaltyShot && !isPenaltyShot) {
+            // ШБ стал обычным удалением — бросок, которого никто не назначал,
+            // уходит вместе с голом и шайбой в счёте, если его успели реализовать.
+            await deletePenaltyShotRows(client, gameId, eventId);
+        } else if (!wasPenaltyShot && isPenaltyShot) {
+            // Обычное удаление стало ШБ — заводим строку броска так же, как при
+            // создании штрафа, иначе будет «штраф есть, броска нет».
+            await createPenaltyShotRow(client, gameId, eventId, team_id, period, time_seconds);
+        } else if (isPenaltyShot) {
+            // Секретарь поправил время штрафа «ШБ» — строка броска обязана поехать
+            // следом, иначе бросок окажется в другом периоде, чем нарушение.
             await client.query(
                 `UPDATE game_events SET period = $1, time_seconds = $2 WHERE linked_event_id = $3`,
                 [period, time_seconds || 0, eventId]
@@ -333,19 +368,9 @@ export const deleteGameEvent = async (req, res) => {
         }
 
         // Штраф вида «ШБ» уносит с собой строку броска: без назначения бросок
-        // не существует. Удаляем явно, а не каскадом БД, — реализованный бросок
-        // это гол, и счёт матча надо уменьшить.
+        // не существует.
         if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
-            const linkedRes = await client.query(
-                'SELECT id, event_type, team_id FROM game_events WHERE linked_event_id = $1',
-                [eventId]
-            );
-            for (const linked of linkedRes.rows) {
-                if (linked.event_type === 'goal') {
-                    await shiftGameScore(client, gameId, linked.team_id, -1);
-                }
-                await client.query('DELETE FROM game_events WHERE id = $1', [linked.id]);
-            }
+            await deletePenaltyShotRows(client, gameId, eventId);
         }
 
         await client.query('DELETE FROM game_events WHERE id = $1', [eventId]);

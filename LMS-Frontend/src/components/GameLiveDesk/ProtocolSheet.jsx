@@ -1,5 +1,5 @@
 // src/components/GameLiveDesk/ProtocolSheet.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines,
   CustomSelect, StylishSelect, StylishInput,
@@ -8,6 +8,37 @@ import {
 } from './GameDeskShared';
 import { Icon } from '../../ui/Icon';
 import { EquipmentMark } from '../../ui/EquipmentMark';
+
+// Обратный отсчёт тайм-аута: 30 секунд с момента нажатия кнопки, потом ещё
+// минуту висит на нуле, чтобы секретарь видел, что тайм-аут закончился, и
+// убирается сам. Считаем от штампа времени, а не тиками — так отсчёт не
+// «плывёт» при перерисовках и в свёрнутой вкладке.
+const TIMEOUT_SECS = 30;
+const TIMEOUT_LINGER_MS = 60 * 1000;
+
+const TimeoutCountdown = ({ startedAt, onExpire }) => {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        setNow(Date.now());
+        const tick = setInterval(() => setNow(Date.now()), 250);
+        const expire = setTimeout(onExpire, TIMEOUT_SECS * 1000 + TIMEOUT_LINGER_MS);
+        return () => { clearInterval(tick); clearTimeout(expire); };
+    }, [startedAt]);
+
+    const left = Math.max(0, TIMEOUT_SECS - Math.floor((now - startedAt) / 1000));
+    const isOver = left === 0;
+
+    return (
+        <div
+            className={`flex items-center gap-1.5 px-3 rounded-md border shadow-sm h-[32px] transition-colors ${isOver ? 'bg-white border-graphite/20 text-graphite/40' : 'bg-orange/10 border-orange/40 text-orange'}`}
+            title={isOver ? 'Тайм-аут закончился' : 'Идёт тайм-аут'}
+        >
+            <Icon name="stopwatch" className={`w-4 h-4 shrink-0 ${isOver ? '' : 'animate-pulse'}`} />
+            <span className="font-mono text-[13px] font-bold tabular-nums">{formatTime(left)}</span>
+        </div>
+    );
+};
 
 const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -119,6 +150,18 @@ export const ProtocolSheet = ({
   const [editPenaltyData, setEditPenaltyData] = useState({});
 
   const [manualStr, setManualStr] = useState(false);
+
+  // Момент нажатия «Зафиксировать тайм-аут» — от него идёт обратный отсчёт в шапке.
+  // Живёт здесь, а не в TimeoutPill: после сохранения пустая кнопка заменяется
+  // на кнопку с событием, и состояние внутри неё пропало бы.
+  const [timeoutStartedAt, setTimeoutStartedAt] = useState(null);
+
+  // Тайм-аут удалили (нажали по ошибке) — отсчёт тоже убираем.
+  const prevTimeoutsCount = useRef(timeouts.length);
+  useEffect(() => {
+    if (prevTimeoutsCount.current > 0 && timeouts.length === 0) setTimeoutStartedAt(null);
+    prevTimeoutsCount.current = timeouts.length;
+  }, [timeouts.length]);
 
   const calculateGoalStrength = (timeSecs) => {
     if (timeSecs === null || timeSecs === undefined) return 'equal';
@@ -345,6 +388,9 @@ export const ProtocolSheet = ({
         </div>
         
         <div className="flex items-center justify-end gap-2 shrink-0 min-w-[140px]">
+          {timeoutStartedAt && (
+              <TimeoutCountdown startedAt={timeoutStartedAt} onExpire={() => setTimeoutStartedAt(null)} />
+          )}
           {timeouts.length > 0 ? (
               timeouts.map(t => (
                   <TimeoutPill 
@@ -360,7 +406,12 @@ export const ProtocolSheet = ({
               <TimeoutPill 
                   timeoutEvent={null} 
                   timerSeconds={timerSeconds} 
-                  onSave={(data) => onSaveEvent(teamId, 'timeout', data)} 
+                  onSave={async (data) => {
+                      setTimeoutStartedAt(Date.now());
+                      const ok = await onSaveEvent(teamId, 'timeout', data);
+                      if (!ok) setTimeoutStartedAt(null);
+                      return ok;
+                  }} 
                   onDelete={onDeleteEvent} 
                   isReadOnly={isReadOnly}
               />
