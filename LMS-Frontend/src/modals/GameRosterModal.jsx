@@ -13,6 +13,10 @@ const renderDsqBadge = (activeDisqualifications) => <DisqualificationBadge activ
 
 const POSITION_MAP = { 'goalie': 'Вр', 'defense': 'Защ', 'forward': 'Нап' };
 
+// Роли представителя в турнирной заявке — ровно три (см. TOURNAMENT_ROLES на бэкенде)
+const STAFF_ROLE_LABELS = { team_manager: 'Руководитель', team_admin: 'Администратор', coach: 'Тренер' };
+const staffRolesLabel = (s) => (s.roles || '').split(',').map(r => STAFF_ROLE_LABELS[r.trim()]).filter(Boolean).join(', ');
+
 // Обратный маппинг из БД
 const mapDbPositionToUI = (dbPos) => {
   if (dbPos === 'G') return 'goalie';
@@ -27,6 +31,11 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
   // приходит отдельно и живёт в шторке отдельным блоком под заявкой.
   const [reservePool, setReservePool] = useState([]);
   const [reserveSettings, setReserveSettings] = useState({ enabled: false, max_per_game: 0, block_back_to_back: false });
+  // Представители на матч: пул — допущенный штаб из заявки на сезон, выбранные —
+  // те, кто едет на этот матч (их выбирает команда при отправке заявки из Team Room
+  // или секретарь здесь). В протокол и в подписанты попадают только выбранные.
+  const [staffPool, setStaffPool] = useState([]);
+  const [selectedStaff, setSelectedStaff] = useState([]);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,6 +46,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     } else {
       setAvailable([]); setSelected([]); setSearch('');
       setReservePool([]); setReserveSettings({ enabled: false, max_per_game: 0, block_back_to_back: false });
+      setStaffPool([]); setSelectedStaff([]);
     }
   }, [isOpen, gameId, teamId]);
 
@@ -103,6 +113,8 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
         setSelected(newSelected);
         setReservePool(data.reserveGoalies || []);
         setReserveSettings(data.reserveSettings || { enabled: false, max_per_game: 0, block_back_to_back: false });
+        setStaffPool(data.staffPool || []);
+        setSelectedStaff(data.staffRoster || []);
       }
     } catch (err) { console.error(err); }
     finally { setIsLoading(false); }
@@ -145,6 +157,17 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     setSelected(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
 
+  // Представитель выбирается человеком целиком: все его роли из заявки едут в протокол
+  const handleAddStaff = (s) => {
+    if (readOnly) return;
+    setSelectedStaff(prev => prev.some(x => x.user_id === s.user_id) ? prev : [...prev, s]);
+  };
+
+  const handleRemoveStaff = (s) => {
+    if (readOnly) return;
+    setSelectedStaff(prev => prev.filter(x => x.user_id !== s.user_id));
+  };
+
   const handleLetterClick = (id, letter) => {
     if (readOnly) return;
     setSelected(prev => {
@@ -181,7 +204,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/roster/${teamId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-        body: JSON.stringify({ roster: selected })
+        body: JSON.stringify({ roster: selected, staff: selectedStaff.map(s => s.user_id) })
       });
       const data = await res.json();
       if (data.success) {
@@ -223,6 +246,11 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     }));
 
   const showReserveBlock = reserveSettings.enabled && reservePool.length > 0;
+
+  // Пул представителей минус уже выбранные. Дисквалифицированных не прячем — секретарь
+  // должен видеть, что человек в заявке есть, и почему его нельзя взять.
+  const selectedStaffIds = new Set(selectedStaff.map(s => s.user_id));
+  const filteredStaffPool = staffPool.filter(s => !selectedStaffIds.has(s.user_id)).filter(matchesSearch);
 
   const goalies = selected.filter(p => p.position === 'goalie');
   const defense = selected.filter(p => p.position === 'defense');
@@ -449,6 +477,57 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                     </div>
                   ))}
 
+                  {/* Представители — через разделитель под игроками: они уходят в другой
+                      раздел протокола. Раньше в протокол попадала вся заявка на сезон
+                      разом, теперь — только выбранные на этот матч. */}
+                  <div className="mt-4 pt-4 border-t-2 border-dashed border-graphite/15">
+                    <div className="px-3 pb-2">
+                      <div className="text-[12px] font-black uppercase text-graphite tracking-wide">
+                        Представители ({filteredStaffPool.length})
+                      </div>
+                      <div className="text-[11px] text-graphite-light leading-snug mt-1">
+                        Допущенный штаб из заявки на сезон. В протокол и в подписанты попадут только выбранные на матч.
+                      </div>
+                    </div>
+
+                    {filteredStaffPool.length === 0 ? (
+                      <div className="px-3 py-4 text-[12px] text-graphite-light/70 italic">
+                        {search ? 'По запросу никого нет' : staffPool.length === 0 ? 'В заявке на сезон нет допущенных представителей' : 'Все представители уже на матче'}
+                      </div>
+                    ) : filteredStaffPool.map(s => (
+                      <div key={`staff-${s.user_id}`} className="flex items-center justify-between p-3 hover:bg-blue-500/5 rounded-md group transition-colors border border-transparent hover:border-blue-500/10">
+                        <div className="flex items-center gap-3 min-w-0 pr-2">
+                          <img src={getImageUrl(s.photo_url || '/default/user_default.webp')} className="w-10 h-10 rounded-lg object-cover bg-graphite/5 shrink-0" alt="av" />
+                          <div className="min-w-0 flex flex-col justify-center">
+                            <span className="block text-[13px] font-bold text-graphite leading-tight truncate">
+                              {s.last_name} {s.first_name}
+                            </span>
+                            <span className="block text-[11px] font-medium text-graphite-light mt-[2px] truncate">
+                              {[s.middle_name, staffRolesLabel(s) || null].filter(Boolean).join(' | ')}
+                            </span>
+                          </div>
+                        </div>
+                        {s.active_disqualifications?.length > 0 ? (
+                          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {renderDsqBadge(s.active_disqualifications)}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleAddStaff(s)}
+                            disabled={readOnly}
+                            className={`w-8 h-8 flex items-center justify-center rounded-md shrink-0 transition-colors ${
+                              readOnly
+                                ? 'bg-graphite/5 text-graphite/20 cursor-not-allowed'
+                                : 'bg-graphite/5 text-graphite hover:bg-blue-600 hover:text-white'
+                            }`}
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
                   {/* Резервные вратари дивизиона — через разделитель под заявкой
                       команды. Недоступных не прячем: секретарю нужно видеть, что
                       вратарь в списке есть, и понимать, почему его нельзя взять. */}
@@ -528,12 +607,13 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                     {reserveInLineup > 0 && (
                       <span className="text-blue-600 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">Резерв: {reserveInLineup}</span>
                     )}
+                    <span className="text-graphite bg-white px-2 py-1 rounded shadow-sm border border-graphite/10">Предст.: {selectedStaff.length}</span>
                   </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
                   {selected.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-[13px] font-bold text-graphite/40 text-center px-10">
+                    <div className="py-10 flex items-center justify-center text-[13px] font-bold text-graphite/40 text-center px-10">
                       Состав пуст.<br/>Выберите игроков из списка слева.
                     </div>
                   ) : (
@@ -544,6 +624,44 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                       rowClassName={(p) => p.active_disqualifications?.length > 0 ? 'bg-status-rejected/10' : ''}
                     />
                   )}
+
+                  {/* Представители на матч — под игроками, в том же разделе протокола */}
+                  <div className="p-4 border-t border-graphite/10 bg-graphite/[0.02]">
+                    <div className="text-[12px] font-black uppercase text-graphite tracking-wide mb-3">Представители на матч</div>
+
+                    {selectedStaff.length === 0 ? (
+                      <div className="text-[12px] text-graphite-light/70 italic">
+                        Без представителей. Руководитель, администратор и тренер добавляются из списка слева.
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {selectedStaff.map(s => (
+                          <div key={`game-staff-${s.user_id}`} className={`flex items-center gap-3 p-3 bg-white rounded-md border border-graphite/10 ${s.active_disqualifications?.length > 0 ? 'bg-status-rejected/10' : ''}`}>
+                            <img src={getImageUrl(s.photo_url || '/default/user_default.webp')} className="w-9 h-9 rounded-md object-cover bg-graphite/5 shrink-0" alt="av" />
+                            <div className="min-w-0 flex flex-col justify-center flex-1">
+                              <span className="text-[13px] font-bold text-graphite leading-tight truncate">{s.last_name} {s.first_name}</span>
+                              <span className="text-[11px] text-graphite-light truncate mt-[2px]">
+                                {[s.middle_name, staffRolesLabel(s) || null].filter(Boolean).join(' | ')}
+                              </span>
+                            </div>
+                            {s.active_disqualifications?.length > 0 && (
+                              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>{renderDsqBadge(s.active_disqualifications)}</div>
+                            )}
+                            <button
+                              onClick={() => handleRemoveStaff(s)}
+                              disabled={readOnly}
+                              className={`w-7 h-7 flex items-center justify-center shrink-0 transition-colors ${
+                                readOnly ? 'text-graphite/10 cursor-not-allowed' : 'text-graphite/30 hover:text-status-rejected'
+                              }`}
+                              title="Убрать с матча"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {!readOnly && (

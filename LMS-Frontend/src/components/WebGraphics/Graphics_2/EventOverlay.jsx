@@ -143,11 +143,11 @@ export default function EventOverlay({ game, overlay }) {
                 ) : (
                   <div className="flex items-center gap-5 min-w-0">
                     <div className="flex items-baseline gap-2 shrink-0">
-                      <Num size={38} color={S.red}>{overlay.data.penalty_minutes}</Num>
+                      <Num size={38} color={S.red}>{overlay.data.penalty_display ?? overlay.data.penalty_minutes}</Num>
                       <Cap size={14} color={S.red} tracking="0.2em">МИН</Cap>
                     </div>
                     <span className="font-black uppercase leading-none truncate" style={{ color: S.white, fontSize: 20, letterSpacing: '0.03em' }}>
-                      {overlay.data.penalty_violation}
+                      {overlay.data.penalty_reasons_text || overlay.data.penalty_violation}
                     </span>
                   </div>
                 )}

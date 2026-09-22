@@ -1,12 +1,14 @@
 // src/components/GameLiveDesk/ProtocolSheet.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { 
+import {
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines,
-  CustomSelect, StylishSelect, StylishInput, PenaltyOffenderSelect,
-  goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY,
-  PENALTY_SHOT_MINS, PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
+  CustomSelect, StylishSelect, StylishInput, PenaltyOffenderSelect, TriggerButton,
+  goalStrengthOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY,
+  PENALTY_KINDS, penaltyKindOptions, penaltyKindOf, penaltyKindLabel, isContinuationRow, penaltyGroupKey, sortPenaltyRows,
+  PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
 } from './GameDeskShared';
 import { formatPenaltyOffender } from '../../ui/PenaltyOffenderModal';
+import { PenaltyReasonsModal } from '../../ui/PenaltyReasonsModal';
 import { Icon } from '../../ui/Icon';
 import { EquipmentMark } from '../../ui/EquipmentMark';
 
@@ -111,9 +113,11 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
     );
 };
 
-export const ProtocolSheet = ({ 
-  teamId, teamLetter, teamName, teamLogo, roster, teamEvents, oppEvents = [], timerSeconds, 
-  onSaveEvent, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving,
+export const ProtocolSheet = ({
+  teamId, teamLetter, teamName, teamLogo, roster, teamEvents, oppEvents = [], timerSeconds,
+  // onSavePenaltyGroup — штраф целиком (вид + все строки), см. savePenaltyGroup в GameLiveDesk;
+  // onSaveEvent для штрафов остаётся только для правки отдельной строки группы
+  onSaveEvent, onSavePenaltyGroup, onDeleteEvent, onToggleLineup, isPlusMinusEnabled, onRequestPlusMinus, isSaving,
   goalieLog = [], isReadOnly, league,
   // Справочник причин удаления сезона; если лига его не заполнила, сюда приходит
   // встроенный список (см. usePenaltyReasons)
@@ -142,7 +146,8 @@ export const ProtocolSheet = ({
   const goals = teamEvents
     .filter(e => e.event_type === 'goal' || e.event_type === PS_PENDING || e.event_type === PS_FAILED)
     .sort((a, b) => a.time_seconds - b.time_seconds);
-  const penalties = teamEvents.filter(e => e.event_type === 'penalty');
+  // Строки одной группы штрафа — подряд, по порядку (см. sortPenaltyRows)
+  const penalties = sortPenaltyRows(teamEvents.filter(e => e.event_type === 'penalty'));
   const timeouts = teamEvents.filter(e => e.event_type === 'timeout').sort((a, b) => a.time_seconds - b.time_seconds);
 
   const penaltiesWithTimeline = calculatePenaltyTimelines(penalties);
@@ -150,11 +155,18 @@ export const ProtocolSheet = ({
 
   const [newGoal, setNewGoal] = useState({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal', from_shot: true });
   // who — нарушитель и отбывающий: { type: ''|'player'|'team'|'official', jersey, server }
+  // kind — вид штрафа (PENALTY_KINDS), violations — причины по строкам вида (у видов
+  // с общей причиной — одна).
   const EMPTY_WHO = { type: '', jersey: '', server: '' };
-  const [newPenalty, setNewPenalty] = useState({ who: EMPTY_WHO, mins: '2', violation: '', start: '' });
+  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violations: [], start: '' };
+  const [newPenalty, setNewPenalty] = useState(EMPTY_PENALTY);
+  // Какому полю открыта модалка причин: 'new' — форме, 'edit' — редактору группы
+  const [reasonsTarget, setReasonsTarget] = useState(null);
 
   const [editGoalId, setEditGoalId] = useState(null);
   const [editGoalData, setEditGoalData] = useState({});
+  // Правка штрафа: первая строка открывает редактор группы (вид, нарушитель, начало,
+  // причины всех строк), строка-продолжение — только свои поля (причина, окончание)
   const [editPenaltyId, setEditPenaltyId] = useState(null);
   const [editPenaltyData, setEditPenaltyData] = useState({});
 
@@ -250,53 +262,96 @@ export const ProtocolSheet = ({
     penalty_served_by_id: who?.server ? getPlayerId(who.server) : null,
   });
 
-  const getPenaltyClass = (val) => {
-    if (val === PENALTY_SHOT_MINS) return 'penalty_shot';
-    if (val === 'match') return 'match';
-    const m = parseInt(val, 10);
-    if (m === 2) return 'minor';
-    if (m === 4) return 'double_minor';
-    if (m === 5) return 'major';
-    if (m === 25) return 'match';
-    return 'minor';
-  };
-
-  // "5+20" физически занимает лёд только 5 минут (нарушитель удалён до конца матча отдельно от штрафного времени).
-  // ШБ не занимает лёд вовсе — вместо отсидки соперник пробивает штрафной бросок.
-  const resolvePenaltyMinutes = (val) => (
-    val === PENALTY_SHOT_MINS ? 0 : (val === 'match' ? 5 : parseInt(val, 10))
-  );
-
-  // Отменяются голом только малый и двойной малый; для них — если у соперника есть гол в окне [start, start+mins],
-  // окончание штрафа ставится на время этого гола, иначе — полная номинальная длительность.
+  // ─── СБОРКА СТРОК ШТРАФА ────────────────────────────────────────────────────
+  // Вид даёт набор строк (см. PENALTY_KINDS); здесь у каждой считаются начало и
+  // окончание. Строки идут цепочкой: следующая начинается, когда закончилась
+  // предыдущая. Малый штраф закрывает гол соперника из игры в его окне — тогда
+  // цепочка сдвигается на время гола (для удалений задним числом). Большой (5)
+  // голом не закрывается; у двадцатки начало = время нарушения, окончания нет.
   //
   // Гол с назначенного штрафного броска удаление НЕ прекращает: буллит разыгрывается
-  // один на один и к численному преимуществу отношения не имеет. Поэтому везде ниже
-  // берётся isScoredFromPlay, а не голый event_type === 'goal'.
-  const computeAutoEnd = (startSecs, minsVal) => {
-    // ШБ не тикает: «окончание» равно началу, чтобы строка не попадала ни в
-    // слоты меньшинства, ни в обратный отсчёт таймера штрафов.
-    if (minsVal === PENALTY_SHOT_MINS) return startSecs;
-    const mins = resolvePenaltyMinutes(minsVal);
-    if (mins === 4) {
-      // 2+2: два независимых 2-минутных отрезка, каждый может быть закрыт только своим голом.
-      // Первый гол в первом отрезке отменяет только его — второй отрезок всё равно надо отсидеть
-      // (если только его не отменит СВОЙ, отдельный гол в его собственном окне).
-      let segStart = startSecs;
-      for (let i = 0; i < 2; i++) {
-        const segEnd = segStart + 120;
-        const goalsInSeg = oppEvents.filter(e => isScoredFromPlay(e) && e.time_seconds > segStart && e.time_seconds < segEnd);
-        segStart = goalsInSeg.length > 0
-          ? goalsInSeg.reduce((a, b) => (a.time_seconds < b.time_seconds ? a : b)).time_seconds
-          : segEnd;
+  // один на один и к численному преимуществу отношения не имеет (isScoredFromPlay).
+  const kindSpec = (kind) => PENALTY_KINDS[kind] || PENALTY_KINDS.minor;
+
+  // Слоты причин для модалки: у видов с общей причиной — один на всё
+  const reasonSlots = (kind) => {
+    const spec = kindSpec(kind);
+    return spec.sharedReason ? [spec.rows[0]] : spec.rows;
+  };
+
+  // Причина каждой строки: общая размножается на все строки
+  const violationsPerRow = (kind, violations = []) => {
+    const spec = kindSpec(kind);
+    return spec.rows.map((_, i) => (spec.sharedReason ? violations[0] : violations[i]) || '');
+  };
+
+  const buildGroupRows = (kind, startSecs, who, violations) => {
+    const spec = kindSpec(kind);
+    const perRow = violationsPerRow(kind, violations);
+    const serverId = who?.server ? getPlayerId(who.server) : null;
+    let cursor = startSecs;
+
+    return spec.rows.map((r, i) => {
+      let time_seconds = startSecs;
+      let penalty_end_time = null;
+
+      if (r.cls === 'penalty_shot') {
+        // ШБ не тикает: «окончание» равно началу, чтобы строка не попадала ни в
+        // слоты меньшинства, ни в обратный отсчёт таймера штрафов.
+        penalty_end_time = startSecs;
+      } else if (r.cls === 'game_misconduct') {
+        penalty_end_time = null;
+      } else {
+        time_seconds = cursor;
+        let end = cursor + r.minutes * 60;
+        if (r.cls === 'minor') {
+          const goal = oppEvents
+            .filter(e => isScoredFromPlay(e) && e.time_seconds > cursor && e.time_seconds < end)
+            .sort((a, b) => a.time_seconds - b.time_seconds)[0];
+          if (goal) end = goal.time_seconds;
+        }
+        penalty_end_time = end;
+        cursor = end;
       }
-      return segStart;
-    }
-    const nominalEnd = startSecs + mins * 60;
-    if (mins !== 2) return nominalEnd;
-    const oppGoals = oppEvents.filter(e => isScoredFromPlay(e) && e.time_seconds > startSecs && e.time_seconds < nominalEnd);
-    if (oppGoals.length === 0) return nominalEnd;
-    return oppGoals.reduce((a, b) => (a.time_seconds < b.time_seconds ? a : b)).time_seconds;
+
+      return {
+        time_seconds, penalty_end_time,
+        penalty_minutes: r.minutes, penalty_class: r.cls,
+        // Отбывающий пишется в строки, где сидит партнёр (двойки при 2+10, пятёрка при 5+20)
+        penalty_served_by_id: r.needsServer ? serverId : null,
+        ...penaltySnapshot(perRow[i]),
+      };
+    });
+  };
+
+  // Что показать в графе «Окон» формы: конец последней строки меньшинства, у 20 и ШБ — прочерк
+  const previewGroupEnd = (kind, startSecs, who, violations) => {
+    if (startSecs === null || isNaN(startSecs)) return '';
+    const rows = buildGroupRows(kind, startSecs, who, violations);
+    const timed = rows.filter(r => r.penalty_end_time !== null && r.penalty_class !== 'penalty_shot');
+    if (timed.length === 0) return '—';
+    return formatTime(timed[timed.length - 1].penalty_end_time);
+  };
+
+  // Причины в поле формы — сокращениями через запятую; пусто, если ни одной не выбрано
+  const reasonsSummary = (kind, violations = []) => {
+    const codes = reasonSlots(kind)
+      .map((_, i) => violations[i])
+      .filter(Boolean)
+      .map(v => penaltyReasons.find(o => String(o.value) === String(v))?.shortLabel || getPenaltyReasonCode(v));
+    return codes.join(', ');
+  };
+
+  // Тело запроса на создание/правку группы (см. savePenaltyGroup в GameLiveDesk)
+  const groupPayload = (data) => {
+    const startSecs = data.startSecs;
+    return {
+      penalty_kind: data.kind,
+      time_seconds: startSecs,
+      player_id: data.who?.type === 'player' ? getPlayerId(data.who.jersey) : null,
+      penalty_offender_type: data.who?.type || 'team',
+      rows: buildGroupRows(data.kind, startSecs, data.who, data.violations),
+    };
   };
 
   const handleAddGoal = () => {
@@ -383,43 +438,79 @@ export const ProtocolSheet = ({
     }, g.id);
   };
 
-  const handleAddPenalty = () => {
+  const handleAddPenalty = async () => {
     if (penaltyTimeMissing || penaltyWhoMissing) return;
-    const startSecs = newPenaltyStart;
-    const mins = resolvePenaltyMinutes(newPenalty.mins);
-    const endSecs = computeAutoEnd(startSecs, newPenalty.mins);
-
-    onSaveEvent(teamId, 'penalty', {
-      time_seconds: startSecs, penalty_end_time: endSecs, ...whoToPayload(newPenalty.who),
-      penalty_minutes: mins, penalty_class: getPenaltyClass(newPenalty.mins),
-      ...penaltySnapshot(newPenalty.violation)
-    });
-    setNewPenalty({ who: EMPTY_WHO, mins: '2', violation: '', start: '' });
+    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...newPenalty, startSecs: newPenaltyStart }));
+    if (ok) setNewPenalty(EMPTY_PENALTY);
   };
 
-  const startEditPenalty = (p) => {
+  // Первая строка (или старая одиночная запись) — редактор группы целиком.
+  // Старые виды, которых больше не заводят (матч-штраф одной строкой, большой без
+  // двадцатки), в редакторе становятся «5+20» — единственным большим штрафом.
+  const LEGACY_KIND_TO_EDITABLE = { match: 'major', legacy_major: 'major' };
+  const startEditGroup = (p) => {
+    const rows = penalties
+      .filter(r => penaltyGroupKey(r) === penaltyGroupKey(p))
+      .sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1));
+    const rawKind = penaltyKindOf(p);
+    const kind = LEGACY_KIND_TO_EDITABLE[rawKind] || (PENALTY_KINDS[rawKind] ? rawKind : 'minor');
+    const spec = kindSpec(kind);
+    // Причины по слотам: у общей — первая строка, иначе по порядку строк группы
+    const violations = spec.sharedReason
+      ? [rows[0]?.penalty_violation || '']
+      : spec.rows.map((_, i) => rows[i]?.penalty_violation || '');
+    setEditPenaltyId(p.id);
+    setEditPenaltyData({ mode: 'group', who: whoFromEvent(p), kind, violations, start: formatTime(p.time_seconds) });
+  };
+
+  const saveEditGroup = async () => {
+    const startSecs = parseTime(editPenaltyData.start);
+    if (startSecs === null || isNaN(startSecs)) return;
+    const target = penalties.find(r => r.id === editPenaltyId);
+    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...editPenaltyData, startSecs }), penaltyGroupKey(target));
+    if (ok) setEditPenaltyId(null);
+  };
+
+  // Строка-продолжение (вторая двойка, десятка, двадцатка) — только свои поля:
+  // причина и окончание. Нарушитель, вид и начало — у группы, правятся с первой строки.
+  const startEditRow = (p) => {
     setEditPenaltyId(p.id);
     setEditPenaltyData({
-      who: whoFromEvent(p),
-      // У ШБ штрафных минут ноль, и по ним вид штрафа не восстановить — только по классу.
-      mins: p.penalty_class === 'penalty_shot' ? PENALTY_SHOT_MINS
-          : p.penalty_class === 'match' ? 'match'
-          : String(p.penalty_minutes),
-      violation: p.penalty_violation || '', start: formatTime(p.time_seconds)
+      mode: 'row',
+      violation: p.penalty_violation || '',
+      end: p.penalty_end_time === null || p.penalty_end_time === undefined ? '' : formatTime(p.penalty_end_time),
     });
   };
 
-  const saveEditPenalty = async () => {
-    const startSecs = parseTime(editPenaltyData.start);
-    const mins = resolvePenaltyMinutes(editPenaltyData.mins);
-    const endSecs = computeAutoEnd(startSecs, editPenaltyData.mins);
+  const saveEditRow = async () => {
+    const p = penalties.find(r => r.id === editPenaltyId);
+    if (!p) return;
+    const endless = p.penalty_class === 'game_misconduct' || p.penalty_class === 'penalty_shot';
+    const endSecs = endless ? (p.penalty_class === 'penalty_shot' ? p.time_seconds : null) : parseTime(editPenaltyData.end);
+    if (!endless && (endSecs === null || isNaN(endSecs))) return;
 
     const success = await onSaveEvent(teamId, 'penalty', {
-      time_seconds: startSecs, penalty_end_time: endSecs, ...whoToPayload(editPenaltyData.who),
-      penalty_minutes: mins, penalty_class: getPenaltyClass(editPenaltyData.mins),
-      ...penaltySnapshot(editPenaltyData.violation)
-    }, editPenaltyId);
+      time_seconds: p.time_seconds, penalty_end_time: endSecs,
+      player_id: p.primary_player_id || null,
+      penalty_offender_type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
+      penalty_served_by_id: p.penalty_served_by_id || null,
+      penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
+      ...penaltySnapshot(editPenaltyData.violation),
+    }, p.id);
     if (success) setEditPenaltyId(null);
+  };
+
+  const startEditPenalty = (p) => (isContinuationRow(p) ? startEditRow(p) : startEditGroup(p));
+
+  // Модалка причин: слоты по виду, значения — из формы или редактора группы
+  const reasonsModalState = reasonsTarget === 'new'
+    ? { kind: newPenalty.kind, values: newPenalty.violations }
+    : reasonsTarget === 'edit'
+      ? { kind: editPenaltyData.kind, values: editPenaltyData.violations || [] }
+      : null;
+  const applyReasons = (values) => {
+    if (reasonsTarget === 'new') setNewPenalty(prev => ({ ...prev, violations: values }));
+    if (reasonsTarget === 'edit') setEditPenaltyData(prev => ({ ...prev, violations: values }));
   };
 
   // Строка ввода вынесена из сетки наверх (см. форму под шапкой), поэтому +1 не нужен
@@ -498,9 +589,9 @@ export const ProtocolSheet = ({
                       {/* Левый край карточки выезжает на 12px в колонку номера строки (псевдоэлемент):
                           сама колонка в форме пустая, а поле «Время» без этого упиралось в край */}
                       <td className={`${goalInputCell} relative before:content-[''] before:absolute before:inset-y-0 before:-left-3 before:w-3 before:rounded-l-md before:bg-status-accepted/[0.09]`}><StylishInput ghost={goalGhost} hint={autoTimeGoals ? '' : 'Время'} isTimeField title="Время гола" value={newGoal.time} placeholder={autoTimeGoals ? formatTime(timerSeconds) : ''} onChange={e=>setNewGoal({...newGoal, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Автор" title="Автор гола" roster={roster} value={newGoal.scorer} onChange={e=>setNewGoal({...newGoal, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
-                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Пас 1" title="Ассистент 1" roster={roster} value={newGoal.ast1} onChange={e=>setNewGoal({...newGoal, ast1: e.target.value})} exclude={[newGoal.scorer]} /></td>
-                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Пас 2" title="Ассистент 2" roster={roster} value={newGoal.ast2} onChange={e=>setNewGoal({...newGoal, ast2: e.target.value})} exclude={[newGoal.scorer, newGoal.ast1]} /></td>
+                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Автор" title="Автор гола" roster={roster} value={newGoal.scorer} onChange={e=>setNewGoal({...newGoal, scorer: e.target.value})} taken={{ [newGoal.ast1]: 'Ассистент 1', [newGoal.ast2]: 'Ассистент 2' }} className="!text-status-accepted font-bold" /></td>
+                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Пас 1" title="Ассистент 1" roster={roster} value={newGoal.ast1} onChange={e=>setNewGoal({...newGoal, ast1: e.target.value})} taken={{ [newGoal.scorer]: 'Автор', [newGoal.ast2]: 'Ассистент 2' }} /></td>
+                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Пас 2" title="Ассистент 2" roster={roster} value={newGoal.ast2} onChange={e=>setNewGoal({...newGoal, ast2: e.target.value})} taken={{ [newGoal.scorer]: 'Автор', [newGoal.ast1]: 'Ассистент 1' }} /></td>
                       <td className={goalInputCell}>
                          <CustomSelect
                             ghost={goalGhost}
@@ -543,14 +634,23 @@ export const ProtocolSheet = ({
                     <>
                       <td className={`${penaltyInputCell} !pl-2.5 rounded-l-md`}><PenaltyOffenderSelect ghost={penaltyGhost} hint="Игрок" title="Нарушитель" roster={roster} value={newPenalty.who} onChange={who=>setNewPenalty({...newPenalty, who})} className="!text-status-rejected font-bold" /></td>
                       <td className={penaltyInputCell}>
+                        {/* Смена вида сбрасывает причины: у нового вида другой набор строк */}
                         <CustomSelect
                           ghost={penaltyGhost}
-                          title="Штраф" options={penaltyMinsOptions} value={newPenalty.mins}
-                          onChange={e=>setNewPenalty({...newPenalty, mins: e.target.value})}
+                          title="Вид штрафа" options={penaltyKindOptions} value={newPenalty.kind}
+                          onChange={e=>setNewPenalty({...newPenalty, kind: e.target.value, violations: []})}
                           hideEmpty
                         />
                       </td>
-                      <td className={penaltyInputCell}><CustomSelect ghost={penaltyGhost} hint="Причина" emptyLabel="— не выбрано —" dense title="Причина удаления" options={penaltyReasons} value={newPenalty.violation} onChange={e=>setNewPenalty({...newPenalty, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
+                      {/* Причины по строкам вида — через модалку со списком и составом штрафа */}
+                      <td className={penaltyInputCell}>
+                        <TriggerButton
+                          ghost={penaltyGhost} hint="Причина"
+                          value={reasonsSummary(newPenalty.kind, newPenalty.violations)}
+                          onClick={() => setReasonsTarget('new')}
+                          className="h-[30px] !py-0 !px-1"
+                        />
+                      </td>
                       <td className={penaltyInputCell}>
                         <StylishInput
                           ghost={penaltyGhost}
@@ -566,11 +666,7 @@ export const ProtocolSheet = ({
                         />
                       </td>
                       <td className={`${penaltyInputCell} text-center font-mono text-[13px] text-graphite/40`} title="Окончание штрафа рассчитывается автоматически">
-                        {(() => {
-                          if (newPenalty.mins === PENALTY_SHOT_MINS) return '—';
-                          const s = newPenaltyStart;
-                          return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, newPenalty.mins)) : '';
-                        })()}
+                        {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violations)}
                       </td>
                       <td className={`${penaltyInputCell} text-center border-r-[6px] border-transparent bg-clip-padding rounded-r-[12px]`}>
                         <button
@@ -671,10 +767,16 @@ export const ProtocolSheet = ({
               const isEditingGoal = goal && goal.id === editGoalId; const isEditingPenalty = penalty && penalty.id === editPenaltyId;
 
               const isPenaltyShot = penalty?.penalty_class === 'penalty_shot';
+              // Строка-продолжение группы (вторая двойка, десятка, двадцатка): нарушитель
+              // и вид у неё общие с первой строкой, правится только своё, удаляется
+              // группой — с первой строки.
+              const isPenaltyContinuation = isContinuationRow(penalty);
+              const isPenaltyEndless = penalty?.effEnd === null || penalty?.penalty_class === 'game_misconduct';
 
               let isFinished = false; let endTimeDisplay = ''; let endTimeClass = 'font-mono font-semibold text-[13px] text-graphite';
-              if (isPenaltyShot) {
-                // ШБ не отсиживают — окончания у него нет, обратный отсчёт не нужен.
+              if (isPenaltyShot || (penalty && isPenaltyEndless)) {
+                // ШБ не отсиживают, у удалённого до конца матча окончания нет —
+                // обратный отсчёт не нужен.
                 endTimeDisplay = '—'; endTimeClass = 'font-mono font-medium text-[13px] text-graphite/25';
               } else if (penalty && !isEditingPenalty) {
                 const pStart = penalty.effStart; const pEnd = penalty.effEnd;
@@ -747,9 +849,9 @@ export const ProtocolSheet = ({
                   ) : isEditingGoal && !isReadOnly ? (
                     <>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishInput isEditing isTimeField title="Время гола" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 1" roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} exclude={[editGoalData.scorer]} /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 2" roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} exclude={[editGoalData.scorer, editGoalData.ast1]} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} taken={{ [editGoalData.ast1]: 'Ассистент 1', [editGoalData.ast2]: 'Ассистент 2' }} className="!text-status-accepted font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 1" roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} taken={{ [editGoalData.scorer]: 'Автор', [editGoalData.ast2]: 'Ассистент 2' }} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 2" roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} taken={{ [editGoalData.scorer]: 'Автор', [editGoalData.ast1]: 'Ассистент 1' }} /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                            isEditing
@@ -809,17 +911,25 @@ export const ProtocolSheet = ({
                   )}
 
                   {/* УДАЛЕНИЯ */}
-                  {isEditingPenalty && !isReadOnly ? (
+                  {isEditingPenalty && !isReadOnly && editPenaltyData.mode === 'group' ? (
                     <>
+                      {/* Редактор группы: вид, нарушитель, причины всех строк, начало */}
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData({...editPenaltyData, who})} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
-                          isEditing title="Штраф" options={penaltyMinsOptions} value={editPenaltyData.mins}
-                          onChange={e=>setEditPenaltyData({...editPenaltyData, mins: e.target.value})}
+                          isEditing title="Вид штрафа" options={penaltyKindOptions} value={editPenaltyData.kind}
+                          onChange={e=>setEditPenaltyData({...editPenaltyData, kind: e.target.value, violations: []})}
                           hideEmpty
                         />
                       </td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><CustomSelect isEditing dense title="Причина удаления" options={penaltyReasons} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
+                        <TriggerButton
+                          dim hint="Причина"
+                          value={reasonsSummary(editPenaltyData.kind, editPenaltyData.violations)}
+                          onClick={() => setReasonsTarget('edit')}
+                          className="h-[30px] !py-0 !px-1"
+                        />
+                      </td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <StylishInput
                           isEditing isTimeField title="Начало штрафа" value={editPenaltyData.start}
@@ -827,22 +937,39 @@ export const ProtocolSheet = ({
                         />
                       </td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-                        {(() => {
-                          if (editPenaltyData.mins === PENALTY_SHOT_MINS) return '—';
-                          const s = parseTime(editPenaltyData.start);
-                          return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, editPenaltyData.mins)) : '';
-                        })()}
+                        {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violations)}
                       </td>
-                      <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditPenalty} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
+                      <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditGroup} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
+                    </>
+                  ) : isEditingPenalty && !isReadOnly ? (
+                    <>
+                      {/* Строка-продолжение: нарушитель, минуты и начало — у группы, здесь
+                          правятся только причина и окончание */}
+                      <td className="border-r border-graphite/[0.12] bg-orange/10 font-bold text-[13px] text-graphite/50 whitespace-nowrap">{renderOffender(penalty)}</td>
+                      <td className="border-r border-graphite/[0.12] bg-orange/10 font-semibold text-[13px] text-graphite/50">{penalty.penalty_minutes}</td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><CustomSelect isEditing dense title="Причина удаления" emptyLabel="— не выбрано —" options={penaltyReasons} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} className="px-1" /></td>
+                      <td className="border-r border-graphite/[0.12] bg-orange/10 font-mono font-semibold text-[13px] text-graphite/50">{formatTime(penalty.effStart)}</td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
+                        {isPenaltyEndless ? (
+                          <span className="font-mono text-[13px] text-graphite/25">—</span>
+                        ) : (
+                          <StylishInput
+                            isEditing isTimeField title="Окончание штрафа" value={editPenaltyData.end}
+                            onChange={e=>setEditPenaltyData({...editPenaltyData, end: formatTimeMask(e.target.value)})}
+                          />
+                        )}
+                      </td>
+                      <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditRow} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : penalty ? (
                     <>
-                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite whitespace-nowrap" title={penalty.penalty_served_by_id ? 'Нарушитель / отбывающий' : undefined}>{renderOffender(penalty)}</td>
-                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite">
-                        {isPenaltyShot ? 'ШБ'
-                          : (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) ? '2+2'
-                          : (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) ? '5+20'
-                          : penalty.penalty_minutes}
+                      {/* «↳» — продолжение группы: та же запись, следующая строка протокола */}
+                      <td className="relative bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite whitespace-nowrap" title={isPenaltyContinuation ? `Продолжение: ${kindSpec(penaltyKindOf(penalty)).title}` : penalty.penalty_served_by_id ? 'Нарушитель / отбывающий' : undefined}>
+                        {isPenaltyContinuation && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-graphite/30 font-medium">↳</span>}
+                        {renderOffender(penalty)}
+                      </td>
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite" title={kindSpec(penaltyKindOf(penalty)).title || undefined}>
+                        {isPenaltyShot ? 'ШБ' : penalty.penalty_group_id ? penalty.penalty_minutes : penaltyKindLabel(penalty)}
                       </td>
                       {/* В графе — только сокращение (снимок penalty_violation_code, для старых
                           записей — по наименованию), как и в PDF-протоколе; полная формулировка
@@ -853,8 +980,10 @@ export const ProtocolSheet = ({
                       <td className="bg-status-rejected/[0.035] border-r border-graphite/30 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/25 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
-                               <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/25 hover:text-status-rejected transition-colors" title="Удалить"><Icon name="delete" className="w-[18px] h-[18px]" /></button>
+                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/25 hover:text-orange transition-colors" title={isPenaltyContinuation ? 'Причина и окончание строки' : 'Редактировать'}><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                               {!isPenaltyContinuation && (
+                                 <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/25 hover:text-status-rejected transition-colors" title={penalty.penalty_group_id ? 'Удалить штраф целиком' : 'Удалить'}><Icon name="delete" className="w-[18px] h-[18px]" /></button>
+                               )}
                             </div>
                          )}
                       </td>
@@ -868,6 +997,19 @@ export const ProtocolSheet = ({
           </tbody>
         </table>
       </div>
+
+      {/* Причины строк штрафа: слева справочник, справа состав штрафа с выбранным */}
+      {reasonsModalState && (
+        <PenaltyReasonsModal
+          isOpen
+          onClose={() => setReasonsTarget(null)}
+          title={`Причины: ${kindSpec(reasonsModalState.kind).title}`}
+          options={penaltyReasons}
+          slots={reasonSlots(reasonsModalState.kind)}
+          values={reasonsModalState.values}
+          onSave={applyReasons}
+        />
+      )}
     </div>
   );
 };

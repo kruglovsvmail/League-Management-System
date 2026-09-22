@@ -70,7 +70,7 @@ function EventRow({ event, isFaded, isActive, isHome, homeShortName, awayShortNa
                 </span>
               ) : 'Без ассистентов'
             ) : (
-              <span>{event.penalty_minutes} мин — {event.penalty_violation || 'Нарушение'}</span>
+              <span>{event.penalty_display ?? event.penalty_minutes} мин — {event.penalty_reasons_text || event.penalty_violation || 'Нарушение'}</span>
             )}
           </div>
         </div>
@@ -131,6 +131,8 @@ export function GameEventsWidget({
 
   const hotEvents = events
     .filter(e => ['goal', 'penalty'].includes(e.event_type))
+    // Вторая двойка, десятка, двадцатка — та же запись; в эфир идёт первая строка
+    .filter(e => !(e.event_type === 'penalty' && e.penalty_group_id != null && Number(e.penalty_group_seq) > 1))
     .sort(sortEvents);
 
   const homeShortName = game?.home_short_name || game?.home_team_name?.substring(0, 3).toUpperCase() || 'ХОЗ';

@@ -1028,6 +1028,34 @@ export const updateGameStatus = async (req, res) => {
     }
 };
 
+// Пул представителей на матч: допущенный лигой штаб из заявки команды на сезон.
+// Из него выбирают тех, кто едет на конкретный матч (game_team_staff) — команда в
+// Team Room при отправке заявки или секретарь в шторке состава. Параметры:
+// $1 — матч, $2 — команда, $3 — лига (для дисквалификаций).
+//
+// Штаб попадает в пул только с допуском лиги — тот же тумблер, что и у игроков,
+// только у представителя он лежит в своей таблице (ролей у него бывает несколько,
+// а допуск один). Нет строки — значит не допущен.
+const loadStaffPoolQuery = `
+    SELECT ttr.user_id AS user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
+           string_agg(ttr.tournament_role, ', ' ORDER BY ttr.tournament_role) AS roles,
+           user_active_disqualifications(ttr.user_id, $3) AS active_disqualifications
+    FROM tournament_team_roles ttr
+    JOIN users u ON ttr.user_id = u.id
+    JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
+    JOIN games g ON g.division_id = tt.division_id
+       AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
+    LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
+    JOIN tournament_staff_admission tsa
+      ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
+     AND tsa.is_admitted = true
+    WHERE g.id = $1
+      AND tt.team_id = $2
+      AND ttr.left_at IS NULL
+    GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+    ORDER BY u.last_name, u.first_name
+`;
+
 export const getGameRoster = async (req, res) => {
     try {
         const { gameId, teamId } = req.params;
@@ -1038,6 +1066,7 @@ export const getGameRoster = async (req, res) => {
                 tournamentRoster: [],
                 gameRoster: [],
                 staffRoster: [],
+                staffPool: [],
                 reserveGoalies: [],
                 reserveSettings: { enabled: false, max_per_game: 0, block_back_to_back: false }
             });
@@ -1057,7 +1086,7 @@ export const getGameRoster = async (req, res) => {
         // собирает одна SQL-функция — чтобы правило было одинаковым во всех местах.
         const dqSubquery = (userIdCol) => `user_active_disqualifications(${userIdCol}, $3) as active_disqualifications`;
 
-        const [tRosterRes, gRosterRes, staffRes] = await Promise.all([
+        const [tRosterRes, gRosterRes, staffRes, staffPoolRes] = await Promise.all([
             pool.query(`
                 SELECT tr.player_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tr.jersey_number, tr.position,
                        -- Фото из заявки (снимок на момент допуска), иначе живое фото в составе
@@ -1096,27 +1125,23 @@ export const getGameRoster = async (req, res) => {
                 ORDER BY u.last_name
             `, [gameId, teamId, leagueId]),
 
+            // Представители, заявленные именно на этот матч (game_team_staff) — их команда
+            // выбрала при отправке заявки из Team Room или секретарь в шторке состава.
+            // Раньше сюда попадала вся заявка на сезон разом; теперь она — только пул для
+            // выбора (staffPool ниже), а в протокол идут выбранные.
             pool.query(`
-                SELECT ttr.user_id as user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
-                       string_agg(ttr.tournament_role, ', ') as roles,
-                       ${dqSubquery('ttr.user_id')}
-                FROM tournament_team_roles ttr
-                JOIN users u ON ttr.user_id = u.id
-                JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
-                JOIN games g ON g.division_id = tt.division_id
-                   AND (g.home_team_id = tt.team_id OR g.away_team_id = tt.team_id)
+                SELECT gts.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url,
+                       string_agg(gts.role, ', ' ORDER BY gts.id) AS roles,
+                       ${dqSubquery('gts.user_id')}
+                FROM game_team_staff gts
+                JOIN users u ON u.id = gts.user_id
                 LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-                -- Штаб попадает в протокол только с допуском лиги — тот же тумблер, что и
-                -- у игроков, только у представителя он лежит в своей таблице (ролей у него
-                -- бывает несколько, а допуск один). Нет строки — значит не допущен.
-                JOIN tournament_staff_admission tsa
-                  ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
-                 AND tsa.is_admitted = true
-                WHERE g.id = $1
-                  AND tt.team_id = $2
-                  AND ttr.left_at IS NULL
-                GROUP BY ttr.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
-            `, [gameId, teamId, leagueId])
+                WHERE gts.game_id = $1 AND gts.team_id = $2
+                GROUP BY gts.user_id, u.first_name, u.last_name, u.middle_name, u.avatar_url, tm.photo_url
+                ORDER BY u.last_name, u.first_name
+            `, [gameId, teamId, leagueId]),
+
+            pool.query(loadStaffPoolQuery, [gameId, teamId, leagueId])
         ]);
 
         // Резервные вратари дивизиона: отдельным списком под заявкой команды.
@@ -1129,6 +1154,7 @@ export const getGameRoster = async (req, res) => {
             tournamentRoster: tRosterRes.rows,
             gameRoster: gRosterRes.rows,
             staffRoster: staffRes.rows,
+            staffPool: staffPoolRes.rows,
             reserveGoalies: reserve.goalies,
             reserveSettings: {
                 enabled: reserve.enabled,
@@ -1155,7 +1181,7 @@ export const saveGameRoster = async (req, res) => {
             return res.status(403).json({ success: false, error: accessError });
         }
 
-        const { roster } = req.body;
+        const { roster, staff } = req.body;
 
         if (roster && roster.length > 0) {
             const playerIds = roster.map(p => p.player_id);
@@ -1198,9 +1224,56 @@ export const saveGameRoster = async (req, res) => {
             }
         }
 
+        // Представители на матч: массив user_id целиком (пустой — «без представителей»,
+        // это разрешено). Массива нет — старая версия шторки, прежний выбор не трогаем.
+        // Роли берём из заявки на сезон на момент сохранения: протокол хранит снимок.
+        // Каждый выбранный должен быть в пуле допущенных и без дисквалификации.
+        let staffRows = null;
+        if (Array.isArray(staff)) {
+            const leagueRes = await client.query(`
+                SELECT s.league_id FROM games g
+                JOIN divisions div ON g.division_id = div.id
+                JOIN seasons s ON div.season_id = s.id
+                WHERE g.id = $1
+            `, [gameId]);
+            const poolRes = await client.query(loadStaffPoolQuery, [gameId, teamId, leagueRes.rows[0]?.league_id || null]);
+            const poolById = new Map(poolRes.rows.map(p => [Number(p.user_id), p]));
+
+            const staffIds = [...new Set(staff.map(Number).filter(Number.isFinite))];
+            if (staffIds.some(id => !poolById.has(id))) {
+                return res.status(400).json({ success: false, error: 'Среди представителей есть тот, кого нет среди допущенных в заявке команды на сезон' });
+            }
+            const dqStaff = staffIds.map(id => poolById.get(id)).filter(p => p.active_disqualifications?.length > 0);
+            if (dqStaff.length > 0) {
+                const names = dqStaff.map(p => `${p.last_name} ${p.first_name}`).join(', ');
+                return res.status(400).json({ success: false, error: `Нельзя включить в протокол дисквалифицированных представителей: ${names}` });
+            }
+
+            staffRows = staffIds.flatMap(id =>
+                poolById.get(id).roles.split(',').map(r => r.trim()).filter(Boolean).map(role => ({ userId: id, role }))
+            );
+        }
+
         await client.query('BEGIN');
 
         await client.query('DELETE FROM game_rosters WHERE game_id = $1 AND team_id = $2', [gameId, teamId]);
+
+        if (staffRows) {
+            await client.query('DELETE FROM game_team_staff WHERE game_id = $1 AND team_id = $2', [gameId, teamId]);
+            if (staffRows.length > 0) {
+                const sValues = [];
+                const sParams = [];
+                let i = 1;
+                staffRows.forEach(r => {
+                    sValues.push(`($${i++}, $${i++}, $${i++}, $${i++})`);
+                    sParams.push(gameId, teamId, r.userId, r.role);
+                });
+                await client.query(
+                    `INSERT INTO game_team_staff (game_id, team_id, user_id, role) VALUES ${sValues.join(', ')}`,
+                    sParams
+                );
+            }
+        }
 
         if (roster && roster.length > 0) {
             const values = [];

@@ -130,10 +130,10 @@ export default function EventOverlay({ game, overlay }) {
                   {!isGoal && (
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-black text-3xl tabular-nums leading-none drop-shadow-sm text-red-500">
-                            {overlay.data.penalty_minutes} <span className="text-lg font-bold tracking-widest ml-1">МИН</span>
+                            {overlay.data.penalty_display ?? overlay.data.penalty_minutes} <span className="text-lg font-bold tracking-widest ml-1">МИН</span>
                         </span>
                         <span className="text-xs font-bold uppercase tracking-widest text-zinc-300">
-                            — {overlay.data.penalty_violation}
+                            — {overlay.data.penalty_reasons_text || overlay.data.penalty_violation}
                         </span>
                       </div>
                   )}

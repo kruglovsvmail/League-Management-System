@@ -24,27 +24,23 @@ const emptyNotes = {
     away_protest_text: '',
 };
 
-// Игроки и персонал турнирной заявки обеих команд — из них секретарь выбирает
-// представителей проверяемой и проверяющей команды. Один человек может быть
-// одновременно и игроком, и персоналом (играющий тренер), поэтому схлопываем по
-// пользователю: иначе он попадёт в список дважды.
-const fetchTeamMembers = async (divisionId, homeTeamId, awayTeamId) => {
+// Игроки турнирной заявки обеих команд и персонал, заявленный на этот матч — из них
+// секретарь выбирает представителей проверяемой и проверяющей команды. Персонал берём
+// не из заявки на сезон, а из game_team_staff: представителем на проверке может быть
+// только тот, кто был на матче. Один человек может быть одновременно и игроком, и
+// персоналом (играющий тренер), поэтому схлопываем по пользователю: иначе он попадёт
+// в список дважды.
+const fetchTeamMembers = async (gameId, divisionId, homeTeamId, awayTeamId) => {
     const { rows } = await pool.query(`
         WITH members AS (
             SELECT tt.team_id, tr.player_id AS user_id, false AS is_staff
             FROM tournament_rosters tr
             JOIN tournament_teams tt ON tt.id = tr.tournament_team_id
-            WHERE tt.division_id = $1 AND tt.team_id IN ($2, $3) AND tr.period_end IS NULL
+            WHERE tt.division_id = $2 AND tt.team_id IN ($3, $4) AND tr.period_end IS NULL
             UNION ALL
-            SELECT tt.team_id, ttr.user_id, true AS is_staff
-            FROM tournament_team_roles ttr
-            JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
-            -- Представителем на проверке игроков может быть только допущенный человек:
-            -- тумблер лежит в tournament_staff_admission, отсутствие строки = не допущен.
-            JOIN tournament_staff_admission tsa
-              ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
-             AND tsa.is_admitted = true
-            WHERE tt.division_id = $1 AND tt.team_id IN ($2, $3) AND ttr.left_at IS NULL
+            SELECT gts.team_id, gts.user_id, true AS is_staff
+            FROM game_team_staff gts
+            WHERE gts.game_id = $1 AND gts.team_id IN ($3, $4)
         )
         SELECT m.team_id, m.user_id AS id, u.last_name, u.first_name, u.middle_name,
                bool_or(m.is_staff) AS is_staff
@@ -52,7 +48,7 @@ const fetchTeamMembers = async (divisionId, homeTeamId, awayTeamId) => {
         JOIN users u ON u.id = m.user_id
         GROUP BY m.team_id, m.user_id, u.last_name, u.first_name, u.middle_name
         ORDER BY u.last_name ASC, u.first_name ASC
-    `, [divisionId, homeTeamId, awayTeamId]);
+    `, [gameId, divisionId, homeTeamId, awayTeamId]);
 
     const format = (r) => `${r.last_name} ${r.first_name ? r.first_name[0] + '.' : ''}${r.middle_name ? r.middle_name[0] + '.' : ''}`.trim();
     const result = { home: [], away: [] };
@@ -115,7 +111,7 @@ export const getProtocolBack = async (req, res) => {
         const game = gameRes.rows[0];
 
         const data = await fetchProtocolBack(gameId);
-        const teamMembers = await fetchTeamMembers(game.division_id, game.home_team_id, game.away_team_id);
+        const teamMembers = await fetchTeamMembers(gameId, game.division_id, game.home_team_id, game.away_team_id);
 
         res.json({ success: true, data: { ...data, teamMembers } });
     } catch (err) {

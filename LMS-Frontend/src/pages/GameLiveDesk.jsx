@@ -15,7 +15,7 @@ import { SummaryTablesAccordion } from '../components/GameLiveDesk/SummaryTables
 import { ProtocolBackAccordion } from '../components/GameLiveDesk/ProtocolBackAccordion';
 import {
   getPeriodLimits,
-  calculatePenaltyTimelines,
+  calculatePenaltyTimelines, isMinorRow, isLegacyDoubleMinor,
   calculatePeriodFromTime,
   PS_PENDING, PS_FAILED, isScoredFromPlay, sortRosterByPosition
 } from '../components/GameLiveDesk/GameDeskShared';
@@ -315,53 +315,6 @@ export function GameLiveDesk() {
 
   useEffect(() => { loadInitialData(); }, [gameId]);
 
-  // Стартовая запись журнала вратарей: если в заявке на матч у команды один вратарь,
-  // он попадает в журнал сам — правило и запись живут на бэке (autofillGoalieLog),
-  // здесь то же условие проверяется заранее, чтобы не дёргать сервер при каждой
-  // перезагрузке данных. Ключ последней попытки помнит ref: иначе при отказе
-  // (окно управления закрыто, нет прав) запрос уходил бы по кругу после каждого
-  // loadInitialData.
-  const goalieAutofillKeyRef = useRef(null);
-  useEffect(() => {
-    // Завершённый матч панель не трогает — то же ограничение стоит и на бэке
-    if (!game || isReadOnly || !['scheduled', 'live'].includes(game.status)) return;
-
-    const lineupGoalieIds = (roster) => roster
-      .filter(r => r.position === 'goalie' || r.position_in_line === 'G')
-      .map(r => String(r.player_id));
-    const homeGoalies = lineupGoalieIds(homeRoster);
-    const awayGoalies = lineupGoalieIds(awayRoster);
-    const first = goalieLog[0];
-    // Сторона ждёт автозаполнения: в заявке ровно один вратарь, а в журнале либо
-    // ничего нет, либо сторона первой записи «не указан» / игрок не из заявки
-    const sideNeedsFill = (goalies, unspecified, goalieId) =>
-      goalies.length === 1 && (!first || unspecified || (goalieId != null && !goalies.includes(String(goalieId))));
-    const needed = sideNeedsFill(homeGoalies, first?.home_goalie_unspecified, first?.home_goalie_id)
-      || sideNeedsFill(awayGoalies, first?.away_goalie_unspecified, first?.away_goalie_id);
-    if (!needed) return;
-
-    // В ключе и состояние первой записи: правка журнала или заявки — новая попытка
-    const key = [
-      first?.id ?? 'none',
-      first?.home_goalie_id, first?.home_goalie_unspecified,
-      first?.away_goalie_id, first?.away_goalie_unspecified,
-      homeGoalies.join(','), awayGoalies.join(','),
-    ].join('|');
-    if (goalieAutofillKeyRef.current === key) return;
-    goalieAutofillKeyRef.current = key;
-
-    (async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/goalie-log/autofill`, { method: 'POST', headers });
-        const data = await res.json();
-        if (data.success && data.changed) {
-          await loadInitialData();
-          socket?.emit('game_updated', { gameId });
-        }
-      } catch (err) { console.error('Ошибка автозаполнения журнала вратарей:', err); }
-    })();
-  }, [game, homeRoster, awayRoster, goalieLog, isReadOnly]);
-
   const lockSocketUpdates = () => {
     ignoreSocketRef.current = true;
     if (ignoreTimeoutRef.current) clearTimeout(ignoreTimeoutRef.current);
@@ -591,40 +544,106 @@ export function GameLiveDesk() {
   // голов из игры: шайба с назначенного штрафного броска удаление не прекращает
   // (см. isScoredFromPlay в GameDeskShared) — буллит разыгрывается один на один,
   // и к численному преимуществу соперника отношения не имеет.
+  // Тело PUT для строки штрафа из записи списка событий. Запись отдаёт нарушителя
+  // как primary_player_id, а обработчик ждёт player_id — без этой подстановки
+  // нарушитель стирался при каждом сдвиге окончания.
+  const penaltyRowPayload = (p, patch = {}) => ({
+    period: p.period, event_type: 'penalty', team_id: p.team_id,
+    time_seconds: p.time_seconds, penalty_end_time: p.penalty_end_time,
+    player_id: p.primary_player_id || null,
+    penalty_offender_type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
+    penalty_served_by_id: p.penalty_served_by_id || null,
+    penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
+    penalty_violation: p.penalty_violation, penalty_violation_code: p.penalty_violation_code,
+    penalty_reason_id: p.penalty_reason_id,
+    ...patch,
+  });
+
   const processGoalPenaltyLogic = async (scoringTeamId, goalTimeRaw) => {
     const concedingTeamId = scoringTeamId === game.home_team_id ? game.away_team_id : game.home_team_id;
     const goalTime = parseInt(goalTimeRaw, 10);
     const concedingTimeline = calculatePenaltyTimelines(events.filter(e => e.team_id === concedingTeamId && e.event_type === 'penalty'));
     const scoringTimeline = calculatePenaltyTimelines(events.filter(e => e.team_id === scoringTeamId && e.event_type === 'penalty'));
-    const isPenaltyActiveOnIce = (p, time) => [2, 4, 5, 25].includes(parseInt(p.penalty_minutes, 10)) && time >= p.effStart && time < p.effEnd;
+    // Строка в слоте меньшинства прямо сейчас: у группы 2+2 в один момент активна
+    // ровно одна из двух двоек, так что счёт строк — это счёт удалённых на льду
+    const isActiveOnIce = (p, time) => p.onIce && p.effEnd !== null && time >= p.effStart && time < p.effEnd;
 
-    const activeConceding = concedingTimeline.filter(p => isPenaltyActiveOnIce(p, goalTime));
-    const activeScoring = scoringTimeline.filter(p => isPenaltyActiveOnIce(p, goalTime));
+    const activeConceding = concedingTimeline.filter(p => isActiveOnIce(p, goalTime));
+    const activeScoring = scoringTimeline.filter(p => isActiveOnIce(p, goalTime));
+    if (activeConceding.length <= activeScoring.length) return;
 
-    if (activeConceding.length > activeScoring.length) {
-      const expirablePenalty = activeConceding.filter(p => [2, 4].includes(parseInt(p.penalty_minutes, 10))).sort((a, b) => a.effStart - b.effStart)[0];
-      if (expirablePenalty) {
-        const mins = parseInt(expirablePenalty.penalty_minutes, 10);
-        let reduction = 0;
-        if (mins === 2) reduction = expirablePenalty.effEnd - goalTime;
-        else if (mins === 4) {
-          // 2+2: пока ни один из двух отрезков не был отменён (остаток = полные 240с), гол в первых
-          // 2 минутах отменяет только первый отрезок — второй всё равно доигрывается 2 минуты с этого
-          // момента. Если остаток уже меньше 240с, значит первый отрезок уже был отменён предыдущим
-          // голом — этот (второй) гол отменяет оставшийся отрезок целиком, штраф заканчивается сразу.
-          const totalDuration = expirablePenalty.effEnd - expirablePenalty.effStart;
-          const elapsed = goalTime - expirablePenalty.effStart;
-          if (totalDuration >= 240 && elapsed < 120) reduction = expirablePenalty.effEnd - (goalTime + 120);
-          else reduction = expirablePenalty.effEnd - goalTime;
-        }
-        if (reduction > 0) {
-          const newDbEndTime = parseInt(expirablePenalty.penalty_end_time, 10) - reduction;
-          await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/events/${expirablePenalty.id}`, {
-            method: 'PUT', headers, body: JSON.stringify({ ...expirablePenalty, penalty_end_time: newDbEndTime })
-          });
-        }
-      }
+    // Закрывается тот малый, что закончился бы раньше; большой (5) голом не закрывается
+    const expirable = activeConceding.filter(isMinorRow).sort((a, b) => a.effEnd - b.effEnd)[0];
+    if (!expirable) return;
+
+    let reduction = 0;
+    if (isLegacyDoubleMinor(expirable)) {
+      // Старая запись 2+2 одной строкой на 4 минуты: пока ни один из двух отрезков не был
+      // отменён (остаток = полные 240с), гол в первых 2 минутах отменяет только первый
+      // отрезок — второй всё равно доигрывается 2 минуты с этого момента. Если остаток уже
+      // меньше 240с, первый отрезок уже был отменён предыдущим голом — этот гол закрывает
+      // оставшийся отрезок целиком.
+      const totalDuration = expirable.effEnd - expirable.effStart;
+      const elapsed = goalTime - expirable.effStart;
+      reduction = (totalDuration >= 240 && elapsed < 120) ? expirable.effEnd - (goalTime + 120) : expirable.effEnd - goalTime;
+    } else {
+      reduction = expirable.effEnd - goalTime;
     }
+    if (reduction <= 0) return;
+
+    const updates = [{ row: expirable, patch: { penalty_end_time: parseInt(expirable.penalty_end_time, 10) - reduction } }];
+
+    // Продолжение группы (вторая двойка, десятка) начинается раньше — сдвигаем на столько
+    // же, сохраняя длительность. Двадцатка стоит на времени нарушения и не двигается.
+    if (expirable.penalty_group_id) {
+      events
+        .filter(e => e.event_type === 'penalty' && e.penalty_group_id === expirable.penalty_group_id
+          && Number(e.penalty_group_seq) > Number(expirable.penalty_group_seq)
+          && e.penalty_class !== 'game_misconduct' && e.penalty_end_time !== null)
+        .forEach(e => {
+          const newStart = parseInt(e.time_seconds, 10) - reduction;
+          updates.push({ row: e, patch: {
+            time_seconds: newStart,
+            penalty_end_time: parseInt(e.penalty_end_time, 10) - reduction,
+            period: calculatePeriodFromTime(newStart, periodLength, otLength, periodsCount),
+          } });
+        });
+    }
+
+    for (const u of updates) {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/events/${u.row.id}`, {
+        method: 'PUT', headers, body: JSON.stringify(penaltyRowPayload(u.row, u.patch))
+      });
+    }
+  };
+
+  // Штраф целиком: вид + строки (см. buildGroupRows в ProtocolSheet). Период у каждой
+  // строки свой — десятка, начатая в конце периода, заканчивается уже в следующем.
+  // groupId — правка существующей группы (или старой одиночной записи по её id).
+  const savePenaltyGroup = async (teamId, groupData, groupId = null) => {
+    setIsSaving(true);
+    if (autoStopOnEvent && !groupId) handleTimerAction('stop');
+
+    const rows = (groupData.rows || []).map(r => ({
+      ...r,
+      period: calculatePeriodFromTime(r.time_seconds, periodLength, otLength, periodsCount),
+    }));
+    const payload = { ...groupData, team_id: teamId, period: rows[0]?.period || currentPeriod, rows };
+
+    try {
+      const url = groupId
+        ? `${import.meta.env.VITE_API_URL}/api/games/${gameId}/penalties/${groupId}`
+        : `${import.meta.env.VITE_API_URL}/api/games/${gameId}/penalties`;
+      const res = await fetch(url, { method: groupId ? 'PUT' : 'POST', headers, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (data.success) {
+        await loadInitialData();
+        socket?.emit('game_updated', { gameId });
+        return true;
+      }
+      alert(data.error || 'Не удалось сохранить штраф');
+    } catch (err) { console.error(err); } finally { setIsSaving(false); }
+    return false;
   };
 
   // Типы, у которых период вычисляется по времени на табло. Послематчевая серия
@@ -924,6 +943,7 @@ export function GameLiveDesk() {
             awayRoster={awayRoster}
             timerSeconds={timerSeconds}
             onSaveEvent={saveEventRow}
+            onSavePenaltyGroup={savePenaltyGroup}
             onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, id, type: 'event' })}
             onToggleLineup={toggleLineup}
             trackPlusMinus={trackPlusMinus}

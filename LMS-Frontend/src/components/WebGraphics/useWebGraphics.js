@@ -1,7 +1,7 @@
 // src/components/WebGraphics/useWebGraphics.js
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { calculatePenaltyTimelines } from '../GameLiveDesk/GameDeskShared';
+import { calculateOnIcePenalties } from '../GameLiveDesk/GameDeskShared';
 import { startAudioReactive, stopAudioReactive } from './audioReactive';
 import { useBumperWarmup } from './bumperWarmup';
 
@@ -586,7 +586,9 @@ export function useWebGraphics(gameId) {
   const activePenalties = useMemo(() => {
     if (!game || !game.penalties) return [];
     try {
-        const timelines = calculatePenaltyTimelines(game.penalties);
+        // Позиция табло — на группу штрафа целиком: у 2+2 один отсчёт на 4 минуты,
+        // у 2+10 — 2, у 5+20 — 5. Дисциплинарные 10 и 20 на табло не выводятся.
+        const timelines = calculateOnIcePenalties(game.penalties);
         return timelines
           .filter(p => timerSeconds >= p.effStart && timerSeconds < p.effEnd)
           .map(p => ({

@@ -5,12 +5,19 @@ import puppeteer from 'puppeteer';
 // Импортируем бэкенд-фабрику для выбора шаблона
 import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
 import { fetchProtocolBack, CHECK_RESULTS } from './protocolBackController.js';
+import { sortPenaltyRows } from '../utils/penaltyGroups.js';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+// Роль представителя в заявке на матч → строка подписи в протоколе. Ключи строк
+// (coach / off1 / off2) исторические, к ним привязаны роли подписей home_off1 и т.п.
+// в game_protocol_signatures; в шапке протокола они подписаны «Тр. команды»,
+// «Рук. команды», «Админ. команды».
+const TEAM_ROLE_SLOTS = { coach: 'coach', team_manager: 'off1', team_admin: 'off2' };
 
 // ============================================================================
 // ВНУТРЕННЯЯ ФУНКЦИЯ: Сбор всех данных из БД (используется для JSON, HTML и PDF)
@@ -70,7 +77,8 @@ const fetchRawProtocolData = async (gameId) => {
             u_a2.last_name as a2_last_name, gr_a2.jersey_number as a2_number,
             -- Штраф на команду («К») / представителя («ОПК») и номер отбывающего за
             -- нарушителя — графа «№» блока «Удаление» печатает «ОПК/75», «12/44»
-            ge.penalty_offender_type, gr_srv.jersey_number as served_by_number
+            ge.penalty_offender_type, gr_srv.jersey_number as served_by_number,
+            ge.penalty_kind, ge.penalty_group_id, ge.penalty_group_seq
         FROM game_events ge
         -- COALESCE обязателен: у штрафа автора нет, нарушитель лежит в
         -- penalty_player_id, и без него в графе «№» блока «Удаление» печаталась
@@ -82,7 +90,9 @@ const fetchRawProtocolData = async (gameId) => {
         LEFT JOIN users u_a2 ON ge.assist2_id = u_a2.id
         LEFT JOIN game_rosters gr_a2 ON ge.assist2_id = gr_a2.player_id AND gr_a2.game_id = $1
         LEFT JOIN game_rosters gr_srv ON ge.penalty_served_by_id = gr_srv.player_id AND gr_srv.game_id = $1 AND gr_srv.team_id = ge.team_id
-        WHERE ge.game_id = $1 ORDER BY ge.time_seconds ASC
+        WHERE ge.game_id = $1
+        -- Строки одной группы штрафа (5 и 20 у 5+20) стоят на одной секунде — порядок по seq
+        ORDER BY ge.time_seconds ASC, ge.penalty_group_seq ASC NULLS FIRST, ge.id ASC
     `;
     const eventsResult = await pool.query(eventsQuery, [gameId]);
 
@@ -100,57 +110,35 @@ const fetchRawProtocolData = async (gameId) => {
         signatures[sig.role] = { hash: sig.signature_hash, name: displayName, date: sig.created_at, user_id: sig.user_id };
     });
 
-    // Человек может быть заявлен сразу в нескольких ролях (руководитель + тренер + администратор) —
-    // это отдельные строки в tournament_team_roles. Группируем по человеку, иначе он попадёт
-    // в выпадающие списки подписантов по разу на каждую свою роль.
+    // Представители команд в строках подписей — из заявки на ЭТОТ матч (game_team_staff):
+    // их выбрала команда при отправке заявки или секретарь в шторке состава. Подставляются
+    // сразу, без выбора: тренер заявки — в «Тр. команды», руководитель — в «Рук. команды»,
+    // администратор — в «Админ. команды». Роли нет в заявке — строка остаётся пустой.
+    // Один человек может занять две строки, если заявлен в двух ролях.
     //
-    // Подписать протокол может только допущенный представитель: тумблер допуска лежит в
-    // tournament_staff_admission парой «заявка + человек», строки нет — значит не допущен.
-    const signersQuery = `
-        SELECT 'home' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name,
-               array_agg(DISTINCT ttr.tournament_role) as roles
-        FROM tournament_team_roles ttr
-        JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
-        JOIN users u ON u.id = ttr.user_id
-        JOIN tournament_staff_admission tsa
-          ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
-         AND tsa.is_admitted = true
-        WHERE tt.team_id = $2 AND tt.division_id = $1 AND ttr.left_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
-        GROUP BY ttr.user_id, u.last_name, u.first_name, u.middle_name
-        UNION ALL
-        SELECT 'away' as side, ttr.user_id as id, u.last_name, u.first_name, u.middle_name,
-               array_agg(DISTINCT ttr.tournament_role) as roles
-        FROM tournament_team_roles ttr
-        JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
-        JOIN users u ON u.id = ttr.user_id
-        JOIN tournament_staff_admission tsa
-          ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
-         AND tsa.is_admitted = true
-        WHERE tt.team_id = $3 AND tt.division_id = $1 AND ttr.left_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
-        GROUP BY ttr.user_id, u.last_name, u.first_name, u.middle_name
+    // Если в одной роли заявлено несколько человек (два тренера), в строку встаёт первый
+    // по алфавиту: в протоколе на роль одна строка.
+    //
+    // Допуск лиги проверен раньше, при выборе: в game_team_staff попадают только
+    // допущенные. Дисквалификация могла прилететь уже после — такого не подставляем.
+    const teamStaffQuery = `
+        SELECT CASE WHEN gts.team_id = $2 THEN 'home' ELSE 'away' END as side,
+               gts.role, gts.user_id as id, u.last_name, u.first_name, u.middle_name
+        FROM game_team_staff gts
+        JOIN users u ON u.id = gts.user_id
+        WHERE gts.game_id = $1 AND gts.team_id IN ($2, $3)
+          AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = gts.user_id AND d.league_id = $4 AND d.status = 'active')
+        ORDER BY u.last_name, u.first_name
     `;
-    const signersResult = await pool.query(signersQuery, [game.division_id, game.home_team_id, game.away_team_id, game.league_id]);
-    
-    const eligibleSigners = { home: { coaches: [], staff: [] }, away: { coaches: [], staff: [] } };
+    const teamStaffResult = await pool.query(teamStaffQuery, [gameId, game.home_team_id, game.away_team_id, game.league_id]);
+
     const formatName = (r) => `${r.last_name} ${r.first_name ? r.first_name[0]+'.' : ''} ${r.middle_name ? r.middle_name[0]+'.' : ''}`.trim();
-    
-    signersResult.rows.forEach(r => {
-        const name = formatName(r);
-        const roles = r.roles || [];
-        // Строку «Тренер» подписывает только заявленный тренер команды. Главного тренера
-        // в турнирной заявке нет — он подаётся ролью 'coach' (см. TOURNAMENT_ROLES).
-        const isCoach = roles.includes('coach');
-        const entry = { id: r.id, name, roles };
-        if (r.side === 'home') {
-            eligibleSigners.home.staff.push(entry);
-            if (isCoach) eligibleSigners.home.coaches.push(entry);
-        }
-        if (r.side === 'away') {
-            eligibleSigners.away.staff.push(entry);
-            if (isCoach) eligibleSigners.away.coaches.push(entry);
-        }
+
+    const prefilledTeamStaff = { home: { coach: null, off1: null, off2: null }, away: { coach: null, off1: null, off2: null } };
+    teamStaffResult.rows.forEach(r => {
+        const slot = TEAM_ROLE_SLOTS[r.role];
+        if (!slot || prefilledTeamStaff[r.side][slot]) return;
+        prefilledTeamStaff[r.side][slot] = { id: r.id, name: formatName(r) };
     });
 
     const refsQuery = `
@@ -252,7 +240,7 @@ const fetchRawProtocolData = async (gameId) => {
             away: { id: game.away_team_id, name: game.away_team_name, roster: awayRoster }
         },
         events: eventsResult.rows,
-        signatures, eligibleSigners, prefilledOfficials,
+        signatures, prefilledTeamStaff, prefilledOfficials,
         goalieLog: goalieLogResult.rows, shotsSummary: shotsSummaryResult.rows,
         timerSettings: timerResult.rows[0] || { periods_count: 3 },
         penaltyTypes: penaltyTypesResult.rows,
@@ -358,12 +346,16 @@ const prepareProtocolData = (apiData) => {
           return 0;
       });
   
-      const getSig = (role) => {
-        const sig = apiData.signatures ? apiData.signatures[role] : null;
-        if (!sig) return "";
-        return sig.hash ? `${sig.name} [${sig.hash}]` : sig.name;
+      // Строки подписей представителей: подпись, а до неё — представитель из заявки
+      // на матч (prefilledTeamStaff), как у судейской бригады. Нет ни того, ни другого —
+      // строка пустая.
+      const getSig = (slot) => {
+        const sig = apiData.signatures ? apiData.signatures[`${prefix}_${slot}`] : null;
+        if (sig) return sig.hash ? `${sig.name} [${sig.hash}]` : sig.name;
+        const prefilled = apiData.prefilledTeamStaff?.[prefix]?.[slot];
+        return prefilled ? prefilled.name : "";
       };
-  
+
       return {
         id: teamData.id, name: teamData.name || '', goalies, fieldPlayers,
         // Во «Взятии ворот» печатаются и голы, и штрафные броски: реализованный ШБ
@@ -374,9 +366,10 @@ const prepareProtocolData = (apiData) => {
         goals: teamEvents
           .filter(e => e.event_type === 'goal' || e.event_type === 'failed_ps' || e.event_type === 'pending_ps')
           .sort((a, b) => a.time_seconds - b.time_seconds),
-        penalties: teamEvents.filter(e => e.event_type === 'penalty'),
+        // Строки одной группы (2+2, 2+10) — подряд, как в бумажном бланке
+        penalties: sortPenaltyRows(teamEvents.filter(e => e.event_type === 'penalty')),
         timeout: teamEvents.find(e => e.event_type === 'timeout')?.time_seconds,
-        coachSig: getSig(`${prefix}_coach`), off1Sig: getSig(`${prefix}_off1`), off2Sig: getSig(`${prefix}_off2`),
+        coachSig: getSig('coach'), off1Sig: getSig('off1'), off2Sig: getSig('off2'),
       };
     };
   
@@ -475,7 +468,7 @@ const prepareProtocolData = (apiData) => {
         'timekeeper': getSigOrPrefilled('timekeeper'),
         'informant': getSigOrPrefilled('informant'),
       },
-      eligibleSigners: apiData.eligibleSigners || { home: { coaches: [], staff: [] }, away: { coaches: [], staff: [] } },
+      prefilledTeamStaff: apiData.prefilledTeamStaff || { home: {}, away: {} },
       prefilledOfficials: apiData.prefilledOfficials || {},
       signatures: apiData.signatures || {},
       stats, periods, goalieLog,
@@ -584,62 +577,60 @@ export const signProtocol = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Роль или пользователь не указаны' });
         }
 
-        // Подписи представителей команды (тренер/официальное лицо) — та же проверка,
-        // что фильтрует выпадающий список на фронте (eligibleSigners), только теперь и на сервере:
-        // иначе можно было отправить подпись за дисквалифицированного или вообще постороннего userId напрямую в API.
-        const sideMatch = role.match(/^(home|away)_/);
+        // Подписи представителей команды — та же подстановка, что и в панели подписания
+        // (prefilledTeamStaff), только теперь и на сервере: иначе можно было отправить
+        // подпись за дисквалифицированного или вообще постороннего userId напрямую в API.
+        // Человек должен быть заявлен на этот матч (game_team_staff) именно в той роли,
+        // которой соответствует строка: тренер — «Тр. команды», руководитель —
+        // «Рук. команды», администратор — «Админ. команды».
+        const sideMatch = role.match(/^(home|away)_(coach|off1|off2)$/);
         if (sideMatch) {
-            const side = sideMatch[1];
+            const [, side, slot] = sideMatch;
+            const requiredRole = Object.keys(TEAM_ROLE_SLOTS).find(r => TEAM_ROLE_SLOTS[r] === slot);
             const gameRes = await pool.query(`
-                SELECT g.division_id, g.home_team_id, g.away_team_id, s.league_id
+                SELECT g.home_team_id, g.away_team_id, s.league_id
                 FROM games g
                 JOIN divisions div ON g.division_id = div.id
                 JOIN seasons s ON div.season_id = s.id
                 WHERE g.id = $1
             `, [gameId]);
             if (gameRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
-            const { division_id, home_team_id, away_team_id, league_id } = gameRes.rows[0];
+            const { home_team_id, away_team_id, league_id } = gameRes.rows[0];
             const teamId = side === 'home' ? home_team_id : away_team_id;
 
             const eligibleRes = await pool.query(`
                 SELECT 1
-                FROM tournament_team_roles ttr
-                JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
-                WHERE ttr.user_id = $1 AND tt.team_id = $2 AND tt.division_id = $3 AND ttr.left_at IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = ttr.user_id AND d.league_id = $4 AND d.status = 'active')
-            `, [userId, teamId, division_id, league_id]);
+                FROM game_team_staff gts
+                WHERE gts.game_id = $1 AND gts.user_id = $2 AND gts.team_id = $3 AND gts.role = $4
+                  AND NOT EXISTS (SELECT 1 FROM disqualifications d WHERE d.user_id = gts.user_id AND d.league_id = $5 AND d.status = 'active')
+                LIMIT 1
+            `, [gameId, userId, teamId, requiredRole, league_id]);
 
             if (eligibleRes.rows.length === 0) {
-                return res.status(403).json({ success: false, error: 'Этот пользователь не может подписать протокол за команду — не найден в заявке представителей или дисквалифицирован' });
+                return res.status(403).json({ success: false, error: 'Этот пользователь не может подписать протокол за команду — не заявлен на этот матч в этой роли или дисквалифицирован' });
             }
+        }
+
+        // Подпись — только ЭЦП по PIN-коду, для представителей команд так же, как для
+        // судейской бригады. Раньше тренера и официальных лиц можно было «вписать» без
+        // PIN — теперь фамилия и так стоит в протоколе из заявки на матч, вписывать
+        // нечего: осталась только подпись.
+        if (!pinCode || String(pinCode).length !== 4) {
+            return res.status(400).json({ success: false, error: 'Для подписи нужен четырёхзначный PIN-код' });
         }
 
         const userRes = await pool.query('SELECT sign_pin_hash, last_name, first_name, middle_name FROM users WHERE id = $1', [userId]);
         if (userRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Пользователь не найден' });
         const user = userRes.rows[0];
-        
-        let signatureHash = null;
+
+        if (!user.sign_pin_hash) return res.status(400).json({ success: false, error: 'У данного пользователя не задан PIN-код (ЭЦП)' });
+
+        const isMatch = await bcrypt.compare(String(pinCode), user.sign_pin_hash);
+        if (!isMatch) return res.status(403).json({ success: false, error: 'Неверный PIN-код' });
+
+        const genSegment = () => Math.floor(1000 + Math.random() * 9000).toString();
+        const signatureHash = `${genSegment()}-${genSegment()}`;
         const finalName = `${user.last_name} ${user.first_name ? user.first_name[0] + '.' : ''}${user.middle_name ? user.middle_name[0] + '.' : ''}`;
-
-        if (role === 'home_coach' || role === 'away_coach') {
-            signatureHash = null; 
-        } else {
-            if (pinCode && pinCode.length === 4) {
-                if (!user.sign_pin_hash) return res.status(400).json({ success: false, error: 'У данного пользователя не задан PIN-код (ЭЦП)' });
-
-                const isMatch = await bcrypt.compare(pinCode, user.sign_pin_hash);
-                if (!isMatch) return res.status(403).json({ success: false, error: 'Неверный PIN-код' });
-
-                const genSegment = () => Math.floor(1000 + Math.random() * 9000).toString();
-                signatureHash = `${genSegment()}-${genSegment()}`;
-            } else {
-                if (role.includes('off1') || role.includes('off2')) {
-                    signatureHash = null;
-                } else {
-                    return res.status(400).json({ success: false, error: 'Для судейской бригады обязателен PIN-код' });
-                }
-            }
-        }
 
         await pool.query('DELETE FROM game_protocol_signatures WHERE game_id = $1 AND role = $2', [gameId, role]);
         

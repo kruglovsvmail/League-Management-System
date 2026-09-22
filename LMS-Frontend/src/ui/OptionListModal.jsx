@@ -7,6 +7,9 @@ import { Modal } from '../modals/Modal';
 //
 // Опция может нести необязательный `num` — порядковый номер из справочника. Тогда он
 // показывается слева от наименования и участвует в поиске (справочник причин штрафа).
+// `description` — пояснение к значению (вид штрафа: «2» — «Малый штраф»). Список тогда
+// рисуется таблицей: значение жирно в узкой колонке, пояснение бледнее — акцент на
+// самом значении, а не на подписи.
 // Строка поиска появляется сама на длинных списках; `searchable` позволяет решить явно.
 // `dense` ужимает строки (справочник причин удаления): в фиксированную высоту списка
 // помещается заметно больше пунктов, и листать приходится меньше.
@@ -24,7 +27,7 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
     return options.filter(opt => {
       // Поиск по номеру: точное совпадение начала («1» находит 1, 10-19, но не 21)
       if (opt.num != null && String(opt.num).startsWith(q)) return true;
-      return `${opt.label ?? ''} ${opt.shortLabel ?? ''}`.toLowerCase().includes(q);
+      return `${opt.label ?? ''} ${opt.shortLabel ?? ''} ${opt.description ?? ''}`.toLowerCase().includes(q);
     });
   }, [options, query]);
 
@@ -81,7 +84,14 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
             {opt.num != null && (
               <span className="shrink-0 w-7 text-right text-[12px] font-bold text-graphite/40 tabular-nums">{opt.num}</span>
             )}
-            <span className="min-w-0">{opt.label}</span>
+            {opt.description ? (
+              <>
+                <span className="shrink-0 w-14 font-black tabular-nums">{opt.label}</span>
+                <span className="min-w-0 truncate font-medium text-graphite/55">{opt.description}</span>
+              </>
+            ) : (
+              <span className="min-w-0">{opt.label}</span>
+            )}
           </button>
         ))}
         {/* Заглушки живут внутри списка, а не под ним — так фиксированная высота

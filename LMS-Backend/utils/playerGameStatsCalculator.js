@@ -242,9 +242,10 @@ ga_on_penalty AS (
     -- ради которого показатель и заводится, в подсчёт бы не попал.
     --
     -- Учитываем только удаления, реально оставляющие команду в меньшинстве:
-    -- 2, 2+2, 5 и матч-штраф. Дисциплинарные 10-минутные не в счёт — при них
-    -- на лёд выходит замена, состав полный. Набор минут тот же, что зашит
-    -- в calculatePenaltyTimelines на фронте.
+    -- малые и большие (строки классов minor/major; у старых записей — одной
+    -- строкой на 4 или 25 минут). Дисциплинарные 10 и 20 не в счёт — при них
+    -- на лёд выходит замена, состав полный; у 20 к тому же нет окончания.
+    -- Правило то же, что у слотов меньшинства в calculatePenaltyTimelines на фронте.
     SELECT pen.penalty_player_id AS player_id, pen.team_id, COUNT(*) AS cnt
     FROM game_events pen
     CROSS JOIN ctx c
@@ -259,7 +260,8 @@ ga_on_penalty AS (
       AND pen.event_type       = 'penalty'
       AND pen.penalty_player_id IS NOT NULL
       AND pen.penalty_end_time  IS NOT NULL
-      AND pen.penalty_minutes  IN (2, 4, 5, 25)
+      AND (pen.penalty_class IN ('minor', 'major', 'double_minor', 'match')
+           OR (pen.penalty_class IS NULL AND pen.penalty_minutes IN (2, 4, 5, 25)))
     GROUP BY pen.penalty_player_id, pen.team_id
 ),
 

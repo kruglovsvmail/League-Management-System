@@ -8,12 +8,13 @@ import {
     createGameEvent,
     updateGameEvent,
     deleteGameEvent,
+    createPenaltyGroup,
+    updatePenaltyGroup,
     updateTimerSettings,
     getEventPlusMinus,
     saveEventPlusMinus,
     saveGoalieLog,
     deleteGoalieLog,
-    autofillGoalieLog,
     saveGoalieShotsSummary,
     getGoalieShotsSummary,
     finishShootout,
@@ -61,6 +62,12 @@ router.post('/games/:gameId/events', express.json(), requirePermission('MATCH_SE
 router.put('/games/:gameId/events/:eventId', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, updateGameEvent);
 router.delete('/games/:gameId/events/:eventId', requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, deleteGameEvent);
 
+// Штраф группой строк (2+2, 2+10, 5+20 …): создаётся и правится целиком, одной
+// транзакцией. Правка отдельной строки (причина, отбывающий, окончание) идёт через
+// обычный PUT /events/:eventId, удаление — через DELETE /events/:eventId первой строки.
+router.post('/games/:gameId/penalties', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, createPenaltyGroup);
+router.put('/games/:gameId/penalties/:groupId', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, updatePenaltyGroup);
+
 router.get('/games/:gameId/events/:eventId/plus-minus', getEventPlusMinus);
 router.post('/games/:gameId/events/:eventId/plus-minus', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, saveEventPlusMinus);
 
@@ -74,7 +81,6 @@ router.post('/games/:gameId/reopen-shootout', express.json(), requirePermission(
 router.post('/games/:gameId/goalie-log', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, saveGoalieLog);
 router.delete('/games/:gameId/goalie-log/:logId', requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, deleteGoalieLog);
 // Стартовая запись по заявкам на матч: единственный вратарь команды попадает в журнал сам
-router.post('/games/:gameId/goalie-log/autofill', requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, autofillGoalieLog);
 
 // === БРОСКИ В СТВОР ПО ВРАТАРЮ ===
 // Командные броски в створ — производная величина, секретарь её не вводит.

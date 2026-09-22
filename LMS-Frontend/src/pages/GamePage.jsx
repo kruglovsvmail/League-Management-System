@@ -537,7 +537,11 @@ export function GamePage() {
   let currentAwayScore = 0;
   const periodNames = { '1': '1-й период', '2': '2-й период', '3': '3-й период', 'OT': 'Овертайм', 'SO': 'Буллиты' };
   
-  const groupedEvents = sortedEvents.reduce((acc, ev) => {
+  // Штраф-группа (2+2, 2+10 …) в ленте — одна карточка от первой строки: подпись
+  // вида и все причины приходят с бэка (penalty_display, penalty_reasons_text)
+  const groupedEvents = sortedEvents
+    .filter(ev => !(ev.event_type === 'penalty' && ev.penalty_group_id != null && Number(ev.penalty_group_seq) > 1))
+    .reduce((acc, ev) => {
     if (ev.event_type === 'goal') {
       if (ev.team_id === game?.home_team_id) currentHomeScore++;
       else if (ev.team_id === game?.away_team_id) currentAwayScore++;
@@ -1037,7 +1041,7 @@ const EventCard = ({ ev, isHome }) => {
           )}
           {isPenalty && (
              <span className="text-[9px] font-bold text-orange uppercase bg-orange/10 px-1.5 py-0.5 rounded shadow-sm">
-               {ev.penalty_class === 'penalty_shot' ? 'Штрафной бросок' : `${ev.penalty_minutes} мин`}
+               {ev.penalty_class === 'penalty_shot' ? 'Штрафной бросок' : `${ev.penalty_display ?? ev.penalty_minutes} мин`}
              </span>
           )}
           {(isSOGoal || isSOMiss) && (
@@ -1076,7 +1080,7 @@ const EventCard = ({ ev, isHome }) => {
             </div>
           )
         ) : isPenalty ? (
-          <span className="text-[11px] font-medium text-graphite/60 mt-0.5 truncate w-full">{ev.penalty_violation || 'Нарушение правил'}</span>
+          <span className="text-[11px] font-medium text-graphite/60 mt-0.5 truncate w-full">{ev.penalty_reasons_text || ev.penalty_violation || 'Нарушение правил'}</span>
         ) : (
           <span className={`text-[12px] font-bold mt-0.5 truncate w-full ${isSOGoal ? 'text-status-accepted' : 'text-status-rejected'}`}>
             {isSOGoal ? 'Реализован' : 'Не реализован'}

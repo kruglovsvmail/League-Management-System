@@ -52,29 +52,57 @@ export function penaltyReasonAccusative(accusative) {
 }
 
 // ── Формулировка тяжести штрафа («малым штрафом» / «двойным малым штрафом» и т.д.) ──
-// penalty_class — основной источник (см. getPenaltyClass на фронте); penalty_minutes — фолбэк
-// для старых записей, созданных до появления поля penalty_class.
+// penalty_kind — вид штрафа целиком (2+10, 5+20 …, см. utils/penaltyGroups.js) —
+// основной источник. penalty_class и penalty_minutes — фолбэк для записей, созданных
+// до появления видов: у них штраф — одна строка со своим классом.
 
-const PENALTY_CLASS_PHRASE = {
+const PENALTY_KIND_PHRASE = {
     minor: 'малым штрафом',
     double_minor: 'двойным малым штрафом',
-    major: 'большим штрафом',
+    misconduct: 'дисциплинарным штрафом',
+    minor_misconduct: 'малым и дисциплинарным штрафом',
+    double_minor_misconduct: 'двойным малым и дисциплинарным штрафом',
+    game_misconduct: 'дисциплинарным штрафом до конца игры',
+    major: 'большим и дисциплинарным штрафом до конца игры',
+    // Старые записи: матч-штраф одной строкой и большой без двадцатки
     match: 'большим и дисциплинарным штрафом до конца игры',
+    legacy_major: 'большим штрафом',
     // Штрафной бросок назначается ПРОТИВ КОМАНДЫ: нарушитель на скамейку не
     // садится, минут не получает, и называть его в объявлении нечего. Плашка
     // оверлея игрока при этом показывает — там он уместен, в озвучке нет.
     penalty_shot: 'штрафным броском',
 };
 
-export const isTeamOnlyPenalty = (penaltyClass) => penaltyClass === 'penalty_shot';
+export const isTeamOnlyPenalty = (penaltyClass, penaltyKind) => penaltyClass === 'penalty_shot' || penaltyKind === 'penalty_shot';
 
-export function resolvePenaltyClassPhrase(penaltyClass, penaltyMinutes) {
-    let cls = penaltyClass;
-    if (!cls) {
-        const m = parseInt(penaltyMinutes, 10);
-        cls = m === 4 ? 'double_minor' : (m === 25 ? 'match' : (m === 5 ? 'major' : 'minor'));
-    }
-    return PENALTY_CLASS_PHRASE[cls] || PENALTY_CLASS_PHRASE.minor;
+// Вид по классу и минутам старой записи — то же правило, что legacyPenaltyKind на бэке
+const legacyKind = (penaltyClass, penaltyMinutes) => {
+    const m = parseInt(penaltyMinutes, 10);
+    if (penaltyClass === 'penalty_shot') return 'penalty_shot';
+    if (penaltyClass === 'double_minor' || m === 4) return 'double_minor';
+    if (penaltyClass === 'match' || m === 25) return 'match';
+    if (penaltyClass === 'major' || m === 5) return 'legacy_major';
+    if (penaltyClass === 'misconduct' || m === 10) return 'misconduct';
+    if (penaltyClass === 'game_misconduct' || m === 20) return 'game_misconduct';
+    return 'minor';
+};
+
+export function resolvePenaltyClassPhrase(penaltyClass, penaltyMinutes, penaltyKind) {
+    const kind = penaltyKind || legacyKind(penaltyClass, penaltyMinutes);
+    return PENALTY_KIND_PHRASE[kind] || PENALTY_KIND_PHRASE.minor;
+}
+
+// Причины группы для фразы: «за грубость», «за грубость и за атаку в голову»,
+// «за X, за Y и за Z». Берутся только заполненные падежи справочника; одиночная
+// запись приходит массивом из одной причины (или penalty_accusative по старинке).
+export function penaltyReasonsPhrase(accusatives, singleAccusative) {
+    const list = (Array.isArray(accusatives) && accusatives.length > 0 ? accusatives : [singleAccusative])
+        .map(penaltyReasonAccusative)
+        .filter(Boolean);
+    if (list.length === 0) return null;
+    const parts = list.map(r => `за ${r}`);
+    if (parts.length === 1) return parts[0];
+    return `${parts.slice(0, -1).join(', ')} и ${parts[parts.length - 1]}`;
 }
 
 // ── Построение текста состава ────────────────────────────────────────────────
@@ -157,21 +185,22 @@ function formatNameDeclined(pronunciation, firstName, lastName, caseName) {
 // Формулировка отличается от диктора арены (там строчная буква и «до конца игры») —
 // у комментатора тип штрафа стоит в начале фразы, поэтому с большой буквы.
 
-const BROADCAST_PENALTY_CLASS_PHRASE = {
+const BROADCAST_PENALTY_KIND_PHRASE = {
     minor: 'Малым штрафом',
     double_minor: 'Двойным малым штрафом',
-    major: 'Большим штрафом',
+    misconduct: 'Дисциплинарным штрафом',
+    minor_misconduct: 'Малым и дисциплинарным штрафом',
+    double_minor_misconduct: 'Двойным малым и дисциплинарным штрафом',
+    game_misconduct: 'Дисциплинарным штрафом до конца матча',
+    major: 'Большим и дисциплинарным штрафом до конца матча',
     match: 'Большим и дисциплинарным штрафом до конца матча',
+    legacy_major: 'Большим штрафом',
     penalty_shot: 'Штрафным броском',
 };
 
-function resolveBroadcastPenaltyClassPhrase(penaltyClass, penaltyMinutes) {
-    let cls = penaltyClass;
-    if (!cls) {
-        const m = parseInt(penaltyMinutes, 10);
-        cls = m === 4 ? 'double_minor' : (m === 25 ? 'match' : (m === 5 ? 'major' : 'minor'));
-    }
-    return BROADCAST_PENALTY_CLASS_PHRASE[cls] || BROADCAST_PENALTY_CLASS_PHRASE.minor;
+function resolveBroadcastPenaltyClassPhrase(penaltyClass, penaltyMinutes, penaltyKind) {
+    const kind = penaltyKind || legacyKind(penaltyClass, penaltyMinutes);
+    return BROADCAST_PENALTY_KIND_PHRASE[kind] || BROADCAST_PENALTY_KIND_PHRASE.minor;
 }
 
 // ── Построение текста события для КОММЕНТАТОРА (панель трансляции) ──────────
@@ -183,6 +212,7 @@ export function buildBroadcastEventText({
     player_last_name, player_first_name, pronunciation, jersey_number, is_goalie,
     team_name, team_pronunciation,
     penalty_class, penalty_minutes, penalty_violation, penalty_accusative,
+    penalty_kind, penalty_reasons_accusative,
     assist1_last_name, assist1_first_name, assist1_pronunciation, assist1_jersey_number,
     assist2_last_name, assist2_first_name, assist2_pronunciation, assist2_jersey_number,
     goal_strength,
@@ -193,14 +223,16 @@ export function buildBroadcastEventText({
     const scorerPhrase = `${playerDisplay}${playerNumWord ? ` номер ${playerNumWord}` : ''}`;
 
     if (event_type === 'penalty') {
-        const reason = penaltyReasonAccusative(penalty_accusative);
-        const severity = resolveBroadcastPenaltyClassPhrase(penalty_class, penalty_minutes);
+        // Причин у штрафа может быть несколько (2+2 за два разных нарушения) —
+        // называем все: «за грубость и за атаку в голову».
+        const reason = penaltyReasonsPhrase(penalty_reasons_accusative, penalty_accusative);
+        const severity = resolveBroadcastPenaltyClassPhrase(penalty_class, penalty_minutes, penalty_kind);
         // При штрафном броске игрока не называем, даже если он в протоколе есть.
-        const hasPlayer = !isTeamOnlyPenalty(penalty_class)
+        const hasPlayer = !isTeamOnlyPenalty(penalty_class, penalty_kind)
             && !!(player_last_name || player_first_name || pronunciation);
         // Падеж в справочнике не заполнен — причину опускаем целиком:
         // «Большим и дисциплинарным штрафом до конца матча, наказана команда Динамо.»
-        const reasonPart = reason ? ` за ${reason}` : '';
+        const reasonPart = reason ? ` ${reason}` : '';
 
         if (!hasPlayer) {
             return `${severity}${reasonPart}, наказана команда ${teamDisplay}.`;
@@ -269,13 +301,14 @@ export function buildEventText({
     player_last_name, player_first_name, pronunciation, jersey_number, is_goalie,
     team_name, team_pronunciation,
     penalty_class, penalty_minutes, penalty_violation, penalty_accusative,
+    penalty_kind, penalty_reasons_accusative,
     assist1_last_name, assist1_first_name, assist1_pronunciation, assist1_jersey_number,
     assist2_last_name, assist2_first_name, assist2_pronunciation, assist2_jersey_number,
 }) {
     const teamDisplay = team_pronunciation || team_name || '';
     // При штрафном броске наказана команда, а не игрок: фамилию нарушителя
     // диктор не называет, хотя в протоколе она записана.
-    const hasPlayer = !(event_type === 'penalty' && isTeamOnlyPenalty(penalty_class))
+    const hasPlayer = !(event_type === 'penalty' && isTeamOnlyPenalty(penalty_class, penalty_kind))
         && !!(player_last_name || player_first_name || pronunciation);
     const playerDisplay = pronunciation || `${player_first_name || ''} ${player_last_name || ''}`.trim();
     const playerNumWord = jersey_number ? ` номер ${numberToWords(jersey_number)}` : '';
@@ -303,8 +336,9 @@ export function buildEventText({
     }
 
     if (event_type === 'penalty') {
-        const reason = penaltyReasonAccusative(penalty_accusative);
-        const severity = resolvePenaltyClassPhrase(penalty_class, penalty_minutes);
+        // Все причины группы: «за грубость и за атаку в голову двойным малым штрафом…»
+        const reason = penaltyReasonsPhrase(penalty_reasons_accusative, penalty_accusative);
+        const severity = resolvePenaltyClassPhrase(penalty_class, penalty_minutes, penalty_kind);
 
         // Падеж в справочнике не заполнен — причину опускаем, и тогда фраза начинается
         // с тяжести штрафа: «Малым штрафом наказан Иван Петров номер двадцать первый…».
@@ -321,13 +355,15 @@ export function buildEventText({
             return `${opening} наказан ${playerDisplay}${playerNumWord}, команда ${teamDisplay}.`;
         }
 
+        // reason уже со своим «за …»; в начале фразы — с большой буквы
+        const reasonOpening = reason.charAt(0).toUpperCase() + reason.slice(1);
         if (!hasPlayer) {
-            return `За ${reason}, ${severity} наказана команда ${teamDisplay}.`;
+            return `${reasonOpening}, ${severity} наказана команда ${teamDisplay}.`;
         }
         if (is_goalie) {
-            return `За ${reason}, ${severity} наказан вратарь команды ${teamDisplay}, ${playerDisplay}${playerNumWord}.`;
+            return `${reasonOpening}, ${severity} наказан вратарь команды ${teamDisplay}, ${playerDisplay}${playerNumWord}.`;
         }
-        return `За ${reason}, ${severity} наказан ${playerDisplay}${playerNumWord}, команда ${teamDisplay}.`;
+        return `${reasonOpening}, ${severity} наказан ${playerDisplay}${playerNumWord}, команда ${teamDisplay}.`;
     }
 
     return null;

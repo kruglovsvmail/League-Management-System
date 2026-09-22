@@ -9,7 +9,8 @@ import { Button } from './Button';
 // («ОПК»). За нарушителя на скамейке может сидеть другой игрок: за команду и
 // представителя — всегда (сами они не сидят), за игрока — когда тот удалён до конца
 // матча (5+20). Поэтому выбор двухшаговый и с кнопкой «Сохранить», а не по клику:
-//   1-й тап по плитке — нарушитель (бейдж «Н»), 2-й тап по номеру — отбывающий («О»).
+//   1-й тап по плитке — нарушитель (подпись «Нарушитель» под номером), 2-й тап по
+//   номеру — отбывающий («Отбывающий»).
 // Повторный тап по нарушителю снимает весь выбор, по отбывающему — только его.
 // Отбывающий в статистику не идёт, это фиксация в протоколе.
 //
@@ -28,12 +29,10 @@ export const formatPenaltyOffender = (who) => {
   return who.server ? `${head} / ${who.server}` : head;
 };
 
-// Бейдж «Н»/«О» на углу плитки с номером игрока. У «К»/«ОПК» бейджа нет: там и так
-// понятно, что это нарушитель — номером они быть не могут.
-const Badge = ({ children }) => (
-  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-graphite text-white text-[10px] font-black flex items-center justify-center shadow-sm">
-    {children}
-  </span>
+// Подпись роли под номером — мелко, белым по цветной плитке. У «К»/«ОПК» подписи нет:
+// там и так понятно, что это нарушитель — номером они быть не могут.
+const RoleCaption = ({ children }) => (
+  <span className="mt-1 text-[9px] font-semibold uppercase tracking-wider text-white/85">{children}</span>
 );
 
 export function PenaltyOffenderModal({ isOpen, onClose, title = 'Нарушитель', options = [], value, onSelect }) {
@@ -64,7 +63,7 @@ export function PenaltyOffenderModal({ isOpen, onClose, title = 'Нарушит�
   };
 
   const summary = formatPenaltyOffender(who);
-  const tileBase = 'relative h-16 rounded-md border flex items-center justify-center font-bold transition-colors';
+  const tileBase = 'h-16 rounded-md border flex flex-col items-center justify-center font-bold leading-none transition-colors';
   const tileIdle = 'border-graphite/20 text-graphite hover:border-orange hover:bg-orange/5 hover:text-orange';
   const tileOffender = 'border-orange bg-orange text-white shadow-sm';
   const tileServer = 'border-status-pending bg-status-pending text-white shadow-sm';
@@ -83,8 +82,8 @@ export function PenaltyOffenderModal({ isOpen, onClose, title = 'Нарушит�
               className={`${tileBase} text-[18px] ${offender ? tileOffender : server ? tileServer : tileIdle}`}
             >
               {opt.label}
-              {offender && <Badge>Н</Badge>}
-              {server && <Badge>О</Badge>}
+              {offender && <RoleCaption>Нарушитель</RoleCaption>}
+              {server && <RoleCaption>Отбывающий</RoleCaption>}
             </button>
           );
         })}

@@ -3,6 +3,7 @@ import { getLeagueIdForGame } from '../utils/leagueLookup.js';
 import { getPeriodLimits } from '../utils/periodLimits.js';
 import { arenaAudioFileExists } from '../utils/arenaAudioFiles.js';
 import { generateArenaEventAudio } from '../controllers/ttsArenaController.js';
+import { PENALTY_GROUP_LATERAL, PENALTY_GROUP_COLUMNS, decoratePenaltyEvent, isPenaltyContinuationRow } from '../utils/penaltyGroups.js';
 
 // IN-MEMORY хранилище таймеров.
 // Теперь хранит { accumulatedSeconds, startedAt, isRunning, ... }
@@ -367,6 +368,7 @@ export default function setupTimerSockets(io) {
     SELECT
       ge.id, ge.time_seconds, ge.event_type, ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
       pt.tts_accusative as penalty_accusative,
+      ${PENALTY_GROUP_COLUMNS},
       su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
       su.pronunciation as primary_pronunciation,
       gr_su.jersey_number as primary_jersey_number, gr_su.position_in_line as primary_position,
@@ -381,6 +383,7 @@ export default function setupTimerSockets(io) {
     LEFT JOIN tournament_teams tt_ev ON tt_ev.team_id = ge.team_id AND tt_ev.division_id = g_ev.division_id
     -- Падеж причины для диктора из справочника лиги (NULL -> встроенный фолбэк)
     LEFT JOIN penalty_types pt ON pt.id = ge.penalty_reason_id
+    ${PENALTY_GROUP_LATERAL}
     LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id
     LEFT JOIN game_rosters gr_su ON gr_su.game_id = ge.game_id AND gr_su.player_id = su.id AND gr_su.team_id = ge.team_id
     LEFT JOIN users a1 ON ge.assist1_id = a1.id
@@ -396,7 +399,7 @@ export default function setupTimerSockets(io) {
     const state = getAnnouncerState(gameId);
     try {
       const res = await pool.query(GAME_EVENTS_QUERY, [gameId]);
-      state.gameEvents = res.rows;
+      state.gameEvents = res.rows.map(decoratePenaltyEvent);
     } catch (e) {
       console.error(`[ArenaAnnouncer] Ошибка загрузки событий (Матч ${gameId}):`, e);
     }
@@ -419,7 +422,11 @@ export default function setupTimerSockets(io) {
       if (currentSeconds < row.time_seconds) continue; // таймер ещё не дошёл до этого момента
       // Гол без автора озвучивать нечего; штраф — не важно, назначен ли виновник
       // (командный штраф), важно чтобы была причина — она обязательна в форме.
-      const eligible = row.event_type === 'goal' ? !!row.primary_player_id : !!row.penalty_violation;
+      // Строка-продолжение группы штрафа (вторая двойка, десятка) не объявляется —
+      // фраза одна на группу, от первой строки, и в ней все причины.
+      const eligible = row.event_type === 'goal'
+        ? !!row.primary_player_id
+        : (!!row.penalty_violation && !isPenaltyContinuationRow(row));
       if (!eligible) continue;
       if (state.processedEventIds.has(row.id)) continue;
       state.processedEventIds.add(row.id); // помечаем сразу — не проверять повторно, даже если истекло
@@ -439,8 +446,10 @@ export default function setupTimerSockets(io) {
         team_pronunciation: row.team_pronunciation || null,
         penalty_class: row.penalty_class,
         penalty_minutes: row.penalty_minutes,
+        penalty_kind: row.penalty_kind || null,
         penalty_violation: row.penalty_violation,
         penalty_accusative: row.penalty_accusative || null,
+        penalty_reasons_accusative: row.penalty_reasons_accusative || [],
         assist1_last_name: row.assist1_last_name,
         assist1_first_name: row.assist1_first_name,
         assist1_pronunciation: row.assist1_pronunciation || null,

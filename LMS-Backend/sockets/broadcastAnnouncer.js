@@ -21,6 +21,7 @@ import pool from '../config/db.js';
 import { getLeagueIdForGame } from '../utils/leagueLookup.js';
 import { generateBroadcastEventAudio } from '../controllers/ttsBroadcastController.js';
 import { isTimerCurrentlyRunning } from './timerHandler.js';
+import { PENALTY_GROUP_LATERAL, PENALTY_GROUP_COLUMNS, decoratePenaltyEvent, isPenaltyContinuationRow } from '../utils/penaltyGroups.js';
 
 // "Актуальность"/expiry: гол/штраф нередко сохраняют без автора/причины, чтобы сразу отразить
 // на табло, а автора/причину назначают позже. Если это "позже" затянулось дольше expiry секунд
@@ -63,8 +64,10 @@ const getState = (gameId) => {
 // только дельта, поэтому не важно, что счётчик стартует с нуля при каждом рестарте сервера.
 const getRunningMsNow = (s) => s.accumulatedRunningMs + (s.isRunning && s.runSince ? (Date.now() - s.runSince) : 0);
 
+// Строка-продолжение группы штрафа (вторая двойка, десятка) в эфир не идёт —
+// плашка и фраза одна на группу, от первой строки.
 const isEligible = (row) =>
-  row.event_type === 'goal' ? !!row.primary_player_id : !!row.penalty_violation;
+  row.event_type === 'goal' ? !!row.primary_player_id : (!!row.penalty_violation && !isPenaltyContinuationRow(row));
 
 const getEventSignature = (row) =>
   `${row.event_type}_${row.id}_${row.primary_player_id || 'x'}`;
@@ -76,6 +79,7 @@ const EVENTS_QUERY = `
     ge.id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength,
     ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
     pt.tts_accusative as penalty_accusative,
+    ${PENALTY_GROUP_COLUMNS},
     t.id as team_id, COALESCE(tt_ev.snap_name, t.name) as team_name, COALESCE(tt_ev.snap_logo_url, t.logo_url) as team_logo, COALESCE(tt_ev.snap_pronunciation, t.pronunciation) as team_pronunciation,
     su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
     su.pronunciation as primary_pronunciation,
@@ -91,6 +95,7 @@ const EVENTS_QUERY = `
   -- Падеж причины для диктора берём из справочника лиги; пункт могли удалить,
   -- тогда останется NULL и сработает встроенный фолбэк (см. ttsShared.js)
   LEFT JOIN penalty_types pt ON pt.id = ge.penalty_reason_id
+  ${PENALTY_GROUP_LATERAL}
   LEFT JOIN teams t ON ge.team_id = t.id
   LEFT JOIN users su ON COALESCE(ge.scorer_id, ge.penalty_player_id) = su.id
   LEFT JOIN team_members tm_su ON tm_su.user_id = su.id AND tm_su.team_id = ge.team_id
@@ -191,8 +196,10 @@ export default function setupBroadcastAnnouncer(io) {
         team_pronunciation: row.team_pronunciation || null,
         penalty_minutes: row.penalty_minutes,
         penalty_class: row.penalty_class,
+        penalty_kind: row.penalty_kind || null,
         penalty_violation: row.penalty_violation,
         penalty_accusative: row.penalty_accusative || null,
+        penalty_reasons_accusative: row.penalty_reasons_accusative || [],
         assist1_last_name: row.assist1_last_name,
         assist1_first_name: row.assist1_first_name,
         assist1_pronunciation: row.assist1_pronunciation || null,
@@ -295,7 +302,7 @@ export default function setupBroadcastAnnouncer(io) {
   // отмечать момент первого появления заготовки события (см. firstSeenRunningMs), а не только готовых.
   const fetchAllRows = async (gameId) => {
     try {
-      return (await pool.query(EVENTS_QUERY, [gameId])).rows;
+      return (await pool.query(EVENTS_QUERY, [gameId])).rows.map(decoratePenaltyEvent);
     } catch (e) {
       console.error(`[BroadcastAnnouncer] Ошибка загрузки событий (матч ${gameId}):`, e);
       return [];

@@ -12,6 +12,7 @@ export const GameFlowAccordion = ({
   awayRoster,
   timerSeconds,
   onSaveEvent,
+  onSavePenaltyGroup,
   onDeleteEvent,
   onToggleLineup,
   trackPlusMinus,
@@ -61,6 +62,7 @@ export const GameFlowAccordion = ({
                   oppEvents={events.filter(e => e.team_id === game.away_team_id)}
                   timerSeconds={timerSeconds}
                   onSaveEvent={onSaveEvent}
+                  onSavePenaltyGroup={onSavePenaltyGroup}
                   onDeleteEvent={onDeleteEvent}
                   onToggleLineup={onToggleLineup}
                   isPlusMinusEnabled={trackPlusMinus}
@@ -85,6 +87,7 @@ export const GameFlowAccordion = ({
                   oppEvents={events.filter(e => e.team_id === game.home_team_id)}
                   timerSeconds={timerSeconds}
                   onSaveEvent={onSaveEvent}
+                  onSavePenaltyGroup={onSavePenaltyGroup}
                   onDeleteEvent={onDeleteEvent}
                   onToggleLineup={onToggleLineup}
                   isPlusMinusEnabled={trackPlusMinus}

@@ -87,32 +87,200 @@ export const calculatePeriodFromTime = (seconds, pLen, otLen, pCount = 3) => {
   return 'SO';
 };
 
-export const calculatePenaltyTimelines = (penalties) => {
-  const sorted = [...penalties].sort((a, b) => parseInt(a.time_seconds, 10) - parseInt(b.time_seconds, 10));
-  const slots = [0, 0];
+// ─── ВИДЫ ШТРАФОВ ────────────────────────────────────────────────────────────
+// Секретарь выбирает вид, а строк протокола получается столько, сколько у вида:
+// «2+2» — две строки по 2, «2+10» — двойка и десятка, «5+20» — пятёрка и двадцатка.
+// Каждая строка — своё событие со своей причиной, началом и окончанием; вместе их
+// держит penalty_group_id (id первой строки) и penalty_group_seq. Зеркало
+// LMS-Backend/utils/penaltyGroups.js — набор строк и классы должны совпадать.
+//
+// Строки группы идут цепочкой: следующая начинается, когда закончилась предыдущая.
+// onIce — строка занимает слот меньшинства (малый, большой); дисциплинарные 10 и 20
+// на лёд не влияют. needsServer — в этой строке может сидеть партнёр за нарушителя
+// (сам он на десятке или удалён). sharedReason — причина одна на все строки
+// (двадцатка у 5+20 автоматическая, за то же нарушение).
+export const PENALTY_KINDS = {
+  minor:                   { label: '2',    title: 'Малый штраф', rows: [{ minutes: 2, cls: 'minor' }] },
+  double_minor:            { label: '2+2',  title: 'Двойной малый штраф', rows: [{ minutes: 2, cls: 'minor' }, { minutes: 2, cls: 'minor' }] },
+  misconduct:              { label: '10',   title: 'Дисциплинарный штраф', rows: [{ minutes: 10, cls: 'misconduct' }] },
+  minor_misconduct:        { label: '2+10', title: 'Малый + дисциплинарный штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 10, cls: 'misconduct' }] },
+  double_minor_misconduct: { label: '4+10', title: 'Двойной малый + дисциплинарный штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 2, cls: 'minor', needsServer: true }, { minutes: 10, cls: 'misconduct' }] },
+  game_misconduct:         { label: '20',   title: 'Дисциплинарный штраф до конца матча', rows: [{ minutes: 20, cls: 'game_misconduct' }] },
+  major:                   { label: '5+20', title: 'Большой штраф + дисцип. до конца матча', rows: [{ minutes: 5, cls: 'major', needsServer: true }, { minutes: 20, cls: 'game_misconduct' }], sharedReason: true },
+  penalty_shot:            { label: 'ШБ',   title: 'Штрафной бросок', rows: [{ minutes: 0, cls: 'penalty_shot' }] },
+};
+export const PENALTY_KIND_ORDER = ['minor', 'double_minor', 'misconduct', 'minor_misconduct', 'double_minor_misconduct', 'game_misconduct', 'major', 'penalty_shot'];
+// label — минуты (в поле и в списке жирно), description — пояснение бледнее
+export const penaltyKindOptions = PENALTY_KIND_ORDER.map(k => ({ value: k, label: PENALTY_KINDS[k].label, shortLabel: PENALTY_KINDS[k].label, description: PENALTY_KINDS[k].title }));
 
-  return sorted.map(p => {
-    const mins = parseInt(p.penalty_minutes, 10);
-    let effStart = parseInt(p.time_seconds, 10);
-    let effEnd = parseInt(p.penalty_end_time, 10);
+// Классы строк, занимающие слот меньшинства. Старые записи (одна строка на 4 или 25
+// минут, класс double_minor/match) — тоже слот: там вся группа лежала в одной строке.
+const ON_ICE_CLASSES = ['minor', 'major', 'double_minor', 'match'];
+export const isOnIceRow = (p) => {
+  if (p?.penalty_class) return ON_ICE_CLASSES.includes(p.penalty_class);
+  return [2, 4, 5, 25].includes(parseInt(p?.penalty_minutes, 10));
+};
+// Малый штраф — единственный, который закрывается голом соперника
+export const isMinorRow = (p) => p?.penalty_class === 'minor' || p?.penalty_class === 'double_minor'
+  || (!p?.penalty_class && [2, 4].includes(parseInt(p?.penalty_minutes, 10)));
+// Старая запись двойного малого: 4 минуты одной строкой (до появления групп)
+export const isLegacyDoubleMinor = (p) => p?.penalty_class === 'double_minor' || (!p?.penalty_class && parseInt(p?.penalty_minutes, 10) === 4);
 
-    if (isNaN(effStart) || isNaN(effEnd)) return { ...p, effStart: 0, effEnd: 0 };
+// Вид старой записи — по классу и минутам (зеркало legacyPenaltyKind на бэке)
+export const penaltyKindOf = (p) => {
+  if (!p) return 'minor';
+  if (p.penalty_kind) return p.penalty_kind;
+  const m = parseInt(p.penalty_minutes, 10);
+  if (p.penalty_class === 'penalty_shot') return 'penalty_shot';
+  if (p.penalty_class === 'double_minor' || m === 4) return 'double_minor';
+  if (p.penalty_class === 'match' || m === 25) return 'match';
+  if (p.penalty_class === 'major' || m === 5) return 'legacy_major';
+  if (p.penalty_class === 'misconduct' || m === 10) return 'misconduct';
+  if (p.penalty_class === 'game_misconduct' || m === 20) return 'game_misconduct';
+  return 'minor';
+};
+// Подпись вида для списков: старые записи без группы подписываются как раньше
+const LEGACY_KIND_LABEL = { match: '5+20', legacy_major: '5' };
+export const penaltyKindLabel = (p) => {
+  const kind = penaltyKindOf(p);
+  return PENALTY_KINDS[kind]?.label ?? LEGACY_KIND_LABEL[kind] ?? String(p?.penalty_minutes ?? '');
+};
 
-    const isSlotPenalty = [2, 4, 5, 25].includes(mins);
-    
-    if (isSlotPenalty) {
-      slots.sort((a, b) => a - b);
-      if (slots[0] > effStart) {
-        effStart = slots[0];
-      }
-      let duration = effEnd - parseInt(p.time_seconds, 10);
-      effEnd = effStart + duration;
-      let slotDuration = duration;
-      if (mins === 25) slotDuration = Math.min(duration, 300); 
-      slots[0] = effStart + slotDuration;
-    }
-    return { ...p, effStart, effEnd };
+// Ключ группы: id группы, а у старой одиночной записи — её собственный id
+export const penaltyGroupKey = (p) => p?.penalty_group_id ?? p?.id;
+/**
+ * Порядок строк штрафов в протоколе: по времени первой строки группы, а строки одной
+ * группы — подряд, по seq. Вторая двойка у 2+2 начинается позже, и без этого между
+ * строками одной группы вклинивалось бы чужое удаление, начавшееся в промежутке.
+ */
+export const sortPenaltyRows = (penalties) => {
+  const key = (p) => p.penalty_group_id ?? p.id;
+  const seqOf = (p) => Number(p.penalty_group_seq) || 1;
+  const first = new Map();
+  penalties.forEach(p => {
+    const k = key(p);
+    const cur = first.get(k);
+    if (!cur || seqOf(p) < cur.seq) first.set(k, { seq: seqOf(p), time: parseInt(p.time_seconds, 10) || 0, id: p.id });
   });
+  return [...penalties].sort((a, b) => {
+    const fa = first.get(key(a)), fb = first.get(key(b));
+    return fa.time - fb.time || fa.id - fb.id || seqOf(a) - seqOf(b) || a.id - b.id;
+  });
+};
+
+export const isContinuationRow = (p) => p?.penalty_group_id != null && Number(p?.penalty_group_seq) > 1;
+
+/**
+ * Фактические начало и окончание каждой строки штрафа с учётом слотов меньшинства
+ * и цепочек внутри группы.
+ *
+ * Слотов два на команду: третий малый штраф не начинается, пока не освободится
+ * слот (стоит в очереди). Слоты считаются по каждой команде отдельно — раньше
+ * список обеих команд делил одни слоты, и штраф гостей мог «ждать» штраф хозяев.
+ *
+ * Внутри группы строки идут цепочкой: следующая начинается, когда закончилась
+ * предыдущая, — так вторая двойка у 2+2 стартует после первой (или после гола,
+ * который первую закрыл), а десятка после всех двоек. Двадцатка у 5+20 стоит
+ * особняком: начало = время нарушения, окончания нет (effEnd = null).
+ *
+ * Возвращает те же строки в исходном порядке с полями effStart, effEnd, onIce,
+ * chainStart, chainEnd (границы отрезка меньшинства всей группы — для табло).
+ */
+export const calculatePenaltyTimelines = (penalties) => {
+  const byId = new Map();
+  const teams = new Map();
+  penalties.forEach(p => {
+    const teamKey = p.team_id ?? 'x';
+    if (!teams.has(teamKey)) teams.set(teamKey, []);
+    teams.get(teamKey).push(p);
+  });
+
+  teams.forEach(list => {
+    // Группы в порядке начала первой строки; внутри группы — по seq
+    const groups = new Map();
+    list.forEach(p => {
+      const key = penaltyGroupKey(p);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    const ordered = [...groups.values()]
+      .map(rows => rows.sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1) || a.id - b.id))
+      .sort((a, b) => parseInt(a[0].time_seconds, 10) - parseInt(b[0].time_seconds, 10) || a[0].id - b[0].id);
+
+    const slots = [0, 0];
+    ordered.forEach(rows => {
+      let cursor = parseInt(rows[0].time_seconds, 10);
+      if (isNaN(cursor)) cursor = 0;
+      let chainStart = null;
+      let chainEnd = null;
+      let slotTaken = false;
+
+      rows.forEach(p => {
+        const start = parseInt(p.time_seconds, 10);
+        const storedEnd = parseInt(p.penalty_end_time, 10);
+        const onIce = isOnIceRow(p);
+
+        if (p.penalty_class === 'penalty_shot') {
+          const s = isNaN(start) ? 0 : start;
+          byId.set(p.id, { ...p, effStart: s, effEnd: s, onIce: false, chainStart: null, chainEnd: null });
+          return;
+        }
+        if (p.penalty_class === 'game_misconduct' || isNaN(storedEnd)) {
+          // Удалён до конца матча: считается с момента нарушения, окончания нет
+          byId.set(p.id, { ...p, effStart: isNaN(start) ? cursor : start, effEnd: null, onIce: false, chainStart: null, chainEnd: null });
+          return;
+        }
+
+        const duration = Math.max(0, storedEnd - (isNaN(start) ? cursor : start));
+        let effStart = cursor;
+        if (onIce && !slotTaken) {
+          // Первая строка меньшинства ждёт свободный слот, остальные идут за ней цепочкой
+          slots.sort((a, b) => a - b);
+          if (slots[0] > effStart) effStart = slots[0];
+          slotTaken = true;
+        }
+        const effEnd = effStart + duration;
+        if (onIce) {
+          if (chainStart === null) chainStart = effStart;
+          // У старого матч-штрафа одной строкой на 25 минут слот занят только 5
+          chainEnd = p.penalty_class === 'match' || parseInt(p.penalty_minutes, 10) === 25
+            ? effStart + Math.min(duration, 300)
+            : effEnd;
+        }
+        cursor = effEnd;
+        byId.set(p.id, { ...p, effStart, effEnd, onIce, chainStart, chainEnd });
+      });
+
+      if (chainStart !== null) {
+        slots.sort((a, b) => a - b);
+        slots[0] = chainEnd;
+        // Границы цепочки — одни на всю группу
+        rows.forEach(p => {
+          const r = byId.get(p.id);
+          if (r && r.onIce) byId.set(p.id, { ...r, chainStart, chainEnd });
+        });
+      }
+    });
+  });
+
+  return penalties.map(p => byId.get(p.id) || { ...p, effStart: 0, effEnd: 0, onIce: false, chainStart: null, chainEnd: null });
+};
+
+/**
+ * Позиции табло: одна на группу — отрезок меньшинства целиком (у 2+2 это 4 минуты
+ * одним отсчётом, у 2+10 — 2, у 5+20 — 5). Дисциплинарные на табло не выводятся.
+ * Возвращает первую строку меньшинства каждой группы с effStart/effEnd = границы цепочки.
+ */
+export const calculateOnIcePenalties = (penalties) => {
+  const rows = calculatePenaltyTimelines(penalties);
+  const seen = new Set();
+  return rows.filter(p => {
+    if (!p.onIce || p.chainStart === null) return false;
+    const key = penaltyGroupKey(p);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(p => ({ ...p, effStart: p.chainStart, effEnd: p.chainEnd }));
 };
 
 // --- Справочники ---
@@ -205,13 +373,7 @@ export const goalStrengthOptions = [
 // же эпизоду назначено ещё и удаление, секретарь заводит его отдельной строкой.
 export const PENALTY_SHOT_MINS = 'ps';
 
-export const penaltyMinsOptions = [
-  { value: '2', label: '2' },
-  { value: '4', label: '2+2' },
-  { value: '5', label: '5' },
-  { value: 'match', label: '5+20' },
-  { value: PENALTY_SHOT_MINS, label: 'ШБ' }
-];
+// Виды штрафа в поле «Шт» — см. PENALTY_KINDS выше (penaltyKindOptions)
 
 // ─── ШТРАФНОЙ БРОСОК ПО ХОДУ МАТЧА ───────────────────────────────────────────
 // Три состояния одной строки во «Взятии ворот», и все три — разные типы события:
@@ -282,7 +444,7 @@ export const shootoutOptions = [
 // placeholder — подстановка, которая уйдёт в запись, если ничего не выбрать (время с
 // таймера, «Пустые ворота»): рисуется как значение. hint — просто подсказка, что здесь
 // вводить («Автор», «Причина»): бледная, в запись не идёт.
-const TriggerButton = ({ onClick, value, options = [], placeholder = '', hint = '', className = '', dim = false, warn = false, ghost = false }) => {
+export const TriggerButton = ({ onClick, value, options = [], placeholder = '', hint = '', className = '', dim = false, warn = false, ghost = false }) => {
   const selected = options.find(o => String(o.value) === String(value));
   // В самом поле показываем сокращение, если оно задано (причина штрафа), иначе обычный label.
   // Полное наименование при этом остаётся в подсказке при наведении.
@@ -324,7 +486,7 @@ const NativeSelect = ({ options = [], value, onChange, className = '', placehold
   >
     {!hideEmpty && <option value="">{placeholder || '-'}</option>}
     {options.map(opt => (
-      <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+      <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.description ? `${opt.label} — ${opt.description}` : opt.label}</option>
     ))}
   </select>
 );
@@ -333,15 +495,26 @@ const NativeSelect = ({ options = [], value, onChange, className = '', placehold
 // StylishSelect/CustomSelect/StylishInput сохраняют прежний внешний контракт пропсов
 // (value/onChange/options|roster/exclude), но внутри рендерят разное в зависимости от устройства:
 // мобильный (≤850px + touch) -> системный <select>/ввод, десктоп -> кастомная модалка на базе Modal.jsx.
-export const StylishSelect = ({ value, onChange, exclude = [], className, roster, title, isEditing = false, ghost = false, hint = '' }) => {
+// taken — номера, занятые в этом же событии другой ролью ({ '7': 'Автор' }): в модалке они
+// гаснут с подписью роли под номером, в системном <select> — выключены с подписью.
+// Пустые ключи (роль ещё не выбрана) отбрасываются.
+export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, className, roster, title, isEditing = false, ghost = false, hint = '' }) => {
   const isMobile = useIsMobile();
   // useState вызывается безусловно (Rules of Hooks) — даже если он не понадобится в мобильной ветке,
   // isMobile может измениться на лету при ресайзе окна через границу 850px.
   const [isOpen, setIsOpen] = useState(false);
 
+  const takenClean = Object.fromEntries(Object.entries(taken).filter(([k]) => k && k !== 'undefined' && k !== 'null'));
+
   const options = roster
     .filter(p => !exclude.includes(String(p.jersey_number)))
-    .map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
+    .map(p => {
+      const num = String(p.jersey_number);
+      const badge = takenClean[num];
+      return badge
+        ? { value: num, label: `${num} · ${badge}`, disabled: true }
+        : { value: num, label: num };
+    });
 
   const mergedClassName = `h-[30px] !py-0 !px-2 ${className || ''}`;
 
@@ -356,9 +529,10 @@ export const StylishSelect = ({ value, onChange, exclude = [], className, roster
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         title={title || 'Номер игрока'}
-        options={options}
+        options={options.map(o => ({ value: o.value, label: o.value }))}
         value={value}
         onSelect={(val) => onChange({ target: { value: val } })}
+        taken={takenClean}
       />
     </>
   );

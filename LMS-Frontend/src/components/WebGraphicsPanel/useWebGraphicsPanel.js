@@ -13,7 +13,11 @@ const AUTO_SHOW_DEFAULTS = { enabled: true, delay: 10, duration: 10, expiry: 45 
 // Готовность события к показу/озвучке: гол ждёт автора, штраф — причину нарушения (тот же
 // критерий, что у диктора арены в timerHandler.js). Командный/скамеечный штраф игрока не
 // имеет вообще — раньше это здесь считалось "неготовым" навсегда, хотя причина уже выбрана.
-const isEventEligible = (ev) => ev?.event_type === 'penalty' ? !!ev?.penalty_violation : !!ev?.primary_player_id;
+// Строка-продолжение группы штрафа в эфир не идёт: плашка и фраза одна на группу
+const isPenaltyContinuation = (ev) => ev?.event_type === 'penalty' && ev?.penalty_group_id != null && Number(ev?.penalty_group_seq) > 1;
+const isEventEligible = (ev) => ev?.event_type === 'penalty'
+  ? (!!ev?.penalty_violation && !isPenaltyContinuation(ev))
+  : !!ev?.primary_player_id;
 
 export function useWebGraphicsPanel(gameId) {
   const [game, setGame] = useState(null);
@@ -321,6 +325,7 @@ export function useWebGraphicsPanel(gameId) {
       ev.assist1_id, ev.assist1_last_name, ev.assist1_first_name, ev.assist1_pronunciation, ev.assist1_jersey_number,
       ev.assist2_id, ev.assist2_last_name, ev.assist2_first_name, ev.assist2_pronunciation, ev.assist2_jersey_number,
       ev.penalty_minutes, ev.penalty_violation, ev.penalty_class,
+      ev.penalty_kind, (ev.penalty_reasons_accusative || []).join(','),
       ev.goal_strength, ev.team_pronunciation, ev.team_name
     ].join('|');
   }, []);
@@ -343,7 +348,11 @@ export function useWebGraphicsPanel(gameId) {
       team_pronunciation: ev.team_pronunciation || null,
       penalty_minutes: ev.penalty_minutes,
       penalty_class: ev.penalty_class,
+      penalty_kind: ev.penalty_kind || null,
       penalty_violation: ev.penalty_violation,
+      // Падежи причин из справочника — их отдаёт список событий (decoratePenaltyEvent)
+      penalty_accusative: ev.penalty_accusative || null,
+      penalty_reasons_accusative: ev.penalty_reasons_accusative || [],
       assist1_last_name: ev.assist1_last_name,
       assist1_first_name: ev.assist1_first_name,
       assist1_pronunciation: ev.assist1_pronunciation || null,

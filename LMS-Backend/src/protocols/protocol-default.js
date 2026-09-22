@@ -40,13 +40,27 @@ const formatPenaltyOffender = (penalty) => {
     return penalty.served_by_number ? `${who} / ${penalty.served_by_number}` : who;
 };
 
+// Графа «Мин»: у штрафа-группы (2+2, 2+10, 5+20 — по строке на составляющую, см.
+// utils/penaltyGroups.js) каждая строка печатает свои минуты: «2», «2», «10», «5», «20» —
+// так заполняют бумажный бланк. Составные подписи остались только у старых записей,
+// где весь штраф лежал одной строкой на 4 или 25 минут.
 const formatPenaltyMinutes = (penalty) => {
     if (!penalty) return '';
     // Штрафной бросок минут не даёт — в графе «Шт.» печатаем сам вид наказания.
     if (penalty.penalty_class === 'penalty_shot') return 'ШБ';
+    if (penalty.penalty_group_id) return penalty.penalty_minutes || '';
     if (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) return '2+2';
     if (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) return '5+20';
     return penalty.penalty_minutes || '';
+};
+
+// Графа «Окончание»: у дисциплинарного до конца матча окончания нет — прочерк,
+// как и у штрафного броска.
+const formatPenaltyEnd = (penalty) => {
+    if (!penalty) return '';
+    if (penalty.penalty_class === 'penalty_shot' || penalty.penalty_class === 'game_misconduct') return '—';
+    if (penalty.penalty_end_time === null || penalty.penalty_end_time === undefined) return '—';
+    return formatTime(penalty.penalty_end_time);
 };
 
 // Штрафной бросок по ходу матча печатается строкой во «Взятии ворот»: время,
@@ -121,7 +135,8 @@ const PENALTY_REASON_MAP = {
 };
 
 // Скошенный овал поверх ячейки — так строку «Замечание: да / нет / на обороте»
-// отмечают от руки. Рисуем им «да», когда на обороте есть вписанные замечания.
+// отмечают от руки. Рисуем им «да», когда на обороте есть вписанные замечания,
+// и «нет», когда их нет.
 // preserveAspectRatio="none" растягивает овал по ячейке, non-scaling-stroke не даёт
 // линии растянуться вместе с ним и остаться неровной по толщине.
 const MARK_OVAL = `
@@ -264,7 +279,7 @@ const LEGEND_SECTIONS = [
         title: 'Подписи',
         rows: [
             ['Замечание', 'Отметка о наличии замечаний Главного судьи: «на обороте» — замечания записаны на этой стороне протокола'],
-            ['Тренер, Офиц. лицо', 'Фамилия и подпись (ЭЦП) представителя команды'],
+            ['Тр., Рук., Админ. команды', 'Тренер, руководитель и администратор команды из заявки на матч; фамилия и подпись (ЭЦП)'],
             ['Секретарь, судьи', 'Фамилия и подпись (ЭЦП) официального лица матча'],
         ],
     },
@@ -622,8 +637,9 @@ export const getHtml = (data) => {
     const goalieRows = Array.from({ length: 10 }, (_, i) => data.goalieLog[i] || { time_seconds: null, home_jersey: '', away_jersey: '' });
     const periodsAndTotal = [...(data.periods || []), 'Общ.'];
 
-    // Строку «Замечание» в подвале первой страницы отмечаем «да», если на обороте
-    // есть вписанные замечания. Уведомление о протесте сюда не входит — у него на
+    // Строку «Замечание» в подвале первой страницы отмечаем овалом всегда: «да», если
+    // на обороте есть вписанные замечания, иначе «нет» — пустой строки в подписанном
+    // протоколе быть не должно. Уведомление о протесте сюда не входит — у него на
     // обороте своя отметка «Да»/«Нет» по каждой команде.
     const backNotes = data.notes || {};
     const hasBackNotes = Boolean(
@@ -693,7 +709,7 @@ export const getHtml = (data) => {
                 <div class="gridCell" style="width: 4%;"><span class="dataText">${formatPenaltyMinutes(penalty)}</span></div>
                 <div class="gridCell" style="width: 16%;"><span class="dataText">${t(penaltyReason)}</span></div>
                 <div class="gridCell" style="width: 6%;"><span class="dataText">${formatTime(penalty?.time_seconds)}</span></div>
-                <div class="gridCell" style="width: 6%;"><span class="dataText">${penalty?.penalty_class === 'penalty_shot' ? '—' : formatTime(penalty?.penalty_end_time)}</span></div>
+                <div class="gridCell" style="width: 6%;"><span class="dataText">${formatPenaltyEnd(penalty)}</span></div>
               </div>
             `);
         }
@@ -732,13 +748,13 @@ export const getHtml = (data) => {
 
           <div class="gridRow" style="border-width: 1.5pt; border-style: solid; border-color: #222222; border-top-width: 0; flex-direction: row;">
             <div style="flex: 1; border-right: 1pt solid #858585; justify-content: center; padding-left: 4pt;">
-              <span style="font-size: 6pt; font-weight: normal; color: #000;">Тренер: <span style="font-size: 7pt; color: ${teamData.coachSig ? '#000' : '#d1d1d1'};">${t(teamData.coachSig) || '—'}</span></span>
+              <span style="font-size: 6pt; font-weight: normal; color: #000;">Тренер команды: <span style="font-size: 7pt; color: ${teamData.coachSig ? '#000' : '#d1d1d1'};">${t(teamData.coachSig) || '—'}</span></span>
             </div>
             <div style="flex: 1; border-right: 1pt solid #858585; justify-content: center; padding-left: 4pt;">
-              <span style="font-size: 6pt; font-weight: normal; color: #000;">Офиц. лицо 1: <span style="font-size: 7pt; color: ${teamData.off1Sig ? '#000' : '#d1d1d1'};">${t(teamData.off1Sig) || '—'}</span></span>
+              <span style="font-size: 6pt; font-weight: normal; color: #000;">Руков. команды: <span style="font-size: 7pt; color: ${teamData.off1Sig ? '#000' : '#d1d1d1'};">${t(teamData.off1Sig) || '—'}</span></span>
             </div>
             <div style="flex: 1; justify-content: center; padding-left: 4pt;">
-              <span style="font-size: 6pt; font-weight: normal; color: #000;">Офиц. лицо 2: <span style="font-size: 7pt; color: ${teamData.off2Sig ? '#000' : '#d1d1d1'};">${t(teamData.off2Sig) || '—'}</span></span>
+              <span style="font-size: 6pt; font-weight: normal; color: #000;">Админ. команды: <span style="font-size: 7pt; color: ${teamData.off2Sig ? '#000' : '#d1d1d1'};">${t(teamData.off2Sig) || '—'}</span></span>
             </div>
           </div>
         </div>
@@ -949,7 +965,10 @@ export const getHtml = (data) => {
                 <span class="columnTitle">да</span>
                 ${hasBackNotes ? MARK_OVAL : ''}
               </div>
-              <div class="cellCenter" style="width: 15%;"><span class="columnTitle">нет</span></div>
+              <div class="cellCenter" style="width: 15%; position: relative;">
+                <span class="columnTitle">нет</span>
+                ${!hasBackNotes ? MARK_OVAL : ''}
+              </div>
               <div class="cellCenter" style="width: 30%;"><span class="columnTitle">на обороте</span></div>
             </div>
             <div class="rowTall">

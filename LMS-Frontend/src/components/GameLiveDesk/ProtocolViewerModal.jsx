@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { getToken } from '../../utils/helpers';
 import { Button } from '../../ui/Button';
-import { Select } from '../../ui/Select';
 import { Icon } from '../../ui/Icon';
 
 const A4_HEIGHT_MM = 297;
@@ -92,12 +91,13 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
     setFormState(prev => ({ ...prev, [role]: { ...prev[role], [field]: value } }));
   };
 
-  const handleSign = async (role, isPinless, prefilledUserId) => {
-    const userId = prefilledUserId || formState[role]?.userId;
+  // Подписант в строке уже стоит — представитель из заявки на матч или судья из
+  // назначения; выбирать его не нужно, только ввести PIN.
+  const handleSign = async (role, userId) => {
     const pinCode = formState[role]?.pin || '';
 
     if (!userId) {
-      alert("Выберите пользователя из списка");
+      alert("В этой строке некому подписывать");
       return;
     }
 
@@ -152,12 +152,16 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
 
   const signatures = protocolData?.signatures || {};
 
+  // Представители команды в строках подписей стоят сразу — из заявки на матч
+  // (prefilledTeamStaff: тренер / руководитель / администратор), как судьи из
+  // назначения. Выбирать некого и незачем: подписывает тот, кто заявлен на матч.
+  // Роли нет в заявке — строка пустая, подписывать некому.
   const renderTeamSection = (teamType, teamName) => {
-    const optionsSource = protocolData?.eligibleSigners?.[teamType] || { coaches: [], staff: [] };
+    const prefilled = protocolData?.prefilledTeamStaff?.[teamType] || {};
     const roles = [
-      { key: `${teamType}_coach`, label: 'Тренер', isPinless: true, options: optionsSource.coaches, opt: false },
-      { key: `${teamType}_off1`, label: 'Офиц. лицо 1', isPinless: false, options: optionsSource.staff, opt: false },
-      { key: `${teamType}_off2`, label: 'Офиц. лицо 2', isPinless: false, options: optionsSource.staff, opt: true },
+      { key: `${teamType}_coach`, label: 'Тр. команды', user: prefilled.coach },
+      { key: `${teamType}_off1`, label: 'Рук. команды', user: prefilled.off1 },
+      { key: `${teamType}_off2`, label: 'Ад. команды', user: prefilled.off2 },
     ];
 
     return (
@@ -171,27 +175,12 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
            <div className="flex flex-col w-full divide-y divide-graphite/10">
               {roles.map(r => {
                  const sig = signatures[r.key];
-                 const isSigned = !!sig;
-                 const isFullySigned = isSigned && !!sig.hash;
-                 const isInscribed = isSigned && !sig.hash; 
-                 
-                 const selectOptions = r.options.map(opt => ({ value: opt.id, label: opt.name }));
-
-                 let signedUserId = '';
-                 if (isSigned) {
-                    signedUserId = sig.user_id; 
-                    if (signedUserId && !selectOptions.find(o => o.value === signedUserId)) {
-                      selectOptions.push({ value: signedUserId, label: sig.name });
-                    }
-                 }
-
-                 const currentUserId = isSigned ? signedUserId : (formState[r.key]?.userId || '');
+                 const isFullySigned = !!sig && !!sig.hash;
+                 // Подпись уже есть — показываем её автора, даже если заявку на матч с тех
+                 // пор поменяли. Старые протоколы: «вписанный» без ЭЦП (hash пустой) —
+                 // фамилия стоит, подписать PIN-кодом ещё можно.
+                 const person = sig ? { id: sig.user_id, name: sig.name } : r.user;
                  const currentPin = formState[r.key]?.pin || '';
-
-                 const isOfficialBtnDisabled = isSigning === r.key || 
-                                               !currentUserId || 
-                                               (currentPin.length > 0 && currentPin.length < 4) ||
-                                               (isInscribed && currentPin.length !== 4);
 
                  return (
                     <div key={r.key} className="flex items-center gap-2 py-2 w-full">
@@ -199,42 +188,11 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                          {r.label}
                        </div>
 
-                       <div className="flex-1 min-w-[130px]">
-                          <Select 
-                             options={selectOptions}
-                             value={currentUserId}
-                             onChange={(val) => {
-                                updateForm(r.key, 'userId', val);
-                             }}
-                             placeholder="Выберите..."
-                             isSearchable={true}
-                             className={`w-full px-2 py-1.5 text-[11px] h-[34px] bg-white ${isSigned ? 'opacity-80' : ''}`}
-                             disabled={isSigned || isSigning === r.key} 
-                          />
+                       <div className="flex-1 px-3 bg-gray-50 border border-graphite/10 rounded-md text-[11px] font-semibold text-graphite truncate h-[34px] flex items-center">
+                         {person?.name || <span className="text-graphite/40 font-medium">Не заявлен на матч</span>}
                        </div>
 
-                       {r.isPinless ? (
-                          isSigned ? (
-                             <div className="flex items-center justify-center bg-status-accepted/10 border border-status-accepted/20 h-[34px] px-2 rounded-md shrink-0 w-[95px]">
-                                <span className="text-[9px] font-bold text-status-accepted uppercase flex items-center gap-1">
-                                   <Icon name="save" className="w-3 h-3" />
-                                   Вписано
-                                </span>
-                             </div>
-                          ) : (
-                             <Button 
-                                onClick={() => handleSign(r.key, true, currentUserId)}
-                                disabled={isSigning === r.key || !currentUserId}
-                                isLoading={isSigning === r.key}
-                                loadingText=""
-                                className="w-[34px] h-[34px] p-0 !min-w-[34px] !px-0 shrink-0 shadow-sm flex items-center justify-center rounded-md"
-                             >
-                                {isSigning !== r.key && (
-                                   <Icon name="save" className="w-4 h-4" />
-                                )}
-                             </Button>
-                          )
-                       ) : (
+                       {person && (
                           isFullySigned ? (
                              <div className="flex items-center justify-center bg-status-accepted/10 border border-status-accepted/20 h-[34px] px-2 rounded-md shrink-0 min-w-[95px]">
                                 <span className="text-[9px] font-bold text-status-accepted uppercase flex items-center gap-1">
@@ -244,11 +202,6 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                              </div>
                           ) : (
                              <>
-                               {isInscribed && (
-                                   <div className="flex items-center h-[34px] px-1 mr-1">
-                                      <span className="text-[9px] font-bold text-graphite-light uppercase border-b border-dashed border-graphite-light pb-0.5" title="Вписан в протокол, ожидается ЭЦП">Вписан</span>
-                                   </div>
-                               )}
                                <input 
                                   type="tel" 
                                   style={{ WebkitTextSecurity: 'disc' }}
@@ -256,14 +209,14 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                                   value={currentPin}
                                   onChange={(e) => updateForm(r.key, 'pin', e.target.value.replace(/\D/g, ''))}
                                   placeholder="••••"
-                                  disabled={!currentUserId || isSigning === r.key}
+                                  disabled={isSigning === r.key || !person.id}
                                   autoComplete="off"
                                   name={`code_${r.key}_${Math.random().toString(36).substring(7)}`}
                                   className="w-[50px] h-[34px] border border-graphite/30 rounded-md text-center font-bold text-[12px] text-graphite outline-none focus:border-orange disabled:opacity-50 transition-colors shrink-0"
                                />
                                <Button 
-                                  onClick={() => handleSign(r.key, false, currentUserId)}
-                                  disabled={isOfficialBtnDisabled}
+                                  onClick={() => handleSign(r.key, person.id)}
+                                  disabled={isSigning === r.key || !person.id || currentPin.length < 4}
                                   isLoading={isSigning === r.key}
                                   loadingText=""
                                   className="w-[34px] h-[34px] p-0 !min-w-[34px] !px-0 shrink-0 shadow-sm flex items-center justify-center rounded-md"
@@ -347,7 +300,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
                                   className="w-[50px] h-[34px] border border-graphite/30 rounded-md text-center font-bold text-[12px] text-graphite outline-none focus:border-orange disabled:opacity-50 transition-colors shrink-0"
                                />
                                <Button 
-                                  onClick={() => handleSign(r.key, false, r.user.id)}
+                                  onClick={() => handleSign(r.key, r.user.id)}
                                   disabled={isSigning === r.key || currentPin.length < 4}
                                   isLoading={isSigning === r.key}
                                   loadingText=""
