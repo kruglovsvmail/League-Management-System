@@ -34,7 +34,10 @@ export function PreferencesTab({ setToast }) {
     equip_mark_mouthguard_enabled: false,
     equip_mark_mouthguard_born_after: '1998-12-31',
     allow_match_jersey_change: false,
-    allow_match_letters_change: false
+    allow_match_letters_change: false,
+    sec_auto_time_goals: true,
+    sec_auto_time_penalties: true,
+    sec_auto_time_goalie_log: true
   });
 
   useEffect(() => {
@@ -60,7 +63,10 @@ export function PreferencesTab({ setToast }) {
             equip_mark_mouthguard_enabled: data.data.equip_mark_mouthguard_enabled ?? false,
             equip_mark_mouthguard_born_after: data.data.equip_mark_mouthguard_born_after ?? '1998-12-31',
             allow_match_jersey_change: data.data.allow_match_jersey_change ?? false,
-            allow_match_letters_change: data.data.allow_match_letters_change ?? false
+            allow_match_letters_change: data.data.allow_match_letters_change ?? false,
+            sec_auto_time_goals: data.data.sec_auto_time_goals ?? true,
+            sec_auto_time_penalties: data.data.sec_auto_time_penalties ?? true,
+            sec_auto_time_goalie_log: data.data.sec_auto_time_goalie_log ?? true
           });
         }
       } catch (err) {
@@ -348,6 +354,54 @@ export function PreferencesTab({ setToast }) {
                 <Switch
                   checked={formData.allow_match_letters_change}
                   onChange={(e) => handleStepChange('allow_match_letters_change', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* БЛОК: ВРЕМЯ СОБЫТИЙ В ПАНЕЛИ СЕКРЕТАРЯ — подставлять ли время таймера панели.
+            Выключено — секретарь вводит время сам; без времени событие не сохранить,
+            а в журнале вратарей не нажать «+». */}
+        <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px] relative">
+          <div>
+            <h3 className="text-[13px] font-black uppercase text-graphite tracking-wide">Время событий</h3>
+            <p className="text-[11px] text-graphite-light mt-1 leading-snug">
+              Подставлять в новое событие время таймера панели секретаря. Выключено — время
+              вводится руками, и пока оно не введено, событие не сохраняется и в счёт не идёт.
+            </p>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3" title="Время гола по таймеру панели, если секретарь не ввёл своё">
+              <span className="text-[11px] font-bold text-graphite/70 leading-snug">Голы — время с таймера</span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.sec_auto_time_goals}
+                  onChange={(e) => handleStepChange('sec_auto_time_goals', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3" title="Начало штрафа по таймеру панели, если секретарь не ввёл своё">
+              <span className="text-[11px] font-bold text-graphite/70 leading-snug">Удаления — время с таймера</span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.sec_auto_time_penalties}
+                  onChange={(e) => handleStepChange('sec_auto_time_penalties', e.target.checked)}
+                  disabled={!canEdit}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3" title="Время смены вратаря по таймеру панели, если секретарь не ввёл своё">
+              <span className="text-[11px] font-bold text-graphite/70 leading-snug">Журнал вратарей — время с таймера</span>
+              <div className="shrink-0">
+                <Switch
+                  checked={formData.sec_auto_time_goalie_log}
+                  onChange={(e) => handleStepChange('sec_auto_time_goalie_log', e.target.checked)}
                   disabled={!canEdit}
                 />
               </div>

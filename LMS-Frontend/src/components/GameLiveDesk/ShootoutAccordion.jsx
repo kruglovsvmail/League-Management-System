@@ -203,7 +203,7 @@ const ShootoutColumn = ({ isPending, isClosed, teamId, teamLetter, teamName, tea
 
                     if (shot && shot.id === editShotId && !isClosed && !isReadOnly) {
                         return (
-                            <tr key={`edit-${shot.id}`} className="h-[36px] bg-orange/5 transition-colors">
+                            <tr key={`edit-${shot.id}`} className="h-[36px] bg-orange/10 transition-colors">
                                 <td className="font-bold text-graphite/40 border-r border-graphite/30">{i + 1}</td>
                                 <td className="p-1 border-r border-graphite/30 text-center">
                                     <StylishSelect isEditing title="Бросающий" roster={roster} value={editData.player} onChange={e=>setEditData({...editData, player: e.target.value})} className="font-bold" />

@@ -2,10 +2,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines,
-  CustomSelect, StylishSelect, StylishInput,
+  CustomSelect, StylishSelect, StylishInput, PenaltyOffenderSelect,
   goalStrengthOptions, penaltyMinsOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY,
   PENALTY_SHOT_MINS, PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
 } from './GameDeskShared';
+import { formatPenaltyOffender } from '../../ui/PenaltyOffenderModal';
 import { Icon } from '../../ui/Icon';
 import { EquipmentMark } from '../../ui/EquipmentMark';
 
@@ -116,7 +117,13 @@ export const ProtocolSheet = ({
   goalieLog = [], isReadOnly, league,
   // Справочник причин удаления сезона; если лига его не заполнила, сюда приходит
   // встроенный список (см. usePenaltyReasons)
-  penaltyReasons = penaltyReasonOptions
+  penaltyReasons = penaltyReasonOptions,
+  // Настройки лиги (sec_auto_time_*): подставлять ли в новое событие время таймера
+  // панели. Выключено — время только руками, без него событие не сохранить.
+  autoTimeGoals = true,
+  autoTimePenalties = true,
+  // Дивизион не ведёт броски в створ — графа «Бр» у голов не нужна
+  shotsTrackingEnabled = true
 }) => {
   // Причина уходит в событие снимком: наименование + сокращение + ссылка на пункт.
   // Пункт справочника потом могут отредактировать или удалить — протокол от этого
@@ -139,10 +146,12 @@ export const ProtocolSheet = ({
   const timeouts = teamEvents.filter(e => e.event_type === 'timeout').sort((a, b) => a.time_seconds - b.time_seconds);
 
   const penaltiesWithTimeline = calculatePenaltyTimelines(penalties);
-  const oppPenaltiesWithTimeline = calculatePenaltyTimelines(oppEvents.filter(e => e.event_type === 'penalty'));
+
 
   const [newGoal, setNewGoal] = useState({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal', from_shot: true });
-  const [newPenalty, setNewPenalty] = useState({ player: '', mins: '2', violation: '', start: '' });
+  // who — нарушитель и отбывающий: { type: ''|'player'|'team'|'official', jersey, server }
+  const EMPTY_WHO = { type: '', jersey: '', server: '' };
+  const [newPenalty, setNewPenalty] = useState({ who: EMPTY_WHO, mins: '2', violation: '', start: '' });
 
   const [editGoalId, setEditGoalId] = useState(null);
   const [editGoalData, setEditGoalData] = useState({});
@@ -150,6 +159,29 @@ export const ProtocolSheet = ({
   const [editPenaltyData, setEditPenaltyData] = useState({});
 
   const [manualStr, setManualStr] = useState(false);
+
+  // Время нового события: введённое, иначе с таймера — если лига это разрешила.
+  // null — времени нет: кнопка «+» гаснет, событие в базу не уходит и в счёт не идёт.
+  const newGoalTime = parseTime(newGoal.time) ?? (autoTimeGoals ? timerSeconds : null);
+  const newPenaltyStart = parseTime(newPenalty.start) ?? (autoTimePenalties ? timerSeconds : null);
+  const goalTimeMissing = newGoalTime === null;
+  const penaltyTimeMissing = newPenaltyStart === null;
+
+  // Без нарушителя удаление не сохранить: раньше пустой выбор «-» означал командный
+  // штраф, теперь для него есть своя плитка «К».
+  const penaltyWhoMissing = !newPenalty.who?.type;
+
+  // Форма нового события стоит над списком: без рамок между ячейками, с воздухом
+  // вокруг полей. Голы и удаления тонированы в цвет своих заголовков — так две формы
+  // не сливаются в одну строку. Поля белые с тонкой рамкой (ghost у виджетов): на
+  // тонированном фоне обычные серые поля терялись бы.
+  // Записи в списке подкрашены по типу — тот же язык, что у карточек формы, только
+  // в разы бледнее: пустые строки остаются белыми, записи читаются «гол» / «удаление».
+  const GOAL_TINT = 'bg-status-accepted/[0.035]';
+  const goalInputCell = 'px-1 py-2.5 bg-status-accepted/[0.09]';
+  const penaltyInputCell = 'px-1 py-2.5 bg-status-rejected/[0.08]';
+  const goalGhost = true;
+  const penaltyGhost = true;
 
   // Момент нажатия «Зафиксировать тайм-аут» — от него идёт обратный отсчёт в шапке.
   // Живёт здесь, а не в TimeoutPill: после сохранения пустая кнопка заменяется
@@ -163,6 +195,10 @@ export const ProtocolSheet = ({
     prevTimeoutsCount.current = timeouts.length;
   }, [timeouts.length]);
 
+  // Автоматом ставится только «ПВ» — по журналу вратарей (у соперника на этот
+  // момент пустые ворота). Большинство/меньшинство (+1/+2/-1/-2) секретарь
+  // отмечает руками: по таймлайну штрафов оно считалось ненадёжно. «ШБ» приходит
+  // исходом строки штрафного броска, сюда не попадает.
   const calculateGoalStrength = (timeSecs) => {
     if (timeSecs === null || timeSecs === undefined) return 'equal';
 
@@ -175,32 +211,44 @@ export const ProtocolSheet = ({
        return 'en'; 
     }
 
-    const isPenaltyActive = (p, t) => t >= p.effStart && t < p.effEnd && [2, 4, 5, 25].includes(parseInt(p.penalty_minutes, 10));
-    
-    const myActive = penaltiesWithTimeline.filter(p => isPenaltyActive(p, timeSecs)).length;
-    const oppActive = oppPenaltiesWithTimeline.filter(p => isPenaltyActive(p, timeSecs)).length;
-
-    if (oppActive > myActive) {
-       return (oppActive - myActive) >= 2 ? 'pp2' : 'pp1'; 
-    } else if (myActive > oppActive) {
-       return (myActive - oppActive) >= 2 ? 'sh2' : 'sh1'; 
-    }
-
     return 'equal'; 
   };
 
   useEffect(() => {
      if (manualStr) return; 
-     const timeSecs = newGoal.time ? parseTime(newGoal.time) : timerSeconds;
-     const calcStr = calculateGoalStrength(timeSecs);
+     // Без времени (подстановка с таймера выключена, своё не введено) ситуация
+     // остаётся прочерком — считать её не от чего.
+     const calcStr = calculateGoalStrength(newGoalTime);
      
      if (newGoal.str !== calcStr) {
          setNewGoal(prev => ({ ...prev, str: calcStr }));
      }
-  }, [newGoal.time, timerSeconds, penaltiesWithTimeline, oppPenaltiesWithTimeline, goalieLog, manualStr]);
+  }, [newGoalTime, goalieLog, manualStr]);
 
   const getPlayerId = (jersey) => roster.find(r => r.jersey_number == jersey)?.player_id || null;
   const getJersey = (id) => roster.find(r => r.player_id == id)?.jersey_number || '';
+
+  // Нарушитель/отбывающий: из события — в объект модалки и обратно в поля запроса.
+  // У старых записей типа нет: пустой игрок значил командный штраф.
+  const whoFromEvent = (p) => ({
+    type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
+    jersey: getJersey(p.primary_player_id),
+    server: getJersey(p.penalty_served_by_id),
+  });
+  // В графе «#» списка: нарушитель жирно, отбывающий за ним — бледнее, чтобы «5/3»
+  // не читалось как счёт
+  const renderOffender = (p) => {
+    const who = whoFromEvent(p);
+    const head = formatPenaltyOffender({ ...who, server: '' });
+    return who.server
+      ? <>{head}<span className="text-graphite/40 font-medium"> / {who.server}</span></>
+      : head;
+  };
+  const whoToPayload = (who) => ({
+    player_id: who?.type === 'player' ? getPlayerId(who.jersey) : null,
+    penalty_offender_type: who?.type || 'team',
+    penalty_served_by_id: who?.server ? getPlayerId(who.server) : null,
+  });
 
   const getPenaltyClass = (val) => {
     if (val === PENALTY_SHOT_MINS) return 'penalty_shot';
@@ -252,8 +300,9 @@ export const ProtocolSheet = ({
   };
 
   const handleAddGoal = () => {
+    if (goalTimeMissing) return;
     onSaveEvent(teamId, 'goal', {
-      time_seconds: parseTime(newGoal.time) ?? timerSeconds,
+      time_seconds: newGoalTime,
       player_id: getPlayerId(newGoal.scorer),
       assist1_id: getPlayerId(newGoal.ast1),
       assist2_id: getPlayerId(newGoal.ast2),
@@ -335,22 +384,23 @@ export const ProtocolSheet = ({
   };
 
   const handleAddPenalty = () => {
-    const startSecs = parseTime(newPenalty.start) ?? timerSeconds;
+    if (penaltyTimeMissing || penaltyWhoMissing) return;
+    const startSecs = newPenaltyStart;
     const mins = resolvePenaltyMinutes(newPenalty.mins);
     const endSecs = computeAutoEnd(startSecs, newPenalty.mins);
 
     onSaveEvent(teamId, 'penalty', {
-      time_seconds: startSecs, penalty_end_time: endSecs, player_id: getPlayerId(newPenalty.player),
+      time_seconds: startSecs, penalty_end_time: endSecs, ...whoToPayload(newPenalty.who),
       penalty_minutes: mins, penalty_class: getPenaltyClass(newPenalty.mins),
       ...penaltySnapshot(newPenalty.violation)
     });
-    setNewPenalty({ player: '', mins: '2', violation: '', start: '' });
+    setNewPenalty({ who: EMPTY_WHO, mins: '2', violation: '', start: '' });
   };
 
   const startEditPenalty = (p) => {
     setEditPenaltyId(p.id);
     setEditPenaltyData({
-      player: getJersey(p.primary_player_id),
+      who: whoFromEvent(p),
       // У ШБ штрафных минут ноль, и по ним вид штрафа не восстановить — только по классу.
       mins: p.penalty_class === 'penalty_shot' ? PENALTY_SHOT_MINS
           : p.penalty_class === 'match' ? 'match'
@@ -365,15 +415,176 @@ export const ProtocolSheet = ({
     const endSecs = computeAutoEnd(startSecs, editPenaltyData.mins);
 
     const success = await onSaveEvent(teamId, 'penalty', {
-      time_seconds: startSecs, penalty_end_time: endSecs, player_id: getPlayerId(editPenaltyData.player),
+      time_seconds: startSecs, penalty_end_time: endSecs, ...whoToPayload(editPenaltyData.who),
       penalty_minutes: mins, penalty_class: getPenaltyClass(editPenaltyData.mins),
       ...penaltySnapshot(editPenaltyData.violation)
     }, editPenaltyId);
     if (success) setEditPenaltyId(null);
   };
 
-  const MAX_ROWS = Math.max(roster.length, goals.length + 1, penaltiesWithTimeline.length + 1, 1);
+  // Строка ввода вынесена из сетки наверх (см. форму под шапкой), поэтому +1 не нужен
+  const MAX_ROWS = Math.max(roster.length, goals.length, penaltiesWithTimeline.length, 1);
   const rows = Array.from({ length: MAX_ROWS });
+  // Разметка колонок и шапка общие для двух таблиц: формы ввода (сверху) и списка.
+  // Две таблицы с одним colgroup и процентными ширинами дают одинаковые колонки.
+  // table-fixed + проценты на всех колонках (сумма 100): раскладка тянется вместе
+  // с шириной панели, а пропорции держатся. Ориентир — сетка ~1250px: 1% ≈ 12.5px.
+  // Время гола, «Нач» и «Окон» одинаковые; «#» удалений шире обычного номера
+  // («ОПК/75», «12/44»); «Причина» — под сокращение.
+  const colGroup = (
+          <colgroup>
+            <col className="w-[2.6%]" />
+            <col className="w-[11.2%]" />
+            <col className="w-[3.6%]" />
+
+            <col className="w-[2.6%]" />
+            <col className="w-[5.8%]" />
+            <col className="w-[5.6%]" />
+            <col className="w-[5.6%]" />
+            <col className="w-[5.6%]" />
+            <col className="w-[4.5%]" />
+            {shotsTrackingEnabled && <col className="w-[3.8%]" />}
+            <col className="w-[5.6%]" />
+
+            <col className="w-[6.7%]" />
+            <col className="w-[6.2%]" />
+            <col className="w-[13.4%]" />
+            <col className="w-[5.8%]" />
+            <col className="w-[5.8%]" />
+            <col className="w-[5.6%]" />
+          </colgroup>
+  );
+  // Заголовки блоков — над формой ввода, заголовки колонок — под ней, над списком:
+  // так подписи колонок читаются и для полей формы, и для записей.
+  // withBottom — жирная нижняя граница: нужна над списком (только чтение), над формой —
+  // нет, там заголовки просто сидят на серой подложке формы.
+  // leftCell — что стоит над составом: над формой это ячейка с логотипом на две строки
+  // (rowSpan), над списком — пустая.
+  const blockTitlesRow = (withBottom, leftCell = <th colSpan="3" className={`py-2 ${withBottom ? 'border-b-2 border-graphite/25' : ''}`}></th>) => (
+            <tr className="bg-gray-bg-light text-graphite">
+              {leftCell}
+              <th colSpan={shotsTrackingEnabled ? 8 : 7} className={`py-2 font-bold uppercase tracking-widest text-[10px] text-status-accepted ${withBottom ? 'border-b-2 border-graphite/25' : ''}`}>Взятие ворот</th>
+              <th colSpan="6" className={`py-2 font-bold uppercase tracking-widest text-[10px] text-status-rejected ${withBottom ? 'border-b-2 border-graphite/25' : ''}`}>Удаления</th>
+            </tr>
+  );
+  const columnTitlesHead = (
+          <thead>
+            <tr className="bg-graphite/15 text-[11px] text-graphite-light uppercase tracking-wider relative z-0">
+              <th className="border-l border-graphite/30 border-r [border-right-color:rgb(var(--graphite)_/_0.12)] py-1.5 font-bold">#</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 text-left px-2 font-bold">Фамилия, Имя</th>
+              <th className="border-r-2 border-graphite/25 py-1.5 font-bold">Поз</th>
+
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted"></th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted">Время</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted">Г</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted">П1</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted">П2</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted">ИС</th>
+              {shotsTrackingEnabled && <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-accepted" title="С броска / без броска">Бр</th>}
+              <th className="border-r-2 border-graphite/25 py-1.5"></th>
+              
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-rejected">#</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-rejected">Шт</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 px-2 font-bold text-status-rejected">Причина</th> 
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-rejected">Нач</th>
+              <th className="border-r border-graphite/[0.12] py-1.5 font-bold text-status-rejected">Окон</th>
+              <th className="border-r border-graphite/30 py-1.5"></th>
+            </tr>
+          </thead>
+  );
+  // Ячейки формы нового события — те же виджеты, что были в строке ввода внутри сетки
+  const goalInputCells = (
+                    <>
+                      {/* Левый край карточки выезжает на 12px в колонку номера строки (псевдоэлемент):
+                          сама колонка в форме пустая, а поле «Время» без этого упиралось в край */}
+                      <td className={`${goalInputCell} relative before:content-[''] before:absolute before:inset-y-0 before:-left-3 before:w-3 before:rounded-l-md before:bg-status-accepted/[0.09]`}><StylishInput ghost={goalGhost} hint={autoTimeGoals ? '' : 'Время'} isTimeField title="Время гола" value={newGoal.time} placeholder={autoTimeGoals ? formatTime(timerSeconds) : ''} onChange={e=>setNewGoal({...newGoal, time: formatTimeMask(e.target.value)})} /></td>
+                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Автор" title="Автор гола" roster={roster} value={newGoal.scorer} onChange={e=>setNewGoal({...newGoal, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
+                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Пас 1" title="Ассистент 1" roster={roster} value={newGoal.ast1} onChange={e=>setNewGoal({...newGoal, ast1: e.target.value})} exclude={[newGoal.scorer]} /></td>
+                      <td className={goalInputCell}><StylishSelect ghost={goalGhost} hint="Пас 2" title="Ассистент 2" roster={roster} value={newGoal.ast2} onChange={e=>setNewGoal({...newGoal, ast2: e.target.value})} exclude={[newGoal.scorer, newGoal.ast1]} /></td>
+                      <td className={goalInputCell}>
+                         <CustomSelect
+                            ghost={goalGhost}
+                            hint="ИС"
+                            title="Игровая ситуация"
+                            options={goalStrengthOptions}
+                            value={newGoal.str === 'equal' ? '' : newGoal.str}
+                            onChange={e => {
+                               setManualStr(true);
+                               setNewGoal({...newGoal, str: e.target.value});
+                            }}
+                            hideEmpty
+                         />
+                      </td>
+                      {shotsTrackingEnabled && (
+                      <td className={`${goalInputCell} text-center`}>
+                        <button
+                          type="button"
+                          onClick={() => setNewGoal({...newGoal, from_shot: !newGoal.from_shot})}
+                          className={`mx-auto flex items-center justify-center w-7 h-7 rounded hover:bg-graphite/10 transition-colors ${newGoal.from_shot ? 'text-status-accepted' : 'text-status-rejected'}`}
+                          title={newGoal.from_shot ? 'С броска' : 'Без броска'}
+                        >
+                          <Icon name={newGoal.from_shot ? 'shootout_goal' : 'shootout_miss'} className="w-5 h-5" />
+                        </button>
+                      </td>
+                      )}
+                      <td className={`${goalInputCell} text-center border-r-[6px] border-transparent bg-clip-padding rounded-r-[12px]`}>
+                        <button
+                          onClick={handleAddGoal}
+                          disabled={goalTimeMissing}
+                          className={`mx-auto w-full max-w-[52px] h-[30px] rounded-md transition-colors flex items-center justify-center ${goalTimeMissing ? 'bg-transparent ring-1 ring-inset ring-graphite/20 text-graphite/25 cursor-not-allowed' : 'bg-status-accepted text-white hover:bg-status-accepted/90 shadow-sm'}`}
+                          title={goalTimeMissing ? 'Укажите время гола' : 'Добавить гол'}
+                        >
+                          <Icon name="plus" className="w-6 h-6" />
+                        </button>
+                      </td>
+                    </>
+  );
+  const penaltyInputCells = (
+                    <>
+                      <td className={`${penaltyInputCell} !pl-2.5 rounded-l-md`}><PenaltyOffenderSelect ghost={penaltyGhost} hint="Игрок" title="Нарушитель" roster={roster} value={newPenalty.who} onChange={who=>setNewPenalty({...newPenalty, who})} className="!text-status-rejected font-bold" /></td>
+                      <td className={penaltyInputCell}>
+                        <CustomSelect
+                          ghost={penaltyGhost}
+                          title="Штраф" options={penaltyMinsOptions} value={newPenalty.mins}
+                          onChange={e=>setNewPenalty({...newPenalty, mins: e.target.value})}
+                          hideEmpty
+                        />
+                      </td>
+                      <td className={penaltyInputCell}><CustomSelect ghost={penaltyGhost} hint="Причина" emptyLabel="— не выбрано —" dense title="Причина удаления" options={penaltyReasons} value={newPenalty.violation} onChange={e=>setNewPenalty({...newPenalty, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
+                      <td className={penaltyInputCell}>
+                        <StylishInput
+                          ghost={penaltyGhost}
+                          hint={autoTimePenalties ? '' : 'Начало'}
+                          isTimeField title="Начало штрафа" value={newPenalty.start} placeholder={autoTimePenalties ? formatTime(timerSeconds) : ''}
+                          onChange={e=>setNewPenalty({...newPenalty, start: formatTimeMask(e.target.value)})}
+                          onBlur={()=>{
+                            // Введённое время нормализуем к ММ:СС; при подстановке с таймера
+                            // пустое поле после ухода фокуса фиксирует текущее время таймера
+                            const s = newPenaltyStart;
+                            if (s !== null && !isNaN(s)) setNewPenalty(prev => ({ ...prev, start: formatTime(s) }));
+                          }}
+                        />
+                      </td>
+                      <td className={`${penaltyInputCell} text-center font-mono text-[13px] text-graphite/40`} title="Окончание штрафа рассчитывается автоматически">
+                        {(() => {
+                          if (newPenalty.mins === PENALTY_SHOT_MINS) return '—';
+                          const s = newPenaltyStart;
+                          return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, newPenalty.mins)) : '';
+                        })()}
+                      </td>
+                      <td className={`${penaltyInputCell} text-center border-r-[6px] border-transparent bg-clip-padding rounded-r-[12px]`}>
+                        <button
+                          onClick={handleAddPenalty}
+                          disabled={penaltyTimeMissing || penaltyWhoMissing}
+                          className={`mx-auto w-full max-w-[52px] h-[30px] rounded-md transition-colors flex items-center justify-center ${(penaltyTimeMissing || penaltyWhoMissing) ? 'bg-transparent ring-1 ring-inset ring-graphite/20 text-graphite/25 cursor-not-allowed' : 'bg-status-rejected text-white hover:bg-status-rejected/90 shadow-sm'}`}
+                          title={penaltyWhoMissing ? 'Укажите нарушителя' : penaltyTimeMissing ? 'Укажите начало штрафа' : 'Добавить удаление'}
+                        >
+                          <Icon name="plus" className="w-6 h-6" />
+                        </button>
+                      </td>
+                    </>
+  );
+
   const loadingClass = isSaving ? "opacity-60 pointer-events-none select-none transition-opacity" : "transition-opacity";
 
   return (
@@ -383,7 +594,8 @@ export const ProtocolSheet = ({
         
         <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center gap-3 shrink-0 min-w-[200px]">
           <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center font-black rounded-sm shrink-0">{teamLetter}</span>
-          {teamLogo && <img src={teamLogo} alt={teamName} className="w-8 h-8 object-contain drop-shadow-sm shrink-0" />}
+          {/* Логотип живёт слева от формы ввода; в шапке он только когда формы нет */}
+          {isReadOnly && teamLogo && <img src={teamLogo} alt={teamName} className="w-8 h-8 object-contain drop-shadow-sm shrink-0" />}
           <span className="truncate max-w-[260px]" title={teamName}>{teamName}</span>
         </div>
         
@@ -419,63 +631,43 @@ export const ProtocolSheet = ({
         </div>
       </div>
 
-      <div className="overflow-x-visible pb-12 pt-0.5">
+      <div className="overflow-x-visible pb-4 pt-0.5">
+        {/* Сверху вниз: заголовки блоков → форма нового события → заголовки колонок →
+            список. Форма всегда на одном месте и не уезжает вниз по мере накопления
+            записей; шапка колонок под ней подписывает и поля формы, и записи. Обе
+            таблицы на одном colGroup — поля стоят ровно над своими графами. */}
+        {!isReadOnly && (
+          <div className="bg-gray-bg-light pb-3">
+          {/* border-separate (а не collapse): у ячеек работают скругления, и каждая форма
+              становится отдельной «карточкой» на подложке. Рамок у формы нет, поэтому
+              разница моделей ни на чём другом не сказывается. Зазор между карточками —
+              прозрачная 6px-рамка крайних ячеек; фон под неё не красится (bg-clip-padding). */}
+          <table className="w-full min-w-[950px] text-sm text-center border-separate border-spacing-0 table-fixed select-none">
+            {colGroup}
+            <tbody className="text-graphite">
+              {/* Логотип на две строки: заголовки зон + форма */}
+              {blockTitlesRow(false, (
+                <td colSpan="3" rowSpan="2" className="py-0 align-middle">
+                  {teamLogo && <img src={teamLogo} alt={teamName} className="h-20 w-20 mx-auto object-contain drop-shadow-sm" />}
+                </td>
+              ))}
+              <tr>
+                <td></td>
+                {goalInputCells}
+                {penaltyInputCells}
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        )}
+
         <table className="w-full min-w-[950px] text-sm text-center border-collapse table-fixed select-none">
-          <colgroup>
-            <col className="w-8" />
-            <col className="w-[140px]" />
-            <col className="w-8" />
-
-            <col className="w-8" />
-            <col className="w-[64px]" />
-            <col className="w-11" />
-            <col className="w-11" />
-            <col className="w-11" />
-            <col className="w-14" />
-            <col className="w-12" />
-            <col className="w-[70px]" />
-
-            <col className="w-11" />
-            <col className="w-[52px]" />
-            <col className="w-auto" />
-            <col className="w-[64px]" />
-            <col className="w-[64px]" />
-            <col className="w-[70px]" />
-          </colgroup>
-
-          <thead>
-            <tr className="bg-graphite/5 text-graphite">
-              <th colSpan="3" className="border-t-1 border-l-1 border-r-1 border-b-2 border-graphite/25 py-2 font-bold uppercase tracking-widest text-[10px]">Состав на матч</th>
-              <th colSpan="8" className="border-t-1 border-r-1 border-b-2 border-graphite/25 py-2 font-bold uppercase tracking-widest text-[10px] text-status-accepted">Взятие ворот</th>
-              <th colSpan="6" className="border-t-1 border-r-1 border-b-2 border-graphite/25 py-2 font-bold uppercase tracking-widest text-[10px] text-status-rejected">Удаления</th>
-            </tr>
-            <tr className="bg-graphite/15 text-[11px] text-graphite-light uppercase tracking-wider relative z-0">
-              <th className="border-l-2 border-graphite/25 border-r border-graphite/30 py-1.5 font-bold">#</th>
-              <th className="border-r border-graphite/30 py-1.5 text-left px-2 font-bold">Фамилия, Имя</th>
-              <th className="border-r-2 border-graphite/25 py-1.5 font-bold">Поз</th>
-
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted"></th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">Время</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">Г</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">П1</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">П2</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted">ИС</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-accepted" title="С броска / без броска">Бр</th>
-              <th className="border-r-2 border-graphite/25 py-1.5"></th>
-              
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">#</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Шт</th>
-              <th className="border-r border-graphite/30 py-1.5 text-left px-2 font-bold text-status-rejected">Причина</th> 
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Нач</th>
-              <th className="border-r border-graphite/30 py-1.5 font-bold text-status-rejected">Окон</th>
-              <th className="border-r-2 border-graphite/25 py-1.5"></th>
-            </tr>
-          </thead>
-          
+          {colGroup}
+          {isReadOnly && <thead>{blockTitlesRow(true)}</thead>}
+          {columnTitlesHead}
           <tbody className="bg-white text-graphite relative z-10">
             {rows.map((_, i) => {
               const player = roster[i]; const goal = goals[i]; const penalty = penaltiesWithTimeline[i];
-              const isGoalInput = i === goals.length; const isPenaltyInput = i === penaltiesWithTimeline.length;
               const isEditingGoal = goal && goal.id === editGoalId; const isEditingPenalty = penalty && penalty.id === editPenaltyId;
 
               const isPenaltyShot = penalty?.penalty_class === 'penalty_shot';
@@ -496,27 +688,25 @@ export const ProtocolSheet = ({
                 } else { endTimeDisplay = formatTime(penalty.penalty_end_time); }
               }
 
-              const isLastRow = i === MAX_ROWS - 1;
-
               return (
-                <tr key={i} className={`even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[34px] ${isLastRow ? 'border-b-2 border-graphite/25' : 'border-b border-graphite/30'}`}>
+                <tr key={i} className="hover:bg-graphite/5 transition-colors group h-[34px] border-b border-graphite/30">
                   {/* РОСТЕР */}
-                  <td className="border-l-2 border-graphite/25 border-r border-graphite/30 font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
-                  <td className="border-r border-graphite/30 text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">
+                  <td className="border-l border-graphite/30 border-r [border-right-color:rgb(var(--graphite)_/_0.12)] font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
+                  <td className="border-r border-graphite/[0.12] text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">
                     {player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}
                     {/* Значок обязательной экипировки по возрасту: секретарю он нужен прямо
                         в протоколе — по нему проверяют игрока перед выходом на лёд */}
                     {player && <EquipmentMark birthDate={player.birth_date} league={league} position={player.position_in_line || player.position} className="ml-1" />}
                   </td>
-                  <td className="border-r-2 border-graphite/25 text-[11px] text-graphite-light font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
+                  <td className="border-r-2 border-graphite/25 text-[11px] text-graphite/40 font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
 
                   {/* ВЗЯТИЕ ВОРОТ */}
-                  <td className="border-r border-graphite/30 font-bold text-graphite/25 text-[12px]">{goal || (isGoalInput && !isReadOnly) || isEditingGoal ? i + 1 : ''}</td>
+                  <td className={`border-r border-graphite/[0.12] font-bold text-graphite/25 text-[12px] ${goal && !isEditingGoal ? GOAL_TINT : ''}`}>{goal || isEditingGoal ? i + 1 : ''}</td>
                   {isEditingGoal && !isReadOnly && isPenaltyShotEvent(goal) ? (
                     <>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput isEditing isTimeField title="Время штрафного броска" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Бьющий" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
-                      <td colSpan="2" className="border-r border-graphite/30 p-0.5 bg-orange/5">
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishInput isEditing isTimeField title="Время штрафного броска" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Бьющий" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
+                      <td colSpan="2" className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                           isEditing
                           title="Исход штрафного броска"
@@ -528,22 +718,22 @@ export const ProtocolSheet = ({
                       </td>
                       {/* ИС и «Бр» у штрафного броска предопределены и не редактируются:
                           ситуация всегда ШБ, бросок всегда в створ. */}
-                      <td className="border-r border-graphite/30 bg-orange/5 text-[10px] text-graphite/40 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
-                      <td className="border-r border-graphite/30 bg-orange/5 text-graphite/25 font-bold">—</td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/5"><button onClick={() => saveEditPs(goal)} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
+                      <td className="border-r border-graphite/[0.12] bg-orange/10 text-[10px] text-graphite/40 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
+                      {shotsTrackingEnabled && <td className="border-r border-graphite/[0.12] bg-orange/10 text-graphite/25 font-bold">—</td>}
+                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/10"><button onClick={() => saveEditPs(goal)} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : goal && isPenaltyShotEvent(goal) ? (
                     <>
-                      <td className="border-r border-graphite/30 font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
-                      <td className="border-r border-graphite/30 font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
                       {/* Ассистентов у штрафного броска нет — вместо двух ячеек одна
                           с исходом. ИС и «Бр» на месте, но правке не подлежат. */}
-                      <td colSpan="2" className={`border-r border-graphite/30 text-[11px] uppercase tracking-wider ${(PS_OUTCOME_VIEW[goal.event_type] || PS_OUTCOME_VIEW[PS_PENDING]).className}`}>
+                      <td colSpan="2" className={`bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-[11px] uppercase tracking-wider ${(PS_OUTCOME_VIEW[goal.event_type] || PS_OUTCOME_VIEW[PS_PENDING]).className}`}>
                         {(PS_OUTCOME_VIEW[goal.event_type] || PS_OUTCOME_VIEW[PS_PENDING]).label}
                       </td>
-                      <td className="border-r border-graphite/30 text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
-                      <td className="border-r border-graphite/30 text-graphite/25 font-bold" title="Штрафной бросок всегда идёт в створ">—</td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center">
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
+                      {shotsTrackingEnabled && <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-graphite/25 font-bold" title="Штрафной бросок всегда идёт в створ">—</td>}
+                      <td className="bg-status-accepted/[0.035] border-r-2 border-graphite/25 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
                                {/* +/- у штрафного броска не бывает: эпизод разыгрывается один на один.
@@ -556,11 +746,11 @@ export const ProtocolSheet = ({
                     </>
                   ) : isEditingGoal && !isReadOnly ? (
                     <>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishInput isEditing isTimeField title="Время гола" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Ассистент 1" roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} exclude={[editGoalData.scorer]} /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Ассистент 2" roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} exclude={[editGoalData.scorer, editGoalData.ast1]} /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5">
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishInput isEditing isTimeField title="Время гола" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 1" roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} exclude={[editGoalData.scorer]} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 2" roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} exclude={[editGoalData.scorer, editGoalData.ast1]} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                            isEditing
                            title="Игровая ситуация"
@@ -570,7 +760,8 @@ export const ProtocolSheet = ({
                            hideEmpty
                         />
                       </td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5 text-center">
+                      {shotsTrackingEnabled && (
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center">
                         <button
                           type="button"
                           onClick={() => setEditGoalData({...editGoalData, from_shot: !editGoalData.from_shot})}
@@ -580,16 +771,18 @@ export const ProtocolSheet = ({
                           <Icon name={editGoalData.from_shot ? 'shootout_goal' : 'shootout_miss'} className="w-5 h-5" />
                         </button>
                       </td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/5"><button onClick={saveEditGoal} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
+                      )}
+                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/10"><button onClick={saveEditGoal} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : goal ? (
                     <>
-                      <td className="border-r border-graphite/30 font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
-                      <td className="border-r border-graphite/30 font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
-                      <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist1_id)}</td>
-                      <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist2_id)}</td>
-                      <td className="border-r border-graphite/30 text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY[goal.goal_strength] || ''}</td>
-                      <td className="border-r border-graphite/30 text-center">
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist1_id)}</td>
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist2_id)}</td>
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY[goal.goal_strength] || ''}</td>
+                      {shotsTrackingEnabled && (
+                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-center">
                         <button
                           type="button"
                           onClick={() => !isReadOnly && toggleGoalFromShot(goal)}
@@ -600,7 +793,8 @@ export const ProtocolSheet = ({
                           <Icon name={(goal.from_shot ?? true) ? 'shootout_goal' : 'shootout_miss'} className="w-5 h-5" />
                         </button>
                       </td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center">
+                      )}
+                      <td className="bg-status-accepted/[0.035] border-r-2 border-graphite/25 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
                                {isPlusMinusEnabled && <button onClick={() => onRequestPlusMinus(goal)} className={`transition-colors ${goal.has_plus_minus ? 'text-status-accepted hover:text-status-accepted/80' : 'text-graphite/25 hover:text-status-accepted'}`} title="Показатель полезности (+/-)"><Icon name="users" className="w-[18px] h-[18px]" /></button>}
@@ -610,83 +804,53 @@ export const ProtocolSheet = ({
                          )}
                       </td>
                     </>
-                  ) : (isGoalInput && !isReadOnly) ? (
-                    <>
-                      <td className="border-r border-graphite/30 p-0.5"><StylishInput isTimeField title="Время гола" value={newGoal.time} placeholder={formatTime(timerSeconds)} onChange={e=>setNewGoal({...newGoal, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r border-graphite/30 p-0.5"><StylishSelect title="Автор гола" roster={roster} value={newGoal.scorer} onChange={e=>setNewGoal({...newGoal, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
-                      <td className="border-r border-graphite/30 p-0.5"><StylishSelect title="Ассистент 1" roster={roster} value={newGoal.ast1} onChange={e=>setNewGoal({...newGoal, ast1: e.target.value})} exclude={[newGoal.scorer]} /></td>
-                      <td className="border-r border-graphite/30 p-0.5"><StylishSelect title="Ассистент 2" roster={roster} value={newGoal.ast2} onChange={e=>setNewGoal({...newGoal, ast2: e.target.value})} exclude={[newGoal.scorer, newGoal.ast1]} /></td>
-                      <td className="border-r border-graphite/30 p-0.5">
-                         <CustomSelect
-                            title="Игровая ситуация"
-                            options={goalStrengthOptions}
-                            value={newGoal.str}
-                            onChange={e => {
-                               setManualStr(true);
-                               setNewGoal({...newGoal, str: e.target.value});
-                            }}
-                            hideEmpty
-                         />
-                      </td>
-                      <td className="border-r border-graphite/30 p-0.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setNewGoal({...newGoal, from_shot: !newGoal.from_shot})}
-                          className={`mx-auto flex items-center justify-center w-7 h-7 rounded hover:bg-graphite/10 transition-colors ${newGoal.from_shot ? 'text-status-accepted' : 'text-status-rejected'}`}
-                          title={newGoal.from_shot ? 'С броска' : 'Без броска'}
-                        >
-                          <Icon name={newGoal.from_shot ? 'shootout_goal' : 'shootout_miss'} className="w-5 h-5" />
-                        </button>
-                      </td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center"><button onClick={handleAddGoal} className="w-full h-full min-h-[34px] hover:bg-status-accepted/10 text-status-accepted transition-colors flex items-center justify-center"><Icon name="plus" className="w-6 h-6" /></button></td>
-                    </>
                   ) : (
-                    <><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r-2 border-graphite/25"></td></>
+                    <><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td>{shotsTrackingEnabled && <td className="border-r border-graphite/[0.12]"></td>}<td className="border-r-2 border-graphite/25"></td></>
                   )}
 
                   {/* УДАЛЕНИЯ */}
                   {isEditingPenalty && !isReadOnly ? (
                     <>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><StylishSelect isEditing title="Оштрафованный игрок" roster={roster} value={editPenaltyData.player} onChange={e=>setEditPenaltyData({...editPenaltyData, player: e.target.value})} className="!text-status-rejected font-bold" /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5">
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData({...editPenaltyData, who})} className="!text-status-rejected font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                           isEditing title="Штраф" options={penaltyMinsOptions} value={editPenaltyData.mins}
                           onChange={e=>setEditPenaltyData({...editPenaltyData, mins: e.target.value})}
                           hideEmpty
                         />
                       </td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5"><CustomSelect isEditing title="Причина удаления" options={penaltyReasons} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5">
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><CustomSelect isEditing dense title="Причина удаления" options={penaltyReasons} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <StylishInput
                           isEditing isTimeField title="Начало штрафа" value={editPenaltyData.start}
                           onChange={e=>setEditPenaltyData({...editPenaltyData, start: formatTimeMask(e.target.value)})}
                         />
                       </td>
-                      <td className="border-r border-graphite/30 p-0.5 bg-orange/5 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
                         {(() => {
                           if (editPenaltyData.mins === PENALTY_SHOT_MINS) return '—';
                           const s = parseTime(editPenaltyData.start);
                           return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, editPenaltyData.mins)) : '';
                         })()}
                       </td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/5"><button onClick={saveEditPenalty} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
+                      <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditPenalty} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : penalty ? (
                     <>
-                      <td className="border-r border-graphite/30 font-bold text-[13px] text-graphite">{getJersey(penalty.primary_player_id)}</td>
-                      <td className="border-r border-graphite/30 font-semibold text-[13px] text-graphite">
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite whitespace-nowrap" title={penalty.penalty_served_by_id ? 'Нарушитель / отбывающий' : undefined}>{renderOffender(penalty)}</td>
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite">
                         {isPenaltyShot ? 'ШБ'
                           : (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) ? '2+2'
                           : (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) ? '5+20'
                           : penalty.penalty_minutes}
                       </td>
-                      {/* Полная формулировка — секретарю удобнее читать причину целиком.
-                          Сокращение (penalty_violation_code) остаётся снимком в событии и
-                          печатается в PDF-протоколе, где ширина графы жёстко ограничена. */}
-                      <td className="border-r border-graphite/30 text-left px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation}</td>
-                      <td className="border-r border-graphite/30 font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
-                      <td className={`border-r border-graphite/30 ${endTimeClass}`}>{endTimeDisplay}</td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center">
+                      {/* В графе — только сокращение (снимок penalty_violation_code, для старых
+                          записей — по наименованию), как и в PDF-протоколе; полная формулировка
+                          остаётся в подсказке при наведении. */}
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation_code || getPenaltyReasonCode(penalty.penalty_violation)}</td>
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
+                      <td className={`bg-status-rejected/[0.035] border-r border-graphite/[0.12] ${endTimeClass}`}>{endTimeDisplay}</td>
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/30 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
                                <button onClick={() => startEditPenalty(penalty)} className="text-graphite/25 hover:text-orange transition-colors" title="Редактировать"><Icon name="edit" className="w-[18px] h-[18px]" /></button>
@@ -695,38 +859,8 @@ export const ProtocolSheet = ({
                          )}
                       </td>
                     </>
-                  ) : (isPenaltyInput && !isReadOnly) ? (
-                    <>
-                      <td className="border-r border-graphite/30 p-0.5"><StylishSelect title="Оштрафованный игрок" roster={roster} value={newPenalty.player} onChange={e=>setNewPenalty({...newPenalty, player: e.target.value})} className="!text-status-rejected font-bold" /></td>
-                      <td className="border-r border-graphite/30 p-0.5">
-                        <CustomSelect
-                          title="Штраф" options={penaltyMinsOptions} value={newPenalty.mins}
-                          onChange={e=>setNewPenalty({...newPenalty, mins: e.target.value})}
-                          hideEmpty
-                        />
-                      </td>
-                      <td className="border-r border-graphite/30 p-0.5"><CustomSelect title="Причина удаления" options={penaltyReasons} value={newPenalty.violation} onChange={e=>setNewPenalty({...newPenalty, violation: e.target.value})} dropdownWidth="min-w-[280px]" className="px-1" /></td>
-                      <td className="border-r border-graphite/30 p-0.5">
-                        <StylishInput
-                          isTimeField title="Начало штрафа" value={newPenalty.start} placeholder={formatTime(timerSeconds)}
-                          onChange={e=>setNewPenalty({...newPenalty, start: formatTimeMask(e.target.value)})}
-                          onBlur={()=>{
-                            const s = newPenalty.start ? parseTime(newPenalty.start) : timerSeconds;
-                            if (s !== null && !isNaN(s)) setNewPenalty(prev => ({ ...prev, start: formatTime(s) }));
-                          }}
-                        />
-                      </td>
-                      <td className="border-r border-graphite/30 p-0.5 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-                        {(() => {
-                          if (newPenalty.mins === PENALTY_SHOT_MINS) return '—';
-                          const s = newPenalty.start ? parseTime(newPenalty.start) : timerSeconds;
-                          return (s !== null && !isNaN(s)) ? formatTime(computeAutoEnd(s, newPenalty.mins)) : '';
-                        })()}
-                      </td>
-                      <td className="border-r-2 border-graphite/25 p-0 text-center"><button onClick={handleAddPenalty} className="w-full h-full min-h-[34px] hover:bg-status-rejected/10 text-status-rejected transition-colors flex items-center justify-center"><Icon name="plus" className="w-6 h-6" /></button></td>
-                    </>
                   ) : (
-                    <><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r border-graphite/30"></td><td className="border-r-2 border-graphite/25"></td></>
+                    <><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/30"></td></>
                   )}
                 </tr>
               );

@@ -67,7 +67,10 @@ const fetchRawProtocolData = async (gameId) => {
         SELECT ge.id, ge.team_id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength, ge.penalty_minutes, ge.penalty_class, ge.penalty_violation, ge.penalty_violation_code, ge.penalty_end_time, ge.against_goalie_id,
             u_scorer.last_name as scorer_last_name, gr_scorer.jersey_number as scorer_number,
             u_a1.last_name as a1_last_name, gr_a1.jersey_number as a1_number,
-            u_a2.last_name as a2_last_name, gr_a2.jersey_number as a2_number
+            u_a2.last_name as a2_last_name, gr_a2.jersey_number as a2_number,
+            -- Штраф на команду («К») / представителя («ОПК») и номер отбывающего за
+            -- нарушителя — графа «№» блока «Удаление» печатает «ОПК/75», «12/44»
+            ge.penalty_offender_type, gr_srv.jersey_number as served_by_number
         FROM game_events ge
         -- COALESCE обязателен: у штрафа автора нет, нарушитель лежит в
         -- penalty_player_id, и без него в графе «№» блока «Удаление» печаталась
@@ -78,6 +81,7 @@ const fetchRawProtocolData = async (gameId) => {
         LEFT JOIN game_rosters gr_a1 ON ge.assist1_id = gr_a1.player_id AND gr_a1.game_id = $1
         LEFT JOIN users u_a2 ON ge.assist2_id = u_a2.id
         LEFT JOIN game_rosters gr_a2 ON ge.assist2_id = gr_a2.player_id AND gr_a2.game_id = $1
+        LEFT JOIN game_rosters gr_srv ON ge.penalty_served_by_id = gr_srv.player_id AND gr_srv.game_id = $1 AND gr_srv.team_id = ge.team_id
         WHERE ge.game_id = $1 ORDER BY ge.time_seconds ASC
     `;
     const eventsResult = await pool.query(eventsQuery, [gameId]);

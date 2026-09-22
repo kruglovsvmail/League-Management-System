@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { NumberPickerModal } from '../../ui/NumberPickerModal';
 import { OptionListModal } from '../../ui/OptionListModal';
+import { PenaltyOffenderModal, formatPenaltyOffender } from '../../ui/PenaltyOffenderModal';
 import { TimeInputModal } from '../../ui/TimeInputModal';
 
 // --- Утилиты форматирования ---
@@ -171,8 +172,10 @@ export const PENALTY_REASONS = [
 ];
 
 // ОБНОВЛЕННЫЕ СТАТУСЫ ВЗЯТИЯ ВОРОТ
+// «Равные составы» в протоколе не пишут — в базе значение остаётся 'equal'
+// (стата и PDF на него завязаны), а в панели оно показывается прочерком.
 export const GOAL_STRENGTH_DISPLAY = { 
-  'equal': 'РС', 
+  'equal': '-', 
   'pp1': '+1', 
   'pp2': '+2', 
   'sh1': '-1', 
@@ -187,13 +190,14 @@ export const GOAL_STRENGTH_DISPLAY = {
 // счётчика назначенных бросков, после чего «% реализации ШБ» начнёт врать.
 // Показывать ШБ в уже сохранённой строке всё равно надо, поэтому в
 // GOAL_STRENGTH_DISPLAY выше он остаётся.
+// Прочерк (равные составы) — последним: это «ничего не отмечать», а не ситуация.
 export const goalStrengthOptions = [
-  { value: 'equal', label: 'РС' },
   { value: 'pp1', label: '+1' },
   { value: 'pp2', label: '+2' },
   { value: 'sh1', label: '-1' },
   { value: 'sh2', label: '-2' },
-  { value: 'en', label: 'ПВ' }
+  { value: 'en', label: 'ПВ' },
+  { value: 'equal', label: '-' }
 ];
 
 // PENALTY_SHOT_MINS — псевдозначение поля «Шт»: штрафной бросок вместо минут.
@@ -269,26 +273,41 @@ export const shootoutOptions = [
 
 // Кнопка-триггер, открывающая модалку выбора (десктоп). Серая, слегка скруглённая, лёгкая —
 // ширина всегда 100% (диктуется шириной ячейки таблицы). Пусто -> "-".
-// dim=true (строка в режиме редактирования, уже подсвечена bg-orange/5) -> чуть прозрачнее.
-const TriggerButton = ({ onClick, value, options = [], placeholder = '', className = '', dim = false }) => {
+// dim=true (строка открыта на правку) -> белое поле с оранжевой рамкой: вместе с подсветкой
+// ячеек (bg-orange/10) сразу видно, что это режим редактирования, а не просто заполненная строка.
+// warn=true (обязательное поле не заполнено — время при выключенной подстановке с таймера)
+// -> красноватая рамка и плейсхолдер.
+// ghost=true (поле формы нового события) -> белое поле с тонкой рамкой: форма стоит на
+// тонированном фоне, и обычное серое поле на нём сливалось бы.
+// placeholder — подстановка, которая уйдёт в запись, если ничего не выбрать (время с
+// таймера, «Пустые ворота»): рисуется как значение. hint — просто подсказка, что здесь
+// вводить («Автор», «Причина»): бледная, в запись не идёт.
+const TriggerButton = ({ onClick, value, options = [], placeholder = '', hint = '', className = '', dim = false, warn = false, ghost = false }) => {
   const selected = options.find(o => String(o.value) === String(value));
   // В самом поле показываем сокращение, если оно задано (причина штрафа), иначе обычный label.
   // Полное наименование при этом остаётся в подсказке при наведении.
   const displayValue = selected ? (selected.shortLabel || selected.label) : (value || '');
   const fullValue = selected ? selected.label : (value || '');
   const hasValue = Boolean(displayValue || placeholder);
+  const tone = warn
+    ? 'bg-status-rejected/5 ring-1 ring-inset ring-status-rejected/50 hover:bg-status-rejected/10'
+    : dim
+      ? 'bg-white ring-1 ring-inset ring-orange/50 hover:bg-orange/5'
+      : ghost
+        ? 'bg-white ring-1 ring-inset ring-graphite/15 hover:ring-orange/50 hover:bg-orange/5'
+        : 'bg-graphite/[0.08] hover:bg-graphite/10';
   return (
     <button
       type="button"
       onClick={onClick}
       title={hasValue ? (fullValue || displayValue) : undefined}
-      className={`${className} w-full rounded-md overflow-hidden ${dim ? 'bg-graphite/[0.04]' : 'bg-graphite/[0.08]'} hover:bg-graphite/10 transition-colors duration-150 cursor-pointer text-center`}
+      className={`${className} w-full rounded-md overflow-hidden ${tone} transition-colors duration-150 cursor-pointer text-center`}
     >
       {/* span должен быть блочным и с ограниченной шириной — иначе truncate (text-overflow:
           ellipsis) не работает на строчных элементах, и длинная причина штрафа просто
           вылезает за пределы кнопки вместо многоточия. */}
-      <span className={`block w-full truncate text-[13px] font-semibold ${hasValue ? 'text-graphite' : 'text-graphite/40'}`}>
-        {displayValue || placeholder || '-'}
+      <span className={`block w-full truncate text-[13px] font-semibold ${warn && !displayValue ? 'text-status-rejected/70' : hasValue ? 'text-graphite' : 'text-graphite/40'}`}>
+        {displayValue || placeholder || hint || '-'}
       </span>
     </button>
   );
@@ -314,7 +333,7 @@ const NativeSelect = ({ options = [], value, onChange, className = '', placehold
 // StylishSelect/CustomSelect/StylishInput сохраняют прежний внешний контракт пропсов
 // (value/onChange/options|roster/exclude), но внутри рендерят разное в зависимости от устройства:
 // мобильный (≤850px + touch) -> системный <select>/ввод, десктоп -> кастомная модалка на базе Modal.jsx.
-export const StylishSelect = ({ value, onChange, exclude = [], className, roster, title, isEditing = false }) => {
+export const StylishSelect = ({ value, onChange, exclude = [], className, roster, title, isEditing = false, ghost = false, hint = '' }) => {
   const isMobile = useIsMobile();
   // useState вызывается безусловно (Rules of Hooks) — даже если он не понадобится в мобильной ветке,
   // isMobile может измениться на лету при ресайзе окна через границу 850px.
@@ -332,7 +351,7 @@ export const StylishSelect = ({ value, onChange, exclude = [], className, roster
 
   return (
     <>
-      <TriggerButton onClick={() => setIsOpen(true)} value={value} options={options} className={mergedClassName} dim={isEditing} />
+      <TriggerButton onClick={() => setIsOpen(true)} value={value} options={options} className={mergedClassName} dim={isEditing} ghost={ghost} hint={hint} />
       <NumberPickerModal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
@@ -345,7 +364,32 @@ export const StylishSelect = ({ value, onChange, exclude = [], className, roster
   );
 };
 
-export const CustomSelect = ({ value, onChange, options, className, placeholder = "", title, isEditing = false, hideEmpty = false }) => {
+// Графа «#» таблицы «Удаления»: нарушитель (номер, «К» или «ОПК») и отбывающий за него.
+// value — объект { type, jersey, server } (см. PenaltyOffenderModal), onChange получает
+// такой же объект. Модалка одна и на десктопе, и на телефоне: системный <select>
+// два значения выбрать не даёт.
+export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className, title, isEditing = false, ghost = false, hint = '' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const options = roster.map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
+  const label = formatPenaltyOffender(value);
+
+  return (
+    <>
+      <TriggerButton onClick={() => setIsOpen(true)} value={label} className={`h-[30px] !py-0 !px-2 ${className || ''}`} dim={isEditing} ghost={ghost} hint={hint} />
+      <PenaltyOffenderModal
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        title={title || 'Нарушитель'}
+        options={options}
+        value={value}
+        onSelect={onChange}
+      />
+    </>
+  );
+};
+
+// dense — плотные строки в модалке выбора (длинный справочник причин удаления)
+export const CustomSelect = ({ value, onChange, options, className, placeholder = "", hint = '', emptyLabel, title, isEditing = false, hideEmpty = false, dense = false, ghost = false }) => {
   const isMobile = useIsMobile();
   const [isOpen, setIsOpen] = useState(false);
   const mergedClassName = `h-[30px] !py-0 !px-2 ${className || ''}`;
@@ -356,7 +400,7 @@ export const CustomSelect = ({ value, onChange, options, className, placeholder 
 
   return (
     <>
-      <TriggerButton onClick={() => setIsOpen(true)} value={value} options={options} className={mergedClassName} placeholder={placeholder} dim={isEditing} />
+      <TriggerButton onClick={() => setIsOpen(true)} value={value} options={options} className={mergedClassName} placeholder={placeholder} hint={hint} dim={isEditing} ghost={ghost} />
       <OptionListModal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
@@ -365,7 +409,8 @@ export const CustomSelect = ({ value, onChange, options, className, placeholder 
         value={value}
         onSelect={(val) => onChange({ target: { value: val } })}
         hideEmpty={hideEmpty}
-        emptyLabel={placeholder || undefined}
+        emptyLabel={emptyLabel || placeholder || undefined}
+        dense={dense}
       />
     </>
   );
@@ -374,14 +419,21 @@ export const CustomSelect = ({ value, onChange, options, className, placeholder 
 // isTimeField=true -> поле хранит время в формате ММ:СС (formatTimeMask применяется вызывающей
 // стороной как и раньше). isTimeField=false (по умолчанию) -> обычное текстовое/числовое поле
 // (например счетчик бросков в SummaryTablesAccordion) — рендерится как и раньше, без модалок.
-export const StylishInput = ({ value, onChange, placeholder, onBlur, className, isTimeField = false, title, isEditing = false }) => {
+// isRequired=true -> пустое поле подсвечивается как незаполненное (время события при выключенной
+// подстановке с таймера: без него событие не сохранить).
+// hint — бледная подсказка в поле («Время»); placeholder при этом в поле не показывается,
+// но по-прежнему уходит в модалку как значение по умолчанию (время с таймера).
+export const StylishInput = ({ value, onChange, placeholder, hint = '', onBlur, className, isTimeField = false, title, isEditing = false, isRequired = false, ghost = false }) => {
   const isMobile = useIsMobile();
   const [isOpen, setIsOpen] = useState(false);
+  const warn = isRequired && !value;
   const plainClassName = `w-full h-[30px] text-center bg-white border border-graphite/20 hover:border-orange focus:bg-white focus:border-orange focus:ring-2 focus:ring-orange/20 shadow-sm rounded-md outline-none placeholder-graphite/40 transition-all text-sm font-mono font-semibold text-graphite ${className || ''}`;
   // Тот же серый стиль, что у NativeSelect/TriggerButton — визуально единообразные "кнопки" в таблице.
   // Настоящего системного пикера для формата ММ:СС (в отличие от ЧЧ:ММ у <input type="time">) не
   // существует — вызов цифровой клавиатуры телефона через inputMode="numeric" и есть системный ввод.
-  const mobileTimeClassName = `w-full h-[30px] text-center rounded-md border-none bg-graphite/[0.08] outline-none placeholder-graphite/40 text-[13px] font-mono font-semibold text-graphite focus:ring-2 focus:ring-orange/30 ${className || ''}`;
+  const mobileTimeClassName = `w-full h-[30px] text-center rounded-md border-none outline-none text-[13px] font-mono font-semibold text-graphite focus:ring-2 focus:ring-orange/30 ${
+    warn ? 'bg-status-rejected/5 ring-1 ring-inset ring-status-rejected/50 placeholder-status-rejected/70' : 'bg-graphite/[0.08] placeholder-graphite/40'
+  } ${className || ''}`;
 
   if (isTimeField && isMobile) {
     return (
@@ -397,13 +449,14 @@ export const StylishInput = ({ value, onChange, placeholder, onBlur, className, 
   if (isTimeField && !isMobile) {
     return (
       <>
-        <TriggerButton onClick={() => setIsOpen(true)} value={value} placeholder={placeholder} className={`h-[30px] !py-0 !px-2 ${className || ''}`} dim={isEditing} />
+        <TriggerButton onClick={() => setIsOpen(true)} value={value} placeholder={hint ? '' : placeholder} hint={hint} className={`h-[30px] !py-0 !px-2 ${className || ''}`} dim={isEditing} warn={warn} ghost={ghost} />
         <TimeInputModal
           isOpen={isOpen}
           onClose={() => setIsOpen(false)}
           title={title || 'Время'}
           value={value}
-          defaultValue={placeholder}
+          // Обязательное время: подсказки «мм:сс» в поле ввода быть не должно — оно не время
+          defaultValue={isRequired ? '' : placeholder}
           onSave={(val) => onChange({ target: { value: val } })}
         />
       </>

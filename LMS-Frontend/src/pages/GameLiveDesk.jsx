@@ -315,6 +315,53 @@ export function GameLiveDesk() {
 
   useEffect(() => { loadInitialData(); }, [gameId]);
 
+  // Стартовая запись журнала вратарей: если в заявке на матч у команды один вратарь,
+  // он попадает в журнал сам — правило и запись живут на бэке (autofillGoalieLog),
+  // здесь то же условие проверяется заранее, чтобы не дёргать сервер при каждой
+  // перезагрузке данных. Ключ последней попытки помнит ref: иначе при отказе
+  // (окно управления закрыто, нет прав) запрос уходил бы по кругу после каждого
+  // loadInitialData.
+  const goalieAutofillKeyRef = useRef(null);
+  useEffect(() => {
+    // Завершённый матч панель не трогает — то же ограничение стоит и на бэке
+    if (!game || isReadOnly || !['scheduled', 'live'].includes(game.status)) return;
+
+    const lineupGoalieIds = (roster) => roster
+      .filter(r => r.position === 'goalie' || r.position_in_line === 'G')
+      .map(r => String(r.player_id));
+    const homeGoalies = lineupGoalieIds(homeRoster);
+    const awayGoalies = lineupGoalieIds(awayRoster);
+    const first = goalieLog[0];
+    // Сторона ждёт автозаполнения: в заявке ровно один вратарь, а в журнале либо
+    // ничего нет, либо сторона первой записи «не указан» / игрок не из заявки
+    const sideNeedsFill = (goalies, unspecified, goalieId) =>
+      goalies.length === 1 && (!first || unspecified || (goalieId != null && !goalies.includes(String(goalieId))));
+    const needed = sideNeedsFill(homeGoalies, first?.home_goalie_unspecified, first?.home_goalie_id)
+      || sideNeedsFill(awayGoalies, first?.away_goalie_unspecified, first?.away_goalie_id);
+    if (!needed) return;
+
+    // В ключе и состояние первой записи: правка журнала или заявки — новая попытка
+    const key = [
+      first?.id ?? 'none',
+      first?.home_goalie_id, first?.home_goalie_unspecified,
+      first?.away_goalie_id, first?.away_goalie_unspecified,
+      homeGoalies.join(','), awayGoalies.join(','),
+    ].join('|');
+    if (goalieAutofillKeyRef.current === key) return;
+    goalieAutofillKeyRef.current = key;
+
+    (async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/goalie-log/autofill`, { method: 'POST', headers });
+        const data = await res.json();
+        if (data.success && data.changed) {
+          await loadInitialData();
+          socket?.emit('game_updated', { gameId });
+        }
+      } catch (err) { console.error('Ошибка автозаполнения журнала вратарей:', err); }
+    })();
+  }, [game, homeRoster, awayRoster, goalieLog, isReadOnly]);
+
   const lockSocketUpdates = () => {
     ignoreSocketRef.current = true;
     if (ignoreTimeoutRef.current) clearTimeout(ignoreTimeoutRef.current);

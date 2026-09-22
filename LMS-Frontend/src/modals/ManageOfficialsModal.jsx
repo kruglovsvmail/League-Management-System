@@ -210,8 +210,8 @@ export function ManageOfficialsModal({ isOpen, onClose, gameId, initialOfficials
               <div className="bg-graphite/[0.03] p-4 rounded-2xl border border-graphite/10 flex flex-col gap-6">
                 <div className="flex flex-col gap-6">
                   {renderSelectWithAvatar("Секретарь матча", "secretary", refereeOptions)}
-                  {renderSelectWithAvatar("Хронометрист (Время)", "timekeeper", refereeOptions)}
-                  {renderSelectWithAvatar("Диктор-информатор", "informant", refereeOptions)}
+                  {renderSelectWithAvatar("Судья времени матча", "timekeeper", refereeOptions)}
+                  {renderSelectWithAvatar("Судья информатор", "informant", refereeOptions)}
                 </div>
               </div>
 

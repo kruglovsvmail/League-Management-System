@@ -21,7 +21,10 @@ export const getLeaguePreferences = async (req, res) => {
               equip_mark_mouthguard_enabled,
               to_char(equip_mark_mouthguard_born_after, 'YYYY-MM-DD') AS equip_mark_mouthguard_born_after,
               -- Что команда вправе менять в формации на матч (Team-Room)
-              allow_match_jersey_change, allow_match_letters_change
+              allow_match_jersey_change, allow_match_letters_change,
+              -- Панель секретаря: подставлять ли время таймера в новые события;
+              -- выключено — время вводится руками, без него событие не сохранить
+              sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log
        FROM leagues WHERE id = $1`,
       [leagueId]
     );
@@ -38,7 +41,8 @@ export const updateLeaguePreferences = async (req, res) => {
             reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
             equip_mark_ushk_enabled, equip_mark_ushk_max_age,
             equip_mark_mouthguard_enabled, equip_mark_mouthguard_born_after,
-            allow_match_jersey_change, allow_match_letters_change } = req.body;
+            allow_match_jersey_change, allow_match_letters_change,
+            sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log } = req.body;
 
     // Тумблеры: undefined — поле не прислали (вкладка «Арены» шлёт только своё),
     // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
@@ -67,13 +71,17 @@ export const updateLeaguePreferences = async (req, res) => {
          equip_mark_mouthguard_enabled = COALESCE($10, equip_mark_mouthguard_enabled),
          equip_mark_mouthguard_born_after = COALESCE($11, equip_mark_mouthguard_born_after),
          allow_match_jersey_change = COALESCE($12, allow_match_jersey_change),
-         allow_match_letters_change = COALESCE($13, allow_match_letters_change)
-       WHERE id = $14`,
+         allow_match_letters_change = COALESCE($13, allow_match_letters_change),
+         sec_auto_time_goals = COALESCE($14, sec_auto_time_goals),
+         sec_auto_time_penalties = COALESCE($15, sec_auto_time_penalties),
+         sec_auto_time_goalie_log = COALESCE($16, sec_auto_time_goalie_log)
+       WHERE id = $17`,
       [sec_access_before_hours ?? null, sec_access_after_hours ?? null, disqualification_mode ?? null, arena_sort_order ?? null,
        toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
        toggle(equip_mark_ushk_enabled), equip_mark_ushk_max_age ?? null,
        toggle(equip_mark_mouthguard_enabled), equip_mark_mouthguard_born_after || null,
        toggle(allow_match_jersey_change), toggle(allow_match_letters_change),
+       toggle(sec_auto_time_goals), toggle(sec_auto_time_penalties), toggle(sec_auto_time_goalie_log),
        leagueId]
     );
     res.json({ success: true });

@@ -91,6 +91,13 @@ export const getDivisions = async (req, res) => {
                 WHERE status = 'finished' 
                 GROUP BY division_id
             ),
+            -- Все матчи дивизиона, в любом статусе: по этому счётчику расписание
+            -- поднимает наверх выпадашки дивизионы, в которых календарь уже есть.
+            DivAllGames AS (
+                SELECT division_id, COUNT(*) as cnt
+                FROM games
+                GROUP BY division_id
+            ),
             TeamStats AS (
                 SELECT tt.division_id, json_agg(json_build_object(
                     'id', tt.id,
@@ -162,6 +169,7 @@ export const getDivisions = async (req, res) => {
                 COALESCE(dt.cnt, 0) as approved_teams_count,
                 COALESCE(dp.cnt, 0) as approved_players_count,
                 COALESCE(dg.cnt, 0) as finished_games_count,
+                COALESCE(dga.cnt, 0) as games_count,
                 COALESCE(ts.teams, '[]'::json) as teams,
                 -- Допущенные квалификации одним массивом, как их показывает форма настроек.
                 -- NULL внутри массива — пункт «Без квалификации».
@@ -174,6 +182,7 @@ export const getDivisions = async (req, res) => {
             LEFT JOIN DivTeams dt ON d.id = dt.division_id
             LEFT JOIN DivPlayers dp ON d.id = dp.division_id
             LEFT JOIN DivGames dg ON d.id = dg.division_id
+            LEFT JOIN DivAllGames dga ON d.id = dga.division_id
             LEFT JOIN TeamStats ts ON d.id = ts.division_id
             WHERE d.season_id = $1
             ORDER BY d.id

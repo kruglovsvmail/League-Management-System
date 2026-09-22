@@ -712,8 +712,8 @@ export function GamePage() {
                          <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Судейский столик (Оф. лица)</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                            <OfficialCard label="Секретарь матча" official={officials['secretary']} />
-                           <OfficialCard label="Хронометрист" official={officials['timekeeper']} />
-                           <OfficialCard label="Диктор-информатор" official={officials['informant']} />
+                           <OfficialCard label="Судья времени матча" official={officials['timekeeper']} />
+                           <OfficialCard label="Судья информатор" official={officials['informant']} />
                          </div>
                       </div>
 
@@ -1052,7 +1052,12 @@ const EventCard = ({ ev, isHome }) => {
           )}
         </div>
 
-        <span className="text-[15px] font-bold text-graphite leading-tight mb-1 truncate w-full">{ev.primary_last_name} {ev.primary_first_name}</span>
+        {/* Штраф на команду («К») или представителя («ОПК») — игрока в событии нет */}
+        <span className="text-[15px] font-bold text-graphite leading-tight mb-1 truncate w-full">
+          {ev.primary_last_name
+            ? `${ev.primary_last_name} ${ev.primary_first_name || ''}`
+            : isPenalty ? (ev.penalty_offender_type === 'official' ? 'Официальный представитель' : 'Командный штраф') : ''}
+        </span>
         
         {isGoal ? (
           (ev.assist1_id || ev.assist2_id) && (

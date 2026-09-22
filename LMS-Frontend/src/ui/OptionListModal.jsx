@@ -8,7 +8,9 @@ import { Modal } from '../modals/Modal';
 // Опция может нести необязательный `num` — порядковый номер из справочника. Тогда он
 // показывается слева от наименования и участвует в поиске (справочник причин штрафа).
 // Строка поиска появляется сама на длинных списках; `searchable` позволяет решить явно.
-export function OptionListModal({ isOpen, onClose, title = 'Выбор', options = [], value, onSelect, hideEmpty = false, emptyLabel, searchable }) {
+// `dense` ужимает строки (справочник причин удаления): в фиксированную высоту списка
+// помещается заметно больше пунктов, и листать приходится меньше.
+export function OptionListModal({ isOpen, onClose, title = 'Выбор', options = [], value, onSelect, hideEmpty = false, emptyLabel, searchable, dense = false }) {
   const [query, setQuery] = useState('');
 
   // Сбрасываем поиск при каждом открытии, иначе список приедет уже отфильтрованным
@@ -31,6 +33,10 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
     onClose();
   };
 
+  const rowClassName = dense
+    ? 'text-left px-3 py-1.5 rounded-md font-semibold text-[13px] transition-colors border'
+    : 'text-left px-4 py-3 rounded-md font-semibold text-[14px] transition-colors border';
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="normal">
       {showSearch && (
@@ -46,12 +52,12 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
       {/* С поиском высота списка фиксированная: иначе модалка прыгает и сжимается по мере
           того, как ввод отсекает варианты, и кнопки уезжают из-под курсора.
           Без поиска (короткие списки) оставляем прежнее поведение «по содержимому». */}
-      <div className={`flex flex-col gap-1 overflow-y-auto custom-scrollbar -mx-2 px-2 ${showSearch ? 'h-[60vh]' : 'max-h-[60vh]'}`}>
+      <div className={`flex flex-col ${dense ? 'gap-0.5' : 'gap-1'} overflow-y-auto custom-scrollbar -mx-2 px-2 ${showSearch ? 'h-[60vh]' : 'max-h-[60vh]'}`}>
         {!hideEmpty && !query && (
           <button
             type="button"
             onClick={() => handlePick('', { value: '', label: '-' })}
-            className={`text-left px-4 py-3 rounded-md font-semibold text-[14px] transition-colors border ${
+            className={`${rowClassName} ${
               !value ? 'border-orange bg-orange/10 text-orange' : 'border-transparent text-graphite/50 hover:bg-graphite/5'
             }`}
           >
@@ -64,7 +70,7 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
             type="button"
             disabled={opt.disabled}
             onClick={() => handlePick(opt.value, opt)}
-            className={`text-left px-4 py-3 rounded-md font-semibold text-[14px] transition-colors border flex items-center gap-3 ${
+            className={`${rowClassName} flex items-center gap-3 ${
               opt.disabled
                 ? 'text-graphite/30 line-through border-transparent cursor-not-allowed'
                 : String(value) === String(opt.value)

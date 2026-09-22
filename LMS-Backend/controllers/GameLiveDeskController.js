@@ -40,6 +40,35 @@ const createPenaltyShotRow = async (client, gameId, penaltyEventId, penalizedTea
 };
 
 /**
+ * Кто наказан и кто отбывает — поля штрафа из запроса панели.
+ *
+ * Штраф накладывается на игрока, на команду («К») или на официального представителя
+ * («ОПК»). У двух последних игрока-нарушителя нет: penalty_player_id остаётся NULL,
+ * и в личную статистику минуты никому не идут — только в командный штраф (ровно так
+ * же, как раньше вёл себя пустой выбор «-»). Диктор и графика по NULL уже говорят
+ * «командный штраф», представителя отдельно не выделяем.
+ *
+ * penalty_served_by_id — кто сидит на скамейке за нарушителя (за команду, за
+ * представителя или за удалённого до конца матча). Только фиксация в протоколе:
+ * ни штрафы, ни минуты отбывающему не считаются.
+ *
+ * Для не-штрафов всё NULL — колонки штрафные.
+ */
+const PENALTY_OFFENDER_TYPES = ['player', 'team', 'official'];
+const penaltyOffenderFields = (eventType, playerId, offenderType, servedById) => {
+    if (eventType !== 'penalty') return { playerId: null, offenderType: null, servedById: null };
+    // Тип не прислали (старый клиент) — восстанавливаем по наличию игрока
+    const type = PENALTY_OFFENDER_TYPES.includes(offenderType)
+        ? offenderType
+        : (playerId ? 'player' : 'team');
+    return {
+        playerId: type === 'player' ? (playerId || null) : null,
+        offenderType: type,
+        servedById: servedById || null,
+    };
+};
+
+/**
  * Правка счёта матча на ±1. Вынесено отдельно, потому что дёргается из трёх мест:
  * создание гола, удаление гола и смена исхода штрафного броска (не реализован ↔
  * реализован — это гол, появляющийся и исчезающий без создания события).
@@ -110,6 +139,9 @@ export const getGameEvents = async (req, res) => {
                 ge.id, ge.period, ge.time_seconds, ge.event_type, ge.goal_strength,
                 ge.penalty_violation, ge.penalty_violation_code, ge.penalty_reason_id,
                 ge.penalty_minutes, ge.penalty_class, ge.penalty_end_time,
+                -- Кто наказан (игрок / команда «К» / представитель «ОПК») и кто отбывает
+                -- на скамейке за другого — номер отбывающего панель берёт из заявки по id
+                ge.penalty_offender_type, ge.penalty_served_by_id,
                 ge.against_goalie_id, ge.from_shot, ge.linked_event_id,
                 t.id as team_id, COALESCE(tt_ev.snap_name, t.name) as team_name, COALESCE(tt_ev.snap_logo_url, t.logo_url) as team_logo,
                 COALESCE(tt_ev.snap_pronunciation, t.pronunciation) as team_pronunciation,
@@ -190,13 +222,15 @@ export const createGameEvent = async (req, res) => {
             player_id, assist1_id, assist2_id, goal_strength,
             penalty_violation, penalty_violation_code, penalty_reason_id,
             penalty_minutes, penalty_class, penalty_end_time,
-            against_goalie_id, from_shot, linked_event_id
+            against_goalie_id, from_shot, linked_event_id,
+            penalty_offender_type, penalty_served_by_id
         } = req.body;
 
         await client.query('BEGIN');
 
         const isGoalEvent = (event_type === 'goal');
         const isShootoutEvent = (event_type === 'shootout_goal' || event_type === 'shootout_miss');
+        const penaltyWho = penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id);
         // Штрафной бросок по ходу матча: бьющий хранится в scorer_id так же, как
         // автор гола — реализованный бросок становится обычным голом с ИС «ШБ»,
         // и игрок при смене типа события никуда переезжать не должен.
@@ -212,19 +246,21 @@ export const createGameEvent = async (req, res) => {
                 scorer_id, assist1_id, assist2_id, goal_strength,
                 penalty_player_id, penalty_violation, penalty_violation_code, penalty_reason_id,
                 penalty_minutes, penalty_class, penalty_end_time,
-                against_goalie_id, from_shot, linked_event_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                against_goalie_id, from_shot, linked_event_id,
+                penalty_offender_type, penalty_served_by_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
             RETURNING id
         `, [
             gameId, period, time_seconds || 0, event_type, team_id || null,
             (isGoalEvent || isShootoutEvent || isPenaltyShotRow) ? player_id : null,
             assist1_id || null, assist2_id || null, goal_strength || null,
-            event_type === 'penalty' ? player_id : null,
+            penaltyWho.playerId,
             // Причина сохраняется снимком (наименование + сокращение) плюс ссылкой на пункт
             // справочника: пункт могут удалить, а протокол должен печататься как записан.
             penalty_violation || null, penalty_violation_code || null, penalty_reason_id || null,
             penalty_minutes || null, penalty_class || null, penalty_end_time || null,
-            against_goalie_id || null, fromShotValue, linked_event_id || null
+            against_goalie_id || null, fromShotValue, linked_event_id || null,
+            penaltyWho.offenderType, penaltyWho.servedById
         ]);
 
         const eventId = eventRes.rows[0].id;
@@ -263,10 +299,13 @@ export const updateGameEvent = async (req, res) => {
             player_id, assist1_id, assist2_id, goal_strength,
             penalty_violation, penalty_violation_code, penalty_reason_id,
             penalty_minutes, penalty_class, penalty_end_time,
-            against_goalie_id, from_shot
+            against_goalie_id, from_shot,
+            penalty_offender_type, penalty_served_by_id
         } = req.body;
 
         await client.query('BEGIN');
+
+        const penaltyWho = penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id);
 
         const oldEvRes = await client.query('SELECT event_type, team_id, penalty_class FROM game_events WHERE id = $1', [eventId]);
         if (oldEvRes.rows.length === 0) {
@@ -298,17 +337,19 @@ export const updateGameEvent = async (req, res) => {
         scorer_id = $4, assist1_id = $5, assist2_id = $6, goal_strength = $7,
         penalty_player_id = $8, penalty_violation = $9, penalty_minutes = $10, penalty_class = $11, penalty_end_time = $12,
         against_goalie_id = $13, event_type = $15, from_shot = $16,
-        penalty_violation_code = $17, penalty_reason_id = $18
+        penalty_violation_code = $17, penalty_reason_id = $18,
+        penalty_offender_type = $19, penalty_served_by_id = $20
     WHERE id = $14
 `, [
     period, time_seconds || 0, team_id || null,
     (isGoalEvent || isShootoutEvent || isPenaltyShotRow) ? player_id : null, assist1_id || null, assist2_id || null, goal_strength || null,
-    event_type === 'penalty' ? player_id : null, penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
+    penaltyWho.playerId, penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
     against_goalie_id || null,
     eventId,
     event_type,
     fromShotValue,
-    penalty_violation_code || null, penalty_reason_id || null
+    penalty_violation_code || null, penalty_reason_id || null,
+    penaltyWho.offenderType, penaltyWho.servedById
 ]);
 
         // Строка броска живёт ровно столько, сколько штраф остаётся «ШБ».
@@ -662,6 +703,115 @@ export const deleteGoalieLog = async (req, res) => {
     } catch (err) {
         console.error('Ошибка удаления лога вратарей:', err);
         res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    }
+};
+
+// Стартовая запись журнала вратарей по заявкам на матч.
+//
+// Если у команды в заявке на матч ровно один вратарь, кто начал матч в воротах,
+// известно и без секретаря — заводить первую строку журнала руками он не должен.
+// Панель дёргает маршрут при загрузке и при каждом изменении заявок/журнала, а
+// правило одно:
+//   • журнала нет вовсе → создаём запись на 00:00: сторона с единственным вратарём —
+//     он, другая — «не указан», пока её заявка не даст ответ;
+//   • первая запись есть, но сторона в ней «не указан» либо вписан игрок, которого
+//     в заявке на матч уже нет (заявку пересобрали) → вписываем единственного вратаря.
+// Осознанный выбор секретаря (вратарь из заявки, пустые ворота) не трогаем; при
+// 0 или 2+ вратарях в заявке тоже ничего не делаем — тут решает секретарь.
+// Только для матчей, которые ещё не сыграны (scheduled/live): завершённый матч от
+// одного открытия панели меняться не должен — иначе у старой игры без журнала
+// появлялась бы запись, а с ней и пересчёт статистики.
+// Маршрут идемпотентный: повторный вызов без изменений в заявках отвечает changed=false.
+// Строка матча берётся FOR UPDATE: панель открывают с нескольких устройств разом, и
+// без блокировки каждое вставило бы свою стартовую запись.
+export const autofillGoalieLog = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { gameId } = req.params;
+        await client.query('BEGIN');
+
+        const gameRes = await client.query(
+            'SELECT home_team_id, away_team_id, status FROM games WHERE id = $1 FOR UPDATE',
+            [gameId]
+        );
+        if (gameRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        const { home_team_id, away_team_id, status } = gameRes.rows[0];
+        if (!['scheduled', 'live'].includes(status)) {
+            await client.query('COMMIT');
+            return res.json({ success: true, changed: false });
+        }
+
+        // Вратари в заявке на матч по сторонам. Резервный вратарь лиги тоже вратарь:
+        // при своём вратаре плюс резервном в заявке их двое, и автозаполнения не будет.
+        const goaliesRes = await client.query(`
+            SELECT team_id, array_agg(player_id) AS player_ids
+            FROM game_rosters
+            WHERE game_id = $1 AND position_in_line = 'G'
+            GROUP BY team_id
+        `, [gameId]);
+        const lineupGoalies = (teamId) =>
+            goaliesRes.rows.find(r => String(r.team_id) === String(teamId))?.player_ids || [];
+        const soleGoalie = (teamId) => {
+            const ids = lineupGoalies(teamId);
+            return ids.length === 1 ? ids[0] : null;
+        };
+        const homeSole = soleGoalie(home_team_id);
+        const awaySole = soleGoalie(away_team_id);
+
+        let changed = false;
+        if (homeSole || awaySole) {
+            const firstRes = await client.query(
+                'SELECT * FROM game_goalie_log WHERE game_id = $1 ORDER BY time_seconds ASC, id ASC LIMIT 1',
+                [gameId]
+            );
+
+            if (firstRes.rows.length === 0) {
+                await client.query(`
+                    INSERT INTO game_goalie_log (game_id, time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified)
+                    VALUES ($1, 0, $2, $3, $4, $5)
+                `, [gameId, homeSole, awaySole, !homeSole, !awaySole]);
+                changed = true;
+            } else {
+                const first = firstRes.rows[0];
+                // Сторона свободна для автозаполнения: «не указан» либо вписан игрок,
+                // которого в текущей заявке на матч нет. Пустые ворота (id NULL без
+                // флага) — осознанный выбор, его не трогаем.
+                const isOpenSide = (unspecified, goalieId, teamId) =>
+                    unspecified || (goalieId != null && !lineupGoalies(teamId).some(id => String(id) === String(goalieId)));
+                const fillHome = !!homeSole && isOpenSide(first.home_goalie_unspecified, first.home_goalie_id, home_team_id);
+                const fillAway = !!awaySole && isOpenSide(first.away_goalie_unspecified, first.away_goalie_id, away_team_id);
+
+                if (fillHome || fillAway) {
+                    await client.query(`
+                        UPDATE game_goalie_log
+                        SET home_goalie_id = $1, away_goalie_id = $2,
+                            home_goalie_unspecified = $3, away_goalie_unspecified = $4
+                        WHERE id = $5
+                    `, [
+                        fillHome ? homeSole : first.home_goalie_id,
+                        fillAway ? awaySole : first.away_goalie_id,
+                        fillHome ? false : first.home_goalie_unspecified,
+                        fillAway ? false : first.away_goalie_unspecified,
+                        first.id
+                    ]);
+                    changed = true;
+                }
+            }
+        }
+
+        // triggerRecalcFlag здесь не нужен: он срабатывает только у завершённых
+        // матчей, а их отсекли выше.
+        await client.query('COMMIT');
+        res.json({ success: true, changed });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка автозаполнения журнала вратарей:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    } finally {
+        client.release();
     }
 };
 

@@ -13,6 +13,7 @@ import {
     saveEventPlusMinus,
     saveGoalieLog,
     deleteGoalieLog,
+    autofillGoalieLog,
     saveGoalieShotsSummary,
     getGoalieShotsSummary,
     finishShootout,
@@ -72,6 +73,8 @@ router.post('/games/:gameId/reopen-shootout', express.json(), requirePermission(
 
 router.post('/games/:gameId/goalie-log', express.json(), requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, saveGoalieLog);
 router.delete('/games/:gameId/goalie-log/:logId', requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, deleteGoalieLog);
+// Стартовая запись по заявкам на матч: единственный вратарь команды попадает в журнал сам
+router.post('/games/:gameId/goalie-log/autofill', requirePermission('MATCH_SECRETARY_PANEL_ENTER'), requireGameEditWindow, autofillGoalieLog);
 
 // === БРОСКИ В СТВОР ПО ВРАТАРЮ ===
 // Командные броски в створ — производная величина, секретарь её не вводит.

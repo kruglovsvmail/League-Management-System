@@ -17,6 +17,21 @@ import 'dayjs/locale/ru';
 
 dayjs.locale('ru'); 
 
+// Порядок дивизионов в выпадашке: сначала те, где уже есть матчи (в любом статусе),
+// затем те, где есть хотя бы одна команда (с любым статусом заявки), в конце — совсем
+// пустые. Внутри группы сохраняется порядок бэкенда (по id) — sort стабильный.
+const divisionFillRank = (d) => {
+    if (Number(d.games_count) > 0) return 0;
+    if ((d.teams || []).length > 0) return 1;
+    return 2;
+};
+const sortDivisionsByFill = (list) => [...list].sort((a, b) => divisionFillRank(a) - divisionFillRank(b));
+// Счётчик матчей дивизиона приезжает вместе со списком дивизионов; после добавления
+// или удаления матча правим его на месте, чтобы порядок выпадашки не отставал.
+const bumpDivisionGamesCount = (divisionId, delta) => (list) => sortDivisionsByFill(
+    list.map(d => (d.id === divisionId ? { ...d, games_count: Math.max(0, Number(d.games_count) + delta) } : d))
+);
+
 export function GamesPage() {
     const { selectedLeague } = useOutletContext();
     const { checkAccess } = useAccess();
@@ -105,9 +120,12 @@ export function GamesPage() {
             const res = await fetch(`${import.meta.env.VITE_API_URL}/api/seasons/${selectedSeasonId}/divisions`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
             const data = await res.json();
             if (data.success && data.data.length > 0) {
-                setDivisions(data.data);
+                // По умолчанию открываем первый дивизион выпадашки — то есть тот,
+                // где уже есть расписание, а не просто первый созданный.
+                const list = sortDivisionsByFill(data.data);
+                setDivisions(list);
                 const wanted = wantedRef.current.division;
-                const target = (wanted && data.data.find(d => d.id === wanted)) || data.data[0];
+                const target = (wanted && list.find(d => d.id === wanted)) || list[0];
                 setSelectedDivisionId(target.id);
 
                 // Параметры одноразовые: подсказка сработала, дальше страница
@@ -200,6 +218,7 @@ export function GamesPage() {
             const data = await res.json();
             if (data.success) {
                 setGames(prev => [...prev, data.data]);
+                setDivisions(bumpDivisionGamesCount(selectedDivisionId, 1));
                 // Кнопка добавления доступна только внутри isEditMode (см. рендер ниже),
                 // так что новая строка и так уже редактируема через isEditMode || ...
                 // в GameCard — если положить её id ещё и в editingRowIds, при выходе из
@@ -281,6 +300,7 @@ export function GamesPage() {
             
             if (data.success) {
                 setGames(prev => prev.filter(g => g.id !== gameToDelete));
+                setDivisions(bumpDivisionGamesCount(selectedDivisionId, -1));
                 setEditingRowIds(prev => prev.filter(id => id !== gameToDelete));
                 setToast({ title: 'Успешно', message: 'Матч удален', type: 'success' });
             } else {

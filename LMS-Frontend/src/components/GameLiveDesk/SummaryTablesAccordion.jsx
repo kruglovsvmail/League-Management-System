@@ -20,7 +20,7 @@ export const SummaryTablesAccordion = ({
   onSaveGoalieLog, onRequestDeleteGoalieLog, isReadOnly,
   shotsTrackingEnabled = true
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   
   // ── Журнал вратарей ──────────────────────────────────────────────────────
   const [editLogId, setEditLogId] = useState(null);
@@ -171,9 +171,9 @@ export const SummaryTablesAccordion = ({
   };
 
   const handleAddLog = () => {
-    const timeSecs = newLogData.time ? parseTime(newLogData.time) : (timerSeconds || 0);
+    if (logTimeMissing) return;
     onSaveGoalieLog({
-      time_seconds: timeSecs,
+      time_seconds: newLogTime,
       home_goalie_id: newLogData.home_goalie === UNSPECIFIED_GOALIE ? null : (newLogData.home_goalie || null),
       away_goalie_id: newLogData.away_goalie === UNSPECIFIED_GOALIE ? null : (newLogData.away_goalie || null),
       home_goalie_unspecified: newLogData.home_goalie === UNSPECIFIED_GOALIE,
@@ -189,8 +189,32 @@ export const SummaryTablesAccordion = ({
     String(lastHomeValue) === String(newLogData.home_goalie) &&
     String(lastAwayValue) === String(newLogData.away_goalie);
 
-  const goalieRowsCount = isReadOnly ? Math.max(1, goalieLog.length) : Math.max(1, goalieLog.length + 1);
-  const goalieRows = Array.from({ length: goalieRowsCount });
+  // Время новой записи: введённое, иначе с таймера — если лига это разрешила
+  // (sec_auto_time_goalie_log, приезжает вместе с матчем). null — времени нет,
+  // «+» не нажать.
+  const autoTimeGoalieLog = game?.sec_auto_time_goalie_log ?? true;
+  const newLogTime = parseTime(newLogData.time) ?? (autoTimeGoalieLog ? (timerSeconds || 0) : null);
+  const logTimeMissing = newLogTime === null;
+  const addDisabled = isGoaliesMatch || logTimeMissing;
+  const addTitle = logTimeMissing ? 'Укажите время смены' : isGoaliesMatch ? 'Вратари не изменились' : 'Добавить запись';
+
+  // Карточка ввода — как у голов и удалений в ProtocolSheet, только в своём цвете:
+  // синяя, чтобы не путаться ни с зелёной/красной формами событий, ни с оранжевым
+  // режимом правки. Поля белые с тонкой рамкой (ghost), без рамок между ячейками.
+  const logInputCell = 'px-1 py-2.5 bg-status-pending/[0.08]';
+
+  // Строка ввода живёт в отдельной карточке над списком, поэтому +1 не нужен
+  const goalieRows = Array.from({ length: Math.max(1, goalieLog.length) });
+
+  // Общая разметка колонок для карточки ввода и списка журнала
+  const journalColGroup = (
+    <colgroup>
+      <col className="w-[92px]" />
+      <col className="w-auto" />
+      <col className="w-auto" />
+      <col className="w-[80px]" />
+    </colgroup>
+  );
 
   const teams = [
     {
@@ -234,41 +258,85 @@ export const SummaryTablesAccordion = ({
                 <span className="truncate">Время игры вратарей</span>
               </div>
 
-              <div className="overflow-visible pb-12 pt-0.5">
+              {/* Карточка новой записи — над списком, на серой подложке. Та же разметка
+                  колонок, что и у списка (colgroup), поэтому поля стоят ровно над графами.
+                  border-separate — ради скруглений ячеек; зазор от краёв карточки —
+                  прозрачная рамка крайних ячеек с bg-clip-padding. */}
+              {!isReadOnly && (
+                <div className="bg-gray-bg-light py-3 border-b border-graphite/20">
+                  <table className="w-full text-sm text-center border-separate border-spacing-0 table-fixed select-none">
+                    {journalColGroup}
+                    <tbody className="text-graphite">
+                      <tr>
+                        <td className={`${logInputCell} border-l-[12px] border-transparent bg-clip-padding rounded-l-[18px]`}>
+                          <StylishInput
+                            ghost
+                            isTimeField
+                            title="Время смены вратаря"
+                            value={newLogData.time}
+                            hint={autoTimeGoalieLog ? '' : 'Время'}
+                            placeholder={autoTimeGoalieLog ? formatTime(timerSeconds) : ''}
+                            onChange={e => setNewLogData({ ...newLogData, time: formatTimeMask(e.target.value) })}
+                            className="text-center font-bold px-1"
+                          />
+                        </td>
+                        <td className={logInputCell}>
+                          <CustomSelect ghost title="Вратарь хозяев" options={homeGoalieSelectOptions} value={newLogData.home_goalie} onChange={e => setNewLogData({ ...newLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
+                        </td>
+                        <td className={logInputCell}>
+                          <CustomSelect ghost title="Вратарь гостей" options={awayGoalieSelectOptions} value={newLogData.away_goalie} onChange={e => setNewLogData({ ...newLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
+                        </td>
+                        <td className={`${logInputCell} text-center border-r-[12px] border-transparent bg-clip-padding rounded-r-[18px]`}>
+                          <button
+                            onClick={handleAddLog}
+                            disabled={addDisabled}
+                            className={`mx-auto w-full max-w-[52px] h-[30px] rounded-md transition-colors flex items-center justify-center ${addDisabled ? 'bg-transparent ring-1 ring-inset ring-graphite/20 text-graphite/25 cursor-not-allowed' : 'bg-status-pending text-white hover:bg-status-pending/90 shadow-sm'}`}
+                            title={addTitle}
+                          >
+                            <Icon name="plus" className="w-6 h-6" />
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="overflow-visible pb-4 pt-0.5">
                 <table className="w-full text-sm text-center border-collapse table-fixed select-none">
+                  {journalColGroup}
                   <thead>
                     <tr className="bg-graphite/15 text-xs text-graphite-light uppercase tracking-wider relative z-0">
-                      <th className="border-r border-graphite/30 py-2 font-bold w-[70px]">Время</th>
-                      <th className="border-r border-graphite/30 py-2 px-1">
+                      <th className="border-r border-graphite/[0.12] py-2 font-bold">Время</th>
+                      <th className="border-r border-graphite/[0.12] py-2 px-1">
                         <div className="flex items-center justify-center gap-2 text-graphite">
                           <span className="border-[1.5px] border-graphite w-4 h-4 flex items-center justify-center font-black rounded-[5px] text-[11px] shrink-0">{teams[0].letter}</span>
                           <span className="font-bold text-[11px] uppercase truncate" title={teams[0].name}>{teams[0].name || 'ХОЗ'}</span>
                         </div>
                       </th>
-                      <th className="border-r border-graphite/30 py-2 px-1">
+                      <th className="border-r border-graphite/[0.12] py-2 px-1">
                         <div className="flex items-center justify-center gap-2 text-graphite">
                           <span className="border-[1.5px] border-graphite w-4 h-4 flex items-center justify-center font-black rounded-[5px] text-[11px] shrink-0">{teams[1].letter}</span>
                           <span className="font-bold text-[11px] uppercase truncate" title={teams[1].name}>{teams[1].name || 'ГОС'}</span>
                         </div>
                       </th>
-                      <th className="py-2 w-[80px]"></th>
+                      <th className="py-2"></th>
                     </tr>
                   </thead>
                   <tbody className="bg-white text-graphite relative z-10">
                     {goalieRows.map((_, i) => {
                       const log = goalieLog[i];
-                      const isInput = i === goalieLog.length;
 
                       if (log && log.id === editLogId && !isReadOnly) {
                         return (
-                          <tr key={`edit-${log.id}`} className="h-[36px] border-b border-graphite/30 bg-orange/5 transition-colors">
-                            <td className="p-1 border-r border-graphite/30 text-center">
+                          <tr key={`edit-${log.id}`} className="h-[36px] border-b border-graphite/30 bg-orange/10 transition-colors">
+                            <td className="p-1 border-r border-graphite/[0.12] text-center">
                               <StylishInput isEditing isTimeField title="Время смены вратаря" value={editLogData.time} onChange={e => setEditLogData({ ...editLogData, time: formatTimeMask(e.target.value) })} className="text-center font-bold px-1" />
                             </td>
-                            <td className="p-1 border-r border-graphite/30 text-center">
+                            <td className="p-1 border-r border-graphite/[0.12] text-center">
                               <CustomSelect isEditing title="Вратарь хозяев" options={homeGoalieSelectOptions} value={editLogData.home_goalie} onChange={e => setEditLogData({ ...editLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                             </td>
-                            <td className="p-1 border-r border-graphite/30 text-center">
+                            <td className="p-1 border-r border-graphite/[0.12] text-center">
                               <CustomSelect isEditing title="Вратарь гостей" options={awayGoalieSelectOptions} value={editLogData.away_goalie} onChange={e => setEditLogData({ ...editLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
                             </td>
                             <td className="p-0 text-center">
@@ -282,10 +350,10 @@ export const SummaryTablesAccordion = ({
 
                       if (log) {
                         return (
-                          <tr key={log.id} className="even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
-                            <td className="font-mono font-semibold text-[13px] text-graphite border-r border-graphite/30">{formatTime(log.time_seconds)}</td>
-                            <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.home_goalie_id, homeGoalieOptions, log.home_goalie_unspecified)}</td>
-                            <td className="text-center font-bold border-r border-graphite/30 text-[13px] text-graphite">{renderGoalieLabel(log.away_goalie_id, awayGoalieOptions, log.away_goalie_unspecified)}</td>
+                          <tr key={log.id} className="hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
+                            <td className="font-mono font-semibold text-[13px] text-graphite border-r border-graphite/[0.12]">{formatTime(log.time_seconds)}</td>
+                            <td className="text-center font-bold border-r border-graphite/[0.12] text-[13px] text-graphite">{renderGoalieLabel(log.home_goalie_id, homeGoalieOptions, log.home_goalie_unspecified)}</td>
+                            <td className="text-center font-bold border-r border-graphite/[0.12] text-[13px] text-graphite">{renderGoalieLabel(log.away_goalie_id, awayGoalieOptions, log.away_goalie_unspecified)}</td>
                             <td className="p-0 text-center">
                               {!isReadOnly && (
                                 <div className="flex justify-center items-center w-full h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
@@ -300,48 +368,28 @@ export const SummaryTablesAccordion = ({
                         );
                       }
 
-                      if (isInput && !isReadOnly) {
-                        return (
-                          <tr key="new-log" className="even:bg-graphite/[0.02] hover:bg-graphite/5 transition-colors group h-[36px] border-b border-graphite/30">
-                            <td className="p-1 border-r border-graphite/30 text-center">
-                              <StylishInput
-                                isTimeField
-                                title="Время смены вратаря"
-                                value={newLogData.time}
-                                placeholder={formatTime(timerSeconds)}
-                                onChange={e => setNewLogData({ ...newLogData, time: formatTimeMask(e.target.value) })}
-                                className="text-center font-bold px-1"
-                              />
-                            </td>
-                            <td className="p-1 border-r border-graphite/30 text-center">
-                              <CustomSelect title="Вратарь хозяев" options={homeGoalieSelectOptions} value={newLogData.home_goalie} onChange={e => setNewLogData({ ...newLogData, home_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
-                            </td>
-                            <td className="p-1 border-r border-graphite/30 text-center">
-                              <CustomSelect title="Вратарь гостей" options={awayGoalieSelectOptions} value={newLogData.away_goalie} onChange={e => setNewLogData({ ...newLogData, away_goalie: e.target.value })} className="font-bold text-[12px] h-[28px]" placeholder="Пустые ворота" />
-                            </td>
-                            <td className="p-0 text-center">
-                              <button
-                                onClick={handleAddLog}
-                                disabled={isGoaliesMatch}
-                                className={`w-full h-full min-h-[36px] transition-colors flex items-center justify-center ${isGoaliesMatch ? 'text-graphite/20 cursor-not-allowed' : 'hover:bg-status-accepted/10 text-status-accepted'}`}
-                                title={isGoaliesMatch ? 'Вратари не изменились' : 'Добавить запись'}
-                              >
-                                <Icon name="plus" className="w-6 h-6" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      }
-                      return null;
+                      // Записей нет — одна пустая строка, чтобы список не схлопывался в шапку
+                      return (
+                        <tr key="empty" className="h-[36px] border-b border-graphite/30">
+                          <td className="border-r border-graphite/[0.12]"></td>
+                          <td className="border-r border-graphite/[0.12]"></td>
+                          <td className="border-r border-graphite/[0.12]"></td>
+                          <td></td>
+                        </tr>
+                      );
                     })}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* ── ПРАВАЯ КОЛОНКА ── */}
+            {/* ── ПРАВАЯ КОЛОНКА ──
+                Дивизион без учёта бросков: таблицы нет вовсе, но колонка остаётся
+                (пустая), чтобы журнал вратарей не растягивался на всю ширину. */}
             <div className="flex-1 min-w-0 flex flex-col gap-5">
 
+            {shotsTrackingEnabled && (
+            <>
             {/* Карточка: БРОСКИ В СТВОР ВРАТАРЮ
                 Секретарь вводит ВСЕ броски в створ на конкретного вратаря за период.
                 Отражённые броски (saves) и командные SOG считаются на лету.
@@ -357,11 +405,6 @@ export const SummaryTablesAccordion = ({
                 <span className="truncate">Броски в створ вратарю</span>
               </div>
 
-              {!shotsTrackingEnabled && (
-                <div className="mx-5 mt-3 px-3 py-2 bg-graphite/5 border border-graphite/15 rounded-md text-[11px] font-semibold text-graphite-light leading-tight mb-2">
-                  Лига не ведёт статистику бросков для этого дивизиона — таблица заблокирована.
-                </div>
-              )}
 
               <div className="overflow-visible pb-12 pt-0.5">
                 <table className="w-full text-sm text-center border-collapse table-fixed select-none">
@@ -496,6 +539,8 @@ export const SummaryTablesAccordion = ({
                 </table>
               </div>
             </div>
+            </>
+            )}
 
             </div>
             {/* ── конец правой колонки ── */}

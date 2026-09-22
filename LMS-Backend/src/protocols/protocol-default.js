@@ -29,6 +29,17 @@ const formatTime = (totalSeconds) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+// Графа «№» блока «Удаление»: номер нарушителя, «К» (командный штраф) или «ОПК»
+// (официальный представитель); через дробь — номер отбывающего на скамейке, если
+// сидит не сам нарушитель: «12/44», «ОПК/75», «К/9». Старые записи без типа —
+// по наличию игрока, как их и вводили: пусто = командный.
+const formatPenaltyOffender = (penalty) => {
+    if (!penalty) return '';
+    const type = penalty.penalty_offender_type || (penalty.scorer_number ? 'player' : 'team');
+    const who = type === 'team' ? 'К' : type === 'official' ? 'ОПК' : (penalty.scorer_number || '');
+    return penalty.served_by_number ? `${who} / ${penalty.served_by_number}` : who;
+};
+
 const formatPenaltyMinutes = (penalty) => {
     if (!penalty) return '';
     // Штрафной бросок минут не даёт — в графе «Шт.» печатаем сам вид наказания.
@@ -49,7 +60,8 @@ const isPenaltyShotRow = (goal) => goal?.event_type === 'failed_ps'
 
 const penaltyShotOutcome = (goal) => (goal?.event_type === 'goal' ? 'Реализован' : 'Не реализован');
 
-const GOAL_STRENGTH_MAP = { "equal": "РС", "pp": "+1", "pp1": "+1", "pp2": "+2", "sh": "-1", "sh1": "-1", "sh2": "-2", "en": "ПВ", "ps": "ШБ" };
+// Равные составы в протоколе не пишут — у equal пустая графа
+const GOAL_STRENGTH_MAP = { "equal": "", "pp": "+1", "pp1": "+1", "pp2": "+2", "sh": "-1", "sh1": "-1", "sh2": "-2", "en": "ПВ", "ps": "ШБ" };
 // Причина удаления печатается в протоколе сокращением из справочника (номер / сокращение /
 // полное наименование — см. PENALTY_REASONS в LMS-Frontend/src/components/GameLiveDesk/
 // GameDeskShared.jsx). В game_events.penalty_violation хранится ПОЛНОЕ наименование,
@@ -659,7 +671,9 @@ export const getHtml = (data) => {
             // или удалить, а протокол должен печататься так, как его записал секретарь.
             // PENALTY_REASON_MAP — фолбэк для матчей, записанных до появления справочника.
             const penaltyReason = penalty ? (penalty.penalty_violation_code || PENALTY_REASON_MAP[penalty.penalty_violation] || penalty.penalty_violation || '') : '';
-            const goalStrength = goal ? (GOAL_STRENGTH_MAP[goal.goal_strength] || goal.goal_strength || '') : '';
+            // ?? а не ||: у equal в карте пустая строка, и через || она проваливалась
+            // в сырое значение — в графе печаталось «equal».
+            const goalStrength = goal ? (GOAL_STRENGTH_MAP[goal.goal_strength] ?? goal.goal_strength ?? '') : '';
 
             rowsHtml.push(`
               <div class="gridRow">
@@ -675,9 +689,9 @@ export const getHtml = (data) => {
                   : `<div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.a1_number || ''}</span></div>
                 <div class="gridCell" style="width: 5%;"><span class="dataText">${goal?.a2_number || ''}</span></div>`}
                 <div class="gridCell" style="width: 4%;"><span class="dataText">${t(goalStrength)}</span></div>
-                <div class="gridCell" style="width: 4%;"><span class="dataText">${penalty?.scorer_number || ''}</span></div>
+                <div class="gridCell" style="width: 8%;"><span class="dataText">${formatPenaltyOffender(penalty)}</span></div>
                 <div class="gridCell" style="width: 4%;"><span class="dataText">${formatPenaltyMinutes(penalty)}</span></div>
-                <div class="gridCell" style="width: 20%;"><span class="dataText">${t(penaltyReason)}</span></div>
+                <div class="gridCell" style="width: 16%;"><span class="dataText">${t(penaltyReason)}</span></div>
                 <div class="gridCell" style="width: 6%;"><span class="dataText">${formatTime(penalty?.time_seconds)}</span></div>
                 <div class="gridCell" style="width: 6%;"><span class="dataText">${penalty?.penalty_class === 'penalty_shot' ? '—' : formatTime(penalty?.penalty_end_time)}</span></div>
               </div>
@@ -703,9 +717,9 @@ export const getHtml = (data) => {
               <div class="gridCell" style="width: 5%;"><span class="columnTitle">П1.</span></div>
               <div class="gridCell" style="width: 5%;"><span class="columnTitle">П2.</span></div>
               <div class="gridCell" style="width: 4%;"><span class="columnTitle">ИС.</span></div>
-              <div class="gridCell" style="width: 4%;"><span class="columnTitle">№</span></div>
+              <div class="gridCell" style="width: 8%;"><span class="columnTitle">№</span></div>
               <div class="gridCell" style="width: 4%;"><span class="columnTitle">Шт.</span></div>
-              <div class="gridCell" style="width: 20%;"><span class="columnTitle">Причина</span></div>
+              <div class="gridCell" style="width: 16%;"><span class="columnTitle">Причина</span></div>
               <div class="gridCell" style="width: 6%;"><span class="columnTitle">Начало</span></div>
               <div class="gridCell" style="width: 6%;"><span class="columnTitle">Окончан.</span></div>
             </div>
@@ -918,7 +932,7 @@ export const getHtml = (data) => {
               <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['timekeeper']) || ''}</span></div>
             </div>
             <div class="rowShort">
-              <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Информатор</span></div>
+              <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Судья информатор</span></div>
               <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['informant']) || ''}</span></div>
             </div>
             <div class="rowShort">

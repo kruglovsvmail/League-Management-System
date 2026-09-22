@@ -27,6 +27,13 @@ export const GameFlowAccordion = ({
   // Справочник причин удаления тянем один раз на обе команды
   const { penaltyReasons } = usePenaltyReasons(game?.id);
 
+  // Настройки лиги приезжают вместе с матчем (getGameById). Нет значения — как раньше:
+  // время подставляется с таймера.
+  const autoTimeGoals = game?.sec_auto_time_goals ?? true;
+  const autoTimePenalties = game?.sec_auto_time_penalties ?? true;
+  // Тот же флаг дивизиона, что и у таблицы бросков в SummaryTablesAccordion
+  const shotsTrackingEnabled = game?.track_shots ?? true;
+
   return (
     <div className="bg-white shadow-lg flex flex-col font-sans rounded-md transition-all duration-500 ease-in-out">
       <div
@@ -62,6 +69,9 @@ export const GameFlowAccordion = ({
                   goalieLog={goalieLog}
                   isReadOnly={isReadOnly}
                   penaltyReasons={penaltyReasons}
+                  autoTimeGoals={autoTimeGoals}
+                  autoTimePenalties={autoTimePenalties}
+                  shotsTrackingEnabled={shotsTrackingEnabled}
                 />
 
                 <ProtocolSheet
@@ -83,6 +93,9 @@ export const GameFlowAccordion = ({
                   goalieLog={goalieLog}
                   isReadOnly={isReadOnly}
                   penaltyReasons={penaltyReasons}
+                  autoTimeGoals={autoTimeGoals}
+                  autoTimePenalties={autoTimePenalties}
+                  shotsTrackingEnabled={shotsTrackingEnabled}
                 />
 
              </div>

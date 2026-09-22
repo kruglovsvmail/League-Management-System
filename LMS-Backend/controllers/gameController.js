@@ -472,6 +472,9 @@ export const getGameById = async (req, res) => {
                 -- Название лиги нужно панели трансляции: оно уходит в бегущую
                 -- строку перехода-заставки (defaultGraphics/bumperFrame.js).
                 l.name as league_name,
+                -- Настройки панели секретаря едут вместе с матчем, а не через /api/me:
+                -- у судьи бригады лиги в его списке лиг может не быть вовсе.
+                l.sec_auto_time_goals, l.sec_auto_time_penalties, l.sec_auto_time_goalie_log,
                 COALESCE(tt_home.custom_jersey_dark_url,  ht.jersey_dark_url)  as home_jersey_dark_url,
                 COALESCE(tt_home.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light_url,
                 COALESCE(tt_away.custom_jersey_dark_url,  at.jersey_dark_url)  as away_jersey_dark_url,
