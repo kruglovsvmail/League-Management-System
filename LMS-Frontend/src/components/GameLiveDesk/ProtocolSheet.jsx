@@ -67,6 +67,8 @@ const TimeoutPill = ({ timeoutEvent, timerSeconds, onSave, onDelete, isReadOnly 
                 <span className="text-[10px] font-bold uppercase text-graphite-light absolute left-2.5">ТАЙМ-АУТ</span>
                 <input
                     autoFocus
+                    inputMode="numeric"
+                    pattern="[0-9:]*"
                     value={tempVal}
                     onChange={e => setTempVal(formatTimeMask(e.target.value))}
                     onBlur={(e) => { if (!e.relatedTarget?.closest('.clear-btn')) handleSaveAction(); }}

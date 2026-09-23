@@ -150,6 +150,8 @@ export const TimerPanel = ({
           {isEditingTimer && !isReadOnly ? (
             <input
               autoFocus
+              inputMode="numeric"
+              pattern="[0-9:]*"
               className="w-full text-center font-mono text-6xl font-black text-status-accepted bg-transparent outline-none"
               value={manualTimerInput}
               onChange={(e) => setManualTimerInput(formatTimeMask(e.target.value))}

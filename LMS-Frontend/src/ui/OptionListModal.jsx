@@ -1,6 +1,7 @@
 // src/ui/OptionListModal.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '../modals/Modal';
+import { isTouchDevice } from '../utils/device';
 
 // Общий список опций (причина штрафа, игровая ситуация, штрафные минуты, вратарь и т.п.):
 // клик по строке сразу выбирает значение и закрывает окно.
@@ -48,7 +49,8 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Поиск по номеру или названию..."
-          autoFocus
+          // На телефоне и планшете фокус сразу открыл бы клавиатуру на пол-экрана
+          autoFocus={!isTouchDevice()}
           className="w-full mb-3 px-4 py-2.5 rounded-md border border-graphite/20 bg-white text-[14px] font-medium text-graphite outline-none focus:border-orange focus:ring-2 focus:ring-orange/20 transition-colors"
         />
       )}

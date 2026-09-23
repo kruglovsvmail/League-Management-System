@@ -458,7 +458,7 @@ export const shootoutOptions = [
 
 // --- Device-aware приватные хелперы ---
 
-// Кнопка-триггер, открывающая модалку выбора (десктоп). Серая, слегка скруглённая, лёгкая —
+// Кнопка-триггер, открывающая модалку выбора. Серая, слегка скруглённая, лёгкая —
 // ширина всегда 100% (диктуется шириной ячейки таблицы). Пусто -> "-".
 // dim=true (строка открыта на правку) -> белое поле с оранжевой рамкой: вместе с подсветкой
 // ячеек (bg-orange/10) сразу видно, что это режим редактирования, а не просто заполненная строка.
@@ -500,33 +500,13 @@ export const TriggerButton = ({ onClick, value, options = [], placeholder = '', 
   );
 };
 
-// Настоящий <select> (открывает системный пикер ОС при тапе), но стилизован под ту же
-// серую кнопку, что и TriggerButton на десктопе — appearance-none убирает стандартный
-// вид браузера (рамку, стрелку), сама выпадашка остаётся нативной.
-const NativeSelect = ({ options = [], value, onChange, className = '', placeholder = '', hideEmpty = false }) => (
-  <select
-    value={value ?? ''}
-    onChange={onChange}
-    className={`${className} w-full h-[30px] rounded-md border-none bg-graphite/[0.08] px-1 text-[13px] font-semibold text-graphite text-center outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-orange/30`}
-  >
-    {!hideEmpty && <option value="">{placeholder || '-'}</option>}
-    {options.map(opt => (
-      <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.description ? `${opt.label} — ${opt.description}` : opt.label}</option>
-    ))}
-  </select>
-);
-
 // --- Компоненты UI ---
-// StylishSelect/CustomSelect/StylishInput сохраняют прежний внешний контракт пропсов
-// (value/onChange/options|roster/exclude), но внутри рендерят разное в зависимости от устройства:
-// мобильный (≤850px + touch) -> системный <select>/ввод, десктоп -> кастомная модалка на базе Modal.jsx.
-// taken — номера, занятые в этом же событии другой ролью ({ '7': 'Автор' }): в модалке они
-// гаснут с подписью роли под номером, в системном <select> — выключены с подписью.
-// Пустые ключи (роль ещё не выбрана) отбрасываются.
+// StylishSelect/CustomSelect — выбор через наши модалки (на базе Modal.jsx) на любом
+// устройстве: и на телефоне, и на планшете, и на компьютере. Системный <select> на
+// телефоне был раньше и убран: он выглядел чужим и не умел подписи ролей и пояснения.
+// taken — номера, занятые в этом же событии другой ролью ({ '7': 'Автор' }): в модалке
+// они гаснут с подписью роли под номером. Пустые ключи (роль ещё не выбрана) отбрасываются.
 export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, className, roster, title, isEditing = false, ghost = false, hint = '' }) => {
-  const isMobile = useIsMobile();
-  // useState вызывается безусловно (Rules of Hooks) — даже если он не понадобится в мобильной ветке,
-  // isMobile может измениться на лету при ресайзе окна через границу 850px.
   const [isOpen, setIsOpen] = useState(false);
 
   const takenClean = Object.fromEntries(Object.entries(taken).filter(([k]) => k && k !== 'undefined' && k !== 'null'));
@@ -542,10 +522,6 @@ export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, class
     });
 
   const mergedClassName = `h-[30px] !py-0 !px-2 ${className || ''}`;
-
-  if (isMobile) {
-    return <NativeSelect options={options} value={value} onChange={onChange} className={mergedClassName} />;
-  }
 
   return (
     <>
@@ -565,8 +541,7 @@ export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, class
 
 // Графа «#» таблицы «Удаления»: нарушитель (номер, «К» или «ОПК») и отбывающий за него.
 // value — объект { type, jersey, server } (см. PenaltyOffenderModal), onChange получает
-// такой же объект. Модалка одна и на десктопе, и на телефоне: системный <select>
-// два значения выбрать не даёт.
+// такой же объект.
 export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className, title, isEditing = false, ghost = false, hint = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const options = sortRosterByNumber(roster).map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
@@ -589,13 +564,8 @@ export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className,
 
 // dense — плотные строки в модалке выбора (длинный справочник причин удаления)
 export const CustomSelect = ({ value, onChange, options, className, placeholder = "", hint = '', emptyLabel, title, isEditing = false, hideEmpty = false, dense = false, ghost = false }) => {
-  const isMobile = useIsMobile();
   const [isOpen, setIsOpen] = useState(false);
   const mergedClassName = `h-[30px] !py-0 !px-2 ${className || ''}`;
-
-  if (isMobile) {
-    return <NativeSelect options={options} value={value} onChange={onChange} className={mergedClassName} placeholder={placeholder} hideEmpty={hideEmpty} />;
-  }
 
   return (
     <>
@@ -627,7 +597,7 @@ export const StylishInput = ({ value, onChange, placeholder, hint = '', onBlur, 
   const [isOpen, setIsOpen] = useState(false);
   const warn = isRequired && !value;
   const plainClassName = `w-full h-[30px] text-center bg-white border border-graphite/20 hover:border-orange focus:bg-white focus:border-orange focus:ring-2 focus:ring-orange/20 shadow-sm rounded-md outline-none placeholder-graphite/40 transition-all text-sm font-mono font-semibold text-graphite ${className || ''}`;
-  // Тот же серый стиль, что у NativeSelect/TriggerButton — визуально единообразные "кнопки" в таблице.
+  // Тот же серый стиль, что у TriggerButton — визуально единообразные "кнопки" в таблице.
   // Настоящего системного пикера для формата ММ:СС (в отличие от ЧЧ:ММ у <input type="time">) не
   // существует — вызов цифровой клавиатуры телефона через inputMode="numeric" и есть системный ввод.
   const mobileTimeClassName = `w-full h-[30px] text-center rounded-md border-none outline-none text-[13px] font-mono font-semibold text-graphite focus:ring-2 focus:ring-orange/30 ${

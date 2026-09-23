@@ -1,6 +1,7 @@
 // src/ui/PenaltyReasonsModal.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '../modals/Modal';
+import { isTouchDevice } from '../utils/device';
 
 // Причина штрафа — у штрафа она одна при любом виде (у «4» — на обе двойки, десятка и
 // двадцатка в связках получают свою дисциплинарную сами, см. PENALTY_KINDS). Справочник
@@ -37,7 +38,8 @@ export function PenaltyReasonsModal({ isOpen, onClose, title = 'Причина �
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Поиск по номеру или названию..."
-          autoFocus
+          // На телефоне и планшете фокус сразу открыл бы клавиатуру на пол-экрана
+          autoFocus={!isTouchDevice()}
           className="w-full mb-3 px-4 py-2.5 rounded-md border border-graphite/20 bg-white text-[14px] font-medium text-graphite outline-none focus:border-orange focus:ring-2 focus:ring-orange/20 transition-colors"
         />
         <div className="flex flex-col gap-0.5 overflow-y-auto custom-scrollbar -mx-2 px-2 h-[60vh]">

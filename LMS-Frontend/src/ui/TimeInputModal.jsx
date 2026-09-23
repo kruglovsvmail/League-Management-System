@@ -35,8 +35,11 @@ export function TimeInputModal({ isOpen, onClose, title = 'Время', value, d
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="mini">
       <div className="flex flex-col items-center gap-8 py-4">
+        {/* inputMode: на телефоне и планшете — цифровая клавиатура, а не полная */}
         <input
           ref={inputRef}
+          inputMode="numeric"
+          pattern="[0-9:]*"
           value={text}
           onChange={(e) => setText(formatTimeMask(e.target.value))}
           onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
