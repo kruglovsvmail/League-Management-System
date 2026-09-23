@@ -218,6 +218,7 @@ export const createDivision = async (req, res) => {
             reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
             req_med_cert, req_insurance, req_consent, digital_applications_only, league_managed_roster,
             hide_stats_unpaid, individual_fee, is_tournament,
+            reg_warmup_length, reg_break_length, playoff_warmup_length, playoff_break_length,
             qualification_ids
         } = req.body;
 
@@ -241,7 +242,8 @@ export const createDivision = async (req, res) => {
                 hide_stats_unpaid, individual_fee, is_tournament,
                 reg_track_shots, playoff_track_shots, track_timer_log,
                 reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
-                league_managed_roster
+                league_managed_roster,
+                reg_warmup_length, reg_break_length, playoff_warmup_length, playoff_break_length
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, ${dayStartExpr(7)}, ${dayEndExpr(8)}, ${dayStartExpr(9)}, ${dayEndExpr(10)}, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 false,
@@ -251,7 +253,8 @@ export const createDivision = async (req, res) => {
                 $42, $43, $44,
                 $45, $46, $47,
                 $48, $49,
-                $50
+                $50,
+                $51, $52, $53, $54
             )
             RETURNING id
         `, [
@@ -272,7 +275,9 @@ export const createDivision = async (req, res) => {
             reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false,
             // Флаг значим только в бумажном дивизионе (digital_applications_only = false);
             // у цифрового он просто лежит в строке и никем не читается.
-            league_managed_roster !== undefined ? league_managed_roster : true
+            league_managed_roster !== undefined ? league_managed_roster : true,
+            // Разминка и перерыв в минутах; 0 — этого этапа в карусели панели секретаря нет
+            reg_warmup_length ?? 0, reg_break_length ?? 0, playoff_warmup_length ?? 0, playoff_break_length ?? 0
         ]);
 
         await syncDivisionQualifications(result.rows[0].id, qualification_ids);
@@ -297,6 +302,7 @@ export const updateDivision = async (req, res) => {
             reserve_goalie_max_per_game, reserve_goalie_block_back_to_back,
             req_med_cert, req_insurance, req_consent, digital_applications_only, league_managed_roster, clear_logo, clear_regulations,
             hide_stats_unpaid, individual_fee, is_tournament,
+            reg_warmup_length, reg_break_length, playoff_warmup_length, playoff_break_length,
             qualification_ids
         } = req.body;
 
@@ -319,7 +325,8 @@ export const updateDivision = async (req, res) => {
                 hide_stats_unpaid = $42, individual_fee = $43, is_tournament = $44,
                 reg_track_shots = $45, playoff_track_shots = $46, track_timer_log = $47,
                 reserve_goalie_max_per_game = $48, reserve_goalie_block_back_to_back = $49,
-                league_managed_roster = $50
+                league_managed_roster = $50,
+                reg_warmup_length = $51, reg_break_length = $52, playoff_warmup_length = $53, playoff_break_length = $54
             WHERE id = $20
         `, [
             name, short_name, tournament_type, start_date || null, end_date || null, application_start || null, application_end || null,
@@ -333,7 +340,8 @@ export const updateDivision = async (req, res) => {
             hide_stats_unpaid ?? false, individualFeeValue, is_tournament ?? false,
             reg_track_shots ?? true, playoff_track_shots ?? true, track_timer_log ?? false,
             reserve_goalie_max_per_game ?? 1, reserve_goalie_block_back_to_back ?? false,
-            league_managed_roster !== undefined ? league_managed_roster : true
+            league_managed_roster !== undefined ? league_managed_roster : true,
+            reg_warmup_length ?? 0, reg_break_length ?? 0, playoff_warmup_length ?? 0, playoff_break_length ?? 0
         ]);
 
         await syncDivisionQualifications(id, qualification_ids);

@@ -449,8 +449,10 @@ const prepareProtocolData = (apiData) => {
       referee: back.notes?.referee_notes || '',
       inspector: back.notes?.inspector_notes || '',
       medical: back.notes?.medical_notes || '',
-      protestHome: { filed: flagLabel(back.notes?.home_protest_filed), text: back.notes?.home_protest_text || '' },
-      protestAway: { filed: flagLabel(back.notes?.away_protest_filed), text: back.notes?.away_protest_text || '' },
+      // Отметка «Да/Нет» — у каждой команды своя, текст уведомления — один на обеих
+      protestHome: { filed: flagLabel(back.notes?.home_protest_filed) },
+      protestAway: { filed: flagLabel(back.notes?.away_protest_filed) },
+      protestText: back.notes?.protest_text || '',
     };
 
     return {

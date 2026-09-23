@@ -25,8 +25,9 @@
 // через фолбэки, новых таких не создаём.
 
 // display — что печатается на плашке события; rows — строки протокола по порядку.
-// sharedReason — причина спрашивается один раз и пишется во все строки (5+20:
-// двадцатка автоматическая, за то же нарушение).
+// Причина у штрафа одна — панель пишет её в строки меньшинства; десятка в «2+10»/«4+10»
+// и двадцатка в «5+20» получают дисциплинарную причину сами (см. PENALTY_KINDS в
+// LMS-Frontend/src/components/GameLiveDesk/GameDeskShared.jsx).
 export const PENALTY_KINDS = {
     minor:                   { display: '2',    rows: [{ minutes: 2,  cls: 'minor' }] },
     double_minor:            { display: '4',    rows: [{ minutes: 2,  cls: 'minor' }, { minutes: 2, cls: 'minor' }] },
@@ -34,7 +35,7 @@ export const PENALTY_KINDS = {
     minor_misconduct:        { display: '2+10', rows: [{ minutes: 2,  cls: 'minor' }, { minutes: 10, cls: 'misconduct' }] },
     double_minor_misconduct: { display: '4+10', rows: [{ minutes: 2,  cls: 'minor' }, { minutes: 2, cls: 'minor' }, { minutes: 10, cls: 'misconduct' }] },
     game_misconduct:         { display: '20',   rows: [{ minutes: 20, cls: 'game_misconduct' }] },
-    major:                   { display: '5+20', rows: [{ minutes: 5,  cls: 'major' }, { minutes: 20, cls: 'game_misconduct' }], sharedReason: true },
+    major:                   { display: '5+20', rows: [{ minutes: 5,  cls: 'major' }, { minutes: 20, cls: 'game_misconduct' }] },
     penalty_shot:            { display: 'ШБ',   rows: [{ minutes: 0,  cls: 'penalty_shot' }] },
 };
 

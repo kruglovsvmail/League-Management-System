@@ -14,11 +14,12 @@ import { ShootoutAccordion } from '../components/GameLiveDesk/ShootoutAccordion'
 import { SummaryTablesAccordion } from '../components/GameLiveDesk/SummaryTablesAccordion';
 import { ProtocolBackAccordion } from '../components/GameLiveDesk/ProtocolBackAccordion';
 import {
-  getPeriodLimits,
-  calculatePenaltyTimelines, isMinorRow, isLegacyDoubleMinor,
+  getPeriodLimits, formatTime,
+  calculatePenaltyTimelines, calculateOnIcePenalties, isMinorRow, isLegacyDoubleMinor,
   calculatePeriodFromTime,
   PS_PENDING, PS_FAILED, isScoredFromPlay, sortRosterByPosition
 } from '../components/GameLiveDesk/GameDeskShared';
+import { isPauseStage, pauseStageSeconds } from '../components/GameLiveDesk/matchStages';
 import { ProtocolViewerModal } from '../components/GameLiveDesk/ProtocolViewerModal';
 import { Button } from '../ui/Button';
 import { useAccess } from '../hooks/useAccess';
@@ -234,10 +235,19 @@ export function GameLiveDesk() {
   const [otLength, setOtLength] = useState(5);
   const [soLength, setSoLength] = useState(3);
 
+  // Карусель этапов (см. matchStages.js). stage — 'WU' (разминка) или 'B1'… (перерыв):
+  // пока он есть, идут его собственные часы, а игровое время стоит. null — идёт период
+  // currentPeriod. Длительности разминки и перерыва — в минутах, 0 — этапа нет.
+  const [warmupLength, setWarmupLength] = useState(0);
+  const [breakLength, setBreakLength] = useState(0);
+  const [stage, setStage] = useState(null);
+  const [stageClock, setStageClock] = useState({ accumulated: 0, startedAt: null, isRunning: false });
+  const [stageSeconds, setStageSeconds] = useState(0);
+
   const [trackPlusMinus, setTrackPlusMinus] = useState(false);
   const [autoStopOnEvent, setAutoStopOnEvent] = useState(false);
 
-  const DEFAULT_ARENA_ANNOUNCER = { warn1min: false, warn2min: false, endSiren: false, goalAnnounce: false, goalDelay: 5, goalExpiry: 40 };
+  const DEFAULT_ARENA_ANNOUNCER = { voice: false, endSiren: false, goalDelay: 5, goalExpiry: 40 };
   const [arenaAnnouncer, setArenaAnnouncerState] = useState(DEFAULT_ARENA_ANNOUNCER);
 
   const [plusMinusModalState, setPlusMinusModalState] = useState({ isOpen: false, event: null, scoringTeam: null, concedingTeam: null });
@@ -280,6 +290,8 @@ export function GameLiveDesk() {
         setPeriodLength(dataGame.data.period_length ?? 20);
         setOtLength(dataGame.data.ot_length ?? 5);
         setSoLength(dataGame.data.so_length ?? 3);
+        setWarmupLength(dataGame.data.warmup_length ?? 0);
+        setBreakLength(dataGame.data.break_length ?? 0);
         setTrackPlusMinus(dataGame.data.track_plus_minus ?? false);
         setAutoStopOnEvent(dataGame.data.auto_stop_on_event ?? false);
         setArenaAnnouncerState(
@@ -326,6 +338,8 @@ export function GameLiveDesk() {
     otLength: 'Длительность овертайма',
     soLength: 'Мин. бросков в буллитах',
     periodsCount: 'Количество периодов',
+    warmupLength: 'Длительность разминки',
+    breakLength: 'Длительность перерыва',
     autoStopOnEvent: 'Автостоп таймера',
     arenaAnnouncer: 'Диктор арены',
   };
@@ -349,6 +363,8 @@ export function GameLiveDesk() {
     if (patch.periodLength !== undefined) restBody.period_length = patch.periodLength;
     if (patch.otLength !== undefined) restBody.ot_length = patch.otLength;
     if (patch.soLength !== undefined) restBody.so_length = patch.soLength;
+    if (patch.warmupLength !== undefined) restBody.warmup_length = patch.warmupLength;
+    if (patch.breakLength !== undefined) restBody.break_length = patch.breakLength;
     if (patch.autoStopOnEvent !== undefined) restBody.auto_stop_on_event = patch.autoStopOnEvent;
     if (patch.arenaAnnouncer !== undefined) restBody.arena_announcer = patch.arenaAnnouncer;
     fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/timer-settings`, {
@@ -365,6 +381,8 @@ export function GameLiveDesk() {
   const setPeriodLengthPersist = (val) => { setPeriodLength(val); persistTimerSettings({ periodLength: val }); };
   const setOtLengthPersist = (val) => { setOtLength(val); persistTimerSettings({ otLength: val }); };
   const setSoLengthPersist = (val) => { setSoLength(val); persistTimerSettings({ soLength: val }); };
+  const setWarmupLengthPersist = (val) => { setWarmupLength(val); persistTimerSettings({ warmupLength: val }); };
+  const setBreakLengthPersist = (val) => { setBreakLength(val); persistTimerSettings({ breakLength: val }); };
   const setAutoStopOnEventPersist = (val) => { setAutoStopOnEvent(val); persistTimerSettings({ autoStopOnEvent: val }); };
   const setArenaAnnouncer = (val) => { setArenaAnnouncerState(val); persistTimerSettings({ arenaAnnouncer: val }); };
 
@@ -410,6 +428,12 @@ export function GameLiveDesk() {
         setIsTimerRunning(state.isRunning || false);
 
         if (state.period) setCurrentPeriod(state.period);
+        setStage(state.stage ?? null);
+        setStageClock({
+          accumulated: state.stageAccumulated || 0,
+          startedAt: state.stageStartedAt || null,
+          isRunning: !!state.stageRunning,
+        });
       }
 
       // Настройки матча применяются ВСЕГДА (не гасятся ignoreSocketRef) — сервер уже
@@ -419,6 +443,8 @@ export function GameLiveDesk() {
       applySetting('otLength', state.otLength, setOtLength);
       applySetting('soLength', state.soLength, setSoLength);
       applySetting('periodsCount', state.periodsCount, setPeriodsCount);
+      applySetting('warmupLength', state.warmupLength, setWarmupLength);
+      applySetting('breakLength', state.breakLength, setBreakLength);
       applySetting('trackPlusMinus', state.trackPlusMinus, setTrackPlusMinus);
       applySetting('autoStopOnEvent', state.autoStopOnEvent, setAutoStopOnEvent);
       // Сырой сеттер, а не персистящий setArenaAnnouncer — иначе входящий broadcast
@@ -432,34 +458,32 @@ export function GameLiveDesk() {
     return () => newSocket.disconnect();
   }, [gameId]);
 
+  // Конец периода, разминки и перерыва ловит сервер (advanceMatchStage в timerHandler.js):
+  // останавливает часы и листает карусель. Он делает это не позже чем через секунду, а до
+  // его ответа панель держит время на конце этапа — чтобы табло не показало 20:01.
   useEffect(() => {
     const interval = setInterval(() => {
+      const nowWithOffset = Date.now() + timerData.serverTimeOffset;
       if (timerData.isRunning && timerData.startedAt) {
-        const nowWithOffset = Date.now() + timerData.serverTimeOffset;
         const elapsedSinceStart = Math.floor((nowWithOffset - timerData.startedAt) / 1000);
-        setTimerSeconds(timerData.accumulatedSeconds + elapsedSinceStart);
+        const limits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
+        const secs = timerData.accumulatedSeconds + elapsedSinceStart;
+        setTimerSeconds(limits.end > 0 ? Math.min(secs, limits.end) : secs);
       } else {
         setTimerSeconds(timerData.accumulatedSeconds);
+      }
+
+      if (stageClock.isRunning && stageClock.startedAt) {
+        const length = stage ? pauseStageSeconds(stage, { warmupLength, breakLength }) : 0;
+        const secs = stageClock.accumulated + Math.floor((nowWithOffset - stageClock.startedAt) / 1000);
+        setStageSeconds(Math.min(secs, length));
+      } else {
+        setStageSeconds(stageClock.accumulated);
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [timerData]);
-
-  useEffect(() => {
-    const limits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
-    if (timerData.isRunning && limits.end > 0 && timerSeconds >= limits.end) {
-      if (isReadOnly) return;
-      lockSocketUpdates();
-      
-      setTimerData(prev => ({ ...prev, isRunning: false, accumulatedSeconds: limits.end, startedAt: null }));
-      setIsTimerRunning(false);
-      setTimerSeconds(limits.end);
-
-      socket?.emit('timer_action', { gameId, action: 'stop' });
-      socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: limits.end } });
-    }
-  }, [timerSeconds, timerData.isRunning, currentPeriod, periodLength, otLength, periodsCount, isReadOnly, gameId, socket]);
+  }, [timerData, stageClock, stage, currentPeriod, periodLength, otLength, periodsCount, warmupLength, breakLength]);
 
   // ── ДИКТОР АРЕНЫ: сервер сам решает когда/что озвучить (announcerTimers в timerHandler.js),
   // клиент — тонкий приёмник события 'arena_play'.
@@ -474,9 +498,18 @@ export function GameLiveDesk() {
     arenaAudioRef.current = audio;
   };
 
+  // Бип — сигнал времени, сервер шлёт его с overlay: играем отдельно, поверх, не трогая
+  // фразу диктора, которая звучит сейчас (обрывать её вправе только сирена).
+  const playArenaSignal = (url) => {
+    const bust = url.includes('?') ? `&_=${Date.now()}` : `?_=${Date.now()}`;
+    const audio = new Audio(url + bust);
+    audio.volume = 0.8;
+    audio.play().catch(() => {});
+  };
+
   useEffect(() => {
     if (!socket) return;
-    const handler = ({ url }) => playArenaAudio(url);
+    const handler = ({ url, overlay }) => (overlay ? playArenaSignal(url) : playArenaAudio(url));
     socket.on('arena_play', handler);
     return () => socket.off('arena_play', handler);
   }, [socket]);
@@ -503,8 +536,22 @@ export function GameLiveDesk() {
   const handleTimerAction = (action) => {
     if (isReadOnly) return;
     lockSocketUpdates();
+
+    // Разминка и перерыв — свои часы, игровое время не трогаем. В журнал идут теми же
+    // «Старт» и «Стоп», а отличает их этап в графе периода.
+    if (stage) {
+      logTimerAction(action, stageSeconds, { period: stage });
+      setStageClock(prev => {
+        if (action === 'start') return { ...prev, isRunning: true, startedAt: Date.now() + timerData.serverTimeOffset };
+        if (action === 'stop') return { ...prev, isRunning: false, startedAt: null, accumulated: stageSeconds };
+        return prev;
+      });
+      socket?.emit('timer_action', { gameId, action: action === 'start' ? 'stage_start' : 'stage_stop' });
+      return;
+    }
+
     logTimerAction(action, timerSeconds);
-    
+
     setTimerData(prev => {
         if (action === 'start') return { ...prev, isRunning: true, startedAt: Date.now() + prev.serverTimeOffset };
         if (action === 'stop') return { ...prev, isRunning: false, startedAt: null, accumulatedSeconds: timerSeconds };
@@ -515,23 +562,122 @@ export function GameLiveDesk() {
     socket?.emit('timer_action', { gameId, action });
   };
 
-  const changePeriod = (period) => {
+  // Удаления для бейджей под таймером — тот же расчёт, что у табло трансляции
+  // (useWebGraphics): одна позиция на группу штрафа (у 2+2 — 4 минуты одним отсчётом).
+  // Отложенные — третий штраф, который ждёт свободный слот, — тоже показываем, с момента
+  // нарушения: waiting, а в remaining полная длительность, пока отсчёт не начался.
+  //
+  // На бейдже — номер того, кто СИДИТ на скамейке штрафников: по нему секретарь понимает,
+  // кого выпускать. Если за нарушителя сидит партнёр (2+10, 5+20, командный штраф, штраф
+  // вратаря или представителя), это penalty_served_by_id — его номер берём из состава на
+  // матч, как лист протокола; иначе сидит сам нарушитель.
+  const activePenalties = useMemo(() => {
+    const penalties = events.filter(e => e.event_type === 'penalty');
+    if (penalties.length === 0) return [];
+    const rosterJersey = (teamId, playerId) => {
+      const roster = teamId === game?.home_team_id ? homeRoster : awayRoster;
+      return roster.find(r => r.player_id == playerId)?.jersey_number;
+    };
+    return calculateOnIcePenalties(penalties)
+      .filter(p => p.effEnd !== null && timerSeconds < p.effEnd && timerSeconds >= (parseInt(p.time_seconds, 10) || 0))
+      .map(p => {
+        const waiting = timerSeconds < p.effStart;
+        const servingJersey = p.penalty_served_by_id
+          ? (rosterJersey(p.team_id, p.penalty_served_by_id) ?? p.primary_jersey_number)
+          : p.primary_jersey_number;
+        return { ...p, waiting, servingJersey, remaining: waiting ? p.effEnd - p.effStart : p.effEnd - timerSeconds };
+      });
+  }, [events, timerSeconds, game?.home_team_id, homeRoster, awayRoster]);
+
+  // Стрелки карусели этапов. Этап встаёт на стартовые значения, часы стоят (автостарт только
+  // у перерыва сразу после сирены) — так же, как при автопереходе (enterPeriod / enterPause
+  // в timerHandler.js). Период — на своём начале; разминка и перерыв — их часы с 0:00, а
+  // игровое время на начале матча или на конце периода, после которого перерыв.
+  const goToStage = (key) => {
+    if (isReadOnly || !key) return;
+    lockSocketUpdates();
+    setIsTimerRunning(false);
+    setStageClock({ accumulated: 0, startedAt: null, isRunning: false });
+
+    const period = key === 'WU' ? '1' : isPauseStage(key) ? key.slice(1) : key;
+    const limits = getPeriodLimits(period, periodLength, otLength, periodsCount);
+    const seconds = key === 'WU' ? 0 : isPauseStage(key) ? limits.end : limits.start;
+
+    setStage(isPauseStage(key) ? key : null);
+    setCurrentPeriod(period);
+    setTimerData(prev => ({ ...prev, isRunning: false, startedAt: null, accumulatedSeconds: seconds }));
+    // В журнал — куда переключились и с какого времени начнётся этап
+    logTimerAction('change_period', isPauseStage(key) ? 0 : seconds, { period: key });
+
+    socket?.emit('timer_action', { gameId, action: 'set_stage', value: key });
+    socket?.emit('game_updated', { gameId });
+  };
+
+  // Ручной ввод времени (карандаш). В разминке и перерыве меняем только их время и не
+  // больше длительности из настроек. В игре карусель встаёт на период, которому
+  // принадлежит введённое время (перерывы тут не участвуют); время за пределами
+  // регламента не принимаем.
+  const handleSetTime = (secs) => {
+    if (isReadOnly) return;
+
+    if (stage) {
+      lockSocketUpdates();
+      const value = Math.min(pauseStageSeconds(stage, { warmupLength, breakLength }), Math.max(0, secs));
+      logTimerAction('set_time', value, { period: stage });
+      setStageClock(prev => ({ ...prev, accumulated: value, startedAt: prev.isRunning ? (Date.now() + timerData.serverTimeOffset) : null }));
+      socket?.emit('timer_action', { gameId, action: 'set_stage_time', value });
+      return;
+    }
+    if (currentPeriod === 'SO') return;
+
+    const lastPeriod = parseInt(otLength, 10) > 0 ? 'OT' : String(periodsCount);
+    const matchEnd = getPeriodLimits(lastPeriod, periodLength, otLength, periodsCount).end;
+    if (secs > matchEnd) {
+      setToast({ title: 'Время за пределами матча', message: `По регламенту матч идёт до ${formatTime(matchEnd)}.`, type: 'error' });
+      return;
+    }
+
+    // На границе периодов (20:00) остаёмся в текущем периоде, если время из него
+    const current = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
+    const period = current.end > 0 && secs >= current.start && secs <= current.end
+      ? currentPeriod
+      : calculatePeriodFromTime(secs, periodLength, otLength, periodsCount);
+
+    lockSocketUpdates();
+    // В журнал пишем значение ПОСЛЕ правки — оно и окажется на табло
+    logTimerAction('set_time', secs, { period });
+    setCurrentPeriod(period);
+    setTimerData(prev => ({ ...prev, accumulatedSeconds: secs, startedAt: prev.isRunning ? (Date.now() + prev.serverTimeOffset) : null }));
+    socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: secs, period } });
+    if (period !== currentPeriod) socket?.emit('game_updated', { gameId });
+  };
+
+  // Корректировка кнопками ±1/±10 — только в пределах текущего пункта карусели
+  // (сервер ограничивает так же).
+  const handleAdjustTime = (delta) => {
     if (isReadOnly) return;
     lockSocketUpdates();
-    setCurrentPeriod(period);
-    const limits = getPeriodLimits(period, periodLength, otLength, periodsCount);
-    
-    setTimerData(prev => ({ ...prev, accumulatedSeconds: limits.start, isRunning: false, startedAt: null }));
-    setIsTimerRunning(false);
-    // Период пишем в журнал новый — важно, куда переключились
-    logTimerAction('change_period', limits.start, { period });
 
-    socket?.emit('timer_action', {
-        gameId,
-        action: 'change_period',
-        timerData: { seconds: limits.start, period, isRunning: false } 
+    if (stage) {
+      const value = Math.min(pauseStageSeconds(stage, { warmupLength, breakLength }), Math.max(0, stageSeconds + delta));
+      logTimerAction('adjust', value, { delta_seconds: delta, period: stage });
+      setStageClock(prev => ({ ...prev, accumulated: value, startedAt: prev.isRunning ? (Date.now() + timerData.serverTimeOffset) : null }));
+      socket?.emit('timer_action', { gameId, action: 'adjust_stage_time', timerData: { delta } });
+      return;
+    }
+    if (currentPeriod === 'SO') return;
+
+    const limits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
+    const clamp = (v) => (limits.end > 0 ? Math.min(limits.end, Math.max(limits.start, v)) : Math.max(0, v));
+    logTimerAction('adjust', clamp(timerSeconds + delta), { delta_seconds: delta });
+    setTimerData(prev => {
+      let current = prev.accumulatedSeconds || 0;
+      if (prev.isRunning && prev.startedAt) {
+        current += Math.floor((Date.now() + prev.serverTimeOffset - prev.startedAt) / 1000);
+      }
+      return { ...prev, accumulatedSeconds: clamp(current + delta), startedAt: prev.isRunning ? (Date.now() + prev.serverTimeOffset) : null };
     });
-    socket?.emit('game_updated', { gameId });
+    socket?.emit('timer_action', { gameId, action: 'adjust_time', timerData: { delta } });
   };
 
   const toggleLineup = async (rosterId, teamId, currentState) => {
@@ -622,7 +768,9 @@ export function GameLiveDesk() {
   // groupId — правка существующей группы (или старой одиночной записи по её id).
   const savePenaltyGroup = async (teamId, groupData, groupId = null) => {
     setIsSaving(true);
-    if (autoStopOnEvent && !groupId) handleTimerAction('stop');
+    // Автостоп — про игровое время. В разминке и перерыве оно и так стоит, а «Стоп»
+    // остановил бы часы перерыва.
+    if (autoStopOnEvent && !groupId && !stage) handleTimerAction('stop');
 
     const rows = (groupData.rows || []).map(r => ({
       ...r,
@@ -663,7 +811,7 @@ export function GameLiveDesk() {
       finalPeriod = 'SO';
     }
 
-    if (autoStopOnEvent && !existingId && ['goal', 'penalty', 'timeout'].includes(eventType)) {
+    if (autoStopOnEvent && !existingId && !stage && ['goal', 'penalty', 'timeout'].includes(eventType)) {
       handleTimerAction('stop');
     }
 
@@ -998,13 +1146,18 @@ export function GameLiveDesk() {
         </div>
       </div>
 
-      <TimerPanel 
-        game={game} currentPeriod={currentPeriod} changePeriod={changePeriod}
-        timerSeconds={timerSeconds} isTimerRunning={isTimerRunning} handleTimerAction={handleTimerAction}
+      <TimerPanel
+        game={game} currentPeriod={currentPeriod} onGoToStage={goToStage}
+        stage={stage} stageSeconds={stageSeconds}
+        timerSeconds={timerSeconds} handleTimerAction={handleTimerAction}
+        activePenalties={activePenalties}
+        isTimerRunning={stage ? stageClock.isRunning : isTimerRunning}
         periodsCount={periodsCount} setPeriodsCount={setPeriodsCountPersist}
         periodLength={periodLength} setPeriodLength={setPeriodLengthPersist}
         otLength={otLength} setOtLength={setOtLengthPersist}
         soLength={soLength} setSoLength={setSoLengthPersist}
+        warmupLength={warmupLength} setWarmupLength={setWarmupLengthPersist}
+        breakLength={breakLength} setBreakLength={setBreakLengthPersist}
         autoStopOnEvent={autoStopOnEvent} setAutoStopOnEvent={setAutoStopOnEventPersist}
         arenaAnnouncer={arenaAnnouncer} setArenaAnnouncer={setArenaAnnouncer}
         onResetAnnouncer={() => socket?.emit('timer_action', { gameId, action: 'reset_announcer' })}
@@ -1014,28 +1167,8 @@ export function GameLiveDesk() {
         onFinishGame={handleFinishGameFromDesk} 
         isFinishing={isFinishingGame}
         isRecalculating={isRecalculatingStats}
-        onSetTime={(secs) => {
-          if (isReadOnly) return;
-          lockSocketUpdates();
-          // В журнал пишем значение ПОСЛЕ правки — оно и окажется на табло
-          logTimerAction('set_time', secs);
-          setTimerData(prev => ({ ...prev, accumulatedSeconds: secs, startedAt: prev.isRunning ? (Date.now() + prev.serverTimeOffset) : null }));
-          socket?.emit('timer_action', { gameId, action: 'set_time', timerData: { seconds: secs } });
-        }}
-        onAdjustTime={(delta) => {
-          if (isReadOnly) return;
-          lockSocketUpdates();
-          logTimerAction('adjust', Math.max(0, timerSeconds + delta), { delta_seconds: delta });
-          setTimerData(prev => {
-            let current = prev.accumulatedSeconds || 0;
-            if (prev.isRunning && prev.startedAt) {
-              current += Math.floor((Date.now() - prev.startedAt) / 1000);
-            }
-            const newSecs = Math.max(0, current + delta);
-            return { ...prev, accumulatedSeconds: newSecs, startedAt: prev.isRunning ? (Date.now() + prev.serverTimeOffset) : null };
-          });
-          socket?.emit('timer_action', { gameId, action: 'adjust_time', timerData: { delta } });
-        }}
+        onSetTime={handleSetTime}
+        onAdjustTime={handleAdjustTime}
         isReadOnly={isReadOnly}
       />
 

@@ -11,9 +11,13 @@ import {
 import {
   getBroadcastAssets, uploadBroadcastAsset, deleteBroadcastAsset, updateBumperTitles
 } from '../controllers/broadcastAssetsController.js';
+import {
+  getArenaAnnouncer, uploadArenaAudioFile, deleteArenaAudioFile, updateBeepSchedule
+} from '../controllers/arenaAssetsController.js';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import upload from '../config/upload.js'; // ИМПОРТИРУЕМ НАШ UPLOAD
 import uploadBroadcast from '../config/uploadBroadcast.js';
+import uploadArenaAudio from '../config/uploadArenaAudio.js';
 
 const router = express.Router();
 router.use(verifyToken);
@@ -43,6 +47,12 @@ router.delete('/leagues/:leagueId/owners/:userId', requirePermission('LEAGUE_OWN
 // ГЛОБАЛЬНЫЕ ПАРАМЕТРЫ ЛИГИ — тоже только глобальный админ (Команды → Лиги)
 router.get('/leagues/:leagueId/global-params', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), getLeagueGlobalParams);
 router.put('/leagues/:leagueId/global-params', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateLeagueGlobalParams);
+
+// ДИКТОР АРЕНЫ ЛИГИ — звуки и сценарий бипа, там же (Команды → Лиги) и с тем же правом
+router.get('/leagues/:leagueId/arena-announcer', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), getArenaAnnouncer);
+router.post('/leagues/:leagueId/arena-announcer/files/:file', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), uploadArenaAudio.single('file'), uploadArenaAudioFile);
+router.delete('/leagues/:leagueId/arena-announcer/files/:file', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), deleteArenaAudioFile);
+router.put('/leagues/:leagueId/arena-announcer/beep-schedule', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateBeepSchedule);
 
 // КВАЛИФИКАЦИИ
 router.get('/leagues/:leagueId/settings-qualifications', requirePermission('SETTINGS_QUAL_VIEW'), getSettingsQualifications);

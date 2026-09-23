@@ -10,11 +10,13 @@ import { getLeagueOwners } from '../utils/leagueOwners.js';
 // ==========================================
 // ПАРАМЕТРЫ ЛИГИ (ГЛОБАЛЬНЫЕ НАСТРОЙКИ)
 // ==========================================
+// Режима дисквалификаций здесь нет: его переключает только глобальный администратор
+// (Команды → Лиги, см. getLeagueGlobalParams / updateLeagueGlobalParams ниже).
 export const getLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const result = await pool.query(
-      `SELECT sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order,
+      `SELECT sec_access_before_hours, sec_access_after_hours, arena_sort_order,
               reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
               -- Обозначения экипировки по возрасту: «ушк» и «к» рядом с фамилией в составах
               equip_mark_ushk_enabled, equip_mark_ushk_max_age,
@@ -37,7 +39,9 @@ export const getLeaguePreferences = async (req, res) => {
 export const updateLeaguePreferences = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { sec_access_before_hours, sec_access_after_hours, disqualification_mode, arena_sort_order,
+    // disqualification_mode из тела не берём, даже если прислали: руководство лиги его
+    // больше не меняет — только глобальный администратор (см. updateLeagueGlobalParams).
+    const { sec_access_before_hours, sec_access_after_hours, arena_sort_order,
             reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
             equip_mark_ushk_enabled, equip_mark_ushk_max_age,
             equip_mark_mouthguard_enabled, equip_mark_mouthguard_born_after,
@@ -48,9 +52,6 @@ export const updateLeaguePreferences = async (req, res) => {
     // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
     const toggle = (value) => (value === undefined ? null : !!value);
 
-    if (disqualification_mode && !['light', 'sdk'].includes(disqualification_mode)) {
-      return res.status(400).json({ success: false, error: 'Некорректный режим дисквалификаций' });
-    }
     if (arena_sort_order && !['name', 'city', 'added_desc', 'added_asc'].includes(arena_sort_order)) {
       return res.status(400).json({ success: false, error: 'Некорректный порядок сортировки арен' });
     }
@@ -61,22 +62,21 @@ export const updateLeaguePreferences = async (req, res) => {
       `UPDATE leagues SET
          sec_access_before_hours = COALESCE($1, sec_access_before_hours),
          sec_access_after_hours = COALESCE($2, sec_access_after_hours),
-         disqualification_mode = COALESCE($3, disqualification_mode),
-         arena_sort_order = COALESCE($4, arena_sort_order),
-         reserve_goalies_enabled = COALESCE($5, reserve_goalies_enabled),
-         reserve_goalie_dq_games_enabled = COALESCE($6, reserve_goalie_dq_games_enabled),
-         reserve_goalie_own_dq_blocks = COALESCE($7, reserve_goalie_own_dq_blocks),
-         equip_mark_ushk_enabled = COALESCE($8, equip_mark_ushk_enabled),
-         equip_mark_ushk_max_age = COALESCE($9, equip_mark_ushk_max_age),
-         equip_mark_mouthguard_enabled = COALESCE($10, equip_mark_mouthguard_enabled),
-         equip_mark_mouthguard_born_after = COALESCE($11, equip_mark_mouthguard_born_after),
-         allow_match_jersey_change = COALESCE($12, allow_match_jersey_change),
-         allow_match_letters_change = COALESCE($13, allow_match_letters_change),
-         sec_auto_time_goals = COALESCE($14, sec_auto_time_goals),
-         sec_auto_time_penalties = COALESCE($15, sec_auto_time_penalties),
-         sec_auto_time_goalie_log = COALESCE($16, sec_auto_time_goalie_log)
-       WHERE id = $17`,
-      [sec_access_before_hours ?? null, sec_access_after_hours ?? null, disqualification_mode ?? null, arena_sort_order ?? null,
+         arena_sort_order = COALESCE($3, arena_sort_order),
+         reserve_goalies_enabled = COALESCE($4, reserve_goalies_enabled),
+         reserve_goalie_dq_games_enabled = COALESCE($5, reserve_goalie_dq_games_enabled),
+         reserve_goalie_own_dq_blocks = COALESCE($6, reserve_goalie_own_dq_blocks),
+         equip_mark_ushk_enabled = COALESCE($7, equip_mark_ushk_enabled),
+         equip_mark_ushk_max_age = COALESCE($8, equip_mark_ushk_max_age),
+         equip_mark_mouthguard_enabled = COALESCE($9, equip_mark_mouthguard_enabled),
+         equip_mark_mouthguard_born_after = COALESCE($10, equip_mark_mouthguard_born_after),
+         allow_match_jersey_change = COALESCE($11, allow_match_jersey_change),
+         allow_match_letters_change = COALESCE($12, allow_match_letters_change),
+         sec_auto_time_goals = COALESCE($13, sec_auto_time_goals),
+         sec_auto_time_penalties = COALESCE($14, sec_auto_time_penalties),
+         sec_auto_time_goalie_log = COALESCE($15, sec_auto_time_goalie_log)
+       WHERE id = $16`,
+      [sec_access_before_hours ?? null, sec_access_after_hours ?? null, arena_sort_order ?? null,
        toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
        toggle(equip_mark_ushk_enabled), equip_mark_ushk_max_age ?? null,
        toggle(equip_mark_mouthguard_enabled), equip_mark_mouthguard_born_after || null,
@@ -589,21 +589,24 @@ export const removeLeagueOwner = async (req, res) => {
 };
 
 // --- ГЛОБАЛЬНЫЕ ПАРАМЕТРЫ ЛИГИ ---
-// Настройки лиги, которые её руководство менять не должно: они меняют правила работы
-// с чужими данными (общая база пользователей, составы команд), поэтому живут не на
-// вкладке «Параметры» лиги, а в разделе «Команды → Лиги» у глобального администратора.
+// Настройки лиги, которые её руководство менять не должно, поэтому живут не на вкладке
+// «Параметры» лиги, а в разделе «Команды → Лиги» у глобального администратора.
 // Право LEAGUE_GLOBAL_PARAMS_MANAGE с пустым списком ролей — как у владельцев лиги.
 //
 // league_roster_global_search — шторка «Состав заявки» в дивизионах, где состав ведёт
 // лига, ищет игроков по всей базе пользователей, а не только по игровому составу
 // команды. Найденного вне команды сервер сам добавляет в команду и её игровой состав
 // (см. tournamentTeamController.saveTournamentTeamComposition).
+//
+// disqualification_mode — как лига ведёт дисквалификации: 'light' (простой реестр банов)
+// или 'sdk' (заседания комитета с решениями). Раньше переключался руководством лиги на
+// вкладке «Параметры», теперь — только здесь.
 
 export const getLeagueGlobalParams = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const { rows } = await pool.query(
-      'SELECT league_roster_global_search FROM leagues WHERE id = $1',
+      'SELECT league_roster_global_search, disqualification_mode FROM leagues WHERE id = $1',
       [leagueId]
     );
     if (rows.length === 0) {
@@ -618,17 +621,22 @@ export const getLeagueGlobalParams = async (req, res) => {
 export const updateLeagueGlobalParams = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { league_roster_global_search } = req.body;
+    const { league_roster_global_search, disqualification_mode } = req.body;
 
     // Поле не прислали — не трогаем: карточка шлёт только то, что переключила
     const toggle = (value) => (value === undefined ? null : !!value);
 
+    if (disqualification_mode !== undefined && !['light', 'sdk'].includes(disqualification_mode)) {
+      return res.status(400).json({ success: false, error: 'Некорректный режим дисквалификаций' });
+    }
+
     const { rows } = await pool.query(
       `UPDATE leagues
-          SET league_roster_global_search = COALESCE($1, league_roster_global_search)
-        WHERE id = $2
-        RETURNING league_roster_global_search`,
-      [toggle(league_roster_global_search), leagueId]
+          SET league_roster_global_search = COALESCE($1, league_roster_global_search),
+              disqualification_mode = COALESCE($2, disqualification_mode)
+        WHERE id = $3
+        RETURNING league_roster_global_search, disqualification_mode`,
+      [toggle(league_roster_global_search), disqualification_mode ?? null, leagueId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Лига не найдена' });

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getToken } from '../../utils/helpers';
 import { Icon } from '../../ui/Icon';
 import { ConfirmModal } from '../../modals/ConfirmModal';
+import { SettingsCard } from './SettingsCard';
 
 // Блок «Трансляции» на вкладке параметров лиги: аудио-интро и три видео-заставки.
 //
@@ -175,14 +176,9 @@ export function BroadcastAssetsSection({ leagueId, canEdit, setToast }) {
     } catch (e) { console.error(e); }
   };
 
-  // Карточка занимает одну колонку, как соседние.
+  // Большая карточка (см. SettingsCard): интро и три заставки занимают две строки сетки.
   return (
-    <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm">
-      <div className="flex items-center gap-2 mb-5">
-        <Icon name="live_stream" className="w-4 h-4 text-graphite/40" />
-        <h4 className="text-[13px] font-black uppercase text-graphite tracking-tight">Трансляции</h4>
-      </div>
-
+    <SettingsCard size="lg" icon="live_stream" title="Трансляции">
       {!data ? (
         <div className="text-[11px] font-bold text-graphite/30 py-4">Загрузка…</div>
       ) : (
@@ -264,6 +260,6 @@ export function BroadcastAssetsSection({ leagueId, canEdit, setToast }) {
         title="Удаление файла"
         message={`Удалить ${deleteTarget?.label || 'файл'}? Это действие нельзя отменить.`}
       />
-    </div>
+    </SettingsCard>
   );
 }

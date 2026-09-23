@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { getToken } from '../utils/helpers';
+import { sortRosterByNumber } from '../components/GameLiveDesk/GameDeskShared';
 
 export function GamePlusMinusModal({ isOpen, onClose, gameId, event, scoringTeam, concedingTeam, scoringRoster, concedingRoster, onSuccess }) {
   const [plusPlayers, setPlusPlayers] = useState([]);
@@ -80,9 +81,10 @@ export function GamePlusMinusModal({ isOpen, onClose, gameId, event, scoringTeam
 
   if (!event) return null;
 
-  // Фильтруем вратарей из списков
-  const filteredScoringRoster = scoringRoster.filter(p => p.position !== 'goalie' && p.position_in_line !== 'G');
-  const filteredConcedingRoster = concedingRoster.filter(p => p.position !== 'goalie' && p.position_in_line !== 'G');
+  // Фильтруем вратарей из списков; остальные плитки — по возрастанию номера,
+  // тем же порядком, что и в остальных модалках выбора игрока в панели секретаря
+  const filteredScoringRoster = sortRosterByNumber(scoringRoster.filter(p => p.position !== 'goalie' && p.position_in_line !== 'G'));
+  const filteredConcedingRoster = sortRosterByNumber(concedingRoster.filter(p => p.position !== 'goalie' && p.position_in_line !== 'G'));
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Показатель полезности (+/-)" size="wide">

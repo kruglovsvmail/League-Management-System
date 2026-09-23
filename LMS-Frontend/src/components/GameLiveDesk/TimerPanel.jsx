@@ -1,14 +1,20 @@
 // src/components/GameLiveDesk/TimerPanel.jsx
 import React, { useState } from 'react';
 import { formatTime, formatTimeMask, getPeriodLimits, parseTime } from './GameDeskShared';
+import { buildMatchStages, stageLabel, prevStageKey, nextStageKey, pauseStageSeconds } from './matchStages';
+import { PenaltyCountdowns } from './PenaltyCountdowns';
 import { TimerSettingsDrawer } from '../../modals/TimerSettingsDrawer';
 import { getImageUrl } from '../../utils/helpers';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 
+// isTimerRunning — идут ли часы текущего пункта карусели: игровое время в периоде,
+// свои часы в разминке и перерыве (stage, stageSeconds).
 export const TimerPanel = ({
-  game, currentPeriod, changePeriod, timerSeconds, isTimerRunning, handleTimerAction,
+  game, currentPeriod, onGoToStage, stage, stageSeconds, timerSeconds, isTimerRunning, handleTimerAction,
+  activePenalties = [],
   periodsCount, setPeriodsCount, periodLength, setPeriodLength, otLength, setOtLength, soLength, setSoLength,
+  warmupLength, setWarmupLength, breakLength, setBreakLength,
   trackPlusMinus, setTrackPlusMinus,
   autoStopOnEvent, setAutoStopOnEvent,
   arenaAnnouncer, setArenaAnnouncer, setToast, onResetAnnouncer,
@@ -26,9 +32,21 @@ export const TimerPanel = ({
   const homeLogo = getImageUrl(game?.home_team_logo || game?.home_logo_url || game?.home_logo);
   const awayLogo = getImageUrl(game?.away_team_logo || game?.away_logo_url || game?.away_logo);
 
+  // Карусель этапов: что в ней есть, решают настройки матча (разминка и перерыв — если
+  // длительность больше нуля, овертайм и буллиты — если включены).
+  const stages = buildMatchStages({ periodsCount, otLength, soLength, warmupLength, breakLength });
+  const currentKey = stage || currentPeriod;
+  const stageIndex = stages.indexOf(currentKey);
+  const prevKey = prevStageKey(stages, currentKey);
+  const nextKey = nextStageKey(stages, currentKey);
+  const isShootout = !stage && currentPeriod === 'SO';
+
+  // Что на большом табло: в разминке и перерыве — их время от 0:00, в периоде — игровое
+  const clockSeconds = stage ? stageSeconds : timerSeconds;
+
   const openTimerEdit = () => {
     setIsEditingTimer(true);
-    setManualTimerInput(formatTime(timerSeconds));
+    setManualTimerInput(formatTime(clockSeconds));
   };
 
   const saveTimerEdit = () => {
@@ -46,9 +64,9 @@ export const TimerPanel = ({
   };
 
   const currentLimits = getPeriodLimits(currentPeriod, periodLength, otLength, periodsCount);
-  const countdownSecs = Math.max(0, currentLimits.end - timerSeconds);
-
-  const periodsArray = Array.from({ length: periodsCount }, (_, i) => String(i + 1)).concat(['OT', 'SO']);
+  const countdownSecs = stage
+    ? Math.max(0, pauseStageSeconds(stage, { warmupLength, breakLength }) - stageSeconds)
+    : Math.max(0, currentLimits.end - timerSeconds);
 
   const isTech = game?.is_technical;
   const techHome = typeof isTech === 'string' ? isTech.split('/')[0] : '+';
@@ -77,34 +95,52 @@ export const TimerPanel = ({
         </div>
       </div>
 
-      <div className="mb-4">
-        <div
-          className="grid gap-1.5 bg-white/5 p-1 border border-white/10 rounded-lg"
-          style={{ gridTemplateColumns: `repeat(${Math.min(periodsArray.length, 5)}, minmax(0, 1fr))` }}
+      {/* КАРУСЕЛЬ ЭТАПОВ: разминка → периоды и перерывы → овертайм → буллиты. Листается
+          сама, когда кончается период, перерыв или разминка (это делает сервер), и
+          стрелками. Точки снизу — где мы в матче; перерывы и разминка помельче. */}
+      <div className="mb-4 flex items-stretch gap-1 bg-white/5 p-1 border border-white/10 rounded-lg">
+        <button
+          onClick={() => onGoToStage(prevKey)}
+          disabled={!prevKey || isReadOnly}
+          title={prevKey ? stageLabel(prevKey) : undefined}
+          className="shrink-0 w-8 rounded-md flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         >
-          {periodsArray.map(p => {
-            const isOTDisabled = p === 'OT' && parseInt(otLength, 10) === 0;
-            const isSODisabled = p === 'SO' && parseInt(soLength, 10) === 0;
-            const isDisabled = isOTDisabled || isSODisabled || isReadOnly;
+          <Icon name="chevron_left" className="w-4 h-4" />
+        </button>
 
-            return (
-              <button
-                key={p}
-                onClick={() => !isDisabled && changePeriod(p)}
-                disabled={isDisabled}
-                className={`py-1.5 text-xs font-black rounded-md transition-colors ${
-                  isDisabled
-                    ? 'opacity-20 cursor-not-allowed text-white/20'
-                    : currentPeriod === p
-                      ? 'bg-white/20 text-white shadow-sm'
-                      : 'text-white/40 hover:text-white hover:bg-white/10'
+        <div className="flex-1 min-w-0 py-1.5 overflow-hidden select-none">
+          {stageIndex >= 0 ? (
+            <div className="flex transition-transform duration-300 ease-out" style={{ transform: `translateX(-${stageIndex * 100}%)` }}>
+              {stages.map(key => (
+                <div key={key} className="w-full shrink-0 text-center text-[13px] font-black uppercase tracking-widest text-white truncate">
+                  {stageLabel(key)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            // Этапа уже нет в настройках (например, перерывы выключили, пока шёл перерыв)
+            <div className="text-center text-[13px] font-black uppercase tracking-widest text-white truncate">{stageLabel(currentKey)}</div>
+          )}
+          <div className="flex justify-center items-center gap-1 mt-1.5">
+            {stages.map((key, i) => (
+              <span
+                key={key}
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  i === stageIndex ? 'w-3 bg-white' : (key === 'WU' || key.startsWith('B')) ? 'w-1 bg-white/15' : 'w-1.5 bg-white/30'
                 }`}
-              >
-                {p}
-              </button>
-            );
-          })}
+              />
+            ))}
+          </div>
         </div>
+
+        <button
+          onClick={() => onGoToStage(nextKey)}
+          disabled={!nextKey || isReadOnly}
+          title={nextKey ? stageLabel(nextKey) : undefined}
+          className="shrink-0 w-8 rounded-md flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+        >
+          <Icon name="chevron_right" className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="mb-6">
@@ -121,12 +157,12 @@ export const TimerPanel = ({
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveTimerEdit(); } }}
             />
           ) : (
-            <span className={`font-mono text-6xl font-black tabular-nums tracking-tighter ${isTimerRunning ? 'text-status-accepted' : 'text-white'}`}>
-              {formatTime(timerSeconds)}
+            <span className={`font-mono text-6xl font-black tabular-nums tracking-tighter ${isTimerRunning ? 'text-status-accepted' : isShootout ? 'text-white/30' : 'text-white'}`}>
+              {isShootout ? '--:--' : formatTime(clockSeconds)}
             </span>
           )}
 
-          {!isEditingTimer && !isReadOnly && (
+          {!isEditingTimer && !isReadOnly && !isShootout && (
             <button
               onClick={openTimerEdit}
               className="absolute top-2 right-2 p-1.5 rounded text-white/20 hover:text-white hover:bg-white/10 transition-colors opacity-40 hover:opacity-100"
@@ -141,13 +177,13 @@ export const TimerPanel = ({
           <div className="w-[34%] flex flex-col justify-center items-center bg-white/5 border border-dashed border-white/20 rounded-lg py-2 select-none">
             <span className="text-[9px] text-white/40 uppercase font-bold mb-0.5 tracking-widest">Остаток</span>
             <span className={`font-mono text-2xl font-bold tracking-tighter ${countdownSecs <= 60 && isTimerRunning ? 'text-status-rejected animate-pulse' : 'text-white/60'}`}>
-               {currentPeriod === 'SO' ? '0:00' : formatTime(countdownSecs)}
+               {isShootout ? '--:--' : formatTime(countdownSecs)}
             </span>
           </div>
 
           <button
              onClick={toggleTimer}
-             disabled={currentPeriod === 'SO' || isReadOnly}
+             disabled={isShootout || isReadOnly}
              className={`w-[66%] flex items-center justify-center gap-2 rounded-lg font-black text-[13px] uppercase tracking-widest transition-all shadow-sm border ${
                isTimerRunning
                  ? 'bg-status-rejected/80 hover:bg-status-rejected text-white border-status-rejected/50 shadow-[0_0_15px_rgba(255,69,58,0.2)]'
@@ -161,6 +197,12 @@ export const TimerPanel = ({
              )}
           </button>
         </div>
+
+        {/* Активные удаления: левая команда слева, правая справа. В буллитах и у
+            технического результата их нет. */}
+        {!isShootout && !isTech && (
+          <PenaltyCountdowns penalties={activePenalties} homeTeamId={game?.home_team_id} awayTeamId={game?.away_team_id} />
+        )}
       </div>
 
       {!isReadOnly && (
@@ -185,7 +227,7 @@ export const TimerPanel = ({
               <button
                 key={delta}
                 onClick={() => isAdjustEnabled && onAdjustTime(delta)}
-                disabled={!isAdjustEnabled}
+                disabled={!isAdjustEnabled || isShootout}
                 className={`py-2 rounded-md text-[14px] font-bold uppercase tracking-wider transition-all border ${
                   delta < 0
                     ? 'bg-white/5 border-white/10 text-white/70 hover:bg-status-rejected/20 hover:border-status-rejected/30 hover:text-status-rejected active:scale-95'
@@ -261,6 +303,8 @@ export const TimerPanel = ({
         periodLength={periodLength} setPeriodLength={setPeriodLength}
         otLength={otLength} setOtLength={setOtLength}
         soLength={soLength} setSoLength={setSoLength}
+        warmupLength={warmupLength} setWarmupLength={setWarmupLength}
+        breakLength={breakLength} setBreakLength={setBreakLength}
         trackPlusMinus={trackPlusMinus} setTrackPlusMinus={setTrackPlusMinus}
         autoStopOnEvent={autoStopOnEvent} setAutoStopOnEvent={setAutoStopOnEvent}
         arenaAnnouncer={arenaAnnouncer} setArenaAnnouncer={setArenaAnnouncer}

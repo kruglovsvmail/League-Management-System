@@ -40,16 +40,17 @@ const formatPenaltyOffender = (penalty) => {
     return penalty.served_by_number ? `${who} / ${penalty.served_by_number}` : who;
 };
 
-// Графа «Мин»: у штрафа-группы (2+2, 2+10, 5+20 — по строке на составляющую, см.
+// Графа «Мин»: у штрафа-группы (4, 2+10, 5+20 — по строке на составляющую, см.
 // utils/penaltyGroups.js) каждая строка печатает свои минуты: «2», «2», «10», «5», «20» —
 // так заполняют бумажный бланк. Составные подписи остались только у старых записей,
-// где весь штраф лежал одной строкой на 4 или 25 минут.
+// где весь штраф лежал одной строкой на 4 или 25 минут: двойной малый печатается «4» —
+// тем же именем, что у него в панели секретаря.
 const formatPenaltyMinutes = (penalty) => {
     if (!penalty) return '';
     // Штрафной бросок минут не даёт — в графе «Шт.» печатаем сам вид наказания.
     if (penalty.penalty_class === 'penalty_shot') return 'ШБ';
     if (penalty.penalty_group_id) return penalty.penalty_minutes || '';
-    if (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) return '2+2';
+    if (penalty.penalty_class === 'double_minor' || parseInt(penalty.penalty_minutes, 10) === 4) return '4';
     if (penalty.penalty_class === 'match' || parseInt(penalty.penalty_minutes, 10) === 25) return '5+20';
     return penalty.penalty_minutes || '';
 };
@@ -318,10 +319,11 @@ const W = {
     checkSignChecked: '22.41%',
     checkSignChecking: '17.27%',
     checkSignPerson: '13.78%',
-    // Блок «Уведомление о подаче протеста»
-    protestLabel: '35.07%',
-    protestMid: '4.59%',
-    protestWide: '60.34%',
+    // Блок «Уведомление о подаче протеста»: слева две строки команд с отметками,
+    // справа — одна ячейка текста на обе строки
+    protestSides: '39.66%',  // левая колонка целиком (подпись + отметка)
+    protestFiled: '11.57%',  // отметка «Да/Нет» — доля ВНУТРИ левой колонки (4.59% листа)
+    protestWide: '60.34%',   // общий текст уведомления
 };
 
 // Колонки таблицы БП: «А» | «Б» | Вр.«А» | Вр.«Б» | Результат (x : y).
@@ -549,8 +551,13 @@ const renderNoteBlock = (title, lines, text) => `
     </div>
 `;
 
-// Уведомление о подаче протеста: строки команд «А» и «Б» в три колонки, как в бланке.
-// Узкая ячейка — отметка «Да»/«Нет», широкая — текст уведомления.
+// Уведомление о подаче протеста: строки команд «А» и «Б» со своей отметкой
+// «Да»/«Нет», а текст уведомления — один на обе команды, одной высокой ячейкой
+// справа (в бланке это одно объединённое поле). Объединённых ячеек в этой вёрстке нет
+// (всё на flex, не на <table>), поэтому rowspan имитируется: ряд из двух колонок, в левой
+// две строки команд, в правой — одна ячейка во всю высоту ряда.
+// flex: 1 у строк команд — чтобы длинный текст справа, растянувший ряд вниз,
+// делился между ними поровну: иначе обе повисли бы сверху с пустотой под собой.
 // В самом бланке рамка у этой таблицы прорисована не до конца; здесь она обведена
 // целиком, как остальные таблицы оборота.
 const renderProtestBlock = (notes) => {
@@ -563,13 +570,17 @@ const renderProtestBlock = (notes) => {
     <div style="width: 100%; flex-shrink: 0;">
       <span class="p2NoteTitle">Уведомление представителей команд о подаче протеста:</span>
       <div class="p2Col">
-        ${sides.map(([letter, side]) => `
-          <div class="p2Row" style="min-height: 10pt;">
-            <div class="p2Cell p2CellL" style="width: ${W.protestLabel};"><span class="p2Label">Команда ${letter}</span></div>
-            <div class="p2Cell p2CellC" style="width: ${W.protestMid};"><span class="p2Text">${t(side.filed)}</span></div>
-            <div class="p2Cell p2CellL" style="width: ${W.protestWide};"><span class="p2Text">${t(side.text)}</span></div>
+        <div class="p2Row" style="min-height: 20pt;">
+          <div style="width: ${W.protestSides};">
+            ${sides.map(([letter, side]) => `
+              <div class="p2Row" style="min-height: 10pt; flex: 1;">
+                <div class="p2Cell p2CellL" style="flex: 1;"><span class="p2Label">Команда ${letter}</span></div>
+                <div class="p2Cell p2CellC" style="width: ${W.protestFiled};"><span class="p2Text">${t(side.filed)}</span></div>
+              </div>
+            `).join('')}
           </div>
-        `).join('')}
+          <div class="p2Cell p2CellL" style="width: ${W.protestWide};"><span class="p2Text">${t(notes.protestText)}</span></div>
+        </div>
         <div class="thickBorder" style="top: 0; left: 0; width: 100%; height: 100%;"></div>
       </div>
     </div>

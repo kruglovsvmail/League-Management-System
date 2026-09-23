@@ -6,11 +6,14 @@ import { Icon } from '../ui/Icon';
 import { getToken } from '../utils/helpers';
 
 // Тумблер → файлы, наличие хотя бы одного из которых на S3 обязательно для включения.
+// Голосу файлы не обязательны: голы и штрафы озвучиваются синтезом, а вместо
+// предупреждения без файла прозвучит бип.
 const ARENA_TOGGLE_FILES = {
   endSiren: ['end.mp3'],
-  warn2min: ['left-2min.mp3'],
-  warn1min: ['left-1min-1.mp3', 'left-1min-2.mp3', 'left-1min-3.mp3'],
 };
+
+// Прежние отдельные флаги голоса — теперь это один тумблер `voice`.
+const LEGACY_VOICE_KEYS = ['warn1min', 'warn2min', 'periodWarnings', 'goalAnnounce'];
 
 export function TimerSettingsDrawer({
   isOpen,
@@ -23,6 +26,10 @@ export function TimerSettingsDrawer({
   setOtLength,
   soLength,
   setSoLength,
+  warmupLength,
+  setWarmupLength,
+  breakLength,
+  setBreakLength,
   autoStopOnEvent,
   setAutoStopOnEvent,
   arenaAnnouncer,
@@ -74,9 +81,20 @@ export function TimerSettingsDrawer({
     }
   };
 
+  // Голос диктора — один тумблер: либо диктор говорит (конец периода, голы, штрафы), либо
+  // молчит. Матч, настроенный раньше, хранит прежние флаги по отдельности: голос включён,
+  // если был включён любой, а при первом же изменении они сворачиваются в один.
+  const voiceOn = arenaAnnouncer.voice ?? LEGACY_VOICE_KEYS.some(k => !!arenaAnnouncer[k]);
+
+  const updateArenaAnnouncer = (patch) => {
+    const next = { ...arenaAnnouncer, voice: voiceOn, ...patch };
+    LEGACY_VOICE_KEYS.forEach(k => { delete next[k]; });
+    setArenaAnnouncer(next);
+  };
+
   const handleArenaToggle = async (key, checked) => {
     if (!checked) {
-      setArenaAnnouncer({ ...arenaAnnouncer, [key]: false });
+      updateArenaAnnouncer({ [key]: false });
       return;
     }
     const required = ARENA_TOGGLE_FILES[key];
@@ -84,11 +102,11 @@ export function TimerSettingsDrawer({
       const files = await fetchArenaFiles();
       const hasAny = required.some(f => files[f]);
       if (!hasAny) {
-        setToast?.({ title: 'Нет аудиофайла на сервере', message: 'Загрузите аудиофайл для этой лиги, чтобы включить озвучку.', type: 'error' });
+        setToast?.({ title: 'Нет аудиофайла на сервере', message: 'У лиги не загружен звук для этой озвучки. Звуки загружает глобальный администратор: Команды → Лиги.', type: 'error' });
         return;
       }
     }
-    setArenaAnnouncer({ ...arenaAnnouncer, [key]: true });
+    updateArenaAnnouncer({ [key]: true });
   };
   const drawerContent = (
     <div className={`fixed inset-0 z-[100000] transition-opacity duration-300 ${isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
@@ -124,6 +142,17 @@ export function TimerSettingsDrawer({
                   <div className="flex justify-between items-center px-5 py-3 border-t border-graphite/5">
                     <span className="text-[13px] font-bold text-graphite">Длительность (мин)</span>
                     <Stepper initialValue={periodLength ?? 1} min={1} max={99} onChange={setPeriodLength} />
+                  </div>
+
+                  {/* Разминка и перерыв — этапы карусели на панели; 0 — этапа нет */}
+                  <div className="flex justify-between items-center px-5 py-3 border-t border-graphite/5" title="0 — без разминки: матч открывается сразу на 1-м периоде">
+                    <span className="text-[13px] font-bold text-graphite">Разминка (мин)</span>
+                    <Stepper initialValue={warmupLength ?? 0} min={0} max={60} onChange={setWarmupLength} />
+                  </div>
+
+                  <div className="flex justify-between items-center px-5 py-3 border-t border-graphite/5" title="Между периодами и перед овертаймом. 0 — без перерывов">
+                    <span className="text-[13px] font-bold text-graphite">Перерыв (мин)</span>
+                    <Stepper initialValue={breakLength ?? 0} min={0} max={60} onChange={setBreakLength} />
                   </div>
 
                   <div className="border-t border-graphite/5 px-5 py-3">
@@ -182,38 +211,36 @@ export function TimerSettingsDrawer({
                 </div>
                 <div className="bg-white border border-graphite/5 shadow-sm rounded-md">
 
-                  <div className="px-4 py-2.5 flex justify-between items-center border-b border-graphite/5">
-                    <span className="text-[12px] font-bold text-graphite">Последняя минута периода</span>
-                    <Switch checked={arenaAnnouncer.warn1min} onChange={(e) => handleArenaToggle('warn1min', e.target.checked)} />
+                  <div
+                    className="px-4 py-2.5 flex justify-between items-center gap-3 border-b border-graphite/5"
+                    title="Голосом: за минуту до конца каждого периода и за две до конца последнего, голы и штрафы. Если голос выключен или у лиги нет файла предупреждения, за 5 секунд до этого звучит бип — когда он загружен у лиги"
+                  >
+                    <div className="min-w-0">
+                      <span className="block text-[12px] font-bold text-graphite">Голос диктора</span>
+                      <span className="block text-[10px] text-graphite-light mt-0.5">Конец периода, голы и штрафы</span>
+                    </div>
+                    <div className="shrink-0">
+                      <Switch checked={voiceOn} onChange={(e) => handleArenaToggle('voice', e.target.checked)} />
+                    </div>
                   </div>
 
-                  <div className="px-4 py-2.5 flex justify-between items-center border-b border-graphite/5">
-                    <span className="text-[12px] font-bold text-graphite">Две минуты последнего периода</span>
-                    <Switch checked={arenaAnnouncer.warn2min} onChange={(e) => handleArenaToggle('warn2min', e.target.checked)} />
-                  </div>
+                  {voiceOn && (
+                    <div className="px-4 py-2.5 flex items-center gap-4 border-b border-graphite/5">
+                      <div className="flex flex-col items-center gap-1" title="Реальное время: пауза после гола ждёт фиксированное число секунд независимо от таймера матча">
+                        <span className="text-[9px] text-graphite/40 font-bold uppercase">Задержка (Р)</span>
+                        <Stepper initialValue={arenaAnnouncer.goalDelay ?? 5} min={1} max={30} onChange={(v) => updateArenaAnnouncer({ goalDelay: v })} />
+                      </div>
+                      <div className="flex flex-col items-center gap-1" title="Игровой таймер: если автора/причину назначили спустя это время ХОДА МАТЧА — не озвучиваем">
+                        <span className="text-[9px] text-graphite/40 font-bold uppercase">Актуальность (Т)</span>
+                        <Stepper initialValue={arenaAnnouncer.goalExpiry ?? 40} min={10} max={120} onChange={(v) => updateArenaAnnouncer({ goalExpiry: v })} />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="px-4 py-2.5 flex justify-between items-center border-b border-graphite/5">
                     <span className="text-[12px] font-bold text-graphite">Сирена окончания периода</span>
                     <Switch checked={arenaAnnouncer.endSiren} onChange={(e) => handleArenaToggle('endSiren', e.target.checked)} />
                   </div>
-
-                  <div className="px-4 py-2.5 flex justify-between items-center border-b border-graphite/5">
-                    <span className="text-[12px] font-bold text-graphite">Озвучка голов и штрафов</span>
-                    <Switch checked={arenaAnnouncer.goalAnnounce} onChange={(e) => setArenaAnnouncer({...arenaAnnouncer, goalAnnounce: e.target.checked})} />
-                  </div>
-
-                  {arenaAnnouncer.goalAnnounce && (
-                    <div className="px-4 py-2.5 flex items-center gap-4 border-b border-graphite/5">
-                      <div className="flex flex-col items-center gap-1" title="Реальное время: пауза после гола ждёт фиксированное число секунд независимо от таймера матча">
-                        <span className="text-[9px] text-graphite/40 font-bold uppercase">Задержка (Р)</span>
-                        <Stepper initialValue={arenaAnnouncer.goalDelay ?? 5} min={1} max={30} onChange={(v) => setArenaAnnouncer({...arenaAnnouncer, goalDelay: v})} />
-                      </div>
-                      <div className="flex flex-col items-center gap-1" title="Игровой таймер: если автора/причину назначили спустя это время ХОДА МАТЧА — не озвучиваем">
-                        <span className="text-[9px] text-graphite/40 font-bold uppercase">Актуальность (Т)</span>
-                        <Stepper initialValue={arenaAnnouncer.goalExpiry ?? 40} min={10} max={120} onChange={(v) => setArenaAnnouncer({...arenaAnnouncer, goalExpiry: v})} />
-                      </div>
-                    </div>
-                  )}
 
                   {onResetAnnouncer && (
                     <div className="px-4 py-2.5">

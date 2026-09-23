@@ -7,11 +7,14 @@ import { ConfirmModal } from '../modals/ConfirmModal';
 import { getImageUrl, getToken } from '../utils/helpers';
 import { Icon } from '../ui/Icon';
 import { Switch } from '../ui/Switch';
+import { SegmentButton } from '../ui/SegmentButton';
+import { ArenaAnnouncerSection } from './ArenaAnnouncerSection';
+import { SettingsCard } from './Settings/SettingsCard';
 
 /**
  * Вкладка «Лиги» раздела управления командами (только глобальный админ).
  *
- * Здесь два блока. Первый — владельцы лиги. Владелец стоит выше любой штатной роли:
+ * Здесь три блока. Первый — владельцы лиги. Владелец стоит выше любой штатной роли:
  * внутри своей лиги ему можно всё, включая правку матчей вне окна управления, состава
  * заявки вне заявочной кампании и смену статуса заявки в любом её состоянии. За пределы
  * лиги права не выходят: разделы платформы остаются за глобальным администратором.
@@ -19,11 +22,19 @@ import { Switch } from '../ui/Switch';
  * Владельцев у лиги сколько угодно. В самой лиге факт владения нигде не подписывается —
  * штат про владельцев не знает, они просто всё могут.
  *
- * Второй блок — глобальные параметры лиги: настройки, которые меняют правила работы
- * с чужими данными (общая база пользователей, составы команд) и потому не отдаются
- * руководству лиги на вкладке «Параметры». Сейчас параметр один — «Состав заявки из
- * общей базы» (leagues.league_roster_global_search).
+ * Второй блок — глобальные параметры лиги: настройки, которые не отдаются руководству
+ * лиги на вкладке «Параметры». Сейчас их два: «Состав заявки из общей базы»
+ * (leagues.league_roster_global_search) — меняет правила работы с чужими данными (общая
+ * база пользователей, составы команд), и режим дисквалификаций (leagues.disqualification_mode),
+ * перенесённый сюда с вкладки «Параметры».
+ *
+ * Третий — диктор арены: звуки лиги и сценарий бипа (см. ArenaAnnouncerSection).
  */
+
+const DISQUALIFICATION_MODES = [
+  { value: 'light', label: 'Лайт' },
+  { value: 'sdk', label: 'Через СДК' }
+];
 
 const formatPhoneDisplay = (raw) => {
   if (!raw) return '-';
@@ -46,7 +57,7 @@ const formatPhoneDynamic = (raw) => {
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim() || 'Без имени';
 
 export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) {
-  const { user } = useOutletContext();
+  const { user, onPatchLeague } = useOutletContext();
 
   // Список лиг берём из профиля: глобальному админу он приходит целиком,
   // а в этот раздел никто, кроме него, не попадает.
@@ -62,10 +73,12 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
   const [pendingRemove, setPendingRemove] = useState(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
-  // Глобальные параметры лиги. null — ещё не загружены: тумблер до ответа не рисуем,
-  // иначе он мигнёт выключенным у лиги, где параметр включён.
+  // Глобальные параметры лиги. null — ещё не загружены: переключатели до ответа не рисуем,
+  // иначе они мигнут не тем значением у лиги, где параметр включён.
   const [globalParams, setGlobalParams] = useState(null);
-  const [isParamsSaving, setIsParamsSaving] = useState(false);
+  // Какой параметр сейчас сохраняется: индикатор горит только на его карточке, а
+  // переключатели обеих карточек на это время заблокированы.
+  const [savingParam, setSavingParam] = useState(null);
 
   const authHeaders = { 'Authorization': `Bearer ${getToken()}` };
   const baseUrl = `${import.meta.env.VITE_API_URL}/api/leagues/${selectedLeague?.id}/owners`;
@@ -98,12 +111,13 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLeague?.id]);
 
-  // Тумблер сохраняется сразу, без отдельной кнопки — как параметры на вкладке лиги.
-  // Шлём только переключённое поле: сервер остальные не трогает.
-  const handleParamToggle = async (field, value) => {
+  // Параметр сохраняется сразу, без отдельной кнопки — как параметры на вкладке лиги.
+  // Шлём только изменённое поле: сервер остальные не трогает.
+  const handleParamChange = async (field, value) => {
     const prev = globalParams;
+    if (prev?.[field] === value) return;
     setGlobalParams({ ...prev, [field]: value });
-    setIsParamsSaving(true);
+    setSavingParam(field);
     try {
       const res = await fetch(paramsUrl, {
         method: 'PUT',
@@ -112,7 +126,13 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
       });
       const data = await res.json();
       if (data.success) {
-        setGlobalParams(data.data || { ...prev, [field]: value });
+        const saved = data.data || { ...prev, [field]: value };
+        setGlobalParams(saved);
+        // Режим дисквалификаций лежит ещё и в профиле: по нему меню показывает «Заседания
+        // СДК», а страница дисквалификаций выбирает свой вид. Правим профиль сразу, без F5.
+        if (field === 'disqualification_mode') {
+          onPatchLeague?.(selectedLeague.id, { disqualification_mode: saved.disqualification_mode });
+        }
       } else {
         setGlobalParams(prev);
         showToast?.('Ошибка', data.error, 'error');
@@ -121,7 +141,7 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
       setGlobalParams(prev);
       showToast?.('Ошибка', 'Не удалось сохранить параметр', 'error');
     } finally {
-      setIsParamsSaving(false);
+      setSavingParam(null);
     }
   };
 
@@ -312,47 +332,56 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
       <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6">
         <div className="mb-5 pb-4 border-b border-graphite/10">
           <h3 className="text-[16px] font-black uppercase text-graphite tracking-wide">Глобальные параметры</h3>
-          <p className="text-[12px] font-medium text-graphite-light mt-1">Правила работы лиги с общей базой платформы. Руководству лиги эти настройки не показываются</p>
+          <p className="text-[12px] font-medium text-graphite-light mt-1">Настройки, которые меняет только глобальный администратор. Руководству лиги они не показываются</p>
         </div>
 
+        {/* Карточки те же, что на вкладке «Параметры» лиги (см. SettingsCard) */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm flex flex-col justify-between min-h-[160px] relative">
-            {isParamsSaving && (
-              <div className="absolute top-4 right-4 flex items-center gap-1.5 text-[10px] font-bold text-orange uppercase tracking-widest animate-pulse">
-                <Icon name="refresh" className="w-3 h-3 animate-spin" /> Сохранение
-              </div>
-            )}
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Icon name="user_plus" className="w-4 h-4 text-graphite/40" />
-                <h4 className="text-[13px] font-black uppercase text-graphite tracking-tight">Состав заявки из общей базы</h4>
-              </div>
-              <p className="text-[11px] text-graphite-light leading-relaxed pr-8">
-                В дивизионах, где состав заявки ведёт лига, шторка «Состав заявки» ищет игроков по всем
-                пользователям платформы, а не по игровому составу команды. Найденного вне команды сервер
-                сам добавляет в команду и её игровой состав (первый свободный номер, нападающий),
-                а владельцы и руководитель команды получают push и окно с подробностями в Team-Room.
-                Представители по-прежнему выбираются из штаба команды.
-              </p>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between gap-3">
+          <SettingsCard
+            icon="user_plus"
+            title="Состав заявки из общей базы"
+            description="В дивизионах, где состав заявки ведёт лига, шторка «Состав заявки» ищет игроков по всем пользователям платформы, а не по игровому составу команды. Найденного вне команды сервер сам добавляет в команду и её игровой состав (первый свободный номер, нападающий), а владельцы и руководитель команды получают push и окно с подробностями в Team-Room. Представители по-прежнему выбираются из штаба команды."
+            saving={savingParam === 'league_roster_global_search'}
+          >
+            <div className="flex items-center justify-between gap-3">
               <span className="text-[11px] font-bold text-graphite/70">Использовать</span>
               <div className="shrink-0">
                 {globalParams ? (
                   <Switch
                     checked={!!globalParams.league_roster_global_search}
-                    onChange={(e) => handleParamToggle('league_roster_global_search', e.target.checked)}
-                    disabled={isParamsSaving}
+                    onChange={(e) => handleParamChange('league_roster_global_search', e.target.checked)}
+                    disabled={!!savingParam}
                   />
                 ) : (
                   <div className="w-[40px] h-[22px] rounded-pill bg-graphite/10 animate-pulse" />
                 )}
               </div>
             </div>
-          </div>
+          </SettingsCard>
+
+          {/* РЕЖИМ ДИСКВАЛИФИКАЦИЙ — раньше был на вкладке «Параметры» лиги */}
+          <SettingsCard
+            icon="disqualifications"
+            title="Дисквалификации"
+            description="Лайт — простой реестр банов. Через СДК — заседания комитета с решениями по нарушителям"
+            saving={savingParam === 'disqualification_mode'}
+          >
+            {globalParams ? (
+              <SegmentButton
+                options={DISQUALIFICATION_MODES.map(m => m.label)}
+                defaultIndex={Math.max(0, DISQUALIFICATION_MODES.findIndex(m => m.value === globalParams.disqualification_mode))}
+                onChange={(idx) => handleParamChange('disqualification_mode', DISQUALIFICATION_MODES[idx].value)}
+                className={savingParam ? 'pointer-events-none opacity-50' : ''}
+              />
+            ) : (
+              <div className="h-[36px] rounded-md bg-graphite/10 animate-pulse" />
+            )}
+          </SettingsCard>
         </div>
       </div>
+
+      {/* ДИКТОР АРЕНЫ — key пересоздаёт блок при смене лиги: звуки и сценарий прежней не мелькают */}
+      <ArenaAnnouncerSection key={selectedLeague.id} leagueId={selectedLeague.id} showToast={showToast} />
 
       <div className="flex flex-col lg:flex-row gap-8 items-start">
 

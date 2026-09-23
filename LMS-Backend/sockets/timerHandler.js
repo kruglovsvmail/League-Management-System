@@ -2,6 +2,8 @@ import pool from '../config/db.js';
 import { getLeagueIdForGame } from '../utils/leagueLookup.js';
 import { getPeriodLimits } from '../utils/periodLimits.js';
 import { arenaAudioFileExists } from '../utils/arenaAudioFiles.js';
+import { normalizeBeepSchedule } from '../utils/arenaBeepSchedule.js';
+import { buildMatchStages, isPauseStage, nextStageKey, pauseStageSeconds } from '../utils/matchStages.js';
 import { generateArenaEventAudio } from '../controllers/ttsArenaController.js';
 import { PENALTY_GROUP_LATERAL, PENALTY_GROUP_COLUMNS, decoratePenaltyEvent, isPenaltyContinuationRow } from '../utils/penaltyGroups.js';
 
@@ -24,14 +26,79 @@ const calculateCurrentSeconds = (timer) => {
   return (timer.accumulatedSeconds || 0) + Math.floor((Date.now() - timer.startedAt) / 1000);
 };
 
+// Часы разминки и перерыва — отдельные от игрового времени (см. utils/matchStages.js):
+// пока идёт перерыв, игровое время стоит на конце периода, а эти часы идут от 0:00.
+const calculateStageSeconds = (timer) => {
+  if (!timer.stageRunning || !timer.stageStartedAt) return timer.stageAccumulated || 0;
+  return (timer.stageAccumulated || 0) + Math.floor((Date.now() - timer.stageStartedAt) / 1000);
+};
+
+const newTimerState = () => ({
+  accumulatedSeconds: 0, startedAt: null, period: '1', isRunning: false, controller: 'secretary', penalties: [],
+  periodLength: 20, otLength: 5, soLength: 3, periodsCount: 3, trackPlusMinus: false, autoStopOnEvent: false, arenaAnnouncer: {},
+  warmupLength: 0, breakLength: 0, stage: null, stageAccumulated: 0, stageStartedAt: null, stageRunning: false,
+});
+
+const stopGameClock = (timer) => {
+  if (!timer.isRunning) return;
+  timer.accumulatedSeconds = calculateCurrentSeconds(timer);
+  timer.isRunning = false;
+  timer.startedAt = null;
+};
+
+const stopStageClock = (timer) => {
+  if (!timer.stageRunning) return;
+  timer.stageAccumulated = calculateStageSeconds(timer);
+  timer.stageRunning = false;
+  timer.stageStartedAt = null;
+};
+
+// Переход по карусели — и сам, и стрелками — всегда ставит этап на его стартовые значения
+// и останавливает часы. Период: игровое время на его начале (0:00, 20:00, 40:00…).
+const enterPeriod = (timer, period) => {
+  stopGameClock(timer);
+  stopStageClock(timer);
+  const limits = getPeriodLimits(period, timer.periodLength, timer.otLength, timer.periodsCount);
+  timer.stage = null;
+  timer.stageAccumulated = 0;
+  timer.period = period;
+  timer.accumulatedSeconds = limits.start;
+};
+
+// Разминка и перерыв: их часы на 0:00, игровое время — на начале матча (разминка) или на
+// конце периода, после которого перерыв, — как при автопереходе после сирены.
+const enterPause = (timer, key) => {
+  stopGameClock(timer);
+  stopStageClock(timer);
+  timer.stage = key;
+  timer.stageAccumulated = 0;
+  timer.period = key === 'WU' ? '1' : key.slice(1);
+  timer.accumulatedSeconds = key === 'WU'
+    ? 0
+    : getPeriodLimits(timer.period, timer.periodLength, timer.otLength, timer.periodsCount).end;
+};
+
+// stage в БД: 'PLAY' — идёт период, 'WU'/'B1'… — разминка или перерыв, NULL — этапы у матча
+// ещё ни разу не трогали (создан до карусели или только что). Такой матч, если он ещё
+// не начинался, открываем на разминке — когда она у него есть.
+const storedStage = (row, warmupLength) => {
+  if (row.stage === 'PLAY') return null;
+  if (row.stage) return row.stage;
+  const notStarted = !row.is_running && !(row.time_seconds > 0) && String(row.period || '1') === '1' && row.game_status !== 'finished';
+  return notStarted && warmupLength > 0 ? 'WU' : null;
+};
+
 const syncTimerToDB = async (gameId, timerObj) => {
   try {
     // Для БД нам нужно вычислить реальные секунды на момент сохранения
     const currentSeconds = calculateCurrentSeconds(timerObj);
 
+    // Длительности разминки и перерыва сюда не пишем: NULL в строке значит «брать из
+    // дивизиона», своё значение у матча появляется, только когда его меняет секретарь
+    // (updateTimerSettings). Иначе первый же «Стоп» навсегда отвязал бы матч от дивизиона.
     await pool.query(`
-      INSERT INTO game_timers (game_id, time_seconds, is_running, controller, penalties, period_length, ot_length, so_length, periods_count, period, auto_stop_on_event, arena_announcer, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+      INSERT INTO game_timers (game_id, time_seconds, is_running, controller, penalties, period_length, ot_length, so_length, periods_count, period, auto_stop_on_event, arena_announcer, stage, stage_seconds, stage_running, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
       ON CONFLICT (game_id) DO UPDATE
       SET time_seconds = EXCLUDED.time_seconds,
           is_running = EXCLUDED.is_running,
@@ -44,6 +111,9 @@ const syncTimerToDB = async (gameId, timerObj) => {
           period = EXCLUDED.period,
           auto_stop_on_event = EXCLUDED.auto_stop_on_event,
           arena_announcer = EXCLUDED.arena_announcer,
+          stage = EXCLUDED.stage,
+          stage_seconds = EXCLUDED.stage_seconds,
+          stage_running = EXCLUDED.stage_running,
           updated_at = NOW()
     `, [
       gameId,
@@ -57,7 +127,10 @@ const syncTimerToDB = async (gameId, timerObj) => {
       timerObj.periodsCount ?? 3,
       timerObj.period || '1',
       timerObj.autoStopOnEvent ?? false,
-      JSON.stringify(timerObj.arenaAnnouncer || {})
+      JSON.stringify(timerObj.arenaAnnouncer || {}),
+      timerObj.stage || 'PLAY',
+      calculateStageSeconds(timerObj),
+      timerObj.stageRunning || false
     ]);
   } catch (err) {
     console.error(`Ошибка сохранения таймера в БД (Матч ${gameId}):`, err.message);
@@ -181,7 +254,7 @@ export default function setupTimerSockets(io) {
   // ── ДИКТОР АРЕНЫ: серверная очередь оповещений ──────────────────────────
   // Единый источник истины на сервере (не зависит от вкладки/устройства секретаря):
   // сервер сам решает КОГДА и ЧТО озвучить, клиент — тупой приёмник события 'arena_play'.
-  const announcerTimers = {}; // gameId -> { interval, queue, dispatchedAt, lastDispatched, processedFired, processedEventIds, fileExistCache, leagueId }
+  const announcerTimers = {}; // gameId -> { interval, queue, dispatchedAt, lastDispatched, processedFired, processedEventIds, fileExistCache, leagueId, beepSchedule }
   const ANNOUNCER_SERIALIZE_GAP_MS = 13000; // минимальный зазор между не-сиренными фразами (эвристика длины фразы)
   const S3_BASE = 'https://s3.twcstorage.ru/hockeyeco-uploads';
 
@@ -190,6 +263,7 @@ export default function setupTimerSockets(io) {
       announcerTimers[gameId] = {
         interval: null,
         ticking: false,
+        stageTicking: false,
         queue: [],
         dispatchedAt: 0,
         lastDispatched: null,
@@ -197,6 +271,7 @@ export default function setupTimerSockets(io) {
         processedEventIds: new Set(),
         fileExistCache: {},
         leagueId: undefined, // undefined = ещё не резолвили, null = лига не найдена
+        beepSchedule: undefined, // сценарий бипа лиги — undefined = ещё не загружен
         gameEvents: null, // кэш голов/штрафов матча — null = ещё не загружен
       };
     }
@@ -221,6 +296,59 @@ export default function setupTimerSockets(io) {
     return exists;
   };
 
+  // Сценарий бипа лиги читаем один раз на матч, как и наличие файлов: меняют его редко
+  // и не посреди игры. «Обновить диктора» сбрасывает оба кэша — новый файл или новый
+  // сценарий подхватятся на следующем тике.
+  const resolveBeepSchedule = async (state, leagueId) => {
+    if (state.beepSchedule !== undefined) return state.beepSchedule;
+    if (!leagueId) {
+      state.beepSchedule = null;
+      return null;
+    }
+    try {
+      const res = await pool.query('SELECT arena_beep_schedule FROM leagues WHERE id = $1', [leagueId]);
+      state.beepSchedule = normalizeBeepSchedule(res.rows[0]?.arena_beep_schedule);
+    } catch (e) {
+      console.error(`[ArenaAnnouncer] Ошибка загрузки сценария бипа (Лига ${leagueId}):`, e);
+      state.beepSchedule = null;
+    }
+    return state.beepSchedule;
+  };
+
+  // Звуки по времени — сирена, голосовое предупреждение, бип-страховка и бипы сценария —
+  // помнятся в processedFired: тик раз в секунду иначе сыграл бы их дважды за окно
+  // срабатывания. Когда время уходит назад (ручной ввод, кнопки «−», карусель встала на
+  // период), забываем звуки этого периода, которые снова оказались впереди: настоящий
+  // повторный конец периода снова даёт сирену. Звуки позади нового времени остаются
+  // сыгранными. Голы и штрафы не трогаем — каждый объявляется один раз.
+  const rearmTimeSounds = (gameId, period, fromSeconds) => {
+    const state = announcerTimers[gameId];
+    const timer = activeTimers[gameId];
+    if (!state || !timer) return;
+    const limits = getPeriodLimits(period, timer.periodLength, timer.otLength, timer.periodsCount);
+    if (limits.end <= 0) return;
+    const warnAt = Number(period) === (parseInt(timer.periodsCount, 10) || 3) ? 120 : 60;
+    const prefix = `${period}_`;
+    for (const key of Object.keys(state.processedFired)) {
+      if (!key.startsWith(prefix)) continue;
+      const kind = key.slice(prefix.length);
+      // Самый ранний момент игрового времени, когда звук может сработать (см. announcerTick)
+      const moment = kind === 'siren' ? limits.end - 2
+        : kind === 'warn' ? limits.end - (warnAt + 3)
+        : kind === 'warnBeep' ? limits.end - (warnAt + 5)
+        : kind.startsWith('beep_') ? limits.start + Number(kind.slice('beep_'.length))
+        : null;
+      if (moment !== null && moment >= fromSeconds) delete state.processedFired[key];
+    }
+  };
+
+  // Голос диктора — один тумблер: и предупреждения о конце периода, и голы со штрафами.
+  // Матч, настроенный раньше, хранит прежние флаги по отдельности (warn1min, warn2min,
+  // periodWarnings, goalAnnounce): голос включён, если был включён любой из них.
+  const voiceOn = (settings) => settings.voice ?? (
+    !!settings.periodWarnings || !!settings.warn1min || !!settings.warn2min || !!settings.goalAnnounce
+  );
+
   const enqueueAnnouncement = (state, item) => {
     state.queue.push(item);
     state.queue.sort((a, b) => a.priority - b.priority);
@@ -230,6 +358,14 @@ export default function setupTimerSockets(io) {
     io.to(`game_${gameId}`).emit('arena_play', { url: item.url });
     state.dispatchedAt = Date.now();
     state.lastDispatched = item;
+  };
+
+  // Бип — сигнал времени, а не фраза: звучит сразу, мимо очереди, и не сдвигает её зазор.
+  // overlay — панель играет его поверх, не обрывая фразу диктора, которая идёт сейчас.
+  // Нет у лиги beep.mp3 — молчим, как и с остальными звуками.
+  const playArenaBeep = async (gameId, state, leagueId) => {
+    if (!(await checkStaticAudioFile(state, leagueId, 'beep.mp3'))) return;
+    io.to(`game_${gameId}`).emit('arena_play', { url: `${S3_BASE}/audio/league-${leagueId}/beep.mp3?t=${Date.now()}`, overlay: true });
   };
 
   // Приоритет: 1=сирена, 2=гол, 3=штраф, 4=предупреждения о конце периода.
@@ -263,7 +399,8 @@ export default function setupTimerSockets(io) {
     const limits = getPeriodLimits(timer.period, timer.periodLength, timer.otLength, timer.periodsCount);
     if (limits.end <= 0) return;
 
-    const remaining = limits.end - calculateCurrentSeconds(timer);
+    const currentSeconds = calculateCurrentSeconds(timer);
+    const remaining = limits.end - currentSeconds;
     const leagueId = await resolveAnnouncerLeagueId(gameId, state);
 
     if (settings.endSiren && remaining <= 2 && remaining >= 1) {
@@ -276,31 +413,47 @@ export default function setupTimerSockets(io) {
       }
     }
 
-    if (settings.warn1min && remaining <= 63 && remaining >= 61) {
-      const periodNum = parseInt(timer.period, 10);
-      const periodsCount = timer.periodsCount ?? 3;
-      if (!isNaN(periodNum) && periodNum >= 1 && periodNum <= periodsCount) {
-        const key = `${timer.period}_warn1min`;
+    // Предупреждения и бип — только в основных периодах, овертайм без них.
+    const periodNum = parseInt(timer.period, 10);
+    const periodsCount = parseInt(timer.periodsCount, 10) || 3;
+    if (!isNaN(periodNum) && periodNum >= 1 && periodNum <= periodsCount) {
+      // В каждом периоде, кроме последнего, — за минуту до конца, в последнем — за две.
+      const isLastPeriod = periodNum === periodsCount;
+      const warnAt = isLastPeriod ? 120 : 60;
+      const warnFile = isLastPeriod ? 'left-2min.mp3' : `left-1min-${periodNum}.mp3`;
+      const voice = voiceOn(settings);
+
+      // Бип-страховка за 5 секунд до предупреждения (1:05, в последнем периоде 2:05) —
+      // когда голоса не будет: диктор выключен или у лиги нет нужного файла.
+      if (remaining <= warnAt + 5 && remaining >= warnAt + 3) {
+        const key = `${timer.period}_warnBeep`;
         if (!state.processedFired[key]) {
           state.processedFired[key] = true;
-          const filename = `left-1min-${periodNum}.mp3`;
-          if (await checkStaticAudioFile(state, leagueId, filename)) {
-            enqueueAnnouncement(state, { priority: 4, kind: 'warn1min', url: `${S3_BASE}/audio/league-${leagueId}/${filename}?t=${Date.now()}` });
+          const voiceWillPlay = voice && await checkStaticAudioFile(state, leagueId, warnFile);
+          if (!voiceWillPlay) await playArenaBeep(gameId, state, leagueId);
+        }
+      }
+
+      if (voice && remaining <= warnAt + 3 && remaining >= warnAt + 1) {
+        const key = `${timer.period}_warn`;
+        if (!state.processedFired[key]) {
+          state.processedFired[key] = true;
+          if (await checkStaticAudioFile(state, leagueId, warnFile)) {
+            enqueueAnnouncement(state, { priority: 4, kind: 'warn', url: `${S3_BASE}/audio/league-${leagueId}/${warnFile}?t=${Date.now()}` });
           }
         }
       }
-    }
 
-    if (settings.warn2min && remaining <= 123 && remaining >= 121) {
-      const periodsCount = timer.periodsCount ?? 3;
-      if (String(timer.period) === String(periodsCount)) {
-        const key = `${timer.period}_warn2min`;
-        if (!state.processedFired[key]) {
-          state.processedFired[key] = true;
-          if (await checkStaticAudioFile(state, leagueId, 'left-2min.mp3')) {
-            enqueueAnnouncement(state, { priority: 4, kind: 'warn2min', url: `${S3_BASE}/audio/league-${leagueId}/left-2min.mp3?t=${Date.now()}` });
-          }
-        }
+      // Сценарий бипа лиги: отметки от начала периода. Окно в 3 секунды, как у
+      // предупреждений, — тик раз в секунду может перешагнуть ровную отметку.
+      const schedule = await resolveBeepSchedule(state, leagueId);
+      const elapsed = currentSeconds - limits.start;
+      for (const mark of schedule?.[String(periodNum)] || []) {
+        if (elapsed < mark || elapsed > mark + 2) continue;
+        const key = `${timer.period}_beep_${mark}`;
+        if (state.processedFired[key]) continue;
+        state.processedFired[key] = true;
+        await playArenaBeep(gameId, state, leagueId);
       }
     }
 
@@ -308,10 +461,94 @@ export default function setupTimerSockets(io) {
     dispatchFromAnnouncerQueue(gameId, state);
   };
 
+  // ── КАРУСЕЛЬ ЭТАПОВ: автопереходы (см. utils/matchStages.js) ──────────────
+  // Делает сервер, а не панель: две открытые панели не переключат этап дважды, а переход
+  // случится и при свёрнутой вкладке — тикер живёт, пока в комнате есть хоть кто-то.
+  //  • период дошёл до конца → стоп ровно на конце и дальше по карусели: перерыв (его
+  //    время идёт сразу — перерыв начинается с сиреной) или следующий период;
+  //  • после последнего периода и после овертайма дальше идём, только если счёт равный,
+  //    а овертайм или буллиты есть в настройках матча — иначе матч сыгран;
+  //  • разминка или перерыв истекли → следующий период: стоит на своём начале, ждёт «Старт».
+  const emitTimerState = (gameId) => {
+    io.to(`game_${gameId}`).emit('timer_state', { ...activeTimers[gameId], serverTime: Date.now() });
+  };
+
+  const isScoreTied = async (gameId) => {
+    try {
+      const { rows } = await pool.query('SELECT home_score, away_score, is_technical FROM games WHERE id = $1', [gameId]);
+      const game = rows[0];
+      if (!game || game.is_technical) return false;
+      return (game.home_score ?? 0) === (game.away_score ?? 0);
+    } catch (e) {
+      console.error(`[MatchStages] Не удалось прочитать счёт (Матч ${gameId}):`, e);
+      return false;
+    }
+  };
+
+  const advanceMatchStage = async (gameId) => {
+    const timer = activeTimers[gameId];
+    if (!timer) return;
+    const stages = buildMatchStages(timer);
+
+    if (timer.stage) {
+      if (!timer.stageRunning) return;
+      const length = pauseStageSeconds(timer.stage, timer);
+      if (calculateStageSeconds(timer) < length) return;
+      const next = nextStageKey(stages, timer.stage);
+      stopStageClock(timer);
+      timer.stageAccumulated = length;
+      if (next && !isPauseStage(next)) {
+        enterPeriod(timer, next);
+        rearmTimeSounds(gameId, timer.period, timer.accumulatedSeconds);
+      }
+      emitTimerState(gameId);
+      syncTimerToDB(gameId, timer);
+      if (next && !isPauseStage(next)) io.to(`game_${gameId}`).emit('game_updated');
+      return;
+    }
+
+    if (!timer.isRunning || timer.period === 'SO') return;
+    const limits = getPeriodLimits(timer.period, timer.periodLength, timer.otLength, timer.periodsCount);
+    if (limits.end <= 0 || calculateCurrentSeconds(timer) < limits.end) return;
+
+    // Когда период кончился на самом деле: тик раз в секунду, а если в комнате долго никого
+    // не было — и того позже. Перерыв отсчитываем от этого момента, а не от тика.
+    const endedAt = timer.startedAt + (limits.end - (timer.accumulatedSeconds || 0)) * 1000;
+    timer.accumulatedSeconds = limits.end;
+    timer.isRunning = false;
+    timer.startedAt = null;
+
+    let next = nextStageKey(stages, timer.period);
+    const periodsCount = parseInt(timer.periodsCount, 10) || 3;
+    const regulationOver = timer.period === 'OT' || Number(timer.period) >= periodsCount;
+    if (next && regulationOver && !(await isScoreTied(gameId))) next = null;
+
+    if (next && isPauseStage(next)) {
+      timer.stage = next;
+      timer.stageAccumulated = 0;
+      timer.stageRunning = true;
+      timer.stageStartedAt = endedAt;
+    } else if (next) {
+      enterPeriod(timer, next);
+      rearmTimeSounds(gameId, timer.period, timer.accumulatedSeconds);
+    }
+    emitTimerState(gameId);
+    syncTimerToDB(gameId, timer);
+    if (next && !isPauseStage(next)) io.to(`game_${gameId}`).emit('game_updated');
+  };
+
   const startAnnouncerTicker = (gameId) => {
     const state = getAnnouncerState(gameId);
     if (state.interval) return;
     state.interval = setInterval(() => {
+      // Автопереходы карусели — своим ходом, не дожидаясь диктора: тот может надолго
+      // задуматься над синтезом фразы, а конец периода ждать не должен.
+      if (!state.stageTicking) {
+        state.stageTicking = true;
+        advanceMatchStage(gameId)
+          .catch(e => console.error(`[MatchStages] Ошибка тика (Матч ${gameId}):`, e))
+          .finally(() => { state.stageTicking = false; });
+      }
       if (state.ticking) return;
       state.ticking = true;
       announcerTick(gameId)
@@ -410,7 +647,7 @@ export default function setupTimerSockets(io) {
   // до него доходит (в т.ч. при повторном проигрывании матча с нуля).
   const checkGameEventsForAnnouncement = async (gameId) => {
     const timer = activeTimers[gameId];
-    if (!timer?.arenaAnnouncer?.goalAnnounce) return;
+    if (!timer || !voiceOn(timer.arenaAnnouncer || {})) return;
     const state = getAnnouncerState(gameId);
     if (!state.gameEvents) return; // кэш ещё не загружен — подхватим на следующем тике
 
@@ -490,9 +727,14 @@ export default function setupTimerSockets(io) {
         try {
           // track_plus_minus читаем ЖИВЫМ из divisions (не застывший снимок game_timers,
           // скопированный при создании матча) — актуально даже если лига поменяла флаг позже.
+          // Разминка и перерыв: своё значение матча, если секретарь его менял, иначе — живое
+          // из дивизиона. Так настройка дивизиона доходит и до матчей, созданных раньше неё.
           const res = await pool.query(`
             SELECT gt.*,
-                   CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS live_track_plus_minus
+                   CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS live_track_plus_minus,
+                   COALESCE(gt.warmup_length, CASE WHEN g.stage_type = 'playoff' THEN d.playoff_warmup_length ELSE d.reg_warmup_length END, 0) AS live_warmup_length,
+                   COALESCE(gt.break_length, CASE WHEN g.stage_type = 'playoff' THEN d.playoff_break_length ELSE d.reg_break_length END, 0) AS live_break_length,
+                   g.status AS game_status
             FROM game_timers gt
             JOIN games g ON g.id = gt.game_id
             LEFT JOIN divisions d ON d.id = g.division_id
@@ -513,14 +755,20 @@ export default function setupTimerSockets(io) {
               period: row.period || '1',
               trackPlusMinus: row.live_track_plus_minus ?? false,
               autoStopOnEvent: row.auto_stop_on_event ?? false,
-              arenaAnnouncer: row.arena_announcer || {}
+              arenaAnnouncer: row.arena_announcer || {},
+              warmupLength: row.live_warmup_length ?? 0,
+              breakLength: row.live_break_length ?? 0,
+              stage: storedStage(row, row.live_warmup_length ?? 0),
+              stageAccumulated: row.stage_seconds || 0,
+              stageStartedAt: row.stage_running ? Date.now() : null,
+              stageRunning: row.stage_running || false,
             };
           } else {
-            activeTimers[gameId] = { accumulatedSeconds: 0, startedAt: null, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5, soLength: 3, periodsCount: 3, trackPlusMinus: false, autoStopOnEvent: false, arenaAnnouncer: {} };
+            activeTimers[gameId] = newTimerState();
           }
         } catch (e) {
           console.error('Ошибка загрузки таймера при подключении:', e);
-          activeTimers[gameId] = { accumulatedSeconds: 0, startedAt: null, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5, soLength: 3, periodsCount: 3, trackPlusMinus: false, autoStopOnEvent: false, arenaAnnouncer: {} };
+          activeTimers[gameId] = newTimerState();
         }
       }
 
@@ -706,25 +954,33 @@ export default function setupTimerSockets(io) {
       const { gameId, action, timerData, penaltyData, penaltyId, value } = payload;
       
       if (!activeTimers[gameId]) {
-        activeTimers[gameId] = { accumulatedSeconds: 0, startedAt: null, period: '1', isRunning: false, controller: 'secretary', penalties: [], periodLength: 20, otLength: 5, soLength: 3, periodsCount: 3, trackPlusMinus: false, autoStopOnEvent: false, arenaAnnouncer: {} };
+        activeTimers[gameId] = newTimerState();
       }
 
       const timer = activeTimers[gameId];
 
       // ВСЕГДА обновляем безопасные данные, если они пришли (включая период и настройки)
-      // Вытаскиваем seconds и isRunning, чтобы они случайно не перетерли логику Delta Time
+      // Вытаскиваем seconds и isRunning, чтобы они случайно не перетерли логику Delta Time.
+      // Этап карусели и его часы — тоже мимо: их меняют только действия ниже.
       if (timerData) {
-        const { seconds, isRunning, startedAt, accumulatedSeconds, ...safeData } = timerData;
+        const { seconds, isRunning, startedAt, accumulatedSeconds, stage, stageAccumulated, stageStartedAt, stageRunning, ...safeData } = timerData;
         Object.assign(timer, safeData);
       }
 
       // --- ЛОГИКА DELTA TIME ---
       if (action === 'start') {
+        // «Старт» игрового времени во время разминки или перерыва (прошлая версия панели
+        // о них не знает) — значит, игра пошла: этап закрываем.
+        if (timer.stage) {
+          stopStageClock(timer);
+          timer.stage = null;
+          timer.stageAccumulated = 0;
+        }
         if (!timer.isRunning) {
           timer.isRunning = true;
           timer.startedAt = Date.now();
         }
-      } 
+      }
       else if (action === 'stop') {
         if (timer.isRunning) {
           // При остановке жестко фиксируем, сколько секунд успело набежать
@@ -734,20 +990,33 @@ export default function setupTimerSockets(io) {
         }
       } 
       else if (action === 'set_time') {
-        // Ручная коррекция времени секретарем
+        // Ручная коррекция времени секретарем. Период под введённое время панель выбирает
+        // сама и присылает в timerData.period — тогда это игра, а не перерыв.
         const newSecs = timerData?.seconds !== undefined ? timerData.seconds : value;
+        const before = calculateCurrentSeconds(timer);
         timer.accumulatedSeconds = newSecs;
         if (timer.isRunning) {
            timer.startedAt = Date.now(); // Сбрасываем якорь времени
         }
+        if (newSecs < before) rearmTimeSounds(gameId, timer.period, newSecs);
+        if (timerData?.period !== undefined && timer.stage) {
+          stopStageClock(timer);
+          timer.stage = null;
+          timer.stageAccumulated = 0;
+        }
       }
       else if (action === 'adjust_time') {
+        // Корректировка кнопками — только в пределах текущего периода
         const delta = timerData?.delta || 0;
         if (timer.isRunning) {
           timer.accumulatedSeconds += Math.floor((Date.now() - timer.startedAt) / 1000);
           timer.startedAt = Date.now();
         }
-        timer.accumulatedSeconds = Math.max(0, timer.accumulatedSeconds + delta);
+        const limits = getPeriodLimits(timer.period, timer.periodLength, timer.otLength, timer.periodsCount);
+        let adjusted = Math.max(0, timer.accumulatedSeconds + delta);
+        if (limits.end > 0) adjusted = Math.min(limits.end, Math.max(limits.start, adjusted));
+        timer.accumulatedSeconds = adjusted;
+        if (delta < 0) rearmTimeSounds(gameId, timer.period, adjusted);
       }
       else if (action === 'change_period') {
         // Специфичная логика для смены периода: сброс времени и остановка
@@ -756,6 +1025,39 @@ export default function setupTimerSockets(io) {
         }
         timer.isRunning = false;
         timer.startedAt = null;
+        stopStageClock(timer);
+        timer.stage = null;
+        timer.stageAccumulated = 0;
+        rearmTimeSounds(gameId, timer.period, timer.accumulatedSeconds);
+      }
+      // --- КАРУСЕЛЬ ЭТАПОВ (см. utils/matchStages.js) ---
+      else if (action === 'set_stage') {
+        // Стрелки карусели: этап встаёт на стартовые значения, часы стоят (автостарт только
+        // у перерыва сразу после сирены). См. enterPeriod / enterPause.
+        const key = String(value ?? '');
+        if (isPauseStage(key)) enterPause(timer, key);
+        else if (key) {
+          enterPeriod(timer, key);
+          rearmTimeSounds(gameId, timer.period, timer.accumulatedSeconds);
+        }
+      }
+      else if (action === 'stage_start') {
+        if (timer.stage && !timer.stageRunning) {
+          timer.stageRunning = true;
+          timer.stageStartedAt = Date.now();
+        }
+      }
+      else if (action === 'stage_stop') {
+        stopStageClock(timer);
+      }
+      else if (action === 'set_stage_time' || action === 'adjust_stage_time') {
+        // Время разминки или перерыва — от 0:00 до их длительности, не больше
+        if (timer.stage) {
+          const length = pauseStageSeconds(timer.stage, timer);
+          const base = action === 'adjust_stage_time' ? calculateStageSeconds(timer) + (Number(timerData?.delta) || 0) : Number(value) || 0;
+          timer.stageAccumulated = Math.min(length, Math.max(0, base));
+          if (timer.stageRunning) timer.stageStartedAt = Date.now();
+        }
       }
 
       // Обработка специфических экшенов (штрафы и делегирование)
@@ -771,8 +1073,10 @@ export default function setupTimerSockets(io) {
         timer.penalties = timer.penalties?.filter(x => x.id !== penaltyId);
       } else if (action === 'reset_announcer') {
         // Полный сброс памяти диктора арены этого матча: дедуп голов/штрафов и статичных
-        // триггеров (сирена/предупреждения), очередь озвучки. Не трогает счёт/время/БД.
+        // триггеров (сирена/предупреждения/бип), очередь озвучки. Не трогает счёт/время/БД.
         // Позволяет "прожить" матч заново — отмотать таймер и нажать эту кнопку перед стартом.
+        // Заодно забывает, какие звуки есть у лиги, и её сценарий бипа — так подхватывается
+        // то, что глобальный админ загрузил или поменял уже по ходу матча.
         const state = announcerTimers[gameId];
         if (state) {
           state.processedFired = {};
@@ -780,6 +1084,8 @@ export default function setupTimerSockets(io) {
           state.queue = [];
           state.dispatchedAt = 0;
           state.lastDispatched = null;
+          state.fileExistCache = {};
+          state.beepSchedule = undefined;
           refreshGameEventsCache(gameId).catch(e => console.error(`[ArenaAnnouncer] Ошибка обновления событий при сбросе (Матч ${gameId}):`, e));
         }
       }
@@ -794,7 +1100,8 @@ export default function setupTimerSockets(io) {
       // Спасаем в БД только при важных событиях (sync и тики игнорируем)
       const importantActions = [
         'stop', 'set_time', 'adjust_time', 'set_period', 'change_period', 'update_settings', 'delegate',
-        'add_penalty', 'toggle_penalty', 'remove_penalty'
+        'add_penalty', 'toggle_penalty', 'remove_penalty',
+        'set_stage', 'stage_start', 'stage_stop', 'set_stage_time', 'adjust_stage_time'
       ];
 
       if (importantActions.includes(action)) {

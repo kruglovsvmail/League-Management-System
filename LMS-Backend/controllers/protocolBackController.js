@@ -14,14 +14,15 @@ export const CHECK_RESULTS = {
     not_presented: 'Не предъявил',
 };
 
+// Отметка о протесте — у каждой команды своя, а текст уведомления один на обеих:
+// в бланке это одно поле на две строки (protest_text).
 const emptyNotes = {
     referee_notes: '',
     inspector_notes: '',
     medical_notes: '',
     home_protest_filed: null,
-    home_protest_text: '',
     away_protest_filed: null,
-    away_protest_text: '',
+    protest_text: '',
 };
 
 // Игроки турнирной заявки обеих команд и персонал, заявленный на этот матч — из них
@@ -163,17 +164,16 @@ export const saveProtocolBack = async (req, res) => {
         await client.query(`
             INSERT INTO game_protocol_notes (
                 game_id, referee_notes, inspector_notes, medical_notes,
-                home_protest_filed, home_protest_text, away_protest_filed, away_protest_text,
+                home_protest_filed, away_protest_filed, protest_text,
                 updated_by, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             ON CONFLICT (game_id) DO UPDATE SET
                 referee_notes = EXCLUDED.referee_notes,
                 inspector_notes = EXCLUDED.inspector_notes,
                 medical_notes = EXCLUDED.medical_notes,
                 home_protest_filed = EXCLUDED.home_protest_filed,
-                home_protest_text = EXCLUDED.home_protest_text,
                 away_protest_filed = EXCLUDED.away_protest_filed,
-                away_protest_text = EXCLUDED.away_protest_text,
+                protest_text = EXCLUDED.protest_text,
                 updated_by = EXCLUDED.updated_by,
                 updated_at = NOW()
         `, [
@@ -182,9 +182,8 @@ export const saveProtocolBack = async (req, res) => {
             readText(notes.inspector_notes),
             readText(notes.medical_notes),
             readFlag(notes.home_protest_filed),
-            readText(notes.home_protest_text),
             readFlag(notes.away_protest_filed),
-            readText(notes.away_protest_text),
+            readText(notes.protest_text),
             req.user?.id || null,
         ]);
 

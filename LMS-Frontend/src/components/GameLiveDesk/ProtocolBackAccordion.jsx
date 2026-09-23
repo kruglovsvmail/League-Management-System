@@ -22,14 +22,15 @@ const PROTEST_OPTIONS = [
   { value: 'no', label: 'Нет' },
 ];
 
+// Отметка о протесте — у каждой команды своя, а текст уведомления один на обеих:
+// в бланке это одно поле на две строки, так же оно выглядит и здесь, и в PDF.
 const EMPTY_NOTES = {
   referee_notes: '',
   inspector_notes: '',
   medical_notes: '',
   home_protest_filed: null,
-  home_protest_text: '',
   away_protest_filed: null,
-  away_protest_text: '',
+  protest_text: '',
 };
 
 const EMPTY_ROW = {
@@ -337,38 +338,42 @@ export const ProtocolBackAccordion = ({ game, homeRoster = [], awayRoster = [], 
                       Уведомление представителей команд о подаче протеста
                     </h3>
                   </div>
-                  <div className="p-3 flex flex-col gap-2">
-                    {[
-                      { letter: 'А', name: game?.home_team_name, flag: 'home_protest_filed', text: 'home_protest_text' },
-                      { letter: 'Б', name: game?.away_team_name, flag: 'away_protest_filed', text: 'away_protest_text' },
-                    ].map(side => (
-                      <div key={side.letter} className="flex gap-2 items-center">
-                        <div className="w-[220px] shrink-0 flex items-center gap-2 text-[12px] font-bold text-graphite">
-                          <span className="bg-graphite text-white w-5 h-5 rounded flex items-center justify-center text-[10px] shrink-0">
-                            {side.letter}
-                          </span>
-                          <span className="truncate">{side.name || ''}</span>
+                  {/* Слева две строки команд со своей отметкой, справа — одно поле
+                      текста во всю высоту обеих строк, как объединённая ячейка бланка и PDF. */}
+                  <div className="p-3 flex gap-2 items-stretch">
+                    <div className="w-[338px] shrink-0 flex flex-col gap-2">
+                      {[
+                        { letter: 'А', name: game?.home_team_name, flag: 'home_protest_filed' },
+                        { letter: 'Б', name: game?.away_team_name, flag: 'away_protest_filed' },
+                      ].map(side => (
+                        <div key={side.letter} className="flex gap-2 items-center">
+                          <div className="flex-1 min-w-0 flex items-center gap-2 text-[12px] font-bold text-graphite">
+                            <span className="bg-graphite text-white w-5 h-5 rounded flex items-center justify-center text-[10px] shrink-0">
+                              {side.letter}
+                            </span>
+                            <span className="truncate">{side.name || ''}</span>
+                          </div>
+                          <div className="w-[110px] shrink-0">
+                            <Select
+                              options={PROTEST_OPTIONS}
+                              value={flagToOption(notes[side.flag])}
+                              onChange={(val) => updateNote(side.flag, optionToFlag(val))}
+                              placeholder="—"
+                              className={selectClass}
+                              disabled={isReadOnly}
+                            />
+                          </div>
                         </div>
-                        <div className="w-[110px] shrink-0">
-                          <Select
-                            options={PROTEST_OPTIONS}
-                            value={flagToOption(notes[side.flag])}
-                            onChange={(val) => updateNote(side.flag, optionToFlag(val))}
-                            placeholder="—"
-                            className={selectClass}
-                            disabled={isReadOnly}
-                          />
-                        </div>
-                        <input
-                          type="text"
-                          value={notes[side.text] || ''}
-                          onChange={(e) => updateNote(side.text, e.target.value)}
-                          disabled={isReadOnly}
-                          placeholder="Текст уведомления"
-                          className="flex-1 h-[34px] px-3 rounded-md text-[12px] font-medium outline-none border border-graphite/40 bg-white/70 text-graphite focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] disabled:opacity-60 disabled:cursor-not-allowed disabled:!bg-gray-50"
-                        />
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    <textarea
+                      value={notes.protest_text || ''}
+                      rows={2}
+                      onChange={(e) => updateNote('protest_text', e.target.value)}
+                      disabled={isReadOnly}
+                      placeholder="Текст уведомления — общий для обеих команд"
+                      className="flex-1 min-h-[76px] px-3 py-2 rounded-md text-[12px] font-medium outline-none resize-y border border-graphite/40 bg-white/70 text-graphite focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,122,0,0.2)] disabled:opacity-60 disabled:cursor-not-allowed disabled:!bg-gray-50"
+                    />
                   </div>
                 </div>
 

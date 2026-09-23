@@ -50,8 +50,8 @@ const createPenaltyShotRow = async (client, gameId, penaltyEventId, penalizedTea
  * «командный штраф», представителя отдельно не выделяем.
  *
  * penalty_served_by_id — кто сидит на скамейке за нарушителя (за команду, за
- * представителя или за удалённого до конца матча). Только фиксация в протоколе:
- * ни штрафы, ни минуты отбывающему не считаются.
+ * представителя, за вратаря, за травмированного или за удалённого до конца матча).
+ * Только фиксация в протоколе: ни штрафы, ни минуты отбывающему не считаются.
  *
  * Для не-штрафов всё NULL — колонки штрафные.
  */
@@ -629,11 +629,13 @@ export const deleteGameEvent = async (req, res) => {
 export const updateTimerSettings = async (req, res) => {
     try {
         const { gameId } = req.params;
-        const { period_length, ot_length, so_length, periods_count, auto_stop_on_event, arena_announcer } = req.body;
+        const { period_length, ot_length, so_length, periods_count, auto_stop_on_event, arena_announcer, warmup_length, break_length } = req.body;
 
         // COALESCE: этот роут вызывается и с полным набором (батч-сохранение "Утвердить настройки"),
         // и с одним только arena_announcer (мгновенное сохранение тумблера диктора арены) —
         // отсутствующие поля не должны затирать то, что уже есть в БД.
+        // Разминка и перерыв, записанные здесь, — своё значение матча: с этого момента он
+        // не берёт их из дивизиона (NULL в строке значит «как в дивизионе»).
         await pool.query(`
             UPDATE game_timers SET
                 period_length = COALESCE($1, period_length),
@@ -641,13 +643,16 @@ export const updateTimerSettings = async (req, res) => {
                 so_length = COALESCE($3, so_length),
                 periods_count = COALESCE($4, periods_count),
                 auto_stop_on_event = COALESCE($5, auto_stop_on_event),
-                arena_announcer = COALESCE($6::jsonb, arena_announcer)
+                arena_announcer = COALESCE($6::jsonb, arena_announcer),
+                warmup_length = COALESCE($8, warmup_length),
+                break_length = COALESCE($9, break_length)
             WHERE game_id = $7
         `, [
             period_length ?? null, ot_length ?? null, so_length ?? null, periods_count ?? null,
             auto_stop_on_event ?? null,
             arena_announcer !== undefined ? JSON.stringify(arena_announcer) : null,
-            gameId
+            gameId,
+            warmup_length ?? null, break_length ?? null
         ]);
 
         res.json({ success: true });
@@ -1025,7 +1030,7 @@ export const getGameAudioUrl = async (req, res) => {
     }
 };
 
-// Проверка наличия статичных PA-файлов диктора арены (сирена/предупреждения) для лиги матча.
+// Проверка наличия статичных PA-файлов диктора арены (сирена/предупреждения/бип) для лиги матча.
 // Используется настройками секретарской панели перед включением тумблера диктора.
 export const getArenaAudioFiles = async (req, res) => {
     try {

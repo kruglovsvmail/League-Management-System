@@ -20,6 +20,14 @@ const ACTION_LABELS = {
   change_period: 'Смена периода',
 };
 
+// Разминка и перерывы пишутся ключами карусели (см. utils/matchStages.js): старт, стоп и
+// правки их часов идут теми же действиями, что и у игрового времени, а отличает их период.
+const formatPeriod = (period) => {
+  if (period === 'WU') return 'Разминка';
+  if (/^B\d+$/.test(String(period))) return `Перерыв ${String(period).slice(1)}`;
+  return period || '';
+};
+
 const formatTimer = (seconds) => {
   const s = Math.max(0, Number(seconds) || 0);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -183,7 +191,7 @@ export const exportTimerLog = async (req, res) => {
         ACTION_LABELS[r.action] || r.action,
         formatTimer(r.timer_seconds),
         r.delta_seconds == null ? '' : (r.delta_seconds > 0 ? `+${r.delta_seconds}` : String(r.delta_seconds)),
-        r.period || '',
+        formatPeriod(r.period),
         [r.last_name, r.first_name].filter(Boolean).join(' '),
       ]);
       row.height = 18;

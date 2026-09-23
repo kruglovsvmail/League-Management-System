@@ -120,24 +120,33 @@ export default function App() {
     navigate(canView ? '/divisions' : '/games'); 
   };
 
-  // Настройки лиги правятся прямо в интерфейсе («Настройки → Параметры»), а живут они в
-  // профиле: его отдаёт /api/me при загрузке. Без этой правки включённая настройка
-  // подхватывалась бы только после F5 — профиль в памяти оставался бы прежним.
-  const patchSelectedLeague = (patch) => {
-    if (!selectedLeague || !patch) return;
+  // Настройки лиги правятся прямо в интерфейсе («Настройки → Параметры», а режим
+  // дисквалификаций — у глобального админа в «Команды → Лиги»), а живут они в профиле:
+  // его отдаёт /api/me при загрузке. Без этой правки включённая настройка подхватывалась
+  // бы только после F5 — профиль в памяти оставался бы прежним.
+  //
+  // Лигу указываем явно: глобальный админ правит в «Командах» любую лигу, не обязательно
+  // выбранную в шапке, — и при переключении на неё должен увидеть уже новое значение.
+  const patchLeague = (leagueId, patch) => {
+    if (leagueId == null || !patch) return;
+    const isTarget = (l) => String(l.id) === String(leagueId);
 
-    setSelectedLeague(prev => (prev ? { ...prev, ...patch } : prev));
+    setSelectedLeague(prev => (prev && isTarget(prev) ? { ...prev, ...patch } : prev));
     setCurrentUser(prev => {
       if (!prev) return prev;
       const next = {
         ...prev,
-        leagues: (prev.leagues || []).map(l => (l.id === selectedLeague.id ? { ...l, ...patch } : l)),
+        leagues: (prev.leagues || []).map(l => (isTarget(l) ? { ...l, ...patch } : l)),
       };
       // Кэш профиля тоже обновляем: до следующего /api/me читают именно его
       const store = localStorage.getItem('hockeyeco_user') ? localStorage : sessionStorage;
       if (store.getItem('hockeyeco_user')) store.setItem('hockeyeco_user', JSON.stringify(next));
       return next;
     });
+  };
+
+  const patchSelectedLeague = (patch) => {
+    if (selectedLeague) patchLeague(selectedLeague.id, patch);
   };
 
   const handleLeagueChange = (league) => {
@@ -198,7 +207,8 @@ export default function App() {
                     selectedLeague={selectedLeague}
                     onLeagueChange={handleLeagueChange}
                     onPatchSelectedLeague={patchSelectedLeague}
-                  /> 
+                    onPatchLeague={patchLeague}
+                  />
                 : <Navigate to="/login" replace />
             }
           >

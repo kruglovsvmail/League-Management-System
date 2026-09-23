@@ -49,6 +49,18 @@ export const sortRosterByPosition = (roster) => [...roster].sort((a, b) => {
   return `${a.last_name || ''} ${a.first_name || ''}`.localeCompare(`${b.last_name || ''} ${b.first_name || ''}`, 'ru');
 });
 
+// Порядок плиток с номерами в модалках выбора игрока (автор гола, ассистенты,
+// нарушитель, +/-): сначала вратари, дальше остальные по возрастанию номера.
+// На плитке только номер, и искать его секретарь будет по номеру, а не по амплуа и фамилии,
+// как в графе состава (sortRosterByPosition). Номер не обязан быть числом («00») —
+// нечисловые встают в начало своей группы, как нули.
+const isGoalie = (p) => localizePosition(p.position_in_line || p.position) === 'Вр.';
+export const sortRosterByNumber = (roster) => [...roster].sort((a, b) => {
+  const byRole = (isGoalie(a) ? 0 : 1) - (isGoalie(b) ? 0 : 1);
+  if (byRole !== 0) return byRole;
+  return (parseInt(a.jersey_number, 10) || 0) - (parseInt(b.jersey_number, 10) || 0);
+});
+
 // --- Логика таймеров и штрафов ---
 export const getPeriodLimits = (period, pLen, otLen, pCount = 3) => {
   const p = parseInt(pLen, 10) || 20;
@@ -89,24 +101,37 @@ export const calculatePeriodFromTime = (seconds, pLen, otLen, pCount = 3) => {
 
 // ─── ВИДЫ ШТРАФОВ ────────────────────────────────────────────────────────────
 // Секретарь выбирает вид, а строк протокола получается столько, сколько у вида:
-// «2+2» — две строки по 2, «2+10» — двойка и десятка, «5+20» — пятёрка и двадцатка.
+// «4» — две строки по 2, «2+10» — двойка и десятка, «5+20» — пятёрка и двадцатка.
 // Каждая строка — своё событие со своей причиной, началом и окончанием; вместе их
 // держит penalty_group_id (id первой строки) и penalty_group_seq. Зеркало
 // LMS-Backend/utils/penaltyGroups.js — набор строк и классы должны совпадать.
 //
 // Строки группы идут цепочкой: следующая начинается, когда закончилась предыдущая.
 // onIce — строка занимает слот меньшинства (малый, большой); дисциплинарные 10 и 20
-// на лёд не влияют. needsServer — в этой строке может сидеть партнёр за нарушителя
-// (сам он на десятке или удалён). sharedReason — причина одна на все строки
-// (двадцатка у 5+20 автоматическая, за то же нарушение).
+// на лёд не влияют. needsServer — в этой строке может сидеть партнёр за нарушителя:
+// сам он на десятке или удалён, а у малого и двойного малого — нарушил вратарь,
+// нарушитель травмирован, штраф командный или представителя. Отбывающий из формы
+// пишется только в такие строки.
+//
+// Причина у штрафа ОДНА: секретарь выбирает её для строк меньшинства (у «4» — одна на
+// обе двойки). fixedReason — строка получает свою причину сама, выбрать нельзя: десятка
+// в «2+10» и «4+10», двадцатка в «5+20». defaultReason — у одиночных «10» и «20» та же
+// дисциплинарная причина стоит предвыбором, секретарь может сменить.
+
+// Дисциплинарные причины — всегда эти, какой бы ни был справочник причин лиги.
+// Формулировки совпадают со встроенным справочником (PENALTY_REASONS ниже).
+export const MISCONDUCT_REASON = { title: 'Дисциплинарный штраф', code: 'ДИСЦ' };
+export const GAME_MISCONDUCT_REASON = { title: 'Дисциплинарный до конца матча штраф', code: 'ДИС-КН' };
+export const AUTO_PENALTY_REASONS = [MISCONDUCT_REASON, GAME_MISCONDUCT_REASON];
+
 export const PENALTY_KINDS = {
-  minor:                   { label: '2',    title: 'Малый штраф', rows: [{ minutes: 2, cls: 'minor' }] },
-  double_minor:            { label: '2+2',  title: 'Двойной малый штраф', rows: [{ minutes: 2, cls: 'minor' }, { minutes: 2, cls: 'minor' }] },
-  misconduct:              { label: '10',   title: 'Дисциплинарный штраф', rows: [{ minutes: 10, cls: 'misconduct' }] },
-  minor_misconduct:        { label: '2+10', title: 'Малый + дисциплинарный штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 10, cls: 'misconduct' }] },
-  double_minor_misconduct: { label: '4+10', title: 'Двойной малый + дисциплинарный штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 2, cls: 'minor', needsServer: true }, { minutes: 10, cls: 'misconduct' }] },
-  game_misconduct:         { label: '20',   title: 'Дисциплинарный штраф до конца матча', rows: [{ minutes: 20, cls: 'game_misconduct' }] },
-  major:                   { label: '5+20', title: 'Большой штраф + дисцип. до конца матча', rows: [{ minutes: 5, cls: 'major', needsServer: true }, { minutes: 20, cls: 'game_misconduct' }], sharedReason: true },
+  minor:                   { label: '2',    title: 'Малый штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }] },
+  double_minor:            { label: '4',    title: 'Двойной малый штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 2, cls: 'minor', needsServer: true }] },
+  misconduct:              { label: '10',   title: 'Дисциплинарный штраф', rows: [{ minutes: 10, cls: 'misconduct' }], defaultReason: MISCONDUCT_REASON },
+  minor_misconduct:        { label: '2+10', title: 'Малый + дисциплинарный штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 10, cls: 'misconduct', fixedReason: MISCONDUCT_REASON }] },
+  double_minor_misconduct: { label: '4+10', title: 'Двойной малый + дисциплинарный штраф', rows: [{ minutes: 2, cls: 'minor', needsServer: true }, { minutes: 2, cls: 'minor', needsServer: true }, { minutes: 10, cls: 'misconduct', fixedReason: MISCONDUCT_REASON }] },
+  game_misconduct:         { label: '20',   title: 'Дисциплинарный штраф до конца матча', rows: [{ minutes: 20, cls: 'game_misconduct' }], defaultReason: GAME_MISCONDUCT_REASON },
+  major:                   { label: '5+20', title: 'Большой штраф + дисцип. до конца матча', rows: [{ minutes: 5, cls: 'major', needsServer: true }, { minutes: 20, cls: 'game_misconduct', fixedReason: GAME_MISCONDUCT_REASON }] },
   penalty_shot:            { label: 'ШБ',   title: 'Штрафной бросок', rows: [{ minutes: 0, cls: 'penalty_shot' }] },
 };
 export const PENALTY_KIND_ORDER = ['minor', 'double_minor', 'misconduct', 'minor_misconduct', 'double_minor_misconduct', 'game_misconduct', 'major', 'penalty_shot'];
@@ -506,7 +531,7 @@ export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, class
 
   const takenClean = Object.fromEntries(Object.entries(taken).filter(([k]) => k && k !== 'undefined' && k !== 'null'));
 
-  const options = roster
+  const options = sortRosterByNumber(roster)
     .filter(p => !exclude.includes(String(p.jersey_number)))
     .map(p => {
       const num = String(p.jersey_number);
@@ -544,7 +569,7 @@ export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, class
 // два значения выбрать не даёт.
 export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className, title, isEditing = false, ghost = false, hint = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const options = roster.map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
+  const options = sortRosterByNumber(roster).map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
   const label = formatPenaltyOffender(value);
 
   return (

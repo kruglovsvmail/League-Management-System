@@ -4,7 +4,7 @@ import {
   formatTime, parseTime, formatTimeMask, localizePosition, calculatePenaltyTimelines,
   CustomSelect, StylishSelect, StylishInput, PenaltyOffenderSelect, TriggerButton,
   goalStrengthOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY,
-  PENALTY_KINDS, penaltyKindOptions, penaltyKindOf, penaltyKindLabel, isContinuationRow, penaltyGroupKey, sortPenaltyRows,
+  PENALTY_KINDS, AUTO_PENALTY_REASONS, penaltyKindOptions, penaltyKindOf, penaltyKindLabel, isContinuationRow, penaltyGroupKey, sortPenaltyRows,
   PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
 } from './GameDeskShared';
 import { formatPenaltyOffender } from '../../ui/PenaltyOffenderModal';
@@ -132,7 +132,13 @@ export const ProtocolSheet = ({
   // Причина уходит в событие снимком: наименование + сокращение + ссылка на пункт.
   // Пункт справочника потом могут отредактировать или удалить — протокол от этого
   // меняться не должен.
+  //
+  // Дисциплинарные причины (ДИСЦ, ДИС-КН) — всегда своё сокращение и без ссылки на пункт
+  // справочника лиги: иначе диктор взял бы из пункта падеж и сказал «дисциплинарным
+  // штрафом… за дисциплинарный штраф». Вид штрафа и так называет его сам.
   const penaltySnapshot = (violation) => {
+    const auto = AUTO_PENALTY_REASONS.find(r => r.title === violation);
+    if (auto) return { penalty_violation: auto.title, penalty_violation_code: auto.code, penalty_reason_id: null };
     const opt = penaltyReasons.find(o => String(o.value) === String(violation));
     return {
       penalty_violation: violation || null,
@@ -155,10 +161,9 @@ export const ProtocolSheet = ({
 
   const [newGoal, setNewGoal] = useState({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal', from_shot: true });
   // who — нарушитель и отбывающий: { type: ''|'player'|'team'|'official', jersey, server }
-  // kind — вид штрафа (PENALTY_KINDS), violations — причины по строкам вида (у видов
-  // с общей причиной — одна).
+  // kind — вид штрафа (PENALTY_KINDS), violation — причина, у штрафа она одна (см. rowViolation).
   const EMPTY_WHO = { type: '', jersey: '', server: '' };
-  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violations: [], start: '' };
+  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violation: '', start: '' };
   const [newPenalty, setNewPenalty] = useState(EMPTY_PENALTY);
   // Какому полю открыта модалка причин: 'new' — форме, 'edit' — редактору группы
   const [reasonsTarget, setReasonsTarget] = useState(null);
@@ -273,21 +278,46 @@ export const ProtocolSheet = ({
   // один на один и к численному преимуществу отношения не имеет (isScoredFromPlay).
   const kindSpec = (kind) => PENALTY_KINDS[kind] || PENALTY_KINDS.minor;
 
-  // Слоты причин для модалки: у видов с общей причиной — один на всё
-  const reasonSlots = (kind) => {
-    const spec = kindSpec(kind);
-    return spec.sharedReason ? [spec.rows[0]] : spec.rows;
+  // Причина у штрафа одна: её получают строки меньшинства (у «4» — обе двойки), а
+  // десятка в «2+10»/«4+10» и двадцатка в «5+20» — свою дисциплинарную (fixedReason).
+  const rowViolation = (row, violation) => (row.fixedReason ? row.fixedReason.title : (violation || ''));
+
+  // Причина при смене вида. У одиночных «10» и «20» — предвыбор их дисциплинарной
+  // причины (секретарь может сменить). Уходя с них, подставленную причину убираем —
+  // для двойки она не годится, — а выбранную секретарём оставляем.
+  const AUTO_REASON_TITLES = AUTO_PENALTY_REASONS.map(r => r.title);
+  const reasonForKind = (kind, current) => {
+    const preset = kindSpec(kind).defaultReason?.title;
+    if (preset) return preset;
+    return AUTO_REASON_TITLES.includes(current) ? '' : (current || '');
   };
 
-  // Причина каждой строки: общая размножается на все строки
-  const violationsPerRow = (kind, violations = []) => {
-    const spec = kindSpec(kind);
-    return spec.rows.map((_, i) => (spec.sharedReason ? violations[0] : violations[i]) || '');
+  // Список для окна причин. У одиночных «10» и «20» их дисциплинарная причина есть
+  // всегда — даже если справочник лиги её не содержит, — чтобы к предвыбору можно было
+  // вернуться, сменив его.
+  const autoReasonOption = (r) => ({ value: r.title, label: r.title, shortLabel: r.code, num: null });
+  const reasonOptionsFor = (kind) => {
+    const preset = kindSpec(kind).defaultReason;
+    if (!preset || penaltyReasons.some(o => String(o.value) === preset.title)) return penaltyReasons;
+    return [autoReasonOption(preset), ...penaltyReasons];
+  };
+  // Правка уже записанной строки — как обычной, с любой причиной. Обе дисциплинарные
+  // в списке есть всегда: у десятки и двадцатки текущая причина не должна пропадать.
+  const rowReasonOptions = [
+    ...AUTO_PENALTY_REASONS.filter(r => !penaltyReasons.some(o => String(o.value) === r.title)).map(autoReasonOption),
+    ...penaltyReasons,
+  ];
+
+  // Причина в поле формы — сокращением; пусто, если не выбрана
+  const reasonCode = (violation) => {
+    if (!violation) return '';
+    return AUTO_PENALTY_REASONS.find(r => r.title === violation)?.code
+      || penaltyReasons.find(o => String(o.value) === String(violation))?.shortLabel
+      || getPenaltyReasonCode(violation);
   };
 
-  const buildGroupRows = (kind, startSecs, who, violations) => {
+  const buildGroupRows = (kind, startSecs, who, violation) => {
     const spec = kindSpec(kind);
-    const perRow = violationsPerRow(kind, violations);
     const serverId = who?.server ? getPlayerId(who.server) : null;
     let cursor = startSecs;
 
@@ -317,29 +347,21 @@ export const ProtocolSheet = ({
       return {
         time_seconds, penalty_end_time,
         penalty_minutes: r.minutes, penalty_class: r.cls,
-        // Отбывающий пишется в строки, где сидит партнёр (двойки при 2+10, пятёрка при 5+20)
+        // Отбывающий пишется в строки, где может сидеть партнёр: двойки (и у 2, 2+2, и при
+        // 2+10), пятёрка при 5+20. Десятка и двадцатка — всегда сам нарушитель.
         penalty_served_by_id: r.needsServer ? serverId : null,
-        ...penaltySnapshot(perRow[i]),
+        ...penaltySnapshot(rowViolation(r, violation)),
       };
     });
   };
 
   // Что показать в графе «Окон» формы: конец последней строки меньшинства, у 20 и ШБ — прочерк
-  const previewGroupEnd = (kind, startSecs, who, violations) => {
+  const previewGroupEnd = (kind, startSecs, who, violation) => {
     if (startSecs === null || isNaN(startSecs)) return '';
-    const rows = buildGroupRows(kind, startSecs, who, violations);
+    const rows = buildGroupRows(kind, startSecs, who, violation);
     const timed = rows.filter(r => r.penalty_end_time !== null && r.penalty_class !== 'penalty_shot');
     if (timed.length === 0) return '—';
     return formatTime(timed[timed.length - 1].penalty_end_time);
-  };
-
-  // Причины в поле формы — сокращениями через запятую; пусто, если ни одной не выбрано
-  const reasonsSummary = (kind, violations = []) => {
-    const codes = reasonSlots(kind)
-      .map((_, i) => violations[i])
-      .filter(Boolean)
-      .map(v => penaltyReasons.find(o => String(o.value) === String(v))?.shortLabel || getPenaltyReasonCode(v));
-    return codes.join(', ');
   };
 
   // Тело запроса на создание/правку группы (см. savePenaltyGroup в GameLiveDesk)
@@ -350,7 +372,7 @@ export const ProtocolSheet = ({
       time_seconds: startSecs,
       player_id: data.who?.type === 'player' ? getPlayerId(data.who.jersey) : null,
       penalty_offender_type: data.who?.type || 'team',
-      rows: buildGroupRows(data.kind, startSecs, data.who, data.violations),
+      rows: buildGroupRows(data.kind, startSecs, data.who, data.violation),
     };
   };
 
@@ -454,13 +476,10 @@ export const ProtocolSheet = ({
       .sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1));
     const rawKind = penaltyKindOf(p);
     const kind = LEGACY_KIND_TO_EDITABLE[rawKind] || (PENALTY_KINDS[rawKind] ? rawKind : 'minor');
-    const spec = kindSpec(kind);
-    // Причины по слотам: у общей — первая строка, иначе по порядку строк группы
-    const violations = spec.sharedReason
-      ? [rows[0]?.penalty_violation || '']
-      : spec.rows.map((_, i) => rows[i]?.penalty_violation || '');
+    // Причина одна — с первой строки (двойка, пятёрка или сама 10/20). Разные причины
+    // у старых штрафов при сохранении правки сведутся к ней.
     setEditPenaltyId(p.id);
-    setEditPenaltyData({ mode: 'group', who: whoFromEvent(p), kind, violations, start: formatTime(p.time_seconds) });
+    setEditPenaltyData({ mode: 'group', who: whoFromEvent(p), kind, violation: rows[0]?.penalty_violation || '', start: formatTime(p.time_seconds) });
   };
 
   const saveEditGroup = async () => {
@@ -471,8 +490,10 @@ export const ProtocolSheet = ({
     if (ok) setEditPenaltyId(null);
   };
 
-  // Строка-продолжение (вторая двойка, десятка, двадцатка) — только свои поля:
-  // причина и окончание. Нарушитель, вид и начало — у группы, правятся с первой строки.
+  // Строка-продолжение (вторая двойка, десятка, двадцатка) — только свои поля: причина
+  // и окончание, как у обычной строки. Нарушитель, вид и начало — у группы, правятся с
+  // первой строки. Правило «одна причина, десятке и двадцатке — дисциплинарная» действует
+  // при вводе штрафа; записанную строку секретарь вправе поправить как угодно.
   const startEditRow = (p) => {
     setEditPenaltyId(p.id);
     setEditPenaltyData({
@@ -502,15 +523,15 @@ export const ProtocolSheet = ({
 
   const startEditPenalty = (p) => (isContinuationRow(p) ? startEditRow(p) : startEditGroup(p));
 
-  // Модалка причин: слоты по виду, значения — из формы или редактора группы
+  // Окно причин: вид и причина — из формы или редактора группы
   const reasonsModalState = reasonsTarget === 'new'
-    ? { kind: newPenalty.kind, values: newPenalty.violations }
+    ? { kind: newPenalty.kind, value: newPenalty.violation }
     : reasonsTarget === 'edit'
-      ? { kind: editPenaltyData.kind, values: editPenaltyData.violations || [] }
+      ? { kind: editPenaltyData.kind, value: editPenaltyData.violation || '' }
       : null;
-  const applyReasons = (values) => {
-    if (reasonsTarget === 'new') setNewPenalty(prev => ({ ...prev, violations: values }));
-    if (reasonsTarget === 'edit') setEditPenaltyData(prev => ({ ...prev, violations: values }));
+  const applyReason = (value) => {
+    if (reasonsTarget === 'new') setNewPenalty(prev => ({ ...prev, violation: value }));
+    if (reasonsTarget === 'edit') setEditPenaltyData(prev => ({ ...prev, violation: value }));
   };
 
   // Строка ввода вынесена из сетки наверх (см. форму под шапкой), поэтому +1 не нужен
@@ -522,24 +543,28 @@ export const ProtocolSheet = ({
   // с шириной панели, а пропорции держатся. Ориентир — сетка ~1250px: 1% ≈ 12.5px.
   // Время гола, «Нач» и «Окон» одинаковые; «#» удалений шире обычного номера
   // («ОПК/75», «12/44»); «Причина» — под сокращение.
+  // Графе состава добавлены 1.8% — без них фамилия с именем целиком туда не влезала.
+  // Взяты они понемногу у самых свободных граф — причины (в ней только сокращение
+  // вроде «ТЛ-БР»), нарушителя, минут и номеров авторов гола.
+  // Сумма долей осталась прежней (100% с графой бросков).
   const colGroup = (
           <colgroup>
             <col className="w-[2.6%]" />
-            <col className="w-[11.2%]" />
+            <col className="w-[13.0%]" />
             <col className="w-[3.6%]" />
 
             <col className="w-[2.6%]" />
             <col className="w-[5.8%]" />
-            <col className="w-[5.6%]" />
-            <col className="w-[5.6%]" />
-            <col className="w-[5.6%]" />
+            <col className="w-[5.5%]" />
+            <col className="w-[5.5%]" />
+            <col className="w-[5.5%]" />
             <col className="w-[4.5%]" />
             {shotsTrackingEnabled && <col className="w-[3.8%]" />}
             <col className="w-[5.6%]" />
 
-            <col className="w-[6.7%]" />
-            <col className="w-[6.2%]" />
-            <col className="w-[13.4%]" />
+            <col className="w-[6.4%]" />
+            <col className="w-[6.1%]" />
+            <col className="w-[12.3%]" />
             <col className="w-[5.8%]" />
             <col className="w-[5.8%]" />
             <col className="w-[5.6%]" />
@@ -634,19 +659,19 @@ export const ProtocolSheet = ({
                     <>
                       <td className={`${penaltyInputCell} !pl-2.5 rounded-l-md`}><PenaltyOffenderSelect ghost={penaltyGhost} hint="Игрок" title="Нарушитель" roster={roster} value={newPenalty.who} onChange={who=>setNewPenalty({...newPenalty, who})} className="!text-status-rejected font-bold" /></td>
                       <td className={penaltyInputCell}>
-                        {/* Смена вида сбрасывает причины: у нового вида другой набор строк */}
+                        {/* Смена вида: у одиночных 10 и 20 — предвыбор причины (см. reasonForKind) */}
                         <CustomSelect
                           ghost={penaltyGhost}
                           title="Вид штрафа" options={penaltyKindOptions} value={newPenalty.kind}
-                          onChange={e=>setNewPenalty({...newPenalty, kind: e.target.value, violations: []})}
+                          onChange={e=>setNewPenalty({...newPenalty, kind: e.target.value, violation: reasonForKind(e.target.value, newPenalty.violation)})}
                           hideEmpty
                         />
                       </td>
-                      {/* Причины по строкам вида — через модалку со списком и составом штрафа */}
+                      {/* Причина — одна на штраф, через окно со справочником */}
                       <td className={penaltyInputCell}>
                         <TriggerButton
                           ghost={penaltyGhost} hint="Причина"
-                          value={reasonsSummary(newPenalty.kind, newPenalty.violations)}
+                          value={reasonCode(newPenalty.violation)}
                           onClick={() => setReasonsTarget('new')}
                           className="h-[30px] !py-0 !px-1"
                         />
@@ -666,7 +691,7 @@ export const ProtocolSheet = ({
                         />
                       </td>
                       <td className={`${penaltyInputCell} text-center font-mono text-[13px] text-graphite/40`} title="Окончание штрафа рассчитывается автоматически">
-                        {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violations)}
+                        {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violation)}
                       </td>
                       <td className={`${penaltyInputCell} text-center border-r-[6px] border-transparent bg-clip-padding rounded-r-[12px]`}>
                         <button
@@ -785,7 +810,9 @@ export const ProtocolSheet = ({
                   const isActive = timerSeconds >= pStart && timerSeconds < pEnd;
                   const isDelayed = timerSeconds < pStart;
                   if (isActive) { endTimeDisplay = formatTime(pEnd - timerSeconds); endTimeClass = "font-mono font-black text-[13px] text-status-rejected animate-pulse"; }
-                  else if (isFinished) { endTimeDisplay = formatTime(pEnd); endTimeClass = "font-mono font-medium text-[13px] text-graphite/25"; }
+                  // Отбытый штраф — такой же факт протокола, как и его начало: время окончания
+                  // пишется тем же цветом, что и «Нач», а не гаснет до серого.
+                  else if (isFinished) { endTimeDisplay = formatTime(pEnd); endTimeClass = "font-mono font-semibold text-[13px] text-graphite-light"; }
                   else if (isDelayed) { endTimeDisplay = `⏱ ${formatTime(pEnd - pStart)}`; endTimeClass = "font-mono font-bold text-[13px] text-orange"; }
                 } else { endTimeDisplay = formatTime(penalty.penalty_end_time); }
               }
@@ -794,11 +821,18 @@ export const ProtocolSheet = ({
                 <tr key={i} className="hover:bg-graphite/5 transition-colors group h-[34px] border-b border-graphite/30">
                   {/* РОСТЕР */}
                   <td className="border-l border-graphite/30 border-r [border-right-color:rgb(var(--graphite)_/_0.12)] font-bold text-graphite text-[13px]">{player?.jersey_number || ''}</td>
-                  <td className="border-r border-graphite/[0.12] text-left px-2 truncate whitespace-nowrap overflow-hidden font-semibold text-[13px] text-graphite">
-                    {player ? `${player.last_name} ${player.first_name?.[0] || ''}.` : ''}
-                    {/* Значок обязательной экипировки по возрасту: секретарю он нужен прямо
-                        в протоколе — по нему проверяют игрока перед выходом на лёд */}
-                    {player && <EquipmentMark birthDate={player.birth_date} league={league} position={player.position_in_line || player.position} className="ml-1" />}
+                  {/* Фамилия и имя целиком, без сокращения до инициала: в графе два Сидорова
+                      должны различаться глазами. Длинное имя обрезается многоточием — целиком оно
+                      остаётся в подсказке при наведении. */}
+                  <td className="border-r border-graphite/[0.12] text-left px-2 font-semibold text-[13px] text-graphite" title={player ? `${player.last_name} ${player.first_name || ''}`.trim() : undefined}>
+                    {/* justify-between — имя слева, значок экипировки прижат к правому краю графы.
+                        Так значки всех игроков стоят в одну линию и не прыгают вслед за длиной фамилии:
+                        секретарь пробегает глазом по правому краю и сразу видит, кого проверять перед
+                        выходом на лёд. Имя обрезается первым, значок не сжимается (shrink-0 внутри него). */}
+                    <div className="flex items-center justify-between gap-1.5 min-w-0">
+                      <span className="truncate">{player ? `${player.last_name} ${player.first_name || ''}`.trim() : ''}</span>
+                      {player && <EquipmentMark birthDate={player.birth_date} league={league} position={player.position_in_line || player.position} />}
+                    </div>
                   </td>
                   <td className="border-r-2 border-graphite/25 text-[11px] text-graphite/40 font-medium">{player ? localizePosition(player.position_in_line || player.position) : ''}</td>
 
@@ -913,19 +947,19 @@ export const ProtocolSheet = ({
                   {/* УДАЛЕНИЯ */}
                   {isEditingPenalty && !isReadOnly && editPenaltyData.mode === 'group' ? (
                     <>
-                      {/* Редактор группы: вид, нарушитель, причины всех строк, начало */}
+                      {/* Редактор группы: вид, нарушитель, причина, начало */}
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData({...editPenaltyData, who})} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                           isEditing title="Вид штрафа" options={penaltyKindOptions} value={editPenaltyData.kind}
-                          onChange={e=>setEditPenaltyData({...editPenaltyData, kind: e.target.value, violations: []})}
+                          onChange={e=>setEditPenaltyData({...editPenaltyData, kind: e.target.value, violation: reasonForKind(e.target.value, editPenaltyData.violation)})}
                           hideEmpty
                         />
                       </td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <TriggerButton
                           dim hint="Причина"
-                          value={reasonsSummary(editPenaltyData.kind, editPenaltyData.violations)}
+                          value={reasonCode(editPenaltyData.violation)}
                           onClick={() => setReasonsTarget('edit')}
                           className="h-[30px] !py-0 !px-1"
                         />
@@ -937,17 +971,17 @@ export const ProtocolSheet = ({
                         />
                       </td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-                        {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violations)}
+                        {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violation)}
                       </td>
                       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditGroup} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : isEditingPenalty && !isReadOnly ? (
                     <>
                       {/* Строка-продолжение: нарушитель, минуты и начало — у группы, здесь
-                          правятся только причина и окончание */}
+                          правятся только причина и окончание, как у обычной строки */}
                       <td className="border-r border-graphite/[0.12] bg-orange/10 font-bold text-[13px] text-graphite/50 whitespace-nowrap">{renderOffender(penalty)}</td>
                       <td className="border-r border-graphite/[0.12] bg-orange/10 font-semibold text-[13px] text-graphite/50">{penalty.penalty_minutes}</td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><CustomSelect isEditing dense title="Причина удаления" emptyLabel="— не выбрано —" options={penaltyReasons} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} className="px-1" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><CustomSelect isEditing dense title="Причина удаления" emptyLabel="— не выбрано —" options={rowReasonOptions} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} className="px-1" /></td>
                       <td className="border-r border-graphite/[0.12] bg-orange/10 font-mono font-semibold text-[13px] text-graphite/50">{formatTime(penalty.effStart)}</td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         {isPenaltyEndless ? (
@@ -998,16 +1032,15 @@ export const ProtocolSheet = ({
         </table>
       </div>
 
-      {/* Причины строк штрафа: слева справочник, справа состав штрафа с выбранным */}
+      {/* Причина штрафа — одна, выбор из справочника */}
       {reasonsModalState && (
         <PenaltyReasonsModal
           isOpen
           onClose={() => setReasonsTarget(null)}
-          title={`Причины: ${kindSpec(reasonsModalState.kind).title}`}
-          options={penaltyReasons}
-          slots={reasonSlots(reasonsModalState.kind)}
-          values={reasonsModalState.values}
-          onSave={applyReasons}
+          title={`Причина: ${kindSpec(reasonsModalState.kind).title}`}
+          options={reasonOptionsFor(reasonsModalState.kind)}
+          value={reasonsModalState.value}
+          onSave={applyReason}
         />
       )}
     </div>

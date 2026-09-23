@@ -89,6 +89,8 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       reg_so_length: div.reg_so_length ?? 3, 
       reg_track_plus_minus: div.reg_track_plus_minus ?? false,
       reg_track_shots: div.reg_track_shots ?? true,
+      reg_warmup_length: div.reg_warmup_length ?? 0,
+      reg_break_length: div.reg_break_length ?? 0,
 
       playoff_periods_count: div.playoff_periods_count ?? 3,
       playoff_period_length: div.playoff_period_length ?? 20,
@@ -98,6 +100,8 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       playoff_so_length: div.playoff_so_length ?? 0,
       playoff_track_plus_minus: div.playoff_track_plus_minus ?? false,
       playoff_track_shots: div.playoff_track_shots ?? true,
+      playoff_warmup_length: div.playoff_warmup_length ?? 0,
+      playoff_break_length: div.playoff_break_length ?? 0,
 
       // Один флаг на дивизион: контроль административный, регулярку и плей-офф не разделяем
       track_timer_log: div.track_timer_log ?? false,
@@ -125,6 +129,7 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     
     reg_periods_count: 3, reg_period_length: 20, reg_has_overtime: true, reg_ot_length: 5, reg_has_shootouts: true, reg_so_length: 3, reg_track_plus_minus: false, reg_track_shots: true,
     playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false, playoff_track_shots: true,
+    reg_warmup_length: 0, reg_break_length: 0, playoff_warmup_length: 0, playoff_break_length: 0,
     track_timer_log: false,
 
     reserve_goalie_max_per_game: 1, reserve_goalie_block_back_to_back: false,
@@ -556,6 +561,17 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
         <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
             <div><div className="text-[13px] font-semibold text-graphite">Длина (мин)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Длительность одного периода</div></div>
             <Stepper initialValue={formData[`${prefix}_period_length`]} onChange={(v) => handleChange(`${prefix}_period_length`, v)} min={5} max={60} disabled={isLocked} />
+        </div>
+
+        {/* Этапы карусели в панели секретаря; 0 — этапа нет */}
+        <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
+            <div><div className="text-[13px] font-semibold text-graphite">Разминка (мин)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Перед 1-м периодом. 0 — без разминки</div></div>
+            <Stepper initialValue={formData[`${prefix}_warmup_length`]} onChange={(v) => handleChange(`${prefix}_warmup_length`, v)} min={0} max={60} disabled={isLocked} />
+        </div>
+
+        <div className="flex justify-between items-center gap-4 border-b border-graphite/5 pb-4">
+            <div><div className="text-[13px] font-semibold text-graphite">Перерыв (мин)</div><div className="text-[11px] text-graphite-light mt-0.5 leading-tight">Между периодами и перед овертаймом. 0 — без перерывов</div></div>
+            <Stepper initialValue={formData[`${prefix}_break_length`]} onChange={(v) => handleChange(`${prefix}_break_length`, v)} min={0} max={60} disabled={isLocked} />
         </div>
 
         <div className="flex flex-col gap-3 border-b border-graphite/5 pb-4">

@@ -442,6 +442,10 @@ export const getGameById = async (req, res) => {
             SELECT 
                 g.*,
                 gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.auto_stop_on_event, gt.shootout_status, gt.arena_announcer,
+                -- Разминка и перерыв: своё значение матча, если секретарь его менял, иначе живое
+                -- из дивизиона (та же логика, что при загрузке таймера в sockets/timerHandler.js)
+                COALESCE(gt.warmup_length, CASE WHEN g.stage_type = 'playoff' THEN d.playoff_warmup_length ELSE d.reg_warmup_length END, 0) AS warmup_length,
+                COALESCE(gt.break_length, CASE WHEN g.stage_type = 'playoff' THEN d.playoff_break_length ELSE d.reg_break_length END, 0) AS break_length,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
                 CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots,
                 -- Матчи вне лиг (товарищеские и внешние турниры из Team-Room, см. раздел

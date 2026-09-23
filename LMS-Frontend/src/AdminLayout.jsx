@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from "./components/Sidebar";
 
-export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange, onPatchSelectedLeague }) {
+export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange, onPatchSelectedLeague, onPatchLeague }) {
   // Наш супер-сложный фон
 const complexMeshGradient = {
   backgroundColor: '#e2e4e7'
@@ -19,9 +19,9 @@ const complexMeshGradient = {
       />
       
       <div className="flex-1 ml-[200px] flex flex-col min-h-screen relative z-10">
-        {/* onPatchSelectedLeague — чтобы правка настроек лиги подхватывалась сразу,
-            а не после перезагрузки страницы (см. PreferencesTab) */}
-        <Outlet context={{ user, selectedLeague, onPatchSelectedLeague }} /> 
+        {/* onPatchSelectedLeague / onPatchLeague — чтобы правка настроек лиги подхватывалась
+            сразу, а не после перезагрузки страницы (см. PreferencesTab и LeaguesWorkspace) */}
+        <Outlet context={{ user, selectedLeague, onPatchSelectedLeague, onPatchLeague }} />
       </div>
     </div>
   );
