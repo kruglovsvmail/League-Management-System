@@ -6,6 +6,7 @@ import {
   StylishInput, CustomSelect
 } from './GameDeskShared';
 import { Icon } from '../../ui/Icon';
+import { PaperInput, PaperSelect, PaperAddButton, PaperSaveButton, isClockValid, usePaperDraftSaving, PAPER_SAVING_CELL } from './PaperCells';
 
 // Псевдо-id вратаря «не указан» — отличается от пустых ворот (goalie_id=null,
 // unspecified=false). Используется и в журнале смен, и в бросках (там team_id
@@ -18,9 +19,17 @@ export const SummaryTablesAccordion = ({
   onSaveGoalieShotsSummary,
   homeRoster, awayRoster, timerSeconds,
   onSaveGoalieLog, onRequestDeleteGoalieLog, isReadOnly,
-  shotsTrackingEnabled = true
+  shotsTrackingEnabled = true,
+  // Уведомление об ошибке ввода — снизу справа (бумажный вид)
+  onToast
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+
+  // Вид «Бумажный протокол» (настройка лиги): формы над журналом нет, запись вписывается
+  // в первую свободную строку. Вратарь не выбран (undefined) — «без изменений».
+  const paperMode = game?.sec_panel_view === 'paper';
+  const [paperLog, setPaperLog] = useState({ time: '', home: undefined, away: undefined });
+  const [paperLogErrors, setPaperLogErrors] = useState({});
   
   // ── Журнал вратарей ──────────────────────────────────────────────────────
   const [editLogId, setEditLogId] = useState(null);
@@ -198,13 +207,57 @@ export const SummaryTablesAccordion = ({
   const addDisabled = isGoaliesMatch || logTimeMissing;
   const addTitle = logTimeMissing ? 'Укажите время смены' : isGoaliesMatch ? 'Вратари не изменились' : 'Добавить запись';
 
+  // ── Бумажный вид ──
+  // «+» активен, как только известно время; остальное проверяется по нажатию. Пустая
+  // ячейка вратаря — вратарь из последней записи (в самой первой — «не указан»);
+  // пустые ворота выбираются в окне явно.
+  const paperLogTime = parseTime(paperLog.time) ?? (autoTimeGoalieLog ? (timerSeconds || 0) : null);
+
+  // Строка ввода очищается в тот момент, когда запись встала в журнал, — не раньше и не позже
+  const [paperLogSaving, savePaperLog] = usePaperDraftSaving(goalieLog.length, () => setPaperLog({ time: '', home: undefined, away: undefined }));
+
+  const handleAddPaperLog = () => {
+    if (paperLogTime === null || paperLogSaving) return;
+    const home = paperLog.home ?? (lastGoalieLog ? lastHomeValue : UNSPECIFIED_GOALIE);
+    const away = paperLog.away ?? (lastGoalieLog ? lastAwayValue : UNSPECIFIED_GOALIE);
+    const errors = {};
+    if (!isClockValid(paperLog.time)) errors.time = 'Время: секунд не больше 59';
+    if (lastGoalieLog && String(home) === String(lastHomeValue) && String(away) === String(lastAwayValue)) {
+      errors.goalies = 'Вратари не изменились — выберите нового вратаря хотя бы одной команды';
+    }
+    setPaperLogErrors(errors);
+    if (Object.keys(errors).length) {
+      onToast?.({ title: 'Запись не добавлена', message: Object.values(errors).join('. '), type: 'error' });
+      return;
+    }
+    savePaperLog(() => onSaveGoalieLog({
+      time_seconds: paperLogTime,
+      home_goalie_id: home === UNSPECIFIED_GOALIE ? null : (home || null),
+      away_goalie_id: away === UNSPECIFIED_GOALIE ? null : (away || null),
+      home_goalie_unspecified: home === UNSPECIFIED_GOALIE,
+      away_goalie_unspecified: away === UNSPECIFIED_GOALIE
+    }));
+  };
+
+  const saveEditPaperLog = () => {
+    if (!editLogData.time || !isClockValid(editLogData.time)) {
+      setPaperLogErrors({ editTime: true });
+      onToast?.({ title: 'Запись не сохранена', message: editLogData.time ? 'Время: секунд не больше 59' : 'Время: укажите время смены', type: 'error' });
+      return;
+    }
+    setPaperLogErrors({});
+    saveEditLog();
+  };
+
   // Карточка ввода — как у голов и удалений в ProtocolSheet, только в своём цвете:
   // синяя, чтобы не путаться ни с зелёной/красной формами событий, ни с оранжевым
   // режимом правки. Поля белые с тонкой рамкой (ghost), без рамок между ячейками.
   const logInputCell = 'px-1 py-2.5 bg-status-pending/[0.08]';
 
-  // Строка ввода живёт в отдельной карточке над списком, поэтому +1 не нужен
-  const goalieRows = Array.from({ length: Math.max(1, goalieLog.length) });
+  // Классический вид: строка ввода в отдельной карточке над списком, +1 не нужен.
+  // Бумажный: ввод — в первой свободной строке журнала, под неё нужна строка.
+  const paperDraft = paperMode && !isReadOnly;
+  const goalieRows = Array.from({ length: paperDraft ? goalieLog.length + 1 : Math.max(1, goalieLog.length) });
 
   // Общая разметка колонок для карточки ввода и списка журнала
   const journalColGroup = (
@@ -261,8 +314,9 @@ export const SummaryTablesAccordion = ({
               {/* Карточка новой записи — над списком, на серой подложке. Та же разметка
                   колонок, что и у списка (colgroup), поэтому поля стоят ровно над графами.
                   border-separate — ради скруглений ячеек; зазор от краёв карточки —
-                  прозрачная рамка крайних ячеек с bg-clip-padding. */}
-              {!isReadOnly && (
+                  прозрачная рамка крайних ячеек с bg-clip-padding.
+                  В бумажном виде карточки нет: ввод — в первой свободной строке. */}
+              {!isReadOnly && !paperMode && (
                 <div className="bg-gray-bg-light py-3 border-b border-graphite/20">
                   <table className="w-full text-sm text-center border-separate border-spacing-0 table-fixed select-none">
                     {journalColGroup}
@@ -326,6 +380,44 @@ export const SummaryTablesAccordion = ({
                   <tbody className="bg-white text-graphite relative z-10">
                     {goalieRows.map((_, i) => {
                       const log = goalieLog[i];
+
+                      // Бумажный вид: правка — с клавиатуры и через окно выбора вратаря
+                      if (paperMode && log && log.id === editLogId && !isReadOnly) {
+                        return (
+                          <tr key={`edit-${log.id}`} className="h-[36px] border-b border-graphite/30 bg-orange/10 transition-colors">
+                            <td className="p-0 border-r border-graphite/[0.12]">
+                              <PaperInput type="time" title="Время смены вратаря" value={editLogData.time} error={!!paperLogErrors.editTime} onChange={(v) => { setPaperLogErrors({}); setEditLogData(d => ({ ...d, time: v })); }} onEnter={saveEditPaperLog} className="font-bold" />
+                            </td>
+                            <td className="p-0 border-r border-graphite/[0.12]">
+                              <PaperSelect title="Вратарь хозяев" options={homeGoalieSelectOptions} emptyLabel="Пустые ворота" emptyDisplay="Пустые ворота" value={editLogData.home_goalie} onChange={(v) => setEditLogData(d => ({ ...d, home_goalie: v }))} className="!text-[13px] font-bold" />
+                            </td>
+                            <td className="p-0 border-r border-graphite/[0.12]">
+                              <PaperSelect title="Вратарь гостей" options={awayGoalieSelectOptions} emptyLabel="Пустые ворота" emptyDisplay="Пустые ворота" value={editLogData.away_goalie} onChange={(v) => setEditLogData(d => ({ ...d, away_goalie: v }))} className="!text-[13px] font-bold" />
+                            </td>
+                            <td className="p-0 text-center"><PaperSaveButton tone="log" onClick={saveEditPaperLog} /></td>
+                          </tr>
+                        );
+                      }
+
+                      // Бумажный вид: первая свободная строка — строка ввода новой записи
+                      if (paperDraft && i === goalieLog.length) {
+                        return (
+                          <tr key="paper-draft" className={`h-[36px] border-b border-graphite/30 ${paperLogSaving ? PAPER_SAVING_CELL : ''}`}>
+                            <td className="p-0 border-r border-graphite/[0.12]">
+                              <PaperInput type="time" title="Время смены вратаря" value={paperLog.time} placeholder={autoTimeGoalieLog ? formatTime(timerSeconds) : ''} error={!!paperLogErrors.time} onChange={(v) => { setPaperLogErrors(e => ({ ...e, time: undefined })); setPaperLog(d => ({ ...d, time: v })); }} onEnter={handleAddPaperLog} className="font-bold" />
+                            </td>
+                            <td className="p-0 border-r border-graphite/[0.12]">
+                              <PaperSelect title="Вратарь хозяев (пусто — без изменений)" options={homeGoalieSelectOptions} emptyLabel="Пустые ворота" emptyDisplay="Пустые ворота" value={paperLog.home} error={!!paperLogErrors.goalies} onChange={(v) => { setPaperLogErrors(e => ({ ...e, goalies: undefined })); setPaperLog(d => ({ ...d, home: v })); }} className="!text-[13px] font-bold" />
+                            </td>
+                            <td className="p-0 border-r border-graphite/[0.12]">
+                              <PaperSelect title="Вратарь гостей (пусто — без изменений)" options={awayGoalieSelectOptions} emptyLabel="Пустые ворота" emptyDisplay="Пустые ворота" value={paperLog.away} error={!!paperLogErrors.goalies} onChange={(v) => { setPaperLogErrors(e => ({ ...e, goalies: undefined })); setPaperLog(d => ({ ...d, away: v })); }} className="!text-[13px] font-bold" />
+                            </td>
+                            <td className="p-0 text-center">
+                              <PaperAddButton active={paperLogTime !== null && !paperLogSaving} tone="log" onClick={handleAddPaperLog} title={paperLogTime === null ? 'Укажите время смены' : 'Добавить запись'} />
+                            </td>
+                          </tr>
+                        );
+                      }
 
                       if (log && log.id === editLogId && !isReadOnly) {
                         return (

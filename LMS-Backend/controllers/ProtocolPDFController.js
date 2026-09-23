@@ -579,6 +579,17 @@ export const signProtocol = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Роль или пользователь не указаны' });
         }
 
+        // Секретарь подписывает только завершённый матч: его подпись закрывает протокол для
+        // правок всем, кроме владельца лиги и глобального админа (utils/gameEditWindow.js).
+        // Подписав до «Завершить матч», секретарь сам не смог бы матч завершить.
+        if (role === 'secretary') {
+            const statusRes = await pool.query('SELECT status FROM games WHERE id = $1', [gameId]);
+            if (statusRes.rows.length === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+            if (statusRes.rows[0].status !== 'finished') {
+                return res.status(400).json({ success: false, error: 'Секретарь подписывает протокол после завершения матча: сначала нажмите «Завершить матч».' });
+            }
+        }
+
         // Подписи представителей команды — та же подстановка, что и в панели подписания
         // (prefilledTeamStaff), только теперь и на сервере: иначе можно было отправить
         // подпись за дисквалифицированного или вообще постороннего userId напрямую в API.

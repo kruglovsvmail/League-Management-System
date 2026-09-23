@@ -908,6 +908,119 @@ export const deleteGoalieLog = async (req, res) => {
     }
 };
 
+// Стартовая запись журнала вратарей по заявкам на матч.
+//
+// Если у команды в заявке на матч ровно один вратарь, кто начал матч в воротах,
+// известно и без секретаря — заводить первую строку журнала руками он не должен.
+// Панель дёргает маршрут при загрузке и при каждом изменении заявок/журнала, а
+// правило одно:
+//   • журнала нет вовсе → создаём запись на 00:00: сторона с единственным вратарём —
+//     он, другая — «не указан», пока её заявка не даст ответ;
+//   • первая запись есть, но сторона в ней «не указан» либо вписан игрок, которого
+//     в заявке на матч уже нет (заявку пересобрали) → вписываем единственного вратаря.
+// Осознанный выбор секретаря (вратарь из заявки, пустые ворота) не трогаем; при
+// 0 или 2+ вратарях в заявке тоже ничего не делаем — тут решает секретарь.
+// Удалённая стартовая запись сама не вернётся: последнюю запись журнала удалить
+// нельзя (deleteGoalieLog), так что пустым после автозаписи он уже не бывает.
+// Только для матчей, которые ещё не сыграны (scheduled/live): завершённый матч от
+// одного открытия панели меняться не должен — иначе у старой игры без журнала
+// появлялась бы запись, а с ней и пересчёт статистики.
+// Маршрут идемпотентный: повторный вызов без изменений в заявках отвечает changed=false.
+// Строка матча берётся FOR UPDATE: панель открывают с нескольких устройств разом, и
+// без блокировки каждое вставило бы свою стартовую запись.
+// (Убиралось 22.09.2026 по просьбе «никакой записи при старте», возвращено 23.09.2026
+// по просьбе заказчика.)
+export const autofillGoalieLog = async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { gameId } = req.params;
+        await client.query('BEGIN');
+
+        const gameRes = await client.query(
+            'SELECT home_team_id, away_team_id, status FROM games WHERE id = $1 FOR UPDATE',
+            [gameId]
+        );
+        if (gameRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Матч не найден' });
+        }
+        const { home_team_id, away_team_id, status } = gameRes.rows[0];
+        if (!['scheduled', 'live'].includes(status)) {
+            await client.query('COMMIT');
+            return res.json({ success: true, changed: false });
+        }
+
+        // Вратари в заявке на матч по сторонам. Резервный вратарь лиги тоже вратарь:
+        // при своём вратаре плюс резервном в заявке их двое, и автозаполнения не будет.
+        const goaliesRes = await client.query(`
+            SELECT team_id, array_agg(player_id) AS player_ids
+            FROM game_rosters
+            WHERE game_id = $1 AND position_in_line = 'G'
+            GROUP BY team_id
+        `, [gameId]);
+        const lineupGoalies = (teamId) =>
+            goaliesRes.rows.find(r => String(r.team_id) === String(teamId))?.player_ids || [];
+        const soleGoalie = (teamId) => {
+            const ids = lineupGoalies(teamId);
+            return ids.length === 1 ? ids[0] : null;
+        };
+        const homeSole = soleGoalie(home_team_id);
+        const awaySole = soleGoalie(away_team_id);
+
+        let changed = false;
+        if (homeSole || awaySole) {
+            const firstRes = await client.query(
+                'SELECT * FROM game_goalie_log WHERE game_id = $1 ORDER BY time_seconds ASC, id ASC LIMIT 1',
+                [gameId]
+            );
+
+            if (firstRes.rows.length === 0) {
+                await client.query(`
+                    INSERT INTO game_goalie_log (game_id, time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified)
+                    VALUES ($1, 0, $2, $3, $4, $5)
+                `, [gameId, homeSole, awaySole, !homeSole, !awaySole]);
+                changed = true;
+            } else {
+                const first = firstRes.rows[0];
+                // Сторона свободна для автозаполнения: «не указан» либо вписан игрок,
+                // которого в текущей заявке на матч нет. Пустые ворота (id NULL без
+                // флага) — осознанный выбор, его не трогаем.
+                const isOpenSide = (unspecified, goalieId, teamId) =>
+                    unspecified || (goalieId != null && !lineupGoalies(teamId).some(id => String(id) === String(goalieId)));
+                const fillHome = !!homeSole && isOpenSide(first.home_goalie_unspecified, first.home_goalie_id, home_team_id);
+                const fillAway = !!awaySole && isOpenSide(first.away_goalie_unspecified, first.away_goalie_id, away_team_id);
+
+                if (fillHome || fillAway) {
+                    await client.query(`
+                        UPDATE game_goalie_log
+                        SET home_goalie_id = $1, away_goalie_id = $2,
+                            home_goalie_unspecified = $3, away_goalie_unspecified = $4
+                        WHERE id = $5
+                    `, [
+                        fillHome ? homeSole : first.home_goalie_id,
+                        fillAway ? awaySole : first.away_goalie_id,
+                        fillHome ? false : first.home_goalie_unspecified,
+                        fillAway ? false : first.away_goalie_unspecified,
+                        first.id
+                    ]);
+                    changed = true;
+                }
+            }
+
+            if (changed) await triggerRecalcFlag(client, gameId);
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, changed });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка автозаполнения журнала вратарей:', err);
+        res.status(500).json({ success: false, error: 'Ошибка сервера' });
+    } finally {
+        client.release();
+    }
+};
+
 export const getGoalieShotsSummary = async (req, res) => {
     const { gameId } = req.params;
     try {

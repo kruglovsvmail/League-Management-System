@@ -11,14 +11,31 @@
 // Фронт делает ту же проверку в checkMatchEditAccess (LMS-Frontend/src/hooks/useAccess.js)
 // и прячет элементы управления. Здесь она продублирована всерьёз: без неё окно
 // закрывало бы только интерфейс, а запросы к API проходили бы в любое время.
+//
+// Поверх окна — подпись секретаря. Как только секретарь матча подписал протокол (ЭЦП,
+// роль 'secretary'), править матч не может никто, кроме глобального админа и владельца
+// лиги: ни бригада, ни руководство лиги — ни в окне, ни вне его. Подписи судей и
+// представителей команд после секретаря идут своим маршрутом и этой проверкой не
+// закрываются.
 import pool from '../config/db.js';
 import { isLeagueOwner } from './leagueOwners.js';
+
+// Подписан ли протокол секретарём: SQL-выражение для подзапроса по id матча.
+// Считается только настоящая подпись — с ЭЦП (hash); «вписанная» фамилия без неё в
+// старых протоколах подписью не считается, как и в окне подписания.
+export const secretarySignedSql = (gameIdExpr) => `EXISTS (
+    SELECT 1 FROM game_protocol_signatures
+    WHERE game_id = ${gameIdExpr} AND role = 'secretary' AND COALESCE(signature_hash, '') <> ''
+)`;
+
+export const PROTOCOL_SIGNED_ERROR = 'Протокол подписан секретарём матча — правки закрыты. Изменить его может только владелец лиги или глобальный администратор.';
 
 /**
  * Возвращает null, если правка матча сейчас разрешена, иначе — текст причины отказа.
  * clientOrPool позволяет вызывать проверку внутри уже открытой транзакции.
+ * ignoreSignature — для действий, которые протокол не меняют (пересчёт статистики).
  */
-export const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
+export const checkGameEditAccess = async (clientOrPool, gameId, userId, { ignoreSignature = false } = {}) => {
     if (!userId) return null;
 
     const userRes = await clientOrPool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
@@ -28,7 +45,8 @@ export const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
     if (userRes.rows[0].global_role === 'admin') return null;
 
     const gameRes = await clientOrPool.query(`
-        SELECT g.game_date, g.division_id, s.league_id, l.sec_access_before_hours, l.sec_access_after_hours
+        SELECT g.game_date, g.division_id, s.league_id, l.sec_access_before_hours, l.sec_access_after_hours,
+               ${secretarySignedSql('g.id')} AS is_protocol_signed
         FROM games g
         LEFT JOIN divisions d ON g.division_id = d.id
         LEFT JOIN seasons s ON d.season_id = s.id
@@ -49,10 +67,13 @@ export const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
     // Раньше сюда попадала ЛЮБАЯ запись в league_staff, то есть судья лиги и медиа тоже
     // обходили окно. Прав на запись у них нет, и дыра не эксплуатировалась, но стоило
     // выдать медиа хоть одно право по матчу — оно оказалось бы без окна само собой.
-    if (game.league_id) {
-        // Владелец лиги стоит над руководством: окна на него не действуют вовсе
-        if (await isLeagueOwner(clientOrPool, game.league_id, userId)) return null;
+    // Владелец лиги стоит над руководством: окна и подпись на него не действуют вовсе
+    if (game.league_id && await isLeagueOwner(clientOrPool, game.league_id, userId)) return null;
 
+    // Подписанный секретарём протокол закрыт для всех остальных, руководства лиги тоже
+    if (game.is_protocol_signed && !ignoreSignature) return PROTOCOL_SIGNED_ERROR;
+
+    if (game.league_id) {
         const staffRes = await clientOrPool.query(`
             SELECT 1 FROM league_staff
             WHERE user_id = $1 AND league_id = $2 AND end_date IS NULL
@@ -77,6 +98,31 @@ export const checkGameEditAccess = async (clientOrPool, gameId, userId) => {
     if (now > afterLimit) return `Время управления матчем истекло (${afterLimitHours} ч. после начала).`;
 
     return null;
+};
+
+/**
+ * Только подпись, без окна — для правок, которые окном не закрывались никогда (данные
+ * матча со страниц расписания и матча, PUT /games/:id/info). null — можно, иначе причина.
+ */
+export const checkProtocolSignLock = async (clientOrPool, gameId, userId) => {
+    const signedRes = await clientOrPool.query(`SELECT ${secretarySignedSql('$1')} AS signed`, [gameId]);
+    if (!signedRes.rows[0]?.signed) return null;
+    if (!userId) return PROTOCOL_SIGNED_ERROR;
+
+    const userRes = await clientOrPool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
+    if (userRes.rows[0]?.global_role === 'admin') return null;
+
+    const leagueRes = await clientOrPool.query(`
+        SELECT s.league_id
+        FROM games g
+        JOIN divisions d ON g.division_id = d.id
+        JOIN seasons s ON d.season_id = s.id
+        WHERE g.id = $1
+    `, [gameId]);
+    const leagueId = leagueRes.rows[0]?.league_id;
+    if (leagueId && await isLeagueOwner(clientOrPool, leagueId, userId)) return null;
+
+    return PROTOCOL_SIGNED_ERROR;
 };
 
 /**

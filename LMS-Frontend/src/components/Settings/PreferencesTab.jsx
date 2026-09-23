@@ -4,9 +4,18 @@ import { getToken } from '../../utils/helpers';
 import { Loader } from '../../ui/Loader';
 import { Stepper } from '../../ui/Stepper';
 import { Switch } from '../../ui/Switch';
+import { SegmentButton } from '../../ui/SegmentButton';
 import { useAccess } from '../../hooks/useAccess';
 import { BroadcastAssetsSection } from './BroadcastAssetsSection';
 import { SettingsCard } from './SettingsCard';
+
+// Вид панели секретаря. Значения в базе исторические, названия для людей — другие:
+// paper — «Классический»: ввод прямо в строки таблиц с клавиатуры, как в бумажном
+// протоколе (см. ProtocolSheet); classic — «Модерн»: формы ввода над таблицами.
+const PANEL_VIEWS = [
+  { value: 'paper', label: 'Классический' },
+  { value: 'classic', label: 'Модерн' },
+];
 
 // Режима дисквалификаций здесь нет: его переключает только глобальный администратор
 // (Команды → Лиги → Глобальные параметры).
@@ -32,7 +41,8 @@ export function PreferencesTab({ setToast }) {
     allow_match_letters_change: false,
     sec_auto_time_goals: true,
     sec_auto_time_penalties: true,
-    sec_auto_time_goalie_log: true
+    sec_auto_time_goalie_log: true,
+    sec_panel_view: 'classic'
   });
 
   useEffect(() => {
@@ -60,7 +70,8 @@ export function PreferencesTab({ setToast }) {
             allow_match_letters_change: data.data.allow_match_letters_change ?? false,
             sec_auto_time_goals: data.data.sec_auto_time_goals ?? true,
             sec_auto_time_penalties: data.data.sec_auto_time_penalties ?? true,
-            sec_auto_time_goalie_log: data.data.sec_auto_time_goalie_log ?? true
+            sec_auto_time_goalie_log: data.data.sec_auto_time_goalie_log ?? true,
+            sec_panel_view: data.data.sec_panel_view ?? 'classic'
           });
         }
       } catch (err) {
@@ -304,14 +315,22 @@ export function PreferencesTab({ setToast }) {
           </div>
         </SettingsCard>
 
-        {/* ВРЕМЯ СОБЫТИЙ В ПАНЕЛИ СЕКРЕТАРЯ — подставлять ли время таймера панели.
-            Выключено — секретарь вводит время сам; без времени событие не сохранить,
-            а в журнале вратарей не нажать «+». */}
+        {/* ПАНЕЛЬ СЕКРЕТАРЯ — вид панели и время событий. Время: подставлять ли время
+            таймера панели; выключено — секретарь вводит его сам, без времени событие не
+            сохранить, а в журнале вратарей не нажать «+». Вид: логика та же, меняется
+            только способ ввода голов, удалений и смен вратарей. */}
         <SettingsCard
           icon="stopwatch"
-          title="Время событий"
-          description="Подставлять в новое событие время таймера панели секретаря. Выключено — время вводится руками, и пока оно не введено, событие не сохраняется и в счёт не идёт."
+          title="Панель секретаря"
+          description="Вид панели и время событий. Классический — ввод прямо в строки таблиц с клавиатуры, Модерн — формы ввода над таблицами. Время с таймера выключено — вводится руками, и пока его нет, событие не сохраняется."
         >
+          <SegmentButton
+            options={PANEL_VIEWS.map(v => v.label)}
+            defaultIndex={Math.max(0, PANEL_VIEWS.findIndex(v => v.value === formData.sec_panel_view))}
+            onChange={(idx) => handleStepChange('sec_panel_view', PANEL_VIEWS[idx].value)}
+            className={!canEdit ? 'pointer-events-none opacity-50' : ''}
+          />
+
           <div className="flex items-center justify-between gap-3" title="Время гола по таймеру панели, если секретарь не ввёл своё">
             <span className="text-[11px] font-bold text-graphite/70 leading-snug">Голы — время с таймера</span>
             <div className="shrink-0">

@@ -97,7 +97,7 @@ export const TimerPanel = ({
 
       {/* КАРУСЕЛЬ ЭТАПОВ: разминка → периоды и перерывы → овертайм → буллиты. Листается
           сама, когда кончается период, перерыв или разминка (это делает сервер), и
-          стрелками. Точки снизу — где мы в матче; перерывы и разминка помельче. */}
+          стрелками. */}
       <div className="mb-4 flex items-stretch gap-1 bg-white/5 p-1 border border-white/10 rounded-lg">
         <button
           onClick={() => onGoToStage(prevKey)}
@@ -108,29 +108,19 @@ export const TimerPanel = ({
           <Icon name="chevron_left" className="w-4 h-4" />
         </button>
 
-        <div className="flex-1 min-w-0 py-1.5 overflow-hidden select-none">
+        <div className="flex-1 min-w-0 py-2 overflow-hidden select-none">
           {stageIndex >= 0 ? (
             <div className="flex transition-transform duration-300 ease-out" style={{ transform: `translateX(-${stageIndex * 100}%)` }}>
               {stages.map(key => (
-                <div key={key} className="w-full shrink-0 text-center text-[13px] font-black uppercase tracking-widest text-white truncate">
+                <div key={key} className="w-full shrink-0 text-center text-[18px] leading-6 font-black uppercase tracking-widest text-white truncate">
                   {stageLabel(key)}
                 </div>
               ))}
             </div>
           ) : (
             // Этапа уже нет в настройках (например, перерывы выключили, пока шёл перерыв)
-            <div className="text-center text-[13px] font-black uppercase tracking-widest text-white truncate">{stageLabel(currentKey)}</div>
+            <div className="text-center text-[18px] leading-6 font-black uppercase tracking-widest text-white truncate">{stageLabel(currentKey)}</div>
           )}
-          <div className="flex justify-center items-center gap-1 mt-1.5">
-            {stages.map((key, i) => (
-              <span
-                key={key}
-                className={`h-1 rounded-full transition-all duration-300 ${
-                  i === stageIndex ? 'w-3 bg-white' : (key === 'WU' || key.startsWith('B')) ? 'w-1 bg-white/15' : 'w-1.5 bg-white/30'
-                }`}
-              />
-            ))}
-          </div>
         </div>
 
         <button

@@ -183,12 +183,14 @@ export function GameLiveDesk() {
       return () => clearInterval(interval);
   }, []);
 
-  // 2. Если в результате автоматического пересчета мы видим, 
+  // 2. Если в результате автоматического пересчета мы видим,
   // что прав на редактирование больше нет (isReadOnly === true), сразу выкидываем.
+  // Кроме подписанного секретарём протокола: панель остаётся открытой для просмотра —
+  // в её окне протокола ставят свои подписи судьи и представители команд.
   useEffect(() => {
       if (!game || !activeLeague) return;
 
-      if (isReadOnly) {
+      if (isReadOnly && !game.is_protocol_signed) {
           navigate(`/games/${gameId}`, {
               replace: true,
               state: {
@@ -261,6 +263,8 @@ export function GameLiveDesk() {
 
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [toast, setToast] = useState(null);
+  // Ошибка ввода в бумажном виде протокола: каждое уведомление — новый показ (stamp)
+  const showInputError = (t) => setToast({ ...t, stamp: Date.now() });
 
   const ignoreSocketRef = useRef(false);
   const ignoreTimeoutRef = useRef(null);
@@ -326,6 +330,47 @@ export function GameLiveDesk() {
   };
 
   useEffect(() => { loadInitialData(); }, [gameId]);
+
+  // Стартовая запись журнала вратарей: если в заявке на матч у команды один вратарь,
+  // он попадает в журнал сам — правило и запись живут на бэке (autofillGoalieLog),
+  // здесь то же условие проверяется заранее, чтобы не дёргать сервер при каждой
+  // перезагрузке данных. Ключ последней попытки помнит ref: иначе при отказе
+  // (окно управления закрыто, нет прав) запрос уходил бы по кругу после каждого
+  // loadInitialData. Работает в обоих видах панели.
+  const goalieAutofillKeyRef = useRef(null);
+  useEffect(() => {
+    // Завершённый матч панель не трогает — то же ограничение стоит и на бэке
+    if (!game || isReadOnly || !['scheduled', 'live'].includes(game.status)) return;
+
+    const lineupGoalieIds = (roster) => roster
+      .filter(r => r.position === 'goalie' || r.position_in_line === 'G')
+      .map(r => String(r.player_id));
+    const homeGoalies = lineupGoalieIds(homeRoster);
+    const awayGoalies = lineupGoalieIds(awayRoster);
+    const first = goalieLog[0];
+    // Сторона ждёт автозаполнения: в заявке ровно один вратарь, а в журнале либо
+    // ничего нет, либо сторона первой записи «не указан» / игрок не из заявки
+    const sideNeedsFill = (goalies, unspecified, goalieId) =>
+      goalies.length === 1 && (!first || unspecified || (goalieId != null && !goalies.includes(String(goalieId))));
+    const needed = sideNeedsFill(homeGoalies, first?.home_goalie_unspecified, first?.home_goalie_id)
+      || sideNeedsFill(awayGoalies, first?.away_goalie_unspecified, first?.away_goalie_id);
+    if (!needed) return;
+
+    const key = [first?.id ?? 'none', homeGoalies.join(','), awayGoalies.join(',')].join('|');
+    if (goalieAutofillKeyRef.current === key) return;
+    goalieAutofillKeyRef.current = key;
+
+    (async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/goalie-log/autofill`, { method: 'POST', headers });
+        const data = await res.json();
+        if (data.success && data.changed) {
+          await loadInitialData();
+          socket?.emit('game_updated', { gameId });
+        }
+      } catch (err) { console.error('Ошибка автозаполнения журнала вратарей:', err); }
+    })();
+  }, [game, homeRoster, awayRoster, goalieLog, isReadOnly]);
 
   const lockSocketUpdates = () => {
     ignoreSocketRef.current = true;
@@ -866,8 +911,9 @@ export function GameLiveDesk() {
     setIsSaving(true);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/goalie-log`, { method: 'POST', headers, body: JSON.stringify(logData) });
-      if (res.ok) { await loadInitialData(); socket?.emit('game_updated', { gameId }); }
+      if (res.ok) { await loadInitialData(); socket?.emit('game_updated', { gameId }); return true; }
     } catch (err) { console.error(err); } finally { setIsSaving(false); }
+    return false;
   };
 
   const saveGoalieShotsSummary = async ({ goalie_id, team_id, period, shots_count }) => {
@@ -1039,6 +1085,12 @@ export function GameLiveDesk() {
                     Страница матча
                   </button>
               </div>
+              {game.is_protocol_signed && (
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-status-accepted" title={isReadOnly ? matchEditAccess.reason : 'Протокол подписан — вам правка доступна как владельцу лиги или глобальному администратору'}>
+                    <Icon name="lock" className="w-3.5 h-3.5" />
+                    {isReadOnly ? 'Протокол подписан · только просмотр' : 'Протокол подписан'}
+                  </div>
+              )}
             </div>
 
             <div className="bg-white/60 backdrop-blur-md border border-graphite/10 shadow-sm rounded-lg p-1.5 flex items-center gap-2">
@@ -1100,6 +1152,7 @@ export function GameLiveDesk() {
             goalieLog={goalieLog}
             onGoalieChange={saveGoalieLog}
             isReadOnly={isReadOnly}
+            onToast={showInputError}
           />
 
           <SummaryTablesAccordion
@@ -1114,6 +1167,7 @@ export function GameLiveDesk() {
             onRequestDeleteGoalieLog={(id) => setDeleteModalState({ isOpen: true, id, type: 'goalie' })}
             shotsTrackingEnabled={game?.track_shots ?? true}
             isReadOnly={isReadOnly}
+            onToast={showInputError}
           />
 
           <ShootoutAccordion 
@@ -1187,9 +1241,16 @@ export function GameLiveDesk() {
         isOpen={isTechModalOpen} onClose={() => setIsTechModalOpen(false)} game={game}
         onSuccess={() => { loadInitialData(); socket?.emit('score_updated', { gameId }); socket?.emit('game_updated', { gameId }); }}
       />
-      <ProtocolViewerModal isOpen={isViewerOpen} onClose={() => setIsViewerOpen(false)} gameId={gameId} initialLeagueId={game.league_id} />
+      <ProtocolViewerModal
+        isOpen={isViewerOpen} onClose={() => setIsViewerOpen(false)} gameId={gameId} initialLeagueId={game.league_id}
+        // Подпись секретаря закрывает правки — панель должна узнать об этом сразу, а не
+        // после перезагрузки; другие открытые панели — через game_updated
+        onSigned={async () => { await loadInitialData(); socket?.emit('game_updated', { gameId }); }}
+      />
 
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+      {/* key — метка показа: новое уведомление подряд за прошлым (ошибки ввода бумажного
+          вида) заново отсчитывает свои 5 секунд, а не закрывается по таймеру прошлого */}
+      {toast && <Toast key={toast.stamp} title={toast.title} message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
     </div>
   );

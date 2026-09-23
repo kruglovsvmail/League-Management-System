@@ -7,7 +7,7 @@ import { Icon } from '../../ui/Icon';
 const A4_HEIGHT_MM = 297;
 const PX_PER_MM = 96 / 25.4;
 
-export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
+export function ProtocolViewerModal({ isOpen, onClose, gameId, onSigned }) {
   const [protocolData, setProtocolData] = useState(null);
   const [htmlContent, setHtmlContent] = useState(''); 
   const [isLoading, setIsLoading] = useState(true);
@@ -112,7 +112,8 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId }) {
       
       if (data.success) {
         setFormState(prev => { const next = { ...prev }; delete next[role]; return next; });
-        await loadProtocolData(); 
+        await loadProtocolData();
+        onSigned?.(role);
       } else {
         alert(data.error || 'Ошибка подписания');
       }

@@ -9,6 +9,11 @@ import {
 } from './GameDeskShared';
 import { formatPenaltyOffender } from '../../ui/PenaltyOffenderModal';
 import { PenaltyReasonsModal } from '../../ui/PenaltyReasonsModal';
+import {
+  PaperInput, PaperPick, PaperSelect, PaperAddButton, PaperSaveButton,
+  parseOffenderText, normalizeOffenderText, isClockValid,
+  usePaperDraftSaving, PAPER_SAVING_CELL
+} from './PaperCells';
 import { Icon } from '../../ui/Icon';
 import { EquipmentMark } from '../../ui/EquipmentMark';
 
@@ -129,7 +134,12 @@ export const ProtocolSheet = ({
   autoTimeGoals = true,
   autoTimePenalties = true,
   // Дивизион не ведёт броски в створ — графа «Бр» у голов не нужна
-  shotsTrackingEnabled = true
+  shotsTrackingEnabled = true,
+  // Вид «Бумажный протокол» (настройка лиги sec_panel_view): форм ввода над таблицей
+  // нет, события вписываются прямо в первую свободную строку с клавиатуры
+  paperMode = false,
+  // Уведомление об ошибке ввода ({ title, message, type }) — снизу справа
+  onToast
 }) => {
   // Причина уходит в событие снимком: наименование + сокращение + ссылка на пункт.
   // Пункт справочника потом могут отредактировать или удалить — протокол от этого
@@ -167,8 +177,30 @@ export const ProtocolSheet = ({
   const EMPTY_WHO = { type: '', jersey: '', server: '' };
   const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violation: '', start: '' };
   const [newPenalty, setNewPenalty] = useState(EMPTY_PENALTY);
-  // Какому полю открыта модалка причин: 'new' — форме, 'edit' — редактору группы
+  // Какому полю открыта модалка причин: 'new' — форме, 'paper' — строке ввода бумажного
+  // вида, 'edit' — редактору группы
   const [reasonsTarget, setReasonsTarget] = useState(null);
+
+  // ── Бумажный протокол (paperMode) ──
+  // Черновики строк ввода — первой свободной строки таблицы. Отдельно от формы
+  // классического вида: там у вида штрафа предвыбор «2», а здесь все ячейки пустые.
+  // str '' — игровую ситуацию руками не выбирали (подставится расчётная, как в форме);
+  // fromShot null — «Бр» не трогали (запишется «с броска», как по умолчанию в форме).
+  const EMPTY_PAPER_GOAL = { time: '', scorer: '', ast1: '', ast2: '', str: '', fromShot: null };
+  const EMPTY_PAPER_PENALTY = { whoText: '', kind: '', violation: '', start: '' };
+  const [paperGoal, setPaperGoal] = useState(EMPTY_PAPER_GOAL);
+  const [paperPen, setPaperPen] = useState(EMPTY_PAPER_PENALTY);
+  // Ячейки с ошибкой после «+» или сохранения правки: ключ `${строка}.${поле}`, строка —
+  // 'g' (новый гол), 'ge' (правка гола), 'p' (новое удаление), 'pe' (правка удаления).
+  // Подсветка снимается, как только ячейку поправили.
+  const [fieldErrors, setFieldErrors] = useState({});
+  const hasError = (key) => !!fieldErrors[key];
+  const clearError = (key) => setFieldErrors(prev => {
+    if (!prev[key]) return prev;
+    const next = { ...prev };
+    delete next[key];
+    return next;
+  });
 
   const [editGoalId, setEditGoalId] = useState(null);
   const [editGoalData, setEditGoalData] = useState({});
@@ -268,6 +300,56 @@ export const ProtocolSheet = ({
     penalty_offender_type: who?.type || 'team',
     penalty_served_by_id: who?.server ? getPlayerId(who.server) : null,
   });
+
+  // ─── ПРОВЕРКА ВВОДА БУМАЖНОГО ВИДА ──────────────────────────────────────────
+  // Номера вписываются с клавиатуры, поэтому проверяем по «+» (и по сохранению правки):
+  // событие привязывается к игроку из состава на матч — чужой номер записать нельзя.
+  // Ошибочные ячейки подсвечиваются, секретарю — уведомление, что именно не так.
+  const hasJersey = (num) => roster.some(r => String(r.jersey_number) === String(num));
+
+  const GOAL_ROLES = [['scorer', 'Автор'], ['ast1', 'Ассистент 1'], ['ast2', 'Ассистент 2']];
+  const goalErrors = (d, prefix, { requireTime = false } = {}) => {
+    const errs = {};
+    if (requireTime && !d.time) errs[`${prefix}.time`] = 'Время: укажите время гола';
+    else if (!isClockValid(d.time)) errs[`${prefix}.time`] = 'Время: секунд не больше 59';
+    GOAL_ROLES.forEach(([f, label]) => {
+      if (d[f] && !hasJersey(d[f])) errs[`${prefix}.${f}`] = `${label}: игрока №${d[f]} нет в составе на матч`;
+    });
+    GOAL_ROLES.forEach(([a, la], i) => GOAL_ROLES.slice(i + 1).forEach(([b, lb]) => {
+      if (d[a] && d[a] === d[b]) {
+        const msg = `${la} и ${lb.toLowerCase()} — один и тот же игрок №${d[a]}`;
+        errs[`${prefix}.${a}`] = errs[`${prefix}.${a}`] || msg;
+        errs[`${prefix}.${b}`] = errs[`${prefix}.${b}`] || msg;
+      }
+    }));
+    return errs;
+  };
+
+  const penaltyErrors = (whoText, start, prefix, { requireStart = false } = {}) => {
+    const errs = {};
+    const who = parseOffenderText(whoText);
+    if (!who) errs[`${prefix}.who`] = 'Нарушитель: номер игрока, К или ОПК; отбывающий — через «/», например 5 / 12';
+    else if (who.type === 'player' && !hasJersey(who.jersey)) errs[`${prefix}.who`] = `Нарушитель: игрока №${who.jersey} нет в составе на матч`;
+    else if (who.server && !hasJersey(who.server)) errs[`${prefix}.who`] = `Отбывающий: игрока №${who.server} нет в составе на матч`;
+    else if (who.type === 'player' && who.server === who.jersey) errs[`${prefix}.who`] = 'Нарушитель и отбывающий — один и тот же игрок';
+    if (requireStart && !start) errs[`${prefix}.start`] = 'Начало: укажите время штрафа';
+    else if (!isClockValid(start)) errs[`${prefix}.start`] = 'Начало: секунд не больше 59';
+    return { errs, who };
+  };
+
+  // Ошибок нет — true. Есть — подсветка ячеек этой строки и уведомление с перечнем.
+  const reportErrors = (errs, prefix, title) => {
+    setFieldErrors(prev => ({
+      ...Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${prefix}.`))),
+      ...errs,
+    }));
+    const messages = [...new Set(Object.values(errs))];
+    if (messages.length === 0) return true;
+    onToast?.({ title, message: messages.join('. '), type: 'error' });
+    return false;
+  };
+  const clearRowErrors = (prefix) => setFieldErrors(prev =>
+    Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${prefix}.`))));
 
   // ─── СБОРКА СТРОК ШТРАФА ────────────────────────────────────────────────────
   // Вид даёт набор строк (см. PENALTY_KINDS); здесь у каждой считаются начало и
@@ -392,7 +474,45 @@ export const ProtocolSheet = ({
     setManualStr(false);
   };
 
+  // ── Строки ввода бумажного вида ──
+  // Время: вписанное, иначе с таймера — если лига разрешила (как у формы). Без времени
+  // «+» серый. Игровая ситуация: выбранная руками, иначе расчётная («ПВ» по журналу).
+  const paperGoalTime = parseTime(paperGoal.time) ?? (autoTimeGoals ? timerSeconds : null);
+  const paperGoalStr = paperGoal.str || calculateGoalStrength(paperGoalTime);
+  const paperGoalReady = paperGoalTime !== null;
+  const paperGoalHasContent = !!(paperGoal.time || paperGoal.scorer || paperGoal.ast1 || paperGoal.ast2);
+
+  // Строка ввода очищается в тот момент, когда гол встал в таблицу, — не позже
+  const [paperGoalSaving, savePaperGoal] = usePaperDraftSaving(goals.length, () => setPaperGoal(EMPTY_PAPER_GOAL));
+
+  const handleAddPaperGoal = () => {
+    if (!paperGoalReady || paperGoalSaving) return;
+    if (!reportErrors(goalErrors(paperGoal, 'g'), 'g', 'Гол не добавлен')) return;
+    savePaperGoal(() => onSaveEvent(teamId, 'goal', {
+      time_seconds: paperGoalTime,
+      player_id: getPlayerId(paperGoal.scorer),
+      assist1_id: getPlayerId(paperGoal.ast1),
+      assist2_id: getPlayerId(paperGoal.ast2),
+      goal_strength: paperGoalStr || 'equal',
+      from_shot: paperGoal.fromShot ?? true,
+    }));
+  };
+
+  // Удаление: «+» активен, когда вписан нарушитель, выбран вид и есть время
+  const paperPenStart = parseTime(paperPen.start) ?? (autoTimePenalties ? timerSeconds : null);
+  const paperPenReady = !!paperPen.whoText.trim() && !!paperPen.kind && paperPenStart !== null;
+
+  const [paperPenSaving, savePaperPen] = usePaperDraftSaving(penaltiesWithTimeline.length, () => setPaperPen(EMPTY_PAPER_PENALTY));
+
+  const handleAddPaperPenalty = () => {
+    if (!paperPenReady || paperPenSaving) return;
+    const { errs, who } = penaltyErrors(paperPen.whoText, paperPen.start, 'p');
+    if (!reportErrors(errs, 'p', 'Удаление не добавлено')) return;
+    savePaperPen(() => onSavePenaltyGroup(teamId, groupPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart })));
+  };
+
   const startEditGoal = (g) => {
+    clearRowErrors('ge');
     setEditGoalId(g.id);
     setEditGoalData({
       time: formatTime(g.time_seconds), scorer: getJersey(g.primary_player_id),
@@ -403,6 +523,8 @@ export const ProtocolSheet = ({
   };
 
   const saveEditGoal = async () => {
+    // Бумажный вид: номера вписаны руками — проверяем так же, как по «+»
+    if (paperMode && !reportErrors(goalErrors(editGoalData, 'ge', { requireTime: true }), 'ge', 'Гол не сохранён')) return;
     const success = await onSaveEvent(teamId, 'goal', {
       time_seconds: parseTime(editGoalData.time), player_id: getPlayerId(editGoalData.scorer),
       assist1_id: getPlayerId(editGoalData.ast1), assist2_id: getPlayerId(editGoalData.ast2), goal_strength: editGoalData.str,
@@ -440,6 +562,7 @@ export const ProtocolSheet = ({
   };
 
   const saveEditPs = async (ev) => {
+    if (paperMode && !reportErrors(goalErrors({ time: editGoalData.time, scorer: editGoalData.scorer }, 'ge', { requireTime: true }), 'ge', 'Штрафной бросок не сохранён')) return;
     const success = await onSaveEvent(teamId, editGoalData.psOutcome || ev.event_type, {
       time_seconds: parseTime(editGoalData.time),
       player_id: getPlayerId(editGoalData.scorer),
@@ -480,15 +603,24 @@ export const ProtocolSheet = ({
     const kind = LEGACY_KIND_TO_EDITABLE[rawKind] || (PENALTY_KINDS[rawKind] ? rawKind : 'minor');
     // Причина одна — с первой строки (двойка, пятёрка или сама 10/20). Разные причины
     // у старых штрафов при сохранении правки сведутся к ней.
+    // whoText — нарушитель так, как его вписывают в бумажном виде: «5 / 12», «ОПК».
+    clearRowErrors('pe');
+    const who = whoFromEvent(p);
     setEditPenaltyId(p.id);
-    setEditPenaltyData({ mode: 'group', who: whoFromEvent(p), kind, violation: rows[0]?.penalty_violation || '', start: formatTime(p.time_seconds) });
+    setEditPenaltyData({ mode: 'group', who, whoText: formatPenaltyOffender(who), kind, violation: rows[0]?.penalty_violation || '', start: formatTime(p.time_seconds) });
   };
 
   const saveEditGroup = async () => {
     const startSecs = parseTime(editPenaltyData.start);
+    let who = editPenaltyData.who;
+    if (paperMode) {
+      const { errs, who: parsed } = penaltyErrors(editPenaltyData.whoText, editPenaltyData.start, 'pe', { requireStart: true });
+      if (!reportErrors(errs, 'pe', 'Удаление не сохранено')) return;
+      who = parsed;
+    }
     if (startSecs === null || isNaN(startSecs)) return;
     const target = penalties.find(r => r.id === editPenaltyId);
-    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...editPenaltyData, startSecs }), penaltyGroupKey(target));
+    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...editPenaltyData, who, startSecs }), penaltyGroupKey(target));
     if (ok) setEditPenaltyId(null);
   };
 
@@ -497,6 +629,7 @@ export const ProtocolSheet = ({
   // первой строки. Правило «одна причина, десятке и двадцатке — дисциплинарная» действует
   // при вводе штрафа; записанную строку секретарь вправе поправить как угодно.
   const startEditRow = (p) => {
+    clearRowErrors('pe');
     setEditPenaltyId(p.id);
     setEditPenaltyData({
       mode: 'row',
@@ -510,6 +643,11 @@ export const ProtocolSheet = ({
     if (!p) return;
     const endless = p.penalty_class === 'game_misconduct' || p.penalty_class === 'penalty_shot';
     const endSecs = endless ? (p.penalty_class === 'penalty_shot' ? p.time_seconds : null) : parseTime(editPenaltyData.end);
+    if (paperMode && !endless) {
+      const errs = !editPenaltyData.end ? { 'pe.end': 'Окончание: укажите время' }
+        : !isClockValid(editPenaltyData.end) ? { 'pe.end': 'Окончание: секунд не больше 59' } : {};
+      if (!reportErrors(errs, 'pe', 'Строка не сохранена')) return;
+    }
     if (!endless && (endSecs === null || isNaN(endSecs))) return;
 
     const success = await onSaveEvent(teamId, 'penalty', {
@@ -525,19 +663,24 @@ export const ProtocolSheet = ({
 
   const startEditPenalty = (p) => (isContinuationRow(p) ? startEditRow(p) : startEditGroup(p));
 
-  // Окно причин: вид и причина — из формы или редактора группы
+  // Окно причин: вид и причина — из формы, строки ввода бумажного вида или редактора группы
   const reasonsModalState = reasonsTarget === 'new'
     ? { kind: newPenalty.kind, value: newPenalty.violation }
-    : reasonsTarget === 'edit'
-      ? { kind: editPenaltyData.kind, value: editPenaltyData.violation || '' }
-      : null;
+    : reasonsTarget === 'paper'
+      ? { kind: paperPen.kind, value: paperPen.violation }
+      : reasonsTarget === 'edit'
+        ? { kind: editPenaltyData.kind, value: editPenaltyData.violation || '' }
+        : null;
   const applyReason = (value) => {
     if (reasonsTarget === 'new') setNewPenalty(prev => ({ ...prev, violation: value }));
+    if (reasonsTarget === 'paper') setPaperPen(prev => ({ ...prev, violation: value }));
     if (reasonsTarget === 'edit') setEditPenaltyData(prev => ({ ...prev, violation: value }));
   };
 
-  // Строка ввода вынесена из сетки наверх (см. форму под шапкой), поэтому +1 не нужен
-  const MAX_ROWS = Math.max(roster.length, goals.length, penaltiesWithTimeline.length, 1);
+  // Классический вид: строка ввода вынесена из сетки наверх, +1 не нужен. Бумажный: ввод
+  // идёт в первой свободной строке голов и удалений — под неё нужна строка.
+  const draftRow = paperMode && !isReadOnly ? 1 : 0;
+  const MAX_ROWS = Math.max(roster.length, goals.length + draftRow, penaltiesWithTimeline.length + draftRow, 1);
   const rows = Array.from({ length: MAX_ROWS });
   // Разметка колонок и шапка общие для двух таблиц: формы ввода (сверху) и списка.
   // Две таблицы с одним colgroup и процентными ширинами дают одинаковые колонки.
@@ -708,6 +851,163 @@ export const ProtocolSheet = ({
                     </>
   );
 
+  // ─── ЯЧЕЙКИ БУМАЖНОГО ВИДА ──────────────────────────────────────────────────
+  // Номера и время — с клавиатуры (только цифры), игровая ситуация, вид и причина — через
+  // наши окна. Строка ввода — первая свободная строка голов (удалений); после «+» ввод
+  // переходит на следующую сам: запись встаёт в список, свободная строка сдвигается.
+  const cell = 'border-r border-graphite/[0.12] p-0';
+  const editCell = `${cell} bg-orange/10`;
+  const setGoalField = (field) => (v) => { clearError(`g.${field}`); setPaperGoal(d => ({ ...d, [field]: v })); };
+  const setEditGoalField = (field) => (v) => { clearError(`ge.${field}`); setEditGoalData(d => ({ ...d, [field]: v })); };
+
+  // «Бр» в строке ввода: пусто, пока не трогали (запишется «с броска»), первый тап —
+  // «без броска», дальше — переключение
+  const shotToggle = (value, onToggle) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={value === false ? 'Без броска (нажмите чтобы переключить)' : 'С броска (нажмите чтобы переключить)'}
+      className="w-full h-[33px] flex items-center justify-center hover:bg-orange/5 transition-colors"
+    >
+      {value !== null && value !== undefined && (
+        <Icon name={value ? 'shootout_goal' : 'shootout_miss'} className={`w-5 h-5 ${value ? 'text-status-accepted' : 'text-status-rejected'}`} />
+      )}
+    </button>
+  );
+
+  // Пока запись в пути — строка ввода приглушена и не трогается
+  const goalDraftCell = `${cell} ${paperGoalSaving ? PAPER_SAVING_CELL : ''}`;
+  const penDraftCell = `${cell} ${paperPenSaving ? PAPER_SAVING_CELL : ''}`;
+
+  const paperGoalDraftCells = (
+    <>
+      <td className={goalDraftCell}><PaperInput type="time" title="Время гола" value={paperGoal.time} placeholder={autoTimeGoals ? formatTime(timerSeconds) : ''} error={hasError('g.time')} onChange={setGoalField('time')} onEnter={handleAddPaperGoal} /></td>
+      <td className={goalDraftCell}><PaperInput title="Автор гола" value={paperGoal.scorer} error={hasError('g.scorer')} onChange={setGoalField('scorer')} onEnter={handleAddPaperGoal} className="!text-status-accepted font-bold" /></td>
+      <td className={goalDraftCell}><PaperInput title="Ассистент 1" value={paperGoal.ast1} error={hasError('g.ast1')} onChange={setGoalField('ast1')} onEnter={handleAddPaperGoal} /></td>
+      <td className={goalDraftCell}><PaperInput title="Ассистент 2" value={paperGoal.ast2} error={hasError('g.ast2')} onChange={setGoalField('ast2')} onEnter={handleAddPaperGoal} /></td>
+      <td className={goalDraftCell}>
+        {/* Расчётная «ПВ» показывается, когда строка уже начата, — пустая строка пустая */}
+        <PaperSelect
+          title="Игровая ситуация" options={goalStrengthOptions} hideEmpty blankValues={['equal']}
+          value={paperGoal.str || (paperGoalHasContent ? paperGoalStr : undefined)}
+          onChange={(v) => setPaperGoal(d => ({ ...d, str: v }))}
+        />
+      </td>
+      {shotsTrackingEnabled && (
+        <td className={goalDraftCell}>{shotToggle(paperGoal.fromShot, () => setPaperGoal(d => ({ ...d, fromShot: d.fromShot === null ? false : !d.fromShot })))}</td>
+      )}
+      <td className="border-r-2 border-graphite/25 p-0 text-center">
+        <PaperAddButton active={paperGoalReady && !paperGoalSaving} tone="goal" onClick={handleAddPaperGoal} title={paperGoalReady ? 'Добавить гол' : 'Укажите время гола'} />
+      </td>
+    </>
+  );
+
+  const paperGoalEditCells = (
+    <>
+      <td className={editCell}><PaperInput type="time" title="Время гола" value={editGoalData.time} error={hasError('ge.time')} onChange={setEditGoalField('time')} onEnter={saveEditGoal} /></td>
+      <td className={editCell}><PaperInput title="Автор гола" value={editGoalData.scorer} error={hasError('ge.scorer')} onChange={setEditGoalField('scorer')} onEnter={saveEditGoal} className="!text-status-accepted font-bold" /></td>
+      <td className={editCell}><PaperInput title="Ассистент 1" value={editGoalData.ast1} error={hasError('ge.ast1')} onChange={setEditGoalField('ast1')} onEnter={saveEditGoal} /></td>
+      <td className={editCell}><PaperInput title="Ассистент 2" value={editGoalData.ast2} error={hasError('ge.ast2')} onChange={setEditGoalField('ast2')} onEnter={saveEditGoal} /></td>
+      <td className={editCell}>
+        <PaperSelect title="Игровая ситуация" options={goalStrengthOptions} hideEmpty blankValues={['equal']} value={editGoalData.str} onChange={(v) => setEditGoalData(d => ({ ...d, str: v }))} />
+      </td>
+      {shotsTrackingEnabled && (
+        <td className={editCell}>{shotToggle(editGoalData.from_shot, () => setEditGoalData(d => ({ ...d, from_shot: !d.from_shot })))}</td>
+      )}
+      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/10"><PaperSaveButton onClick={saveEditGoal} /></td>
+    </>
+  );
+
+  // Штрафной бросок: бьющий и время — с клавиатуры, исход — через окно
+  const paperPsEditCells = (ev) => (
+    <>
+      <td className={editCell}><PaperInput type="time" title="Время штрафного броска" value={editGoalData.time} error={hasError('ge.time')} onChange={setEditGoalField('time')} onEnter={() => saveEditPs(ev)} /></td>
+      <td className={editCell}><PaperInput title="Бьющий" value={editGoalData.scorer} error={hasError('ge.scorer')} onChange={setEditGoalField('scorer')} onEnter={() => saveEditPs(ev)} className="!text-status-accepted font-bold" /></td>
+      <td colSpan="2" className={editCell}>
+        <PaperSelect title="Исход штрафного броска" options={psOutcomeOptions(editGoalData.psOutcome)} hideEmpty value={editGoalData.psOutcome} onChange={(v) => setEditGoalData(d => ({ ...d, psOutcome: v }))} />
+      </td>
+      <td className="border-r border-graphite/[0.12] bg-orange/10 text-[10px] text-graphite/40 uppercase font-bold">{GOAL_STRENGTH_DISPLAY.ps}</td>
+      {shotsTrackingEnabled && <td className="border-r border-graphite/[0.12] bg-orange/10 text-graphite/25 font-bold">—</td>}
+      <td className="border-r-2 border-graphite/25 p-0 text-center bg-orange/10"><PaperSaveButton onClick={() => saveEditPs(ev)} /></td>
+    </>
+  );
+
+  const offenderTitle = 'Нарушитель: номер, К или ОПК; отбывающий — через «/», например 5 / 12';
+  const paperPenaltyDraftCells = (
+    <>
+      <td className={penDraftCell}>
+        <PaperInput
+          type="offender" title={offenderTitle} value={paperPen.whoText} error={hasError('p.who')}
+          onChange={(v) => { clearError('p.who'); setPaperPen(d => ({ ...d, whoText: v })); }}
+          onBlur={() => setPaperPen(d => ({ ...d, whoText: normalizeOffenderText(d.whoText) }))}
+          onEnter={handleAddPaperPenalty}
+          className="!text-status-rejected font-bold"
+        />
+      </td>
+      <td className={penDraftCell}>
+        <PaperSelect
+          title="Вид штрафа" options={penaltyKindOptions} hideEmpty value={paperPen.kind || undefined}
+          onChange={(v) => setPaperPen(d => ({ ...d, kind: v, violation: reasonForKind(v, d.violation) }))}
+        />
+      </td>
+      <td className={penDraftCell}><PaperPick title="Причина удаления" display={reasonCode(paperPen.violation)} onClick={() => setReasonsTarget('paper')} /></td>
+      <td className={penDraftCell}><PaperInput type="time" title="Начало штрафа" value={paperPen.start} placeholder={autoTimePenalties ? formatTime(timerSeconds) : ''} error={hasError('p.start')} onChange={(v) => { clearError('p.start'); setPaperPen(d => ({ ...d, start: v })); }} onEnter={handleAddPaperPenalty} /></td>
+      <td className={`border-r border-graphite/[0.12] font-mono text-[13px] text-graphite/40 ${paperPenSaving ? PAPER_SAVING_CELL : ''}`} title="Окончание штрафа рассчитывается автоматически">
+        {paperPen.kind ? previewGroupEnd(paperPen.kind, paperPenStart, parseOffenderText(paperPen.whoText), paperPen.violation) : ''}
+      </td>
+      <td className="border-r border-graphite/30 p-0 text-center">
+        <PaperAddButton
+          active={paperPenReady && !paperPenSaving} tone="penalty" onClick={handleAddPaperPenalty}
+          title={!paperPen.whoText.trim() ? 'Впишите нарушителя' : !paperPen.kind ? 'Выберите вид штрафа' : paperPenStart === null ? 'Укажите начало штрафа' : 'Добавить удаление'}
+        />
+      </td>
+    </>
+  );
+
+  const paperPenaltyGroupEditCells = (
+    <>
+      <td className={editCell}>
+        <PaperInput
+          type="offender" title={offenderTitle} value={editPenaltyData.whoText} error={hasError('pe.who')}
+          onChange={(v) => { clearError('pe.who'); setEditPenaltyData(d => ({ ...d, whoText: v })); }}
+          onBlur={() => setEditPenaltyData(d => ({ ...d, whoText: normalizeOffenderText(d.whoText) }))}
+          onEnter={saveEditGroup}
+          className="!text-status-rejected font-bold"
+        />
+      </td>
+      <td className={editCell}>
+        <PaperSelect
+          title="Вид штрафа" options={penaltyKindOptions} hideEmpty value={editPenaltyData.kind}
+          onChange={(v) => setEditPenaltyData(d => ({ ...d, kind: v, violation: reasonForKind(v, d.violation) }))}
+        />
+      </td>
+      <td className={editCell}><PaperPick title="Причина удаления" display={reasonCode(editPenaltyData.violation)} onClick={() => setReasonsTarget('edit')} /></td>
+      <td className={editCell}><PaperInput type="time" title="Начало штрафа" value={editPenaltyData.start} error={hasError('pe.start')} onChange={(v) => { clearError('pe.start'); setEditPenaltyData(d => ({ ...d, start: v })); }} onEnter={saveEditGroup} /></td>
+      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
+        {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), parseOffenderText(editPenaltyData.whoText), editPenaltyData.violation)}
+      </td>
+      <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><PaperSaveButton onClick={saveEditGroup} /></td>
+    </>
+  );
+
+  // Строка-продолжение: причина — через окно, окончание — с клавиатуры
+  const paperPenaltyRowEditCells = (penalty, isEndless) => (
+    <>
+      <td className="border-r border-graphite/[0.12] bg-orange/10 font-bold text-[13px] text-graphite/50 whitespace-nowrap">{renderOffender(penalty)}</td>
+      <td className="border-r border-graphite/[0.12] bg-orange/10 font-semibold text-[13px] text-graphite/50">{penalty.penalty_minutes}</td>
+      <td className={editCell}>
+        <PaperSelect title="Причина удаления" options={rowReasonOptions} emptyLabel="— не выбрано —" value={editPenaltyData.violation} onChange={(v) => setEditPenaltyData(d => ({ ...d, violation: v }))} />
+      </td>
+      <td className="border-r border-graphite/[0.12] bg-orange/10 font-mono font-semibold text-[13px] text-graphite/50">{formatTime(penalty.effStart)}</td>
+      <td className={editCell}>
+        {isEndless
+          ? <span className="font-mono text-[13px] text-graphite/25">—</span>
+          : <PaperInput type="time" title="Окончание штрафа" value={editPenaltyData.end} error={hasError('pe.end')} onChange={(v) => { clearError('pe.end'); setEditPenaltyData(d => ({ ...d, end: v })); }} onEnter={saveEditRow} />}
+      </td>
+      <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><PaperSaveButton onClick={saveEditRow} /></td>
+    </>
+  );
+
   const loadingClass = isSaving ? "opacity-60 pointer-events-none select-none transition-opacity" : "transition-opacity";
 
   return (
@@ -717,8 +1017,9 @@ export const ProtocolSheet = ({
         
         <div className="font-bold text-graphite text-base uppercase tracking-wide flex items-center gap-3 shrink-0 min-w-[200px]">
           <span className="border-2 border-graphite w-8 h-8 flex items-center justify-center font-black rounded-sm shrink-0">{teamLetter}</span>
-          {/* Логотип живёт слева от формы ввода; в шапке он только когда формы нет */}
-          {isReadOnly && teamLogo && <img src={teamLogo} alt={teamName} className="w-8 h-8 object-contain drop-shadow-sm shrink-0" />}
+          {/* Логотип живёт слева от формы ввода; в шапке он, когда формы нет — только
+              чтение или бумажный вид (там он поменьше, между буквой и названием) */}
+          {(isReadOnly || paperMode) && teamLogo && <img src={teamLogo} alt={teamName} className={`${paperMode ? 'w-7 h-7' : 'w-8 h-8'} object-contain drop-shadow-sm shrink-0`} />}
           <span className="truncate max-w-[260px]" title={teamName}>{teamName}</span>
         </div>
         
@@ -758,8 +1059,9 @@ export const ProtocolSheet = ({
         {/* Сверху вниз: заголовки блоков → форма нового события → заголовки колонок →
             список. Форма всегда на одном месте и не уезжает вниз по мере накопления
             записей; шапка колонок под ней подписывает и поля формы, и записи. Обе
-            таблицы на одном colGroup — поля стоят ровно над своими графами. */}
-        {!isReadOnly && (
+            таблицы на одном colGroup — поля стоят ровно над своими графами.
+            В бумажном виде формы нет: ввод — в первой свободной строке списка. */}
+        {!isReadOnly && !paperMode && (
           <div className="bg-gray-bg-light pb-3">
           {/* border-separate (а не collapse): у ячеек работают скругления, и каждая форма
               становится отдельной «карточкой» на подложке. Рамок у формы нет, поэтому
@@ -786,12 +1088,15 @@ export const ProtocolSheet = ({
 
         <table className="w-full min-w-[950px] text-sm text-center border-collapse table-fixed select-none">
           {colGroup}
-          {isReadOnly && <thead>{blockTitlesRow(true)}</thead>}
+          {(isReadOnly || paperMode) && <thead>{blockTitlesRow(true)}</thead>}
           {columnTitlesHead}
           <tbody className="bg-white text-graphite relative z-10">
             {rows.map((_, i) => {
               const player = roster[i]; const goal = goals[i]; const penalty = penaltiesWithTimeline[i];
               const isEditingGoal = goal && goal.id === editGoalId; const isEditingPenalty = penalty && penalty.id === editPenaltyId;
+              // Бумажный вид: первая свободная строка голов / удалений — строка ввода
+              const isGoalDraft = draftRow === 1 && i === goals.length;
+              const isPenaltyDraft = draftRow === 1 && i === penaltiesWithTimeline.length;
 
               const isPenaltyShot = penalty?.penalty_class === 'penalty_shot';
               // Строка-продолжение группы (вторая двойка, десятка, двадцатка): нарушитель
@@ -840,7 +1145,9 @@ export const ProtocolSheet = ({
 
                   {/* ВЗЯТИЕ ВОРОТ */}
                   <td className={`border-r border-graphite/[0.12] font-bold text-graphite/25 text-[12px] ${goal && !isEditingGoal ? GOAL_TINT : ''}`}>{goal || isEditingGoal ? i + 1 : ''}</td>
-                  {isEditingGoal && !isReadOnly && isPenaltyShotEvent(goal) ? (
+                  {paperMode && isEditingGoal && !isReadOnly ? (
+                    isPenaltyShotEvent(goal) ? paperPsEditCells(goal) : paperGoalEditCells
+                  ) : isEditingGoal && !isReadOnly && isPenaltyShotEvent(goal) ? (
                     <>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishInput isEditing isTimeField title="Время штрафного броска" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Бьющий" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
@@ -942,12 +1249,16 @@ export const ProtocolSheet = ({
                          )}
                       </td>
                     </>
+                  ) : isGoalDraft ? (
+                    paperGoalDraftCells
                   ) : (
                     <><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td>{shotsTrackingEnabled && <td className="border-r border-graphite/[0.12]"></td>}<td className="border-r-2 border-graphite/25"></td></>
                   )}
 
                   {/* УДАЛЕНИЯ */}
-                  {isEditingPenalty && !isReadOnly && editPenaltyData.mode === 'group' ? (
+                  {paperMode && isEditingPenalty && !isReadOnly ? (
+                    editPenaltyData.mode === 'group' ? paperPenaltyGroupEditCells : paperPenaltyRowEditCells(penalty, isPenaltyEndless)
+                  ) : isEditingPenalty && !isReadOnly && editPenaltyData.mode === 'group' ? (
                     <>
                       {/* Редактор группы: вид, нарушитель, причина, начало */}
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData({...editPenaltyData, who})} className="!text-status-rejected font-bold" /></td>
@@ -1024,6 +1335,8 @@ export const ProtocolSheet = ({
                          )}
                       </td>
                     </>
+                  ) : isPenaltyDraft ? (
+                    paperPenaltyDraftCells
                   ) : (
                     <><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/[0.12]"></td><td className="border-r border-graphite/30"></td></>
                   )}
@@ -1039,7 +1352,8 @@ export const ProtocolSheet = ({
         <PenaltyReasonsModal
           isOpen
           onClose={() => setReasonsTarget(null)}
-          title={`Причина: ${kindSpec(reasonsModalState.kind).title}`}
+          // В бумажном виде причину могут выбрать раньше вида — тогда без названия вида
+          title={reasonsModalState.kind ? `Причина: ${kindSpec(reasonsModalState.kind).title}` : 'Причина удаления'}
           options={reasonOptionsFor(reasonsModalState.kind)}
           value={reasonsModalState.value}
           onSave={applyReason}

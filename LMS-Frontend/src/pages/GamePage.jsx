@@ -144,6 +144,8 @@ export function GamePage() {
   }, [game]);
 
   const matchEditAccess = game ? checkMatchEditAccess(game, gameStaffArray) : { hasAccess: false, reason: '' };
+  // Пересчёт статистики протокол не меняет: подпись секретаря его не закрывает, только окно
+  const recalcAccess = game ? checkMatchEditAccess(game, gameStaffArray, { ignoreSignature: true }) : { hasAccess: false, reason: '' };
 
   // Матчи вне лиг (division_id отсутствует — товарищеские/внешние турниры, которые
   // команды создают сами в Team-Room) — доступ только у глобального админа,
@@ -234,9 +236,9 @@ export function GamePage() {
               : "bg-status-accepted/10 text-status-accepted hover:bg-status-accepted hover:text-white cursor-pointer group shadow-sm w-[180px]"; 
             
             // Если нет прав по времени, оборачиваем в тултип
-            if (!matchEditAccess.hasAccess) {
+            if (!recalcAccess.hasAccess) {
               return (
-                <Tooltip title="Действие недоступно" subtitle={matchEditAccess.reason} position="bottom" noUnderline>
+                <Tooltip title="Действие недоступно" subtitle={recalcAccess.reason} position="bottom" noUnderline>
                    <div className={`${badgeClass.replace('hover:bg-status-accepted hover:text-white', '').replace('cursor-pointer group', 'cursor-not-allowed text-status-accepted/50')}`}>
                       <span>{content}</span>
                       <Icon name="lock" className="w-4 h-4 ml-2 shrink-0 opacity-50" />

@@ -26,7 +26,10 @@ export const getLeaguePreferences = async (req, res) => {
               allow_match_jersey_change, allow_match_letters_change,
               -- Панель секретаря: подставлять ли время таймера в новые события;
               -- выключено — время вводится руками, без него событие не сохранить
-              sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log
+              sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log,
+              -- Вид панели: classic — формы ввода над таблицами, paper — ввод прямо в
+              -- строки таблиц с клавиатуры, как в бумажном протоколе
+              sec_panel_view
        FROM leagues WHERE id = $1`,
       [leagueId]
     );
@@ -46,7 +49,8 @@ export const updateLeaguePreferences = async (req, res) => {
             equip_mark_ushk_enabled, equip_mark_ushk_max_age,
             equip_mark_mouthguard_enabled, equip_mark_mouthguard_born_after,
             allow_match_jersey_change, allow_match_letters_change,
-            sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log } = req.body;
+            sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log,
+            sec_panel_view } = req.body;
 
     // Тумблеры: undefined — поле не прислали (вкладка «Арены» шлёт только своё),
     // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
@@ -54,6 +58,9 @@ export const updateLeaguePreferences = async (req, res) => {
 
     if (arena_sort_order && !['name', 'city', 'added_desc', 'added_asc'].includes(arena_sort_order)) {
       return res.status(400).json({ success: false, error: 'Некорректный порядок сортировки арен' });
+    }
+    if (sec_panel_view !== undefined && !['classic', 'paper'].includes(sec_panel_view)) {
+      return res.status(400).json({ success: false, error: 'Некорректный вид панели секретаря' });
     }
 
     // Все поля через COALESCE: вкладка «Арены» шлёт только свою настройку и не должна
@@ -74,7 +81,8 @@ export const updateLeaguePreferences = async (req, res) => {
          allow_match_letters_change = COALESCE($12, allow_match_letters_change),
          sec_auto_time_goals = COALESCE($13, sec_auto_time_goals),
          sec_auto_time_penalties = COALESCE($14, sec_auto_time_penalties),
-         sec_auto_time_goalie_log = COALESCE($15, sec_auto_time_goalie_log)
+         sec_auto_time_goalie_log = COALESCE($15, sec_auto_time_goalie_log),
+         sec_panel_view = COALESCE($17, sec_panel_view)
        WHERE id = $16`,
       [sec_access_before_hours ?? null, sec_access_after_hours ?? null, arena_sort_order ?? null,
        toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
@@ -82,7 +90,7 @@ export const updateLeaguePreferences = async (req, res) => {
        toggle(equip_mark_mouthguard_enabled), equip_mark_mouthguard_born_after || null,
        toggle(allow_match_jersey_change), toggle(allow_match_letters_change),
        toggle(sec_auto_time_goals), toggle(sec_auto_time_penalties), toggle(sec_auto_time_goalie_log),
-       leagueId]
+       leagueId, sec_panel_view ?? null]
     );
     res.json({ success: true });
   } catch (err) {

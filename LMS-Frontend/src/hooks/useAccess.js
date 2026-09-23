@@ -57,15 +57,23 @@ export function useAccess(customUser = null, customLeague = null) {
   /**
    * Специальная проверка для доступа к редактированию матча
    */
-  const checkMatchEditAccess = (game, gameStaff = []) => {
+  // ignoreSignature — для действий, которые протокол не меняют (пересчёт статистики):
+  // для них действует только окно, как и на бэке
+  const checkMatchEditAccess = (game, gameStaff = [], { ignoreSignature = false } = {}) => {
     if (!user || !game) return { hasAccess: false, reason: 'Нет данных' };
-    
-    // 1. Глобальные админы и владельцы лиги — окна на них не действуют
+
+    // 1. Глобальные админы и владельцы лиги — ни окна, ни подпись на них не действуют
     if (hasFullLeagueAccess) return { hasAccess: true };
+
+    // Протокол подписан секретарём матча — правки закрыты всем остальным, руководству
+    // лиги тоже, в окне и вне его (то же правило на бэке, utils/gameEditWindow.js)
+    if (game.is_protocol_signed && !ignoreSignature) {
+        return { hasAccess: false, reason: 'Протокол подписан секретарём матча — править его может только владелец лиги.' };
+    }
 
     const roles = leagueRoles;
 
-    // 2. Руководство лиги (Доступ всегда)
+    // 2. Руководство лиги (Доступ всегда, пока протокол не подписан)
     if (roles.includes(ROLES.TOP_MANAGER) || roles.includes(ROLES.LEAGUE_ADMIN)) {
         return { hasAccess: true };
     }

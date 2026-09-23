@@ -5,7 +5,7 @@ import { recalculatePlayoffs } from '../utils/playoffCalculator.js';
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 // Временное окно управления матчем — общее для контроллеров и маршрутов.
-import { checkGameEditAccess } from '../utils/gameEditWindow.js';
+import { checkGameEditAccess, checkProtocolSignLock, secretarySignedSql } from '../utils/gameEditWindow.js';
 // Правила резервных вратарей — общие для шторки состава и его сохранения.
 import { loadReserveGoaliesForGame, validateReserveGoalies } from '../utils/reserveGoalies.js';
 // Заставки трансляции: слоты лиги со ссылками на S3 для оверлея в OBS.
@@ -41,7 +41,7 @@ export const getPublicGameById = async (req, res) => {
                    -- Живое значение из настроек дивизиона (не застывший снимок из game_timers,
                    -- скопированный при создании матча) — актуально даже если лига поменяла флаг позже.
                    CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
-                   (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
+                   ${secretarySignedSql('g.id')} as is_protocol_signed,
                    (
                        SELECT jsonb_object_agg(period, jsonb_build_object('home', home_goals, 'away', away_goals))
                        FROM (
@@ -479,11 +479,12 @@ export const getGameById = async (req, res) => {
                 -- Настройки панели секретаря едут вместе с матчем, а не через /api/me:
                 -- у судьи бригады лиги в его списке лиг может не быть вовсе.
                 l.sec_auto_time_goals, l.sec_auto_time_penalties, l.sec_auto_time_goalie_log,
+                l.sec_panel_view,
                 COALESCE(tt_home.custom_jersey_dark_url,  ht.jersey_dark_url)  as home_jersey_dark_url,
                 COALESCE(tt_home.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light_url,
                 COALESCE(tt_away.custom_jersey_dark_url,  at.jersey_dark_url)  as away_jersey_dark_url,
                 COALESCE(tt_away.custom_jersey_light_url, at.jersey_light_url) as away_jersey_light_url,
-                (SELECT EXISTS(SELECT 1 FROM game_protocol_signatures WHERE game_id = g.id AND role = 'scorekeeper')) as is_protocol_signed,
+                ${secretarySignedSql('g.id')} as is_protocol_signed,
                 (
                     EXISTS(SELECT 1 FROM game_events ge WHERE ge.game_id = g.id) OR 
                     EXISTS(SELECT 1 FROM game_rosters gr WHERE gr.game_id = g.id) OR
@@ -741,6 +742,31 @@ export const updateGameInfo = async (req, res) => {
         
         const game = gameRes.rows[0];
         const divisionId = game.division_id;
+
+        // Подписанный секретарём протокол: то, что в него входит, меняют только владелец
+        // лиги и глобальный админ. Форма команд и ссылки на видео в протокол не входят —
+        // их можно править и после подписи. Смотрим на изменение, а не на присланное поле:
+        // окно «Форма и медиа» шлёт дату, арену и этап вместе со ссылками, как есть.
+        const PROTOCOL_INFO_FIELDS = [
+            'game_date', 'arena_id', 'stage_type', 'stage_label', 'playoff_match_type', 'series_number',
+            'home_team_id', 'away_team_id', 'game_number', 'status',
+            'actual_start_time', 'actual_end_time', 'spectators'
+        ];
+        const sentProtocolFields = PROTOCOL_INFO_FIELDS.filter(k => updates[k] !== undefined);
+        if (sentProtocolFields.length > 0) {
+            const currentRes = await pool.query(`SELECT ${sentProtocolFields.join(', ')} FROM games WHERE id = $1`, [gameId]);
+            const current = currentRes.rows[0] || {};
+            const isEmpty = (v) => v === undefined || v === null || v === '';
+            const sameValue = (was, now) => {
+                if (isEmpty(was) || isEmpty(now)) return isEmpty(was) && isEmpty(now);
+                if (was instanceof Date) return was.getTime() === new Date(now).getTime();
+                return String(was) === String(now);
+            };
+            if (sentProtocolFields.some(k => !sameValue(current[k], updates[k]))) {
+                const lockError = await checkProtocolSignLock(pool, gameId, req.user?.id);
+                if (lockError) return res.status(403).json({ success: false, error: lockError });
+            }
+        }
 
         if (updates.game_number !== undefined && updates.game_number !== null) {
             const numCheck = await pool.query(`
@@ -1544,7 +1570,8 @@ export const recalculateGameStats = async (req, res) => {
     try {
         const { gameId } = req.params;
 
-        const accessError = await checkGameEditAccess(pool, gameId, req.user?.id);
+        // Пересчёт протокол не меняет — подпись секретаря его не закрывает, только окно
+        const accessError = await checkGameEditAccess(pool, gameId, req.user?.id, { ignoreSignature: true });
         if (accessError) return res.status(403).json({ success: false, error: accessError });
 
         const gameRes = await pool.query(`

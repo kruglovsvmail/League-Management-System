@@ -21,7 +21,9 @@ export const GameFlowAccordion = ({
   goalieLog,
   isReadOnly,
   // Нужна только значкам экипировки по возрасту в протоколе
-  league
+  league,
+  // Уведомление об ошибке ввода — снизу справа (бумажный вид, см. ProtocolSheet)
+  onToast
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -34,6 +36,8 @@ export const GameFlowAccordion = ({
   const autoTimePenalties = game?.sec_auto_time_penalties ?? true;
   // Тот же флаг дивизиона, что и у таблицы бросков в SummaryTablesAccordion
   const shotsTrackingEnabled = game?.track_shots ?? true;
+  // Вид панели — настройка лиги: бумажный протокол вместо форм ввода над таблицами
+  const paperMode = game?.sec_panel_view === 'paper';
 
   return (
     <div className="bg-white shadow-lg flex flex-col font-sans rounded-md transition-all duration-500 ease-in-out">
@@ -74,6 +78,8 @@ export const GameFlowAccordion = ({
                   autoTimeGoals={autoTimeGoals}
                   autoTimePenalties={autoTimePenalties}
                   shotsTrackingEnabled={shotsTrackingEnabled}
+                  paperMode={paperMode}
+                  onToast={onToast}
                 />
 
                 <ProtocolSheet
@@ -99,6 +105,8 @@ export const GameFlowAccordion = ({
                   autoTimeGoals={autoTimeGoals}
                   autoTimePenalties={autoTimePenalties}
                   shotsTrackingEnabled={shotsTrackingEnabled}
+                  paperMode={paperMode}
+                  onToast={onToast}
                 />
 
              </div>
