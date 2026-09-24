@@ -26,12 +26,13 @@ export const SIDEBAR_ITEMS = [
   // Разделы глобального админа. Отдельной группой в коде больше не выделены:
   // это те же пункты списка, а черта перед «Реестром» стоит в раскладке по
   // умолчанию — её можно передвинуть или убрать, как любой другой разделитель.
-  // Право у каждого своё, как и в роутере App.jsx: у всех четырёх это пустой
+  // Право у каждого своё, как и в роутере App.jsx: у всех пяти это пустой
   // список ролей, то есть доступ только у глобального админа.
   { key: 'registry',           name: 'Реестр',           path: '/registry',           icon: 'registry',           permission: 'GLOBAL_REGISTRY_ACCESS' },
   { key: 'teams',              name: 'Команды',          path: '/teams',              icon: 'users',              permission: 'TEAM_MANAGEMENT_ACCESS' },
   { key: 'metrics',            name: 'Метрика',          path: '/metrics',            icon: 'metrics',            permission: 'METRICS_ACCESS' },
   { key: 'leagueless_matches', name: 'Товарки',          path: '/leagueless-matches', icon: 'handshake',          permission: 'LEAGUELESS_MATCHES_ACCESS' },
+  { key: 'subscriptions',      name: 'Подписки',         path: '/subscriptions',      icon: 'currency',           permission: 'SUBSCRIPTIONS_ACCESS' },
 ];
 
 // Перед этим пунктом в раскладке по умолчанию стоит разделитель — та самая черта,

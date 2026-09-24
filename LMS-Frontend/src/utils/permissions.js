@@ -119,6 +119,7 @@ export const PERMISSIONS = {                                                    
   TEAM_MANAGEMENT_ACCESS: [],                                                   // Пустой массив защищает прямой доступ к управлению любой командой в обход лиги
   LEAGUELESS_MATCHES_ACCESS: [],                                                // Пустой массив: раздел "Матчи вне лиг" доступен исключительно users.global_role = 'admin'
   METRICS_ACCESS: [],                                                           // Пустой массив: раздел "Метрика" доступен исключительно users.global_role = 'admin'
+  SUBSCRIPTIONS_ACCESS: [],                                                     // Пустой массив: раздел "Подписки" (даты подписок Team Room) — только users.global_role = 'admin'
 };
 
 /**

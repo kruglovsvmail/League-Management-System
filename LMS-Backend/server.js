@@ -34,6 +34,7 @@ import gameLiveDeskRoutes from './routes/gameLiveDeskRoutes.js';
 import protocolPDFRoutes from './routes/protocolPDFRoutes.js';
 import metricsRoutes from './routes/metricsRoutes.js';
 import leaguelessGamesRoutes from './routes/leaguelessGamesRoutes.js';
+import subscriptionsRoutes from './routes/subscriptionsRoutes.js';
 
 import pool from './config/db.js';
 
@@ -119,6 +120,7 @@ app.use('/api', gameLiveDeskRoutes);
 app.use('/api', protocolPDFRoutes);
 app.use('/api', metricsRoutes);
 app.use('/api', leaguelessGamesRoutes);
+app.use('/api', subscriptionsRoutes);
 
 // --- Обработка ошибок ---
 app.use((err, req, res, next) => {
