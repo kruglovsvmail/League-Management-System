@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getToken } from '../utils/helpers';
 import { Icon } from '../ui/Icon';
+import { SegmentButton } from '../ui/SegmentButton';
 import { ConfirmModal } from '../modals/ConfirmModal';
 
 /**
  * Блок «Диктор арены» на вкладке «Лиги» раздела «Команды» (только глобальный админ).
  *
- * Звуки, которые панель секретаря играет на арене, и сценарий бипа лиги. Файлы уходят в S3
- * под постоянными именами (см. arenaAssetsController.js), сценарий — в leagues.arena_beep_schedule.
+ * Звуки, которые панель секретаря играет на арене, и когда звучит бип. Файлы уходят в S3
+ * под постоянными именами (см. arenaAssetsController.js), сценарий бипа — в
+ * leagues.arena_beep_schedule, бип перед концом периода и удаления — в leagues.arena_beep_*.
  * Всё это общее для всех дивизионов лиги. Голос и сирену секретарь включает в настройках
  * матча, бип отдельного тумблера не имеет: есть файл — звучит.
  */
@@ -22,8 +24,11 @@ const SOUNDS = [
   { file: 'left-1min-2.mp3', title: 'Минута до конца 2-го периода' },
   { file: 'left-2min.mp3', title: 'Две минуты до конца последнего периода' },
   { file: 'end.mp3', title: 'Сирена', hint: 'конец периода и овертайма' },
-  { file: 'beep.mp3', title: 'Бип', hint: 'вместо голоса и по сценарию' },
+  { file: 'beep.mp3', title: 'Бип', hint: 'перед концом периода и удаления, по сценарию' },
 ];
+
+// Пока настройки не пришли с сервера — все бипы «перед концом» выключены
+const NO_BEEP_LEADS = { beforePeriodEnd: null, beforeLastPeriodEnd: null, beforePenaltyEnd: null, always: false };
 
 const PERIODS = ['1', '2', '3'];
 
@@ -40,6 +45,57 @@ const parseMark = (text) => {
 };
 
 const iconButton = 'shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-colors';
+const timeInput = 'w-[64px] bg-gray-bg-light border border-gray-light rounded-md px-2 py-1 text-[12px] font-bold text-graphite text-center tabular-nums focus:bg-white focus:outline-none focus:border-orange/50';
+
+// Одно время «за сколько до конца». Сохраняется, когда поле теряет фокус или по Enter;
+// пустое поле — этого бипа нет. min — ноль до конца периода не принимаем: это уже сирена.
+function BeepLeadRow({ label, hint, value, min, onCommit, showToast }) {
+  const shown = value === null || value === undefined ? '' : formatMark(value);
+  const [draft, setDraft] = useState(shown);
+
+  // Значение сменилось снаружи — сохранилось или откатилось после ошибки: поле за ним
+  useEffect(() => { setDraft(shown); }, [shown]);
+
+  const commit = () => {
+    const text = draft.trim();
+    const next = text === '' ? null : parseMark(text);
+    if (text !== '' && next === null) {
+      showToast?.('Не получилось прочитать время', 'Введите время до конца: 1:05, 0:30 или просто 1', 'error');
+      setDraft(shown);
+      return;
+    }
+    if (next !== null && next < min) {
+      showToast?.('Слишком поздно', 'Ноль до конца периода — это уже сирена. Укажите хотя бы 0:01 или оставьте поле пустым', 'error');
+      setDraft(shown);
+      return;
+    }
+    if (next === (value ?? null)) {
+      setDraft(shown);
+      return;
+    }
+    onCommit(next);
+  };
+
+  return (
+    <div className="flex items-center gap-3 py-2 border-t border-graphite/10 first:border-t-0">
+      <div className="flex-1 min-w-0">
+        <span className="block text-[12px] font-bold text-graphite truncate">{label}</span>
+        {hint && <span className="block text-[10px] font-semibold text-graphite/40 truncate">{hint}</span>}
+      </div>
+      <input
+        type="text"
+        inputMode="numeric"
+        maxLength={5}
+        value={draft}
+        placeholder="мм:сс"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+        className={`${timeInput} shrink-0`}
+      />
+    </div>
+  );
+}
 
 function SoundRow({ sound, state, busy, playing, onListen, onUpload, onDelete }) {
   const inputRef = useRef(null);
@@ -101,11 +157,12 @@ function SoundRow({ sound, state, busy, playing, onListen, onUpload, onDelete })
 }
 
 export function ArenaAnnouncerSection({ leagueId, showToast }) {
-  const [data, setData] = useState(null); // { files: { [file]: { uploaded, url } }, beepSchedule: { '1': [сек], ... } }
+  const [data, setData] = useState(null); // { files: { [file]: { uploaded, url } }, beepSchedule: { '1': [сек], ... }, beepLeads: { beforePeriodEnd, ..., always } }
   const [busyFile, setBusyFile] = useState(null);
   const [playingFile, setPlayingFile] = useState(null);
   const [drafts, setDrafts] = useState({ '1': '', '2': '', '3': '' });
   const [isScheduleSaving, setIsScheduleSaving] = useState(false);
+  const [isLeadsSaving, setIsLeadsSaving] = useState(false);
   // Удаление подтверждаем: исходника звука у администратора может и не остаться.
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -257,11 +314,42 @@ export function ArenaAnnouncerSection({ leagueId, showToast }) {
     saveSchedule({ ...data.beepSchedule, [period]: (data.beepSchedule[period] || []).filter(s => s !== secs) });
   };
 
+  // Бип перед концом периода и удаления: три времени и режим уходят разом, сразу после
+  // каждой правки — как и сценарий.
+  const beepLeads = data?.beepLeads || NO_BEEP_LEADS;
+
+  const saveBeepLeads = async (next) => {
+    const prev = data.beepLeads;
+    setData(d => ({ ...d, beepLeads: next }));
+    setIsLeadsSaving(true);
+    try {
+      const res = await fetch(`${baseUrl}/beep-leads`, {
+        method: 'PUT',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(next)
+      });
+      const json = await res.json();
+      if (json.success) {
+        setData(d => ({ ...d, beepLeads: json.beepLeads }));
+      } else {
+        setData(d => ({ ...d, beepLeads: prev }));
+        showToast?.('Ошибка', json.error || 'Не удалось сохранить бип', 'error');
+      }
+    } catch (err) {
+      setData(d => ({ ...d, beepLeads: prev }));
+      showToast?.('Ошибка', 'Не удалось сохранить бип', 'error');
+    } finally {
+      setIsLeadsSaving(false);
+    }
+  };
+
+  const setLead = (key) => (secs) => saveBeepLeads({ ...beepLeads, [key]: secs });
+
   return (
     <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-sm p-6">
       <div className="mb-5 pb-4 border-b border-graphite/10">
         <h3 className="text-[16px] font-black uppercase text-graphite tracking-wide">Диктор арены</h3>
-        <p className="text-[12px] font-medium text-graphite-light mt-1">Звуки, которые панель секретаря играет на арене, и сценарий бипа. Общие для всех дивизионов лиги</p>
+        <p className="text-[12px] font-medium text-graphite-light mt-1">Звуки, которые панель секретаря играет на арене, и когда звучит бип. Общие для всех дивизионов лиги</p>
       </div>
 
       {!data ? (
@@ -300,7 +388,7 @@ export function ArenaAnnouncerSection({ leagueId, showToast }) {
 
           {/* --- СЦЕНАРИЙ БИПА --- */}
           <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-xl p-5 shadow-sm relative">
-            {isScheduleSaving && (
+            {(isScheduleSaving || isLeadsSaving) && (
               <div className="absolute top-4 right-4 flex items-center gap-1.5 text-[10px] font-bold text-orange uppercase tracking-widest animate-pulse">
                 <Icon name="refresh" className="w-3 h-3 animate-spin" /> Сохранение
               </div>
@@ -345,7 +433,7 @@ export function ArenaAnnouncerSection({ leagueId, showToast }) {
                           placeholder="мм:сс"
                           onChange={(e) => setDrafts(d => ({ ...d, [period]: e.target.value }))}
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addMark(period); } }}
-                          className="w-[64px] bg-gray-bg-light border border-gray-light rounded-md px-2 py-1 text-[12px] font-bold text-graphite text-center tabular-nums focus:bg-white focus:outline-none focus:border-orange/50"
+                          className={timeInput}
                         />
                         <button
                           onClick={() => addMark(period)}
@@ -362,10 +450,56 @@ export function ArenaAnnouncerSection({ leagueId, showToast }) {
               })}
             </div>
 
-            <p className="text-[11px] text-graphite-light leading-relaxed mt-3 pt-3 border-t border-graphite/10">
-              Кроме сценария бип подаётся сам: за 1:05 до конца 1-го и 2-го периода и за 2:05 до конца
-              последнего — если голосового предупреждения не будет.
-            </p>
+            {/* --- БИП ПЕРЕД КОНЦОМ ПЕРИОДА И УДАЛЕНИЯ --- */}
+            <div className="mt-3 pt-3 border-t border-graphite/10">
+              <span className="block text-[11px] font-black uppercase tracking-widest text-graphite/50">Бип перед концом</span>
+              <p className="text-[11px] text-graphite-light leading-relaxed mt-1 mb-1">
+                За сколько до конца подать бип. Пустое поле — этого бипа нет
+              </p>
+
+              <div>
+                <BeepLeadRow
+                  label="1-й и 2-й период"
+                  hint="все, кроме последнего"
+                  value={beepLeads.beforePeriodEnd}
+                  min={1}
+                  onCommit={setLead('beforePeriodEnd')}
+                  showToast={showToast}
+                />
+                <BeepLeadRow
+                  label="Последний период"
+                  hint="в дивизионе с двумя периодами — 2-й"
+                  value={beepLeads.beforeLastPeriodEnd}
+                  min={1}
+                  onCommit={setLead('beforeLastPeriodEnd')}
+                  showToast={showToast}
+                />
+                <BeepLeadRow
+                  label="Удаление"
+                  hint="секретарю пора выпускать игрока"
+                  value={beepLeads.beforePenaltyEnd}
+                  min={0}
+                  onCommit={setLead('beforePenaltyEnd')}
+                  showToast={showToast}
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2.5 mt-0.5 border-t border-graphite/10">
+                <span className="flex-1 min-w-0 text-[12px] font-bold text-graphite">Проигрывать</span>
+                <SegmentButton
+                  options={['Всегда', 'Не при дикторе']}
+                  defaultIndex={beepLeads.always ? 0 : 1}
+                  onChange={(idx) => saveBeepLeads({ ...beepLeads, always: idx === 0 })}
+                  className="w-[210px] shrink-0"
+                />
+              </div>
+              <p className="text-[11px] text-graphite-light leading-relaxed mt-2">
+                «Не при дикторе» — бипы перед концом периода и удаления молчат, если в матче включён
+                голос диктора. Перед концом периода бип всё же прозвучит, если у лиги нет файла
+                голосового предупреждения. Отметки сценария выше звучат всегда
+              </p>
+            </div>
+
             {!data.files?.['beep.mp3']?.uploaded && (
               <p className="text-[11px] font-bold text-status-rejected mt-2">Файл бипа не загружен — бипа не будет.</p>
             )}

@@ -8,8 +8,8 @@ import s3 from '../config/s3.js';
 export const ARENA_AUDIO_BUCKET = 'hockeyeco-uploads';
 
 // Предупреждения: за минуту до конца каждого периода, кроме последнего (left-1min-N.mp3),
-// и за две до конца последнего (left-2min.mp3). Бип — страховка на случай, когда голоса
-// не будет, и сигнал по сценарию лиги (leagues.arena_beep_schedule).
+// и за две до конца последнего (left-2min.mp3). Бип — сигнал перед концом периода и
+// удаления и по сценарию лиги (настройки — utils/arenaBeepSchedule.js).
 export const ARENA_STATIC_AUDIO_FILES = [
     'end.mp3',
     'left-1min-1.mp3',

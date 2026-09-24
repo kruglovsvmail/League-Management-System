@@ -151,3 +151,129 @@ export const sortPenaltyRows = (penalties) => {
 // идут — плашка и фраза одна на группу, от первой строки.
 export const isPenaltyContinuationRow = (row) =>
     row?.event_type === 'penalty' && row.penalty_group_id != null && Number(row.penalty_group_seq) > 1;
+
+
+// ─── ОТРЕЗКИ МЕНЬШИНСТВА ───────────────────────────────────────────────────────
+// Зеркало calculatePenaltyTimelines и calculateOnIcePenalties из
+// LMS-Frontend/src/components/GameLiveDesk/GameDeskShared.jsx. По ним сервер подаёт бип
+// перед концом удаления (диктор арены, timerHandler.js) — в те же моменты, когда у
+// секретаря гаснут бейджи под таймером. Правите расчёт там — правьте и здесь.
+
+// Классы строк, занимающие слот меньшинства. Старые записи (одна строка на 4 или 25
+// минут, класс double_minor/match) — тоже слот: там вся группа лежала в одной строке.
+const ON_ICE_CLASSES = ['minor', 'major', 'double_minor', 'match'];
+const isOnIceRow = (p) => {
+    if (p?.penalty_class) return ON_ICE_CLASSES.includes(p.penalty_class);
+    return [2, 4, 5, 25].includes(parseInt(p?.penalty_minutes, 10));
+};
+
+const penaltyGroupKey = (p) => p?.penalty_group_id ?? p?.id;
+
+/**
+ * Фактические начало и окончание каждой строки штрафа с учётом слотов меньшинства
+ * и цепочек внутри группы.
+ *
+ * Слотов два на команду: третий малый штраф не начинается, пока не освободится
+ * слот (стоит в очереди). Внутри группы строки идут цепочкой: следующая начинается,
+ * когда закончилась предыдущая. Двадцатка у 5+20 стоит особняком: начало = время
+ * нарушения, окончания нет (effEnd = null).
+ *
+ * Возвращает те же строки в исходном порядке с полями effStart, effEnd, onIce,
+ * chainStart, chainEnd (границы отрезка меньшинства всей группы).
+ */
+export const calculatePenaltyTimelines = (penalties) => {
+    const byId = new Map();
+    const teams = new Map();
+    penalties.forEach(p => {
+        const teamKey = p.team_id ?? 'x';
+        if (!teams.has(teamKey)) teams.set(teamKey, []);
+        teams.get(teamKey).push(p);
+    });
+
+    teams.forEach(list => {
+        // Группы в порядке начала первой строки; внутри группы — по seq
+        const groups = new Map();
+        list.forEach(p => {
+            const key = penaltyGroupKey(p);
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(p);
+        });
+        const ordered = [...groups.values()]
+            .map(rows => rows.sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1) || a.id - b.id))
+            .sort((a, b) => parseInt(a[0].time_seconds, 10) - parseInt(b[0].time_seconds, 10) || a[0].id - b[0].id);
+
+        const slots = [0, 0];
+        ordered.forEach(rows => {
+            let cursor = parseInt(rows[0].time_seconds, 10);
+            if (isNaN(cursor)) cursor = 0;
+            let chainStart = null;
+            let chainEnd = null;
+            let slotTaken = false;
+
+            rows.forEach(p => {
+                const start = parseInt(p.time_seconds, 10);
+                const storedEnd = parseInt(p.penalty_end_time, 10);
+                const onIce = isOnIceRow(p);
+
+                if (p.penalty_class === 'penalty_shot') {
+                    const s = isNaN(start) ? 0 : start;
+                    byId.set(p.id, { ...p, effStart: s, effEnd: s, onIce: false, chainStart: null, chainEnd: null });
+                    return;
+                }
+                if (p.penalty_class === 'game_misconduct' || isNaN(storedEnd)) {
+                    // Удалён до конца матча: считается с момента нарушения, окончания нет
+                    byId.set(p.id, { ...p, effStart: isNaN(start) ? cursor : start, effEnd: null, onIce: false, chainStart: null, chainEnd: null });
+                    return;
+                }
+
+                const duration = Math.max(0, storedEnd - (isNaN(start) ? cursor : start));
+                let effStart = cursor;
+                if (onIce && !slotTaken) {
+                    // Первая строка меньшинства ждёт свободный слот, остальные идут за ней цепочкой
+                    slots.sort((a, b) => a - b);
+                    if (slots[0] > effStart) effStart = slots[0];
+                    slotTaken = true;
+                }
+                const effEnd = effStart + duration;
+                if (onIce) {
+                    if (chainStart === null) chainStart = effStart;
+                    // У старого матч-штрафа одной строкой на 25 минут слот занят только 5
+                    chainEnd = p.penalty_class === 'match' || parseInt(p.penalty_minutes, 10) === 25
+                        ? effStart + Math.min(duration, 300)
+                        : effEnd;
+                }
+                cursor = effEnd;
+                byId.set(p.id, { ...p, effStart, effEnd, onIce, chainStart, chainEnd });
+            });
+
+            if (chainStart !== null) {
+                slots.sort((a, b) => a - b);
+                slots[0] = chainEnd;
+                // Границы цепочки — одни на всю группу
+                rows.forEach(p => {
+                    const r = byId.get(p.id);
+                    if (r && r.onIce) byId.set(p.id, { ...r, chainStart, chainEnd });
+                });
+            }
+        });
+    });
+
+    return penalties.map(p => byId.get(p.id) || { ...p, effStart: 0, effEnd: 0, onIce: false, chainStart: null, chainEnd: null });
+};
+
+/**
+ * Позиции меньшинства: одна на группу — отрезок целиком (у 2+2 это 4 минуты одним
+ * отсчётом, у 2+10 — 2, у 5+20 — 5). Дисциплинарные сюда не входят.
+ * Возвращает первую строку меньшинства каждой группы с effStart/effEnd = границы цепочки.
+ */
+export const calculateOnIcePenalties = (penalties) => {
+    const rows = calculatePenaltyTimelines(penalties);
+    const seen = new Set();
+    return rows.filter(p => {
+        if (!p.onIce || p.chainStart === null) return false;
+        const key = penaltyGroupKey(p);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).map(p => ({ ...p, effStart: p.chainStart, effEnd: p.chainEnd }));
+};

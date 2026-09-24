@@ -12,7 +12,7 @@ import {
   getBroadcastAssets, uploadBroadcastAsset, deleteBroadcastAsset, updateBumperTitles
 } from '../controllers/broadcastAssetsController.js';
 import {
-  getArenaAnnouncer, uploadArenaAudioFile, deleteArenaAudioFile, updateBeepSchedule
+  getArenaAnnouncer, uploadArenaAudioFile, deleteArenaAudioFile, updateBeepSchedule, updateBeepLeads
 } from '../controllers/arenaAssetsController.js';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import upload from '../config/upload.js'; // ИМПОРТИРУЕМ НАШ UPLOAD
@@ -53,6 +53,7 @@ router.get('/leagues/:leagueId/arena-announcer', requirePermission('LEAGUE_GLOBA
 router.post('/leagues/:leagueId/arena-announcer/files/:file', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), uploadArenaAudio.single('file'), uploadArenaAudioFile);
 router.delete('/leagues/:leagueId/arena-announcer/files/:file', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), deleteArenaAudioFile);
 router.put('/leagues/:leagueId/arena-announcer/beep-schedule', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateBeepSchedule);
+router.put('/leagues/:leagueId/arena-announcer/beep-leads', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateBeepLeads);
 
 // КВАЛИФИКАЦИИ
 router.get('/leagues/:leagueId/settings-qualifications', requirePermission('SETTINGS_QUAL_VIEW'), getSettingsQualifications);

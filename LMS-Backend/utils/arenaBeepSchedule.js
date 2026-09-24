@@ -26,3 +26,50 @@ export const normalizeBeepSchedule = (raw) => {
     return [period, marks];
   }));
 };
+
+// ─── БИП ПЕРЕД КОНЦОМ ПЕРИОДА И УДАЛЕНИЯ ─────────────────────────────────────
+// Кроме отметок сценария бип подаётся за заданное время до конца периода и до конца
+// удаления. Всё в секундах «до конца», NULL — такого бипа нет:
+//   arena_beep_before_period_end      — 1-й и 2-й период (все, кроме последнего);
+//   arena_beep_before_last_period_end — последний: у дивизиона с двумя периодами это 2-й;
+//   arena_beep_before_penalty_end     — удаления, при которых команда в меньшинстве, —
+//                                       те же, что бейджи под таймером у секретаря.
+// arena_beep_always — режим обоих бипов: true — звучат всегда; false — молчат, если в
+// матче включён голос диктора. На отметки сценария режим не действует.
+//
+// Ноль перед концом периода — это уже сирена, поэтому там минимум секунда. Удаление
+// можно отметить и в сам момент окончания: игровое время после него идёт дальше.
+export const BEEP_LEAD_FIELDS = {
+  beforePeriodEnd:     { column: 'arena_beep_before_period_end',      min: 1, label: 'до конца периода' },
+  beforeLastPeriodEnd: { column: 'arena_beep_before_last_period_end', min: 1, label: 'до конца последнего периода' },
+  beforePenaltyEnd:    { column: 'arena_beep_before_penalty_end',     min: 0, label: 'до конца удаления' },
+};
+
+const toLead = (v, min) => {
+  const s = toSeconds(v);
+  return Number.isInteger(s) && s >= min && s <= MAX_MARK_SECONDS ? s : null;
+};
+
+// Строка leagues → настройки для панели и тикера диктора. Мусор в колонке значит
+// «бипа нет» — как и с отметками сценария.
+export const normalizeBeepLeads = (row) => ({
+  ...Object.fromEntries(Object.entries(BEEP_LEAD_FIELDS).map(([key, f]) => [key, toLead(row?.[f.column], f.min)])),
+  always: row?.arena_beep_always === true,
+});
+
+// Тело запроса из карточки лиги → значения колонок. В отличие от чтения здесь мусор не
+// глотаем: администратор ввёл время и должен узнать, что оно не сохранилось.
+// Возвращает { values } или { error }.
+export const parseBeepLeads = (body) => {
+  const values = {};
+  for (const [key, f] of Object.entries(BEEP_LEAD_FIELDS)) {
+    const raw = body?.[key];
+    if (raw === null || raw === undefined || raw === '') { values[f.column] = null; continue; }
+    const lead = toLead(raw, f.min);
+    if (lead === null) return { error: `Некорректное время бипа ${f.label}` };
+    values[f.column] = lead;
+  }
+  if (typeof body?.always !== 'boolean') return { error: 'Не указан режим бипа' };
+  values.arena_beep_always = body.always;
+  return { values };
+};

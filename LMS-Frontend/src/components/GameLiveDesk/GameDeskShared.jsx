@@ -210,6 +210,9 @@ export const isContinuationRow = (p) => p?.penalty_group_id != null && Number(p?
  *
  * Возвращает те же строки в исходном порядке с полями effStart, effEnd, onIce,
  * chainStart, chainEnd (границы отрезка меньшинства всей группы — для табло).
+ *
+ * Зеркало вместе с calculateOnIcePenalties — LMS-Backend/utils/penaltyGroups.js: по нему
+ * сервер подаёт бип перед концом удаления. Правите расчёт здесь — правьте и там.
  */
 export const calculatePenaltyTimelines = (penalties) => {
   const byId = new Map();

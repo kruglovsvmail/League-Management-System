@@ -865,7 +865,7 @@ export const getHtml = (data) => {
         <div class="page">
         <div class="headerContainer">
           <span class="mainTitle">ОФИЦИАЛЬНЫЙ ПРОТОКОЛ МАТЧА ТЮМЕНСКОГО ГОРОДСКОГО ЧЕМПИОНАТА</span>
-          <span class="subTitle">среди любительских команд, старше восемнадцати лет, сезона ${t(info.season)}</span>
+          <span class="subTitle">среди команд, старше восемнадцати лет, сезона ${t(info.season)}</span>
         </div>
         <div class="metaTable">
           <div class="metaRow">

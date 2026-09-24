@@ -2,10 +2,10 @@ import pool from '../config/db.js';
 import { getLeagueIdForGame } from '../utils/leagueLookup.js';
 import { getPeriodLimits } from '../utils/periodLimits.js';
 import { arenaAudioFileExists } from '../utils/arenaAudioFiles.js';
-import { normalizeBeepSchedule } from '../utils/arenaBeepSchedule.js';
+import { normalizeBeepSchedule, normalizeBeepLeads } from '../utils/arenaBeepSchedule.js';
 import { buildMatchStages, isPauseStage, nextStageKey, pauseStageSeconds } from '../utils/matchStages.js';
 import { generateArenaEventAudio } from '../controllers/ttsArenaController.js';
-import { PENALTY_GROUP_LATERAL, PENALTY_GROUP_COLUMNS, decoratePenaltyEvent, isPenaltyContinuationRow } from '../utils/penaltyGroups.js';
+import { PENALTY_GROUP_LATERAL, PENALTY_GROUP_COLUMNS, decoratePenaltyEvent, isPenaltyContinuationRow, calculateOnIcePenalties } from '../utils/penaltyGroups.js';
 
 // IN-MEMORY хранилище таймеров.
 // Теперь хранит { accumulatedSeconds, startedAt, isRunning, ... }
@@ -254,7 +254,7 @@ export default function setupTimerSockets(io) {
   // ── ДИКТОР АРЕНЫ: серверная очередь оповещений ──────────────────────────
   // Единый источник истины на сервере (не зависит от вкладки/устройства секретаря):
   // сервер сам решает КОГДА и ЧТО озвучить, клиент — тупой приёмник события 'arena_play'.
-  const announcerTimers = {}; // gameId -> { interval, queue, dispatchedAt, lastDispatched, processedFired, processedEventIds, fileExistCache, leagueId, beepSchedule }
+  const announcerTimers = {}; // gameId -> { interval, queue, dispatchedAt, lastDispatched, processedFired, processedEventIds, fileExistCache, leagueId, beepSettings, gameEvents, penaltyEnds }
   const ANNOUNCER_SERIALIZE_GAP_MS = 13000; // минимальный зазор между не-сиренными фразами (эвристика длины фразы)
   const S3_BASE = 'https://s3.twcstorage.ru/hockeyeco-uploads';
 
@@ -271,8 +271,9 @@ export default function setupTimerSockets(io) {
         processedEventIds: new Set(),
         fileExistCache: {},
         leagueId: undefined, // undefined = ещё не резолвили, null = лига не найдена
-        beepSchedule: undefined, // сценарий бипа лиги — undefined = ещё не загружен
+        beepSettings: undefined, // сценарий бипа и бип перед концом периода/удаления — undefined = ещё не загружены
         gameEvents: null, // кэш голов/штрафов матча — null = ещё не загружен
+        penaltyEnds: [], // моменты окончания удалений (игровое время) — для бипа перед концом удаления
       };
     }
     return announcerTimers[gameId];
@@ -296,38 +297,57 @@ export default function setupTimerSockets(io) {
     return exists;
   };
 
-  // Сценарий бипа лиги читаем один раз на матч, как и наличие файлов: меняют его редко
-  // и не посреди игры. «Обновить диктора» сбрасывает оба кэша — новый файл или новый
-  // сценарий подхватятся на следующем тике.
-  const resolveBeepSchedule = async (state, leagueId) => {
-    if (state.beepSchedule !== undefined) return state.beepSchedule;
+  // Настройки бипа лиги — сценарий и бип перед концом периода и удаления (см.
+  // utils/arenaBeepSchedule.js) — читаем один раз на матч, как и наличие файлов: меняют
+  // их редко и не посреди игры. «Обновить диктора» сбрасывает оба кэша — новый файл или
+  // новые настройки подхватятся на следующем тике.
+  const resolveBeepSettings = async (state, leagueId) => {
+    if (state.beepSettings !== undefined) return state.beepSettings;
     if (!leagueId) {
-      state.beepSchedule = null;
+      state.beepSettings = null;
       return null;
     }
     try {
-      const res = await pool.query('SELECT arena_beep_schedule FROM leagues WHERE id = $1', [leagueId]);
-      state.beepSchedule = normalizeBeepSchedule(res.rows[0]?.arena_beep_schedule);
+      const res = await pool.query(`
+        SELECT arena_beep_schedule, arena_beep_before_period_end, arena_beep_before_last_period_end,
+               arena_beep_before_penalty_end, arena_beep_always
+        FROM leagues WHERE id = $1
+      `, [leagueId]);
+      const row = res.rows[0];
+      state.beepSettings = { schedule: normalizeBeepSchedule(row?.arena_beep_schedule), ...normalizeBeepLeads(row) };
     } catch (e) {
-      console.error(`[ArenaAnnouncer] Ошибка загрузки сценария бипа (Лига ${leagueId}):`, e);
-      state.beepSchedule = null;
+      console.error(`[ArenaAnnouncer] Ошибка загрузки настроек бипа (Лига ${leagueId}):`, e);
+      state.beepSettings = null;
     }
-    return state.beepSchedule;
+    return state.beepSettings;
   };
 
-  // Звуки по времени — сирена, голосовое предупреждение, бип-страховка и бипы сценария —
-  // помнятся в processedFired: тик раз в секунду иначе сыграл бы их дважды за окно
-  // срабатывания. Когда время уходит назад (ручной ввод, кнопки «−», карусель встала на
-  // период), забываем звуки этого периода, которые снова оказались впереди: настоящий
-  // повторный конец периода снова даёт сирену. Звуки позади нового времени остаются
-  // сыгранными. Голы и штрафы не трогаем — каждый объявляется один раз.
+  // Звуки по времени — сирена, голосовое предупреждение, бип перед концом периода, бипы
+  // сценария и бипы перед концом удаления — помнятся в processedFired: тик раз в секунду
+  // иначе сыграл бы их дважды за окно срабатывания. Когда время уходит назад (ручной ввод,
+  // кнопки «−», карусель встала на период), забываем звуки, которые снова оказались
+  // впереди: настоящий повторный конец периода снова даёт сирену. Звуки позади нового
+  // времени остаются сыгранными. Голы и штрафы не трогаем — каждый объявляется один раз.
   const rearmTimeSounds = (gameId, period, fromSeconds) => {
     const state = announcerTimers[gameId];
     const timer = activeTimers[gameId];
     if (!state || !timer) return;
+
+    // Бипы перед концом удаления к периоду не привязаны: ключ хранит момент окончания
+    // удаления, а звучит бип за beforePenaltyEnd секунд до него — в любом периоде.
+    const penaltyLead = state.beepSettings?.beforePenaltyEnd;
+    if (penaltyLead != null) {
+      for (const key of Object.keys(state.processedFired)) {
+        if (!key.startsWith('pen_')) continue;
+        if (Number(key.slice('pen_'.length)) - penaltyLead >= fromSeconds) delete state.processedFired[key];
+      }
+    }
+
     const limits = getPeriodLimits(period, timer.periodLength, timer.otLength, timer.periodsCount);
     if (limits.end <= 0) return;
-    const warnAt = Number(period) === (parseInt(timer.periodsCount, 10) || 3) ? 120 : 60;
+    const isLastPeriod = Number(period) === (parseInt(timer.periodsCount, 10) || 3);
+    const warnAt = isLastPeriod ? 120 : 60;
+    const warnBeepAt = isLastPeriod ? state.beepSettings?.beforeLastPeriodEnd : state.beepSettings?.beforePeriodEnd;
     const prefix = `${period}_`;
     for (const key of Object.keys(state.processedFired)) {
       if (!key.startsWith(prefix)) continue;
@@ -335,7 +355,7 @@ export default function setupTimerSockets(io) {
       // Самый ранний момент игрового времени, когда звук может сработать (см. announcerTick)
       const moment = kind === 'siren' ? limits.end - 2
         : kind === 'warn' ? limits.end - (warnAt + 3)
-        : kind === 'warnBeep' ? limits.end - (warnAt + 5)
+        : kind === 'warnBeep' ? (warnBeepAt == null ? null : limits.end - warnBeepAt)
         : kind.startsWith('beep_') ? limits.start + Number(kind.slice('beep_'.length))
         : null;
       if (moment !== null && moment >= fromSeconds) delete state.processedFired[key];
@@ -402,6 +422,8 @@ export default function setupTimerSockets(io) {
     const currentSeconds = calculateCurrentSeconds(timer);
     const remaining = limits.end - currentSeconds;
     const leagueId = await resolveAnnouncerLeagueId(gameId, state);
+    const voice = voiceOn(settings);
+    const beep = await resolveBeepSettings(state, leagueId);
 
     if (settings.endSiren && remaining <= 2 && remaining >= 1) {
       const key = `${timer.period}_siren`;
@@ -413,7 +435,8 @@ export default function setupTimerSockets(io) {
       }
     }
 
-    // Предупреждения и бип — только в основных периодах, овертайм без них.
+    // Предупреждения, бип перед концом периода и сценарий — только в основных периодах,
+    // овертайм без них.
     const periodNum = parseInt(timer.period, 10);
     const periodsCount = parseInt(timer.periodsCount, 10) || 3;
     if (!isNaN(periodNum) && periodNum >= 1 && periodNum <= periodsCount) {
@@ -421,16 +444,18 @@ export default function setupTimerSockets(io) {
       const isLastPeriod = periodNum === periodsCount;
       const warnAt = isLastPeriod ? 120 : 60;
       const warnFile = isLastPeriod ? 'left-2min.mp3' : `left-1min-${periodNum}.mp3`;
-      const voice = voiceOn(settings);
 
-      // Бип-страховка за 5 секунд до предупреждения (1:05, в последнем периоде 2:05) —
-      // когда голоса не будет: диктор выключен или у лиги нет нужного файла.
-      if (remaining <= warnAt + 5 && remaining >= warnAt + 3) {
+      // Бип перед концом периода: за сколько до конца — задаёт лига, для последнего
+      // периода отдельно. Окно в 3 секунды, как у предупреждений. В режиме «не при
+      // дикторе» молчит, только если голосовое предупреждение и правда прозвучит: без
+      // файла у лиги конец периода иначе прошёл бы в тишине.
+      const warnBeepAt = isLastPeriod ? beep?.beforeLastPeriodEnd : beep?.beforePeriodEnd;
+      if (warnBeepAt != null && remaining <= warnBeepAt && remaining >= warnBeepAt - 2) {
         const key = `${timer.period}_warnBeep`;
         if (!state.processedFired[key]) {
           state.processedFired[key] = true;
           const voiceWillPlay = voice && await checkStaticAudioFile(state, leagueId, warnFile);
-          if (!voiceWillPlay) await playArenaBeep(gameId, state, leagueId);
+          if (beep.always || !voiceWillPlay) await playArenaBeep(gameId, state, leagueId);
         }
       }
 
@@ -446,14 +471,31 @@ export default function setupTimerSockets(io) {
 
       // Сценарий бипа лиги: отметки от начала периода. Окно в 3 секунды, как у
       // предупреждений, — тик раз в секунду может перешагнуть ровную отметку.
-      const schedule = await resolveBeepSchedule(state, leagueId);
+      // Звучат всегда: режим «не при дикторе» их не касается.
       const elapsed = currentSeconds - limits.start;
-      for (const mark of schedule?.[String(periodNum)] || []) {
+      for (const mark of beep?.schedule?.[String(periodNum)] || []) {
         if (elapsed < mark || elapsed > mark + 2) continue;
         const key = `${timer.period}_beep_${mark}`;
         if (state.processedFired[key]) continue;
         state.processedFired[key] = true;
         await playArenaBeep(gameId, state, leagueId);
+      }
+    }
+
+    // Бип перед концом удаления — секретарю пора выпускать игрока. Работает и в
+    // овертайме. Моменты окончания посчитаны при загрузке событий матча
+    // (refreshGameEventsCache); удаления, кончающиеся одновременно, дают один бип —
+    // ключ по моменту окончания, а не по штрафу. В режиме «не при дикторе» молчит,
+    // пока в матче включён голос: конец удаления голос не объявляет, и проверять файл,
+    // как у бипа перед концом периода, здесь нечего.
+    if (beep?.beforePenaltyEnd != null) {
+      for (const end of state.penaltyEnds) {
+        const at = end - beep.beforePenaltyEnd;
+        if (currentSeconds < at || currentSeconds > at + 2) continue;
+        const key = `pen_${end}`;
+        if (state.processedFired[key]) continue;
+        state.processedFired[key] = true;
+        if (beep.always || !voice) await playArenaBeep(gameId, state, leagueId);
       }
     }
 
@@ -603,7 +645,8 @@ export default function setupTimerSockets(io) {
   // заново": отмотал таймер, сбросил диктора, запустил — события всплывают по ходу тика).
   const GAME_EVENTS_QUERY = `
     SELECT
-      ge.id, ge.time_seconds, ge.event_type, ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
+      ge.id, ge.team_id, ge.time_seconds, ge.event_type, ge.penalty_violation, ge.penalty_minutes, ge.penalty_class,
+      ge.penalty_end_time,
       pt.tts_accusative as penalty_accusative,
       ${PENALTY_GROUP_COLUMNS},
       su.id as primary_player_id, su.last_name as primary_last_name, su.first_name as primary_first_name,
@@ -637,6 +680,11 @@ export default function setupTimerSockets(io) {
     try {
       const res = await pool.query(GAME_EVENTS_QUERY, [gameId]);
       state.gameEvents = res.rows.map(decoratePenaltyEvent);
+      // Когда кончаются удаления — для бипа перед концом удаления. Те же позиции, что
+      // бейджи под таймером у секретаря: одна на группу, третий штраф ждёт свободный
+      // слот, гол в большинстве закрывает малый досрочно. Дисциплинарных здесь нет.
+      const penalties = state.gameEvents.filter(e => e.event_type === 'penalty');
+      state.penaltyEnds = [...new Set(calculateOnIcePenalties(penalties).map(p => p.effEnd))];
     } catch (e) {
       console.error(`[ArenaAnnouncer] Ошибка загрузки событий (Матч ${gameId}):`, e);
     }
@@ -1075,7 +1123,7 @@ export default function setupTimerSockets(io) {
         // Полный сброс памяти диктора арены этого матча: дедуп голов/штрафов и статичных
         // триггеров (сирена/предупреждения/бип), очередь озвучки. Не трогает счёт/время/БД.
         // Позволяет "прожить" матч заново — отмотать таймер и нажать эту кнопку перед стартом.
-        // Заодно забывает, какие звуки есть у лиги, и её сценарий бипа — так подхватывается
+        // Заодно забывает, какие звуки есть у лиги, и её настройки бипа — так подхватывается
         // то, что глобальный админ загрузил или поменял уже по ходу матча.
         const state = announcerTimers[gameId];
         if (state) {
@@ -1085,7 +1133,7 @@ export default function setupTimerSockets(io) {
           state.dispatchedAt = 0;
           state.lastDispatched = null;
           state.fileExistCache = {};
-          state.beepSchedule = undefined;
+          state.beepSettings = undefined;
           refreshGameEventsCache(gameId).catch(e => console.error(`[ArenaAnnouncer] Ошибка обновления событий при сбросе (Матч ${gameId}):`, e));
         }
       }
