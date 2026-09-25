@@ -348,7 +348,7 @@ export function PreferencesTab({ setToast }) {
           />
 
           <div title="Время нового события — по таймеру панели, если секретарь не ввёл своё. Без галочки время вводится руками, и пока его нет, событие не сохраняется.">
-            <span className="block text-[11px] font-bold text-graphite/70 leading-snug mb-2">Время с таймера</span>
+            <span className="block text-[11px] font-bold text-graphite/70 leading-snug mb-2">Автоматическое подставление время события с таймера</span>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               {AUTO_TIME_FIELDS.map(({ field, label }) => (
                 <Checkbox
@@ -381,7 +381,7 @@ export function PreferencesTab({ setToast }) {
             className="flex items-center justify-between gap-3"
             title="Гол соперника в большинстве прекращает малый штраф: окончание удаления проставляется само, игрок выходит со скамейки. Выключено — удаление отсиживается полностью, гол окончание не меняет."
           >
-            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Досрочный выход после гола</span>
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Досрочный выход после гола при удалении</span>
             <div className="shrink-0">
               <Switch
                 checked={formData.sec_penalty_release_on_goal}
@@ -395,7 +395,7 @@ export function PreferencesTab({ setToast }) {
             className="flex items-center justify-between gap-3"
             title="Секретарь может вписать окончание удаления сам — при вводе штрафа или при правке: любое время, но не раньше начала. Пустое поле — окончание считается само. Выключено — окончание только автоматическое."
           >
-            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Окончание удаления вручную</span>
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Ввод окончание удаления вручную</span>
             <div className="shrink-0">
               <Switch
                 checked={formData.sec_penalty_manual_end}
