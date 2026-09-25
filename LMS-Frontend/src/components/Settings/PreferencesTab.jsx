@@ -4,6 +4,7 @@ import { getToken } from '../../utils/helpers';
 import { Loader } from '../../ui/Loader';
 import { Stepper } from '../../ui/Stepper';
 import { Switch } from '../../ui/Switch';
+import { Checkbox } from '../../ui/Checkbox';
 import { SegmentButton } from '../../ui/SegmentButton';
 import { useAccess } from '../../hooks/useAccess';
 import { BroadcastAssetsSection } from './BroadcastAssetsSection';
@@ -15,6 +16,13 @@ import { SettingsCard } from './SettingsCard';
 const PANEL_VIEWS = [
   { value: 'paper', label: 'Классический' },
   { value: 'classic', label: 'Модерн' },
+];
+
+// Время с таймера панели — по событиям, галочками в одну строку
+const AUTO_TIME_FIELDS = [
+  { field: 'sec_auto_time_goals', label: 'Голы' },
+  { field: 'sec_auto_time_penalties', label: 'Удаления' },
+  { field: 'sec_auto_time_goalie_log', label: 'Журнал вратарей' },
 ];
 
 // Режима дисквалификаций здесь нет: его переключает только глобальный администратор
@@ -42,7 +50,10 @@ export function PreferencesTab({ setToast }) {
     sec_auto_time_goals: true,
     sec_auto_time_penalties: true,
     sec_auto_time_goalie_log: true,
-    sec_panel_view: 'classic'
+    sec_panel_view: 'classic',
+    sec_goalie_autofill: true,
+    sec_penalty_release_on_goal: true,
+    sec_penalty_manual_end: false
   });
 
   useEffect(() => {
@@ -71,7 +82,10 @@ export function PreferencesTab({ setToast }) {
             sec_auto_time_goals: data.data.sec_auto_time_goals ?? true,
             sec_auto_time_penalties: data.data.sec_auto_time_penalties ?? true,
             sec_auto_time_goalie_log: data.data.sec_auto_time_goalie_log ?? true,
-            sec_panel_view: data.data.sec_panel_view ?? 'classic'
+            sec_panel_view: data.data.sec_panel_view ?? 'classic',
+            sec_goalie_autofill: data.data.sec_goalie_autofill ?? true,
+            sec_penalty_release_on_goal: data.data.sec_penalty_release_on_goal ?? true,
+            sec_penalty_manual_end: data.data.sec_penalty_manual_end ?? false
           });
         }
       } catch (err) {
@@ -315,14 +329,16 @@ export function PreferencesTab({ setToast }) {
           </div>
         </SettingsCard>
 
-        {/* ПАНЕЛЬ СЕКРЕТАРЯ — вид панели и время событий. Время: подставлять ли время
-            таймера панели; выключено — секретарь вводит его сам, без времени событие не
-            сохранить, а в журнале вратарей не нажать «+». Вид: логика та же, меняется
-            только способ ввода голов, удалений и смен вратарей. */}
+        {/* ПАНЕЛЬ СЕКРЕТАРЯ — вид панели, время событий и правила ввода. Вид: логика та
+            же, меняется только способ ввода голов, удалений и смен вратарей. Время:
+            подставлять ли время таймера панели; без галочки секретарь вводит его сам, без
+            времени событие не сохранить, а в журнале вратарей не нажать «+». Галочки стоят
+            в одну строку, а пояснения живут в подсказках — так вся карточка помещается в
+            одну ячейку сетки. */}
         <SettingsCard
           icon="stopwatch"
           title="Панель секретаря"
-          description="Вид панели и время событий. Классический — ввод прямо в строки таблиц с клавиатуры, Модерн — формы ввода над таблицами. Время с таймера выключено — вводится руками, и пока его нет, событие не сохраняется."
+          description="Классический — ввод прямо в строки таблиц, Модерн — формы над таблицами."
         >
           <SegmentButton
             options={PANEL_VIEWS.map(v => v.label)}
@@ -331,34 +347,59 @@ export function PreferencesTab({ setToast }) {
             className={!canEdit ? 'pointer-events-none opacity-50' : ''}
           />
 
-          <div className="flex items-center justify-between gap-3" title="Время гола по таймеру панели, если секретарь не ввёл своё">
-            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Голы — время с таймера</span>
+          <div title="Время нового события — по таймеру панели, если секретарь не ввёл своё. Без галочки время вводится руками, и пока его нет, событие не сохраняется.">
+            <span className="block text-[11px] font-bold text-graphite/70 leading-snug mb-2">Время с таймера</span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {AUTO_TIME_FIELDS.map(({ field, label }) => (
+                <Checkbox
+                  key={field}
+                  className=""
+                  label={<span className="text-[11px] font-bold text-graphite/70">{label}</span>}
+                  checked={formData[field]}
+                  onChange={(e) => handleStepChange(field, e.target.checked)}
+                  disabled={!canEdit}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div
+            className="flex items-center justify-between gap-3 pt-3 border-t border-graphite/10"
+            title="Если у команды в заявке на матч один вратарь, он сам встаёт в первую строку журнала вратарей на 0:00. Выключено — первую строку заполняет секретарь."
+          >
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Единственный вратарь — сразу в журнал</span>
             <div className="shrink-0">
               <Switch
-                checked={formData.sec_auto_time_goals}
-                onChange={(e) => handleStepChange('sec_auto_time_goals', e.target.checked)}
+                checked={formData.sec_goalie_autofill}
+                onChange={(e) => handleStepChange('sec_goalie_autofill', e.target.checked)}
                 disabled={!canEdit}
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3" title="Начало штрафа по таймеру панели, если секретарь не ввёл своё">
-            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Удаления — время с таймера</span>
+          <div
+            className="flex items-center justify-between gap-3"
+            title="Гол соперника в большинстве прекращает малый штраф: окончание удаления проставляется само, игрок выходит со скамейки. Выключено — удаление отсиживается полностью, гол окончание не меняет."
+          >
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Досрочный выход после гола</span>
             <div className="shrink-0">
               <Switch
-                checked={formData.sec_auto_time_penalties}
-                onChange={(e) => handleStepChange('sec_auto_time_penalties', e.target.checked)}
+                checked={formData.sec_penalty_release_on_goal}
+                onChange={(e) => handleStepChange('sec_penalty_release_on_goal', e.target.checked)}
                 disabled={!canEdit}
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3" title="Время смены вратаря по таймеру панели, если секретарь не ввёл своё">
-            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Журнал вратарей — время с таймера</span>
+          <div
+            className="flex items-center justify-between gap-3"
+            title="Секретарь может вписать окончание удаления сам — при вводе штрафа или при правке: любое время, но не раньше начала. Пустое поле — окончание считается само. Выключено — окончание только автоматическое."
+          >
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Окончание удаления вручную</span>
             <div className="shrink-0">
               <Switch
-                checked={formData.sec_auto_time_goalie_log}
-                onChange={(e) => handleStepChange('sec_auto_time_goalie_log', e.target.checked)}
+                checked={formData.sec_penalty_manual_end}
+                onChange={(e) => handleStepChange('sec_penalty_manual_end', e.target.checked)}
                 disabled={!canEdit}
               />
             </div>

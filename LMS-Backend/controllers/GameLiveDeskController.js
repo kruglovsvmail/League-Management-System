@@ -256,8 +256,20 @@ const readPenaltyGroupBody = (body) => {
         penalty_served_by_id: r.penalty_served_by_id || null,
     }));
 
+    if (normalized.some(r => penaltyEndsBeforeStart(r.time_seconds, r.penalty_end_time))) {
+        return { error: PENALTY_END_BEFORE_START };
+    }
+
     return { kind, spec, rows: normalized };
 };
+
+// Окончание удаления раньше его начала — ошибка ввода, а не данные: ни рассчитанное
+// панелью, ни вписанное секретарём руками (настройка лиги sec_penalty_manual_end) таким
+// быть не может, а записанное сломало бы отсчёт на табло и статистику «пропущено в
+// меньшинстве». Равное началу допустимо — так записан штраф вида «ШБ».
+const PENALTY_END_BEFORE_START = 'Окончание удаления не может быть раньше его начала';
+const penaltyEndsBeforeStart = (start, end) =>
+    end !== null && end !== undefined && end !== '' && parseInt(end, 10) < (parseInt(start, 10) || 0);
 
 const PENALTY_ROW_INSERT = `
     INSERT INTO game_events (
@@ -417,6 +429,10 @@ export const createGameEvent = async (req, res) => {
             penalty_offender_type, penalty_served_by_id
         } = req.body;
 
+        if (event_type === 'penalty' && penaltyEndsBeforeStart(time_seconds, penalty_end_time)) {
+            return res.status(400).json({ success: false, error: PENALTY_END_BEFORE_START });
+        }
+
         await client.query('BEGIN');
 
         const isGoalEvent = (event_type === 'goal');
@@ -493,6 +509,10 @@ export const updateGameEvent = async (req, res) => {
             against_goalie_id, from_shot,
             penalty_offender_type, penalty_served_by_id
         } = req.body;
+
+        if (event_type === 'penalty' && penaltyEndsBeforeStart(time_seconds, penalty_end_time)) {
+            return res.status(400).json({ success: false, error: PENALTY_END_BEFORE_START });
+        }
 
         await client.query('BEGIN');
 
@@ -929,23 +949,32 @@ export const deleteGoalieLog = async (req, res) => {
 // Строка матча берётся FOR UPDATE: панель открывают с нескольких устройств разом, и
 // без блокировки каждое вставило бы свою стартовую запись.
 // (Убиралось 22.09.2026 по просьбе «никакой записи при старте», возвращено 23.09.2026
-// по просьбе заказчика.)
+// по просьбе заказчика; с 25.09.2026 это настройка лиги sec_goalie_autofill — лига
+// выключает её в «Параметрах», по умолчанию включена.)
 export const autofillGoalieLog = async (req, res) => {
     const client = await pool.connect();
     try {
         const { gameId } = req.params;
         await client.query('BEGIN');
 
-        const gameRes = await client.query(
-            'SELECT home_team_id, away_team_id, status FROM games WHERE id = $1 FOR UPDATE',
-            [gameId]
-        );
+        // У матча вне лиг (товарищеские, внешние турниры) лиги нет — там автозапись
+        // работает, как работала до настройки
+        const gameRes = await client.query(`
+            SELECT g.home_team_id, g.away_team_id, g.status,
+                   COALESCE(l.sec_goalie_autofill, true) AS goalie_autofill
+            FROM games g
+            LEFT JOIN divisions d ON d.id = g.division_id
+            LEFT JOIN seasons s ON s.id = d.season_id
+            LEFT JOIN leagues l ON l.id = s.league_id
+            WHERE g.id = $1
+            FOR UPDATE OF g
+        `, [gameId]);
         if (gameRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Матч не найден' });
         }
-        const { home_team_id, away_team_id, status } = gameRes.rows[0];
-        if (!['scheduled', 'live'].includes(status)) {
+        const { home_team_id, away_team_id, status, goalie_autofill } = gameRes.rows[0];
+        if (!goalie_autofill || !['scheduled', 'live'].includes(status)) {
             await client.query('COMMIT');
             return res.json({ success: true, changed: false });
         }

@@ -336,11 +336,13 @@ export function GameLiveDesk() {
   // здесь то же условие проверяется заранее, чтобы не дёргать сервер при каждой
   // перезагрузке данных. Ключ последней попытки помнит ref: иначе при отказе
   // (окно управления закрыто, нет прав) запрос уходил бы по кругу после каждого
-  // loadInitialData. Работает в обоих видах панели.
+  // loadInitialData. Работает в обоих видах панели. Лига может автозапись выключить
+  // (sec_goalie_autofill в «Параметрах»); у матча вне лиг настройки нет — работает.
   const goalieAutofillKeyRef = useRef(null);
   useEffect(() => {
     // Завершённый матч панель не трогает — то же ограничение стоит и на бэке
     if (!game || isReadOnly || !['scheduled', 'live'].includes(game.status)) return;
+    if (game.sec_goalie_autofill === false) return;
 
     const lineupGoalieIds = (roster) => roster
       .filter(r => r.position === 'goalie' || r.position_in_line === 'G')
@@ -751,6 +753,10 @@ export function GameLiveDesk() {
   });
 
   const processGoalPenaltyLogic = async (scoringTeamId, goalTimeRaw) => {
+    // Лига выключила досрочный выход (sec_penalty_release_on_goal): удаление
+    // отсиживается полностью, гол окончание не трогает. Нет настройки (матч вне лиг) —
+    // выход работает, как раньше.
+    if (game?.sec_penalty_release_on_goal === false) return;
     const concedingTeamId = scoringTeamId === game.home_team_id ? game.away_team_id : game.home_team_id;
     const goalTime = parseInt(goalTimeRaw, 10);
     const concedingTimeline = calculatePenaltyTimelines(events.filter(e => e.team_id === concedingTeamId && e.event_type === 'penalty'));

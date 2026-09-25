@@ -480,6 +480,7 @@ export const getGameById = async (req, res) => {
                 -- у судьи бригады лиги в его списке лиг может не быть вовсе.
                 l.sec_auto_time_goals, l.sec_auto_time_penalties, l.sec_auto_time_goalie_log,
                 l.sec_panel_view,
+                l.sec_goalie_autofill, l.sec_penalty_release_on_goal, l.sec_penalty_manual_end,
                 COALESCE(tt_home.custom_jersey_dark_url,  ht.jersey_dark_url)  as home_jersey_dark_url,
                 COALESCE(tt_home.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light_url,
                 COALESCE(tt_away.custom_jersey_dark_url,  at.jersey_dark_url)  as away_jersey_dark_url,

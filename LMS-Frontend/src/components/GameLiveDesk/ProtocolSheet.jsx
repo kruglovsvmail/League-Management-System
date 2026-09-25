@@ -138,6 +138,11 @@ export const ProtocolSheet = ({
   // Вид «Бумажный протокол» (настройка лиги sec_panel_view): форм ввода над таблицей
   // нет, события вписываются прямо в первую свободную строку с клавиатуры
   paperMode = false,
+  // Правила удалений — настройки лиги. releaseOnGoal (sec_penalty_release_on_goal) —
+  // гол соперника из игры досрочно закрывает малый штраф; manualPenaltyEnd
+  // (sec_penalty_manual_end) — окончание удаления секретарь вписывает сам, не раньше начала
+  releaseOnGoal = true,
+  manualPenaltyEnd = false,
   // Уведомление об ошибке ввода ({ title, message, type }) — снизу справа
   onToast
 }) => {
@@ -174,8 +179,9 @@ export const ProtocolSheet = ({
   const [newGoal, setNewGoal] = useState({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal', from_shot: true });
   // who — нарушитель и отбывающий: { type: ''|'player'|'team'|'official', jersey, server }
   // kind — вид штрафа (PENALTY_KINDS), violation — причина, у штрафа она одна (см. rowViolation).
+  // end — окончание, вписанное руками (только при manualPenaltyEnd; пусто — считается само).
   const EMPTY_WHO = { type: '', jersey: '', server: '' };
-  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violation: '', start: '' };
+  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violation: '', start: '', end: '' };
   const [newPenalty, setNewPenalty] = useState(EMPTY_PENALTY);
   // Какому полю открыта модалка причин: 'new' — форме, 'paper' — строке ввода бумажного
   // вида, 'edit' — редактору группы
@@ -187,7 +193,7 @@ export const ProtocolSheet = ({
   // str '' — игровую ситуацию руками не выбирали (подставится расчётная, как в форме);
   // fromShot null — «Бр» не трогали (запишется «с броска», как по умолчанию в форме).
   const EMPTY_PAPER_GOAL = { time: '', scorer: '', ast1: '', ast2: '', str: '', fromShot: null };
-  const EMPTY_PAPER_PENALTY = { whoText: '', kind: '', violation: '', start: '' };
+  const EMPTY_PAPER_PENALTY = { whoText: '', kind: '', violation: '', start: '', end: '' };
   const [paperGoal, setPaperGoal] = useState(EMPTY_PAPER_GOAL);
   const [paperPen, setPaperPen] = useState(EMPTY_PAPER_PENALTY);
   // Ячейки с ошибкой после «+» или сохранения правки: ключ `${строка}.${поле}`, строка —
@@ -355,8 +361,9 @@ export const ProtocolSheet = ({
   // Вид даёт набор строк (см. PENALTY_KINDS); здесь у каждой считаются начало и
   // окончание. Строки идут цепочкой: следующая начинается, когда закончилась
   // предыдущая. Малый штраф закрывает гол соперника из игры в его окне — тогда
-  // цепочка сдвигается на время гола (для удалений задним числом). Большой (5)
-  // голом не закрывается; у двадцатки начало = время нарушения, окончания нет.
+  // цепочка сдвигается на время гола (для удалений задним числом), если лига не
+  // выключила досрочный выход (releaseOnGoal). Большой (5) голом не закрывается; у
+  // двадцатки начало = время нарушения, окончания нет.
   //
   // Гол с назначенного штрафного броска удаление НЕ прекращает: буллит разыгрывается
   // один на один и к численному преимуществу отношения не имеет (isScoredFromPlay).
@@ -400,7 +407,9 @@ export const ProtocolSheet = ({
       || getPenaltyReasonCode(violation);
   };
 
-  const buildGroupRows = (kind, startSecs, who, violation) => {
+  // firstRowEnd — окончание первой строки, вписанное секретарём (ручное окончание):
+  // оно вместо расчётного, и остальные строки группы идут от него цепочкой.
+  const buildGroupRows = (kind, startSecs, who, violation, { firstRowEnd = null } = {}) => {
     const spec = kindSpec(kind);
     const serverId = who?.server ? getPlayerId(who.server) : null;
     let cursor = startSecs;
@@ -418,7 +427,9 @@ export const ProtocolSheet = ({
       } else {
         time_seconds = cursor;
         let end = cursor + r.minutes * 60;
-        if (r.cls === 'minor') {
+        if (i === 0 && firstRowEnd !== null) {
+          end = firstRowEnd;
+        } else if (r.cls === 'minor' && releaseOnGoal) {
           const goal = oppEvents
             .filter(e => isScoredFromPlay(e) && e.time_seconds > cursor && e.time_seconds < end)
             .sort((a, b) => a.time_seconds - b.time_seconds)[0];
@@ -448,16 +459,106 @@ export const ProtocolSheet = ({
     return formatTime(timed[timed.length - 1].penalty_end_time);
   };
 
-  // Тело запроса на создание/правку группы (см. savePenaltyGroup в GameLiveDesk)
-  const groupPayload = (data) => {
+  // Тело запроса на создание/правку группы (см. savePenaltyGroup в GameLiveDesk).
+  // rows — уже готовые строки (правка с ручным окончанием), иначе собираются по виду.
+  const groupPayload = (data, rows) => {
     const startSecs = data.startSecs;
     return {
       penalty_kind: data.kind,
       time_seconds: startSecs,
       player_id: data.who?.type === 'player' ? getPlayerId(data.who.jersey) : null,
       penalty_offender_type: data.who?.type || 'team',
-      rows: buildGroupRows(data.kind, startSecs, data.who, data.violation),
+      rows: rows || buildGroupRows(data.kind, startSecs, data.who, data.violation, { firstRowEnd: data.firstRowEnd ?? null }),
     };
+  };
+
+  // ─── РУЧНОЕ ОКОНЧАНИЕ (настройка лиги manualPenaltyEnd) ─────────────────────
+  // Окончание вписывается в графу «Окон» той строки, которой оно касается: в строке
+  // ввода и в редакторе группы — окончание первой строки штрафа (у «4» — первой
+  // двойки), в строке-продолжении — её собственное. Следующие строки группы идут от
+  // него цепочкой. Правило одно: не раньше начала строки. Пустое поле — окончание
+  // считается само, как без настройки (в поле бледно видно, каким оно будет).
+  // У двадцатки окончания нет, у ШБ оно равно началу — там вписывать нечего.
+  const toSecs = (v) => (v === null || v === undefined || v === '' ? null : parseInt(v, 10));
+  const firstRowTimed = (kind) => !['game_misconduct', 'penalty_shot'].includes(kindSpec(kind).rows[0].cls);
+
+  // Окончание первой строки, которое получится само
+  const autoFirstRowEnd = (kind, startSecs) => {
+    if (startSecs === null || startSecs === undefined || isNaN(startSecs) || !firstRowTimed(kind)) return null;
+    return buildGroupRows(kind, startSecs, null, '')[0].penalty_end_time;
+  };
+
+  // Вписанное окончание: { value: секунды } или { value: null } — поле пустое;
+  // { error } — не годится
+  const readManualEnd = (text, minSecs) => {
+    if (!text) return { value: null };
+    if (!isClockValid(text)) return { error: 'Окончание: секунд не больше 59' };
+    const secs = parseTime(text);
+    if (secs === null || isNaN(secs)) return { value: null };
+    if (minSecs !== null && secs < minSecs) return { error: `Окончание: не раньше начала удаления (${formatTime(minSecs)})` };
+    return { value: secs };
+  };
+
+  // Окончание из строки ввода нового удаления — только при настройке лиги и у видов,
+  // где первой строке есть что вписывать
+  const newManualEnd = (kind, text, startSecs) =>
+    (manualPenaltyEnd && firstRowTimed(kind) ? readManualEnd(text, startSecs) : { value: null });
+
+  // Третий штраф ждёт свободный слот, и в графах «Нач»/«Окон» у его строк время позже
+  // записанного. Вписанное окончание — в тех же графах, поэтому в базу оно уходит за
+  // вычетом этой разницы.
+  const shownOffset = (row) => {
+    const shown = penaltiesWithTimeline.find(r => r.id === row.id);
+    return shown && !isNaN(shown.effStart) ? shown.effStart - (toSecs(row.time_seconds) || 0) : 0;
+  };
+
+  // Строки группы из записей протокола, по порядку
+  const groupRowsOf = (p) => penalties
+    .filter(r => penaltyGroupKey(r) === penaltyGroupKey(p))
+    .sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1));
+
+  // Сдвиг строки цепочки: начало и окончание вместе, длительность прежняя. Двадцатка
+  // стоит на времени нарушения, у строки без окончания сдвигать нечего.
+  const shiftTimes = (times, cls, delta) => (!delta || cls === 'game_misconduct' || times.penalty_end_time === null)
+    ? times
+    : { time_seconds: times.time_seconds + delta, penalty_end_time: times.penalty_end_time + delta };
+
+  // Правка группы. Пока вид и начало прежние, времена строк не пересчитываются, а
+  // берутся записанные: иначе сохранение ради причины или нарушителя стёрло бы
+  // вписанные руками окончания и досрочные выходы после голов.
+  const groupEditState = (data) => {
+    const target = penalties.find(r => r.id === editPenaltyId);
+    const existing = target ? groupRowsOf(target) : [];
+    const startSecs = parseTime(data.start);
+    const keepsTimes = existing.length === kindSpec(data.kind).rows.length
+      && data.kind === data.origKind && startSecs === data.origStart;
+    return { existing, startSecs, keepsTimes, offset: existing[0] ? shownOffset(existing[0]) : 0 };
+  };
+
+  // Подсказка в пустом поле окончания редактора группы: что встанет, если не вписывать
+  const groupEditEndHint = () => {
+    const { existing, startSecs, keepsTimes, offset } = groupEditState(editPenaltyData);
+    if (startSecs === null || isNaN(startSecs) || !firstRowTimed(editPenaltyData.kind)) return '';
+    const stored = keepsTimes ? toSecs(existing[0].penalty_end_time) : autoFirstRowEnd(editPenaltyData.kind, startSecs);
+    return stored === null ? '' : formatTime(stored + offset);
+  };
+
+  // Строки группы при правке с ручным окончанием. manualShown — вписанное окончание
+  // первой строки в единицах графы «Окон», null — не вписано. Вид и начало прежние —
+  // времена записанные, а новое окончание первой строки сдвигает следующие.
+  const manualGroupEditRows = (data, manualShown) => {
+    const { existing, keepsTimes, offset } = groupEditState(data);
+    const manualStored = manualShown === null ? null : manualShown - offset;
+    if (!keepsTimes) {
+      return buildGroupRows(data.kind, data.startSecs, data.who, data.violation, { firstRowEnd: manualStored });
+    }
+    const oldFirstEnd = toSecs(existing[0].penalty_end_time);
+    const delta = manualStored === null || oldFirstEnd === null ? 0 : manualStored - oldFirstEnd;
+    return buildGroupRows(data.kind, data.startSecs, data.who, data.violation).map((r, i) => {
+      const times = { time_seconds: toSecs(existing[i].time_seconds) ?? r.time_seconds, penalty_end_time: toSecs(existing[i].penalty_end_time) };
+      if (i === 0) return { ...r, ...times, penalty_end_time: manualStored ?? times.penalty_end_time };
+      return { ...r, ...shiftTimes(times, r.penalty_class, delta) };
+    });
   };
 
   const handleAddGoal = () => {
@@ -507,8 +608,10 @@ export const ProtocolSheet = ({
   const handleAddPaperPenalty = () => {
     if (!paperPenReady || paperPenSaving) return;
     const { errs, who } = penaltyErrors(paperPen.whoText, paperPen.start, 'p');
+    const manual = newManualEnd(paperPen.kind, paperPen.end, paperPenStart);
+    if (manual.error) errs['p.end'] = manual.error;
     if (!reportErrors(errs, 'p', 'Удаление не добавлено')) return;
-    savePaperPen(() => onSavePenaltyGroup(teamId, groupPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart })));
+    savePaperPen(() => onSavePenaltyGroup(teamId, groupPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart, firstRowEnd: manual.value })));
   };
 
   const startEditGoal = (g) => {
@@ -587,7 +690,12 @@ export const ProtocolSheet = ({
 
   const handleAddPenalty = async () => {
     if (penaltyTimeMissing || penaltyWhoMissing) return;
-    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...newPenalty, startSecs: newPenaltyStart }));
+    const manual = newManualEnd(newPenalty.kind, newPenalty.end, newPenaltyStart);
+    if (manual.error) {
+      onToast?.({ title: 'Удаление не добавлено', message: manual.error, type: 'error' });
+      return;
+    }
+    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...newPenalty, startSecs: newPenaltyStart, firstRowEnd: manual.value }));
     if (ok) setNewPenalty(EMPTY_PENALTY);
   };
 
@@ -596,67 +704,117 @@ export const ProtocolSheet = ({
   // двадцатки), в редакторе становятся «5+20» — единственным большим штрафом.
   const LEGACY_KIND_TO_EDITABLE = { match: 'major', legacy_major: 'major' };
   const startEditGroup = (p) => {
-    const rows = penalties
-      .filter(r => penaltyGroupKey(r) === penaltyGroupKey(p))
-      .sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1));
+    const rows = groupRowsOf(p);
     const rawKind = penaltyKindOf(p);
     const kind = LEGACY_KIND_TO_EDITABLE[rawKind] || (PENALTY_KINDS[rawKind] ? rawKind : 'minor');
     // Причина одна — с первой строки (двойка, пятёрка или сама 10/20). Разные причины
     // у старых штрафов при сохранении правки сведутся к ней.
     // whoText — нарушитель так, как его вписывают в бумажном виде: «5 / 12», «ОПК».
+    // origKind/origStart — с чем редактор открыт: по ним видно, остались ли вид и начало
+    // прежними (см. groupEditState). end — ручное окончание первой строки, пока пустое.
     clearRowErrors('pe');
     const who = whoFromEvent(p);
     setEditPenaltyId(p.id);
-    setEditPenaltyData({ mode: 'group', who, whoText: formatPenaltyOffender(who), kind, violation: rows[0]?.penalty_violation || '', start: formatTime(p.time_seconds) });
+    setEditPenaltyData({
+      mode: 'group', who, whoText: formatPenaltyOffender(who), kind, violation: rows[0]?.penalty_violation || '',
+      start: formatTime(p.time_seconds), end: '', origKind: kind, origStart: toSecs(p.time_seconds),
+    });
   };
 
   const saveEditGroup = async () => {
     const startSecs = parseTime(editPenaltyData.start);
+    const hasStart = startSecs !== null && !isNaN(startSecs);
     let who = editPenaltyData.who;
+    const manual = manualPenaltyEnd && hasStart && firstRowTimed(editPenaltyData.kind)
+      ? readManualEnd(editPenaltyData.end, startSecs + groupEditState(editPenaltyData).offset)
+      : { value: null };
     if (paperMode) {
       const { errs, who: parsed } = penaltyErrors(editPenaltyData.whoText, editPenaltyData.start, 'pe', { requireStart: true });
+      if (manual.error) errs['pe.end'] = manual.error;
       if (!reportErrors(errs, 'pe', 'Удаление не сохранено')) return;
       who = parsed;
+    } else if (manual.error) {
+      onToast?.({ title: 'Удаление не сохранено', message: manual.error, type: 'error' });
+      return;
     }
-    if (startSecs === null || isNaN(startSecs)) return;
+    if (!hasStart) return;
     const target = penalties.find(r => r.id === editPenaltyId);
-    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...editPenaltyData, who, startSecs }), penaltyGroupKey(target));
+    const data = { ...editPenaltyData, who, startSecs };
+    // Без настройки лиги — как раньше: строки пересобираются по виду и началу
+    const rows = manualPenaltyEnd ? manualGroupEditRows(data, manual.value) : undefined;
+    const ok = await onSavePenaltyGroup(teamId, groupPayload(data, rows), penaltyGroupKey(target));
     if (ok) setEditPenaltyId(null);
   };
 
-  // Строка-продолжение (вторая двойка, десятка, двадцатка) — только свои поля: причина
-  // и окончание, как у обычной строки. Нарушитель, вид и начало — у группы, правятся с
-  // первой строки. Правило «одна причина, десятке и двадцатке — дисциплинарная» действует
-  // при вводе штрафа; записанную строку секретарь вправе поправить как угодно.
+  // Строка-продолжение (вторая двойка, десятка, двадцатка) — только свои поля: причина,
+  // а при настройке лиги manualPenaltyEnd ещё и окончание. Нарушитель, вид и начало — у
+  // группы, правятся с первой строки. Правило «одна причина, десятке и двадцатке —
+  // дисциплинарная» действует при вводе штрафа; записанную строку секретарь вправе
+  // поправить как угодно. end — вписанное окончание, пока пустое (в поле бледно видно
+  // нынешнее).
   const startEditRow = (p) => {
     clearRowErrors('pe');
     setEditPenaltyId(p.id);
-    setEditPenaltyData({
-      mode: 'row',
-      violation: p.penalty_violation || '',
-      end: p.penalty_end_time === null || p.penalty_end_time === undefined ? '' : formatTime(p.penalty_end_time),
-    });
+    setEditPenaltyData({ mode: 'row', violation: p.penalty_violation || '', end: '' });
   };
 
   const saveEditRow = async () => {
     const p = penalties.find(r => r.id === editPenaltyId);
     if (!p) return;
-    const endless = p.penalty_class === 'game_misconduct' || p.penalty_class === 'penalty_shot';
-    const endSecs = endless ? (p.penalty_class === 'penalty_shot' ? p.time_seconds : null) : parseTime(editPenaltyData.end);
-    if (paperMode && !endless) {
-      const errs = !editPenaltyData.end ? { 'pe.end': 'Окончание: укажите время' }
-        : !isClockValid(editPenaltyData.end) ? { 'pe.end': 'Окончание: секунд не больше 59' } : {};
-      if (!reportErrors(errs, 'pe', 'Строка не сохранена')) return;
-    }
-    if (!endless && (endSecs === null || isNaN(endSecs))) return;
+    const reason = penaltySnapshot(editPenaltyData.violation);
+    const oldEnd = toSecs(p.penalty_end_time);
+    const endless = p.penalty_class === 'game_misconduct' || p.penalty_class === 'penalty_shot' || oldEnd === null;
 
+    // Окончание не раньше начала строки — как оно стоит в графе «Нач»
+    let manualStored = null;
+    if (manualPenaltyEnd && !endless) {
+      const offset = shownOffset(p);
+      const manual = readManualEnd(editPenaltyData.end, (toSecs(p.time_seconds) || 0) + offset);
+      if (manual.error) {
+        if (paperMode) reportErrors({ 'pe.end': manual.error }, 'pe', 'Строка не сохранена');
+        else onToast?.({ title: 'Строка не сохранена', message: manual.error, type: 'error' });
+        return;
+      }
+      if (manual.value !== null) manualStored = manual.value - offset;
+    }
+
+    if (manualStored !== null && manualStored !== oldEnd) {
+      // Новое окончание двигает следующие строки группы (у «4+10» за второй двойкой
+      // идёт десятка), поэтому группа сохраняется целиком, одним запросом
+      const existing = groupRowsOf(p);
+      const first = existing[0];
+      const seq = Number(p.penalty_group_seq) || 1;
+      const delta = manualStored - oldEnd;
+      const rows = existing.map(e => {
+        const base = {
+          time_seconds: toSecs(e.time_seconds) || 0, penalty_end_time: toSecs(e.penalty_end_time),
+          penalty_minutes: e.penalty_minutes, penalty_class: e.penalty_class,
+          penalty_served_by_id: e.penalty_served_by_id || null,
+          penalty_violation: e.penalty_violation || null, penalty_violation_code: e.penalty_violation_code || null,
+          penalty_reason_id: e.penalty_reason_id || null,
+        };
+        if (e.id === p.id) return { ...base, ...reason, penalty_end_time: manualStored };
+        return (Number(e.penalty_group_seq) || 1) > seq ? { ...base, ...shiftTimes(base, e.penalty_class, delta) } : base;
+      });
+      const ok = await onSavePenaltyGroup(teamId, {
+        penalty_kind: first.penalty_kind || penaltyKindOf(first),
+        time_seconds: rows[0].time_seconds,
+        player_id: first.primary_player_id || null,
+        penalty_offender_type: first.penalty_offender_type || (first.primary_player_id ? 'player' : 'team'),
+        rows,
+      }, penaltyGroupKey(p));
+      if (ok) setEditPenaltyId(null);
+      return;
+    }
+
+    // Окончание прежнее — сохраняется одна строка, с новой причиной
     const success = await onSaveEvent(teamId, 'penalty', {
-      time_seconds: p.time_seconds, penalty_end_time: endSecs,
+      time_seconds: p.time_seconds, penalty_end_time: oldEnd,
       player_id: p.primary_player_id || null,
       penalty_offender_type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
       penalty_served_by_id: p.penalty_served_by_id || null,
       penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
-      ...penaltySnapshot(editPenaltyData.violation),
+      ...reason,
     }, p.id);
     if (success) setEditPenaltyId(null);
   };
@@ -835,9 +993,21 @@ export const ProtocolSheet = ({
                           }}
                         />
                       </td>
-                      <td className={`${penaltyInputCell} text-center font-mono text-[13px] text-graphite/40`} title="Окончание штрафа рассчитывается автоматически">
-                        {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violation)}
-                      </td>
+                      {manualPenaltyEnd && firstRowTimed(newPenalty.kind) ? (
+                        // Ручное окончание: пустое поле — посчитается само (бледно видно как)
+                        <td className={penaltyInputCell}>
+                          <StylishInput
+                            ghost={penaltyGhost}
+                            isTimeField title="Окончание штрафа" value={newPenalty.end}
+                            placeholder={formatTime(autoFirstRowEnd(newPenalty.kind, newPenaltyStart))}
+                            onChange={e=>setNewPenalty({...newPenalty, end: formatTimeMask(e.target.value)})}
+                          />
+                        </td>
+                      ) : (
+                        <td className={`${penaltyInputCell} text-center font-mono text-[13px] text-graphite/40`} title="Окончание штрафа рассчитывается автоматически">
+                          {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violation)}
+                        </td>
+                      )}
                       <td className={`${penaltyInputCell} text-center border-r-[6px] border-transparent bg-clip-padding rounded-r-[12px]`}>
                         <button
                           onClick={handleAddPenalty}
@@ -952,9 +1122,21 @@ export const ProtocolSheet = ({
       </td>
       <td className={penDraftCell}><PaperPick title="Причина удаления" display={reasonCode(paperPen.violation)} onClick={() => setReasonsTarget('paper')} /></td>
       <td className={penDraftCell}><PaperInput type="time" title="Начало штрафа" value={paperPen.start} placeholder={autoTimePenalties ? formatTime(timerSeconds) : ''} error={hasError('p.start')} onChange={(v) => { clearError('p.start'); setPaperPen(d => ({ ...d, start: v })); }} onEnter={handleAddPaperPenalty} /></td>
-      <td className={`border-r border-graphite/[0.12] font-mono text-[13px] text-graphite/40 ${paperPenSaving ? PAPER_SAVING_CELL : ''}`} title="Окончание штрафа рассчитывается автоматически">
-        {paperPen.kind ? previewGroupEnd(paperPen.kind, paperPenStart, parseOffenderText(paperPen.whoText), paperPen.violation) : ''}
-      </td>
+      {manualPenaltyEnd && (!paperPen.kind || firstRowTimed(paperPen.kind)) ? (
+        <td className={penDraftCell}>
+          <PaperInput
+            type="time" title="Окончание штрафа" value={paperPen.end}
+            placeholder={paperPen.kind ? formatTime(autoFirstRowEnd(paperPen.kind, paperPenStart)) : ''}
+            error={hasError('p.end')}
+            onChange={(v) => { clearError('p.end'); setPaperPen(d => ({ ...d, end: v })); }}
+            onEnter={handleAddPaperPenalty}
+          />
+        </td>
+      ) : (
+        <td className={`border-r border-graphite/[0.12] font-mono text-[13px] text-graphite/40 ${paperPenSaving ? PAPER_SAVING_CELL : ''}`} title="Окончание штрафа рассчитывается автоматически">
+          {paperPen.kind ? previewGroupEnd(paperPen.kind, paperPenStart, parseOffenderText(paperPen.whoText), paperPen.violation) : ''}
+        </td>
+      )}
       <td className="border-r border-graphite/30 p-0 text-center">
         <PaperAddButton
           active={paperPenReady && !paperPenSaving} tone="penalty" onClick={handleAddPaperPenalty}
@@ -983,14 +1165,25 @@ export const ProtocolSheet = ({
       </td>
       <td className={editCell}><PaperPick title="Причина удаления" display={reasonCode(editPenaltyData.violation)} onClick={() => setReasonsTarget('edit')} /></td>
       <td className={editCell}><PaperInput type="time" title="Начало штрафа" value={editPenaltyData.start} error={hasError('pe.start')} onChange={(v) => { clearError('pe.start'); setEditPenaltyData(d => ({ ...d, start: v })); }} onEnter={saveEditGroup} /></td>
-      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-        {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), parseOffenderText(editPenaltyData.whoText), editPenaltyData.violation)}
-      </td>
+      {manualPenaltyEnd && firstRowTimed(editPenaltyData.kind) ? (
+        <td className={editCell}>
+          <PaperInput
+            type="time" title="Окончание штрафа" value={editPenaltyData.end} placeholder={groupEditEndHint()} error={hasError('pe.end')}
+            onChange={(v) => { clearError('pe.end'); setEditPenaltyData(d => ({ ...d, end: v })); }}
+            onEnter={saveEditGroup}
+          />
+        </td>
+      ) : (
+        <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
+          {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), parseOffenderText(editPenaltyData.whoText), editPenaltyData.violation)}
+        </td>
+      )}
       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><PaperSaveButton onClick={saveEditGroup} /></td>
     </>
   );
 
-  // Строка-продолжение: причина — через окно, окончание — с клавиатуры
+  // Строка-продолжение: причина — через окно, окончание — с клавиатуры (если лига
+  // разрешила вписывать его руками, иначе оно просто стоит в графе)
   const paperPenaltyRowEditCells = (penalty, isEndless) => (
     <>
       <td className="border-r border-graphite/[0.12] bg-orange/10 font-bold text-[13px] text-graphite/50 whitespace-nowrap">{renderOffender(penalty)}</td>
@@ -1002,7 +1195,9 @@ export const ProtocolSheet = ({
       <td className={editCell}>
         {isEndless
           ? <span className="font-mono text-[13px] text-graphite/25">—</span>
-          : <PaperInput type="time" title="Окончание штрафа" value={editPenaltyData.end} error={hasError('pe.end')} onChange={(v) => { clearError('pe.end'); setEditPenaltyData(d => ({ ...d, end: v })); }} onEnter={saveEditRow} />}
+          : manualPenaltyEnd
+            ? <PaperInput type="time" title="Окончание штрафа" value={editPenaltyData.end} placeholder={formatTime(penalty.effEnd)} error={hasError('pe.end')} onChange={(v) => { clearError('pe.end'); setEditPenaltyData(d => ({ ...d, end: v })); }} onEnter={saveEditRow} />
+            : <span className="font-mono font-semibold text-[13px] text-graphite/50">{formatTime(penalty.effEnd)}</span>}
       </td>
       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><PaperSaveButton onClick={saveEditRow} /></td>
     </>
@@ -1283,15 +1478,24 @@ export const ProtocolSheet = ({
                           onChange={e=>setEditPenaltyData({...editPenaltyData, start: formatTimeMask(e.target.value)})}
                         />
                       </td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-                        {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violation)}
-                      </td>
+                      {manualPenaltyEnd && firstRowTimed(editPenaltyData.kind) ? (
+                        <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
+                          <StylishInput
+                            isEditing isTimeField title="Окончание штрафа" value={editPenaltyData.end} placeholder={groupEditEndHint()}
+                            onChange={e=>setEditPenaltyData({...editPenaltyData, end: formatTimeMask(e.target.value)})}
+                          />
+                        </td>
+                      ) : (
+                        <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
+                          {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violation)}
+                        </td>
+                      )}
                       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditGroup} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
                     </>
                   ) : isEditingPenalty && !isReadOnly ? (
                     <>
                       {/* Строка-продолжение: нарушитель, минуты и начало — у группы, здесь
-                          правятся только причина и окончание, как у обычной строки */}
+                          правятся только причина и — если лига разрешила — окончание */}
                       <td className="border-r border-graphite/[0.12] bg-orange/10 font-bold text-[13px] text-graphite/50 whitespace-nowrap">{renderOffender(penalty)}</td>
                       <td className="border-r border-graphite/[0.12] bg-orange/10 font-semibold text-[13px] text-graphite/50">{penalty.penalty_minutes}</td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><CustomSelect isEditing dense title="Причина удаления" emptyLabel="— не выбрано —" options={rowReasonOptions} value={editPenaltyData.violation} onChange={e=>setEditPenaltyData({...editPenaltyData, violation: e.target.value})} className="px-1" /></td>
@@ -1299,11 +1503,13 @@ export const ProtocolSheet = ({
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         {isPenaltyEndless ? (
                           <span className="font-mono text-[13px] text-graphite/25">—</span>
-                        ) : (
+                        ) : manualPenaltyEnd ? (
                           <StylishInput
-                            isEditing isTimeField title="Окончание штрафа" value={editPenaltyData.end}
+                            isEditing isTimeField title="Окончание штрафа" value={editPenaltyData.end} placeholder={formatTime(penalty.effEnd)}
                             onChange={e=>setEditPenaltyData({...editPenaltyData, end: formatTimeMask(e.target.value)})}
                           />
+                        ) : (
+                          <span className="font-mono font-semibold text-[13px] text-graphite/50">{formatTime(penalty.effEnd)}</span>
                         )}
                       </td>
                       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditRow} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
@@ -1327,7 +1533,7 @@ export const ProtocolSheet = ({
                       <td className="bg-status-rejected/[0.035] border-r border-graphite/30 p-0 text-center">
                          {!isReadOnly && (
                             <div className="flex justify-center items-center h-full gap-1.5 px-0.5 opacity-50 hover:opacity-100 transition-opacity">
-                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/25 hover:text-orange transition-colors" title={isPenaltyContinuation ? 'Причина и окончание строки' : 'Редактировать'}><Icon name="edit" className="w-[18px] h-[18px]" /></button>
+                               <button onClick={() => startEditPenalty(penalty)} className="text-graphite/25 hover:text-orange transition-colors" title={isPenaltyContinuation ? (manualPenaltyEnd ? 'Причина и окончание строки' : 'Причина строки') : 'Редактировать'}><Icon name="edit" className="w-[18px] h-[18px]" /></button>
                                {!isPenaltyContinuation && (
                                  <button onClick={() => onDeleteEvent(penalty.id)} className="text-graphite/25 hover:text-status-rejected transition-colors" title={penalty.penalty_group_id ? 'Удалить штраф целиком' : 'Удалить'}><Icon name="delete" className="w-[18px] h-[18px]" /></button>
                                )}

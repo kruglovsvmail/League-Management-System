@@ -1,15 +1,16 @@
 import React from 'react';
 
-export function Checkbox({ label, checked, onChange, className = 'mb-4' }) {
+export function Checkbox({ label, checked, onChange, className = 'mb-4', disabled = false }) {
   return (
     <div className={className}>
-      <label className="flex items-center cursor-pointer gap-2 relative z-10 group">
+      <label className={`flex items-center gap-2 relative z-10 group ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
         {/* Невидимый системный чекбокс */}
-        <input 
-          type="checkbox" 
-          className="peer sr-only" 
+        <input
+          type="checkbox"
+          className="peer sr-only"
           checked={checked}
           onChange={onChange}
+          disabled={disabled}
         />
         
         {/* Наш кастомный квадратик: он сосед инпута, поэтому peer-checked тут работает */}

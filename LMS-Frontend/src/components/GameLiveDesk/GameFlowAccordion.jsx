@@ -38,6 +38,10 @@ export const GameFlowAccordion = ({
   const shotsTrackingEnabled = game?.track_shots ?? true;
   // Вид панели — настройка лиги: бумажный протокол вместо форм ввода над таблицами
   const paperMode = game?.sec_panel_view === 'paper';
+  // Правила удалений — тоже настройки лиги. Нет значения (матч вне лиг) — как было до
+  // настроек: гол досрочно закрывает малый штраф, окончание считается само.
+  const releaseOnGoal = game?.sec_penalty_release_on_goal ?? true;
+  const manualPenaltyEnd = game?.sec_penalty_manual_end ?? false;
 
   return (
     <div className="bg-white shadow-lg flex flex-col font-sans rounded-md transition-all duration-500 ease-in-out">
@@ -79,6 +83,8 @@ export const GameFlowAccordion = ({
                   autoTimePenalties={autoTimePenalties}
                   shotsTrackingEnabled={shotsTrackingEnabled}
                   paperMode={paperMode}
+                  releaseOnGoal={releaseOnGoal}
+                  manualPenaltyEnd={manualPenaltyEnd}
                   onToast={onToast}
                 />
 
@@ -106,6 +112,8 @@ export const GameFlowAccordion = ({
                   autoTimePenalties={autoTimePenalties}
                   shotsTrackingEnabled={shotsTrackingEnabled}
                   paperMode={paperMode}
+                  releaseOnGoal={releaseOnGoal}
+                  manualPenaltyEnd={manualPenaltyEnd}
                   onToast={onToast}
                 />
 
