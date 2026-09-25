@@ -53,7 +53,8 @@ export function PreferencesTab({ setToast }) {
     sec_panel_view: 'classic',
     sec_goalie_autofill: true,
     sec_penalty_release_on_goal: true,
-    sec_penalty_manual_end: false
+    sec_penalty_manual_end: false,
+    sec_coincident_penalties: true
   });
 
   useEffect(() => {
@@ -85,7 +86,8 @@ export function PreferencesTab({ setToast }) {
             sec_panel_view: data.data.sec_panel_view ?? 'classic',
             sec_goalie_autofill: data.data.sec_goalie_autofill ?? true,
             sec_penalty_release_on_goal: data.data.sec_penalty_release_on_goal ?? true,
-            sec_penalty_manual_end: data.data.sec_penalty_manual_end ?? false
+            sec_penalty_manual_end: data.data.sec_penalty_manual_end ?? false,
+            sec_coincident_penalties: data.data.sec_coincident_penalties ?? true
           });
         }
       } catch (err) {
@@ -400,6 +402,20 @@ export function PreferencesTab({ setToast }) {
               <Switch
                 checked={formData.sec_penalty_manual_end}
                 onChange={(e) => handleStepChange('sec_penalty_manual_end', e.target.checked)}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
+          <div
+            className="flex items-center justify-between gap-3"
+            title="В окне выбора вида штрафа есть галочка «Обоюдное удаление»: такой же штраф сам заводится второй команде — с «?» вместо нарушителя и причины, их вписывают потом. Обоюдные штрафы голом не прекращаются и большинства не дают. Выключено — галочки нет, уже связанные пары остаются."
+          >
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Показывать галочку обоюдных штрафов</span>
+            <div className="shrink-0">
+              <Switch
+                checked={formData.sec_coincident_penalties}
+                onChange={(e) => handleStepChange('sec_coincident_penalties', e.target.checked)}
                 disabled={!canEdit}
               />
             </div>

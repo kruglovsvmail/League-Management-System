@@ -311,6 +311,44 @@ export const calculateOnIcePenalties = (penalties) => {
   }).map(p => ({ ...p, effStart: p.chainStart, effEnd: p.chainEnd }));
 };
 
+/**
+ * Обоюдное удаление: какие строки штрафа обоюдные.
+ *
+ * Пара — две группы штрафа разных команд, связанные penalty_pair_id (ссылка лежит в
+ * первой строке группы и указывает на первую строку группы соперника). Обоюдна только
+ * одинаковая часть: строки с одним порядковым номером в своих группах, одного класса и
+ * одних минут — двойка с двойкой, пятёрка с пятёркой. У «4» против «2» обоюдна первая
+ * двойка, вторая даёт большинство как обычно; двойка против пятёрки — не пара вовсе.
+ *
+ * Обоюдные строки голом не прекращаются и в счёт «кто в меньшинстве» не идут
+ * (processGoalPenaltyLogic, buildGroupRows). penalties — штрафы ОБЕИХ команд: иначе
+ * партнёра не найти. onIceOnly = false — для значка пары в протоколе: там отмечаются и
+ * парные десятки и двадцатки, хотя на игру они не влияют.
+ */
+export const coincidentRowIds = (penalties, { onIceOnly = true } = {}) => {
+  const groups = new Map();
+  penalties.forEach(p => {
+    const key = penaltyGroupKey(p);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  });
+  groups.forEach(rows => rows.sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1)));
+
+  const ids = new Set();
+  groups.forEach(rows => {
+    const partner = rows[0]?.penalty_pair_id ? groups.get(rows[0].penalty_pair_id) : null;
+    if (!partner) return;
+    rows.forEach((row, i) => {
+      const other = partner[i];
+      if (!other || row.penalty_class !== other.penalty_class) return;
+      if (Number(row.penalty_minutes) !== Number(other.penalty_minutes)) return;
+      if (onIceOnly && !isOnIceRow(row)) return;
+      ids.add(row.id);
+    });
+  });
+  return ids;
+};
+
 // --- Справочники ---
 // Справочник причин штрафа: номер, сокращение и полное наименование.
 // Где что показывается:
@@ -566,7 +604,7 @@ export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className,
 };
 
 // dense — плотные строки в модалке выбора (длинный справочник причин удаления)
-export const CustomSelect = ({ value, onChange, options, className, placeholder = "", hint = '', emptyLabel, title, isEditing = false, hideEmpty = false, dense = false, ghost = false }) => {
+export const CustomSelect = ({ value, onChange, options, className, placeholder = "", hint = '', emptyLabel, title, isEditing = false, hideEmpty = false, dense = false, ghost = false, extra = null }) => {
   const [isOpen, setIsOpen] = useState(false);
   const mergedClassName = `h-[30px] !py-0 !px-2 ${className || ''}`;
 
@@ -583,6 +621,7 @@ export const CustomSelect = ({ value, onChange, options, className, placeholder 
         hideEmpty={hideEmpty}
         emptyLabel={emptyLabel || placeholder || undefined}
         dense={dense}
+        extra={extra}
       />
     </>
   );

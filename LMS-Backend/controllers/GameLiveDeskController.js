@@ -143,6 +143,9 @@ export const getGameEvents = async (req, res) => {
                 -- Кто наказан (игрок / команда «К» / представитель «ОПК») и кто отбывает
                 -- на скамейке за другого — номер отбывающего панель берёт из заявки по id
                 ge.penalty_offender_type, ge.penalty_served_by_id,
+                -- Обоюдное удаление: ссылка на парный штраф другой команды (в первой строке
+                -- группы) и незаполненный двойник — нарушитель и причина ещё не вписаны
+                ge.penalty_pair_id, ge.penalty_unfilled,
                 ge.against_goalie_id, ge.from_shot, ge.linked_event_id,
                 -- Вид штрафа и строки его группы (2+2, 2+10 …): по ним панель рисует
                 -- цепочку строк, а плашка и диктор получают все причины разом
@@ -277,18 +280,146 @@ const PENALTY_ROW_INSERT = `
         penalty_player_id, penalty_violation, penalty_violation_code, penalty_reason_id,
         penalty_minutes, penalty_class, penalty_end_time,
         penalty_offender_type, penalty_served_by_id,
-        penalty_kind, penalty_group_id, penalty_group_seq
-    ) VALUES ($1, $2, $3, 'penalty', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        penalty_kind, penalty_group_id, penalty_group_seq, penalty_unfilled
+    ) VALUES ($1, $2, $3, 'penalty', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     RETURNING id
 `;
 
-const penaltyRowParams = (gameId, teamId, who, kind, groupId, seq, r) => [
+const penaltyRowParams = (gameId, teamId, who, kind, groupId, seq, r, unfilled = false) => [
     gameId, r.period, r.time_seconds, teamId,
     who.playerId, r.penalty_violation, r.penalty_violation_code, r.penalty_reason_id,
     r.penalty_minutes, r.penalty_class, r.penalty_end_time,
     who.offenderType, r.penalty_served_by_id || null,
-    kind, groupId, seq,
+    kind, groupId, seq, unfilled,
 ];
+
+// Строки группы, какие есть сейчас, по порядку. Старая запись (до групп) — одиночная
+// строка без penalty_group_id: правится как группа из одной строки.
+const loadPenaltyGroup = async (client, gameId, groupId) => (await client.query(`
+    SELECT id, penalty_group_seq, penalty_class, team_id, penalty_pair_id, penalty_unfilled
+    FROM game_events
+    WHERE game_id = $1 AND event_type = 'penalty'
+      AND (penalty_group_id = $2 OR (id = $2 AND penalty_group_id IS NULL))
+    ORDER BY penalty_group_seq NULLS FIRST, id
+`, [gameId, groupId])).rows;
+
+// Новая группа. Первая строка — без группы: её id и есть id группы, проставляем после вставки
+const insertPenaltyGroup = async (client, gameId, teamId, who, kind, rows, unfilled = false) => {
+    const first = await client.query(PENALTY_ROW_INSERT, penaltyRowParams(gameId, teamId, who, kind, null, 1, rows[0], unfilled));
+    const groupId = first.rows[0].id;
+    await client.query('UPDATE game_events SET penalty_group_id = $1 WHERE id = $1', [groupId]);
+    for (let i = 1; i < rows.length; i++) {
+        await client.query(PENALTY_ROW_INSERT, penaltyRowParams(gameId, teamId, who, kind, groupId, i + 1, rows[i], unfilled));
+    }
+    return groupId;
+};
+
+// Правка группы по месту (по seq): недостающие строки дописываются, лишние уходят
+// (вид стал короче: 2+10 → 2)
+const rewritePenaltyGroup = async (client, gameId, existing, teamId, who, kind, rows, unfilled = false) => {
+    const firstId = existing[0].id;
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const target = existing[i];
+        if (target) {
+            await client.query(`
+                UPDATE game_events SET
+                    period = $1, time_seconds = $2, team_id = $3,
+                    penalty_player_id = $4, penalty_violation = $5, penalty_violation_code = $6, penalty_reason_id = $7,
+                    penalty_minutes = $8, penalty_class = $9, penalty_end_time = $10,
+                    penalty_offender_type = $11, penalty_served_by_id = $12,
+                    penalty_kind = $13, penalty_group_id = $14, penalty_group_seq = $15, penalty_unfilled = $16
+                WHERE id = $17
+            `, [
+                r.period, r.time_seconds, teamId,
+                who.playerId, r.penalty_violation, r.penalty_violation_code, r.penalty_reason_id,
+                r.penalty_minutes, r.penalty_class, r.penalty_end_time,
+                who.offenderType, r.penalty_served_by_id || null,
+                kind, firstId, i + 1, unfilled,
+                target.id,
+            ]);
+        } else {
+            await client.query(PENALTY_ROW_INSERT, penaltyRowParams(gameId, teamId, who, kind, firstId, i + 1, r, unfilled));
+        }
+    }
+    const extraIds = existing.slice(rows.length).map(r => r.id);
+    if (extraIds.length > 0) {
+        await client.query('DELETE FROM game_events WHERE id = ANY($1::int[])', [extraIds]);
+    }
+};
+
+/**
+ * ─── ОБОЮДНОЕ УДАЛЕНИЕ ───────────────────────────────────────────────────────
+ *
+ * Пара — две группы штрафа разных команд, связанные penalty_pair_id: в первой строке
+ * каждой лежит id первой строки другой. Секретарь ставит галочку «Обоюдное» в окне
+ * вида штрафа (если лига её показывает — sec_coincident_penalties), и второй команде
+ * заводится двойник того же вида и с тем же временем, но без нарушителя и причины
+ * (penalty_unfilled): в протоколе у него «?», а отсчёт на табло идёт сразу. Нарушителя
+ * и причину судья дописывает потом, вид тоже может сменить.
+ *
+ * Время у пары общее: панель присылает вместе с правкой одной группы и строки второй
+ * (pair), и обе пишутся одной транзакцией. Режимы pair.mode:
+ *   'create' — пары ещё нет, заводим двойника;
+ *   'mirror' — двойник ещё пустой: повторяет вид и строки правленой группы целиком;
+ *   'times'  — вторая сторона уже заполнена: меняются только начало и окончание её строк.
+ * Снять галочку — значит разорвать пару: связанный штраф удаляется целиком (unpair).
+ * Удаление любого штрафа пары удаляет оба (deleteGameEvent).
+ *
+ * Что пара значит для игры, считает панель: обоюдные строки одинакового размера голом
+ * не прекращаются и большинства не дают (coincidentRowIds в GameDeskShared.jsx).
+ */
+const UNFILLED_WHO = { playerId: null, offenderType: null };
+
+const deletePenaltyGroupRows = (client, gameId, groupId) => client.query(
+    `DELETE FROM game_events WHERE game_id = $1 AND event_type = 'penalty' AND (penalty_group_id = $2 OR id = $2)`,
+    [gameId, groupId]
+);
+
+// Вторая сторона пары после сохранения группы groupId команды teamId. → { error } | undefined
+const savePenaltyPair = async (client, gameId, groupId, teamId, pair, period) => {
+    const partnerId = (await client.query('SELECT penalty_pair_id FROM game_events WHERE id = $1', [groupId])).rows[0]?.penalty_pair_id || null;
+
+    if (!partnerId) {
+        const parsed = readPenaltyGroupBody({ penalty_kind: pair.penalty_kind, rows: pair.rows, period });
+        if (parsed.error) return { error: parsed.error };
+        // Штрафной бросок назначают одной команде — пары у него не бывает
+        if (parsed.kind === 'penalty_shot') return;
+        const gameRes = await client.query('SELECT home_team_id, away_team_id FROM games WHERE id = $1', [gameId]);
+        const { home_team_id, away_team_id } = gameRes.rows[0] || {};
+        const opponentId = Number(teamId) === home_team_id ? away_team_id : Number(teamId) === away_team_id ? home_team_id : null;
+        if (!opponentId) return { error: 'Не найдена вторая команда матча' };
+        const twinId = await insertPenaltyGroup(client, gameId, opponentId, UNFILLED_WHO, parsed.kind, parsed.rows, true);
+        await client.query('UPDATE game_events SET penalty_pair_id = $2 WHERE id = $1', [groupId, twinId]);
+        await client.query('UPDATE game_events SET penalty_pair_id = $2 WHERE id = $1', [twinId, groupId]);
+        return;
+    }
+
+    const partner = await loadPenaltyGroup(client, gameId, partnerId);
+    if (partner.length === 0) return;
+
+    if (pair.mode === 'mirror') {
+        // Двойника успели заполнить с другого устройства — его вид и строки не трогаем
+        if (!partner[0].penalty_unfilled) return;
+        const parsed = readPenaltyGroupBody({ penalty_kind: pair.penalty_kind, rows: pair.rows, period });
+        if (parsed.error) return { error: parsed.error };
+        if (parsed.kind === 'penalty_shot') return;
+        await rewritePenaltyGroup(client, gameId, partner, partner[0].team_id, UNFILLED_WHO, parsed.kind, parsed.rows, true);
+        return;
+    }
+
+    // 'times': только начало и окончание строк заполненной стороны, по порядку
+    const times = Array.isArray(pair.rows) ? pair.rows : [];
+    for (let i = 0; i < partner.length && i < times.length; i++) {
+        const time = parseInt(times[i].time_seconds, 10) || 0;
+        const end = times[i].penalty_end_time === null || times[i].penalty_end_time === undefined ? null : parseInt(times[i].penalty_end_time, 10);
+        if (penaltyEndsBeforeStart(time, end)) return { error: PENALTY_END_BEFORE_START };
+        await client.query(
+            'UPDATE game_events SET time_seconds = $1, penalty_end_time = $2, period = COALESCE($3, period) WHERE id = $4',
+            [time, end, times[i].period || null, partner[i].id]
+        );
+    }
+};
 
 export const createPenaltyGroup = async (req, res) => {
     const client = await pool.connect();
@@ -304,17 +435,19 @@ export const createPenaltyGroup = async (req, res) => {
 
         await client.query('BEGIN');
 
-        // Первая строка — без группы: её id и есть id группы, проставляем после вставки
-        const first = await client.query(PENALTY_ROW_INSERT, penaltyRowParams(gameId, team_id, who, kind, null, 1, rows[0]));
-        const groupId = first.rows[0].id;
-        await client.query('UPDATE game_events SET penalty_group_id = $1 WHERE id = $1', [groupId]);
-
-        for (let i = 1; i < rows.length; i++) {
-            await client.query(PENALTY_ROW_INSERT, penaltyRowParams(gameId, team_id, who, kind, groupId, i + 1, rows[i]));
-        }
+        const groupId = await insertPenaltyGroup(client, gameId, team_id, who, kind, rows);
 
         if (kind === 'penalty_shot') {
             await createPenaltyShotRow(client, gameId, groupId, team_id, rows[0].period, rows[0].time_seconds);
+        }
+
+        // Галочка «Обоюдное»: второй команде — двойник без нарушителя и причины
+        if (req.body.pair) {
+            const pairResult = await savePenaltyPair(client, gameId, groupId, team_id, req.body.pair, req.body.period);
+            if (pairResult?.error) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, error: pairResult.error });
+            }
         }
 
         await triggerRecalcFlag(client, gameId);
@@ -339,58 +472,24 @@ export const updatePenaltyGroup = async (req, res) => {
         if (parsed.error) return res.status(400).json({ success: false, error: parsed.error });
         const { kind, rows } = parsed;
 
-        const who = penaltyOffenderFields('penalty', player_id, penalty_offender_type, null);
+        // Двойник обоюдного удаления, у которого судья ещё не вписал нарушителя, остаётся
+        // незаполненным: не игрок и не командный штраф, а «?»
+        const unfilled = !!req.body.unfilled;
+        const who = unfilled ? UNFILLED_WHO : penaltyOffenderFields('penalty', player_id, penalty_offender_type, null);
 
         await client.query('BEGIN');
 
-        // Старая запись (до групп) — одиночная строка без penalty_group_id: правим её
-        // как группу из одной строки, id остаётся, группа появляется.
-        const existingRes = await client.query(`
-            SELECT id, penalty_group_seq, penalty_class, team_id
-            FROM game_events
-            WHERE game_id = $1 AND event_type = 'penalty'
-              AND (penalty_group_id = $2 OR (id = $2 AND penalty_group_id IS NULL))
-            ORDER BY penalty_group_seq NULLS FIRST, id
-        `, [gameId, groupId]);
-        if (existingRes.rows.length === 0) {
+        const existing = await loadPenaltyGroup(client, gameId, groupId);
+        if (existing.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Штраф не найден' });
         }
-        const existing = existingRes.rows;
         const firstRow = existing[0];
 
         const wasPenaltyShot = firstRow.penalty_class === 'penalty_shot';
         const isPenaltyShot = kind === 'penalty_shot';
 
-        for (let i = 0; i < rows.length; i++) {
-            const r = rows[i];
-            const target = existing[i];
-            if (target) {
-                await client.query(`
-                    UPDATE game_events SET
-                        period = $1, time_seconds = $2, team_id = $3,
-                        penalty_player_id = $4, penalty_violation = $5, penalty_violation_code = $6, penalty_reason_id = $7,
-                        penalty_minutes = $8, penalty_class = $9, penalty_end_time = $10,
-                        penalty_offender_type = $11, penalty_served_by_id = $12,
-                        penalty_kind = $13, penalty_group_id = $14, penalty_group_seq = $15
-                    WHERE id = $16
-                `, [
-                    r.period, r.time_seconds, team_id,
-                    who.playerId, r.penalty_violation, r.penalty_violation_code, r.penalty_reason_id,
-                    r.penalty_minutes, r.penalty_class, r.penalty_end_time,
-                    who.offenderType, r.penalty_served_by_id || null,
-                    kind, firstRow.id, i + 1,
-                    target.id,
-                ]);
-            } else {
-                await client.query(PENALTY_ROW_INSERT, penaltyRowParams(gameId, team_id, who, kind, firstRow.id, i + 1, r));
-            }
-        }
-        // Вид стал короче (2+10 → 2): лишние строки уходят
-        const extraIds = existing.slice(rows.length).map(r => r.id);
-        if (extraIds.length > 0) {
-            await client.query('DELETE FROM game_events WHERE id = ANY($1::int[])', [extraIds]);
-        }
+        await rewritePenaltyGroup(client, gameId, existing, team_id, who, kind, rows, unfilled);
 
         // Строка броска живёт ровно столько, сколько штраф остаётся «ШБ» (см. updateGameEvent)
         if (wasPenaltyShot && !isPenaltyShot) {
@@ -402,6 +501,19 @@ export const updatePenaltyGroup = async (req, res) => {
                 `UPDATE game_events SET period = $1, time_seconds = $2 WHERE linked_event_id = $3`,
                 [rows[0].period, rows[0].time_seconds, firstRow.id]
             );
+        }
+
+        // Обоюдное удаление: галочку сняли — связанный штраф другой команды уходит
+        // целиком; иначе вторая сторона пары получает свои строки той же транзакцией
+        if (req.body.unpair && firstRow.penalty_pair_id) {
+            await deletePenaltyGroupRows(client, gameId, firstRow.penalty_pair_id);
+            await client.query('UPDATE game_events SET penalty_pair_id = NULL WHERE id = $1', [firstRow.id]);
+        } else if (req.body.pair) {
+            const pairResult = await savePenaltyPair(client, gameId, firstRow.id, team_id, req.body.pair, req.body.period);
+            if (pairResult?.error) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, error: pairResult.error });
+            }
         }
 
         await triggerRecalcFlag(client, gameId);
@@ -516,15 +628,22 @@ export const updateGameEvent = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const penaltyWho = penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id);
-
-        const oldEvRes = await client.query('SELECT event_type, team_id, penalty_class FROM game_events WHERE id = $1', [eventId]);
+        const oldEvRes = await client.query('SELECT event_type, team_id, penalty_class, penalty_unfilled FROM game_events WHERE id = $1', [eventId]);
         if (oldEvRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Событие не найдено' });
         }
 
         const oldEvent = oldEvRes.rows[0];
+
+        // Строка незаполненного двойника обоюдного удаления (правка одной строки — причина
+        // продолжения или окончание) так и остаётся «?»: без присланного нарушителя
+        // penaltyOffenderFields записал бы её командным штрафом
+        const staysUnfilled = event_type === 'penalty' && !!oldEvent.penalty_unfilled
+            && !player_id && !PENALTY_OFFENDER_TYPES.includes(penalty_offender_type);
+        const penaltyWho = staysUnfilled
+            ? { playerId: null, offenderType: null, servedById: penalty_served_by_id || null }
+            : penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id);
 
         // Счёт правится по фактическому изменению «был гол / стал гол». Одним
         // правилом закрываются оба случая: перенос гола другой команде и смена
@@ -549,7 +668,7 @@ export const updateGameEvent = async (req, res) => {
         penalty_player_id = $8, penalty_violation = $9, penalty_minutes = $10, penalty_class = $11, penalty_end_time = $12,
         against_goalie_id = $13, event_type = $15, from_shot = $16,
         penalty_violation_code = $17, penalty_reason_id = $18,
-        penalty_offender_type = $19, penalty_served_by_id = $20
+        penalty_offender_type = $19, penalty_served_by_id = $20, penalty_unfilled = $21
     WHERE id = $14
 `, [
     period, time_seconds || 0, team_id || null,
@@ -560,7 +679,7 @@ export const updateGameEvent = async (req, res) => {
     event_type,
     fromShotValue,
     penalty_violation_code || null, penalty_reason_id || null,
-    penaltyWho.offenderType, penaltyWho.servedById
+    penaltyWho.offenderType, penaltyWho.servedById, staysUnfilled
 ]);
 
         // Строка броска живёт ровно столько, сколько штраф остаётся «ШБ».
@@ -623,6 +742,14 @@ export const deleteGameEvent = async (req, res) => {
         // не существует.
         if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
             await deletePenaltyShotRows(client, gameId, eventId);
+        }
+
+        // Обоюдное удаление удаляется парой: связанный штраф другой команды уходит тоже.
+        // Ссылка на пару лежит в первой строке группы.
+        if (event_type === 'penalty') {
+            const pairRes = await client.query('SELECT penalty_pair_id FROM game_events WHERE id = $1', [penalty_group_id || eventId]);
+            const partnerId = pairRes.rows[0]?.penalty_pair_id;
+            if (partnerId) await deletePenaltyGroupRows(client, gameId, partnerId);
         }
 
         // Штраф удаляется целиком, всеми строками группы: «только десятка из 2+10» —

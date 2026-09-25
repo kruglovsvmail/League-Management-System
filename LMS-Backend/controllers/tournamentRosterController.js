@@ -3,6 +3,7 @@ import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import s3 from '../config/s3.js';
 import { setPersonAdmission } from '../utils/personAdmission.js';
 import { logPersonEvent, logPersonEvents, cardDiff, CARD_FIELDS } from '../utils/personLog.js';
+import { assertJerseyNumbersFree } from '../utils/jerseyNumbers.js';
 
 const DOCS_BUCKET = 'hockeyeco-uploads';
 
@@ -138,7 +139,8 @@ export const updateTournamentRosterStatus = async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка смены статуса ростера:', err);
-        res.status(500).json({ success: false, error: 'Ошибка смены статуса' });
+        // status ставит проверка номера при допуске — её текст лиге показываем как есть
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка смены статуса' });
     }
 };
 
@@ -169,7 +171,8 @@ export const updateTournamentStaffStatus = async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Ошибка смены допуска представителя:', err);
-        res.status(500).json({ success: false, error: 'Ошибка смены допуска' });
+        // Играющий тренер допускается и как игрок — отказ по номеру показываем как есть
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка смены допуска' });
     }
 };
 
@@ -337,6 +340,11 @@ export const updateTournamentRosterInline = async (req, res) => {
             );
             const before = beforeRows[0];
 
+            // Номер не должен быть у другого действующего игрока заявки (utils/jerseyNumbers.js)
+            if (before && jersey_number !== undefined && jersey_number !== null && jersey_number !== '') {
+                await assertJerseyNumbersFree(pool, before.tournament_team_id, [{ player_id: before.player_id, jersey_number }]);
+            }
+
             values.push(id);
             await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${counter}`, values);
 
@@ -362,7 +370,9 @@ export const updateTournamentRosterInline = async (req, res) => {
             await logPersonEvents(pool, events);
         }
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ success: false, error: 'Ошибка сохранения данных игрока' }); }
+    } catch (err) {
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка сохранения данных игрока' });
+    }
 };
 
 // POST /tournament-teams/:id/roster-docs/bulk (multipart: file, type, expires_at, userIds)

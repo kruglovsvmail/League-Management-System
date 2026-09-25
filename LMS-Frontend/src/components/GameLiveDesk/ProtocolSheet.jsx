@@ -5,10 +5,12 @@ import {
   CustomSelect, StylishSelect, StylishInput, PenaltyOffenderSelect, TriggerButton,
   goalStrengthOptions, penaltyReasonOptions, getPenaltyReasonCode, GOAL_STRENGTH_DISPLAY,
   PENALTY_KINDS, AUTO_PENALTY_REASONS, penaltyKindOptions, penaltyKindOf, penaltyKindLabel, isContinuationRow, penaltyGroupKey, sortPenaltyRows,
-  PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay
+  PS_PENDING, PS_FAILED, isPenaltyShotEvent, isScoredFromPlay, coincidentRowIds
 } from './GameDeskShared';
 import { formatPenaltyOffender } from '../../ui/PenaltyOffenderModal';
 import { PenaltyReasonsModal } from '../../ui/PenaltyReasonsModal';
+import { Checkbox } from '../../ui/Checkbox';
+import { ConfirmModal } from '../../modals/ConfirmModal';
 import {
   PaperInput, PaperPick, PaperSelect, PaperAddButton, PaperSaveButton,
   parseOffenderText, normalizeOffenderText, isClockValid,
@@ -143,6 +145,11 @@ export const ProtocolSheet = ({
   // (sec_penalty_manual_end) — окончание удаления секретарь вписывает сам, не раньше начала
   releaseOnGoal = true,
   manualPenaltyEnd = false,
+  // Галочка «Обоюдное» в окне вида штрафа (sec_coincident_penalties): штраф заводится
+  // парой — второй команде двойник без нарушителя и причины. oppTeamName — для
+  // предупреждения, что связанный штраф соперника удалится.
+  coincidentEnabled = true,
+  oppTeamName = '',
   // Уведомление об ошибке ввода ({ title, message, type }) — снизу справа
   onToast
 }) => {
@@ -175,13 +182,25 @@ export const ProtocolSheet = ({
 
   const penaltiesWithTimeline = calculatePenaltyTimelines(penalties);
 
+  // ── Обоюдные удаления ──
+  // Пара — группа этой команды и группа соперника, связанные penalty_pair_id (см.
+  // «ОБОЮДНОЕ УДАЛЕНИЕ» в GameLiveDeskController). Партнёр живёт в таблице соперника,
+  // поэтому считаем по штрафам обеих команд.
+  const oppPenalties = oppEvents.filter(e => e.event_type === 'penalty');
+  const oppTimeline = calculatePenaltyTimelines(oppPenalties);
+  // Обоюдные строки для игры (голом не прекращаются, большинства не дают) и для значка ⇄
+  // (им отмечаются и парные десятки с двадцатками)
+  const coincidentIds = coincidentRowIds([...penalties, ...oppPenalties]);
+  const pairedMarkIds = coincidentRowIds([...penalties, ...oppPenalties], { onIceOnly: false });
+  const [pendingUnpair, setPendingUnpair] = useState(null);
 
   const [newGoal, setNewGoal] = useState({ time: '', scorer: '', ast1: '', ast2: '', str: 'equal', from_shot: true });
   // who — нарушитель и отбывающий: { type: ''|'player'|'team'|'official', jersey, server }
   // kind — вид штрафа (PENALTY_KINDS), violation — причина, у штрафа она одна (см. rowViolation).
   // end — окончание, вписанное руками (только при manualPenaltyEnd; пусто — считается само).
+  // coincident — галочка «Обоюдное» в окне вида: у каждого нового штрафа она снова снята.
   const EMPTY_WHO = { type: '', jersey: '', server: '' };
-  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violation: '', start: '', end: '' };
+  const EMPTY_PENALTY = { who: EMPTY_WHO, kind: 'minor', violation: '', start: '', end: '', coincident: false };
   const [newPenalty, setNewPenalty] = useState(EMPTY_PENALTY);
   // Какому полю открыта модалка причин: 'new' — форме, 'paper' — строке ввода бумажного
   // вида, 'edit' — редактору группы
@@ -193,7 +212,7 @@ export const ProtocolSheet = ({
   // str '' — игровую ситуацию руками не выбирали (подставится расчётная, как в форме);
   // fromShot null — «Бр» не трогали (запишется «с броска», как по умолчанию в форме).
   const EMPTY_PAPER_GOAL = { time: '', scorer: '', ast1: '', ast2: '', str: '', fromShot: null };
-  const EMPTY_PAPER_PENALTY = { whoText: '', kind: '', violation: '', start: '', end: '' };
+  const EMPTY_PAPER_PENALTY = { whoText: '', kind: '', violation: '', start: '', end: '', coincident: false };
   const [paperGoal, setPaperGoal] = useState(EMPTY_PAPER_GOAL);
   const [paperPen, setPaperPen] = useState(EMPTY_PAPER_PENALTY);
   // Ячейки с ошибкой после «+» или сохранения правки: ключ `${строка}.${поле}`, строка —
@@ -287,14 +306,18 @@ export const ProtocolSheet = ({
 
   // Нарушитель/отбывающий: из события — в объект модалки и обратно в поля запроса.
   // У старых записей типа нет: пустой игрок значил командный штраф.
-  const whoFromEvent = (p) => ({
+  // Незаполненный двойник обоюдного удаления — ни игрок, ни «К»: нарушителя ещё нет.
+  const whoFromEvent = (p) => (p.penalty_unfilled ? { ...EMPTY_WHO } : {
     type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
     jersey: getJersey(p.primary_player_id),
     server: getJersey(p.penalty_served_by_id),
   });
+  // «?» у незаполненного двойника — в графах нарушителя и причины, пока их не впишут
+  const unfilledMark = <span className="text-orange font-black" title="Обоюдное удаление: впишите нарушителя и причину">?</span>;
   // В графе «#» списка: нарушитель жирно, отбывающий за ним — бледнее, чтобы «5/3»
   // не читалось как счёт
   const renderOffender = (p) => {
+    if (p.penalty_unfilled) return unfilledMark;
     const who = whoFromEvent(p);
     const head = formatPenaltyOffender({ ...who, server: '' });
     return who.server
@@ -407,12 +430,26 @@ export const ProtocolSheet = ({
       || getPenaltyReasonCode(violation);
   };
 
+  // Сколько удалений в меньшинстве у команды на момент t по её таймлайну — без обоюдных
+  // (они большинства не дают). excludeKey — группа, которую сейчас пересобирают: её
+  // прежние строки не в счёт.
+  const activeOnIceAt = (timeline, t, excludeKey = null) => timeline.filter(p =>
+    p.onIce && !coincidentIds.has(p.id) && p.effEnd !== null && t >= p.effStart && t < p.effEnd
+    && (excludeKey === null || penaltyGroupKey(p) !== excludeKey)).length;
+
   // firstRowEnd — окончание первой строки, вписанное секретарём (ручное окончание):
   // оно вместо расчётного, и остальные строки группы идут от него цепочкой.
-  const buildGroupRows = (kind, startSecs, who, violation, { firstRowEnd = null } = {}) => {
+  // coincidentRow(i, row) — строка обоюдная (пара с таким же штрафом соперника): гол её
+  // не прекращает. excludeGroupKey — ключ пересобираемой группы (см. activeOnIceAt).
+  //
+  // Гол соперника закрывает малый, только если команда в этот момент была в меньшинстве:
+  // своих удалений, считая новую строку, больше, чем у соперника (обоюдные не в счёт).
+  // Раньше закрывал любой гол в окне штрафа, даже забитый при игре 4 на 4.
+  const buildGroupRows = (kind, startSecs, who, violation, { firstRowEnd = null, coincidentRow = () => false, excludeGroupKey = null } = {}) => {
     const spec = kindSpec(kind);
     const serverId = who?.server ? getPlayerId(who.server) : null;
     let cursor = startSecs;
+    const shorthandedAt = (t) => activeOnIceAt(penaltiesWithTimeline, t, excludeGroupKey) + 1 > activeOnIceAt(oppTimeline, t);
 
     return spec.rows.map((r, i) => {
       let time_seconds = startSecs;
@@ -429,9 +466,9 @@ export const ProtocolSheet = ({
         let end = cursor + r.minutes * 60;
         if (i === 0 && firstRowEnd !== null) {
           end = firstRowEnd;
-        } else if (r.cls === 'minor' && releaseOnGoal) {
+        } else if (r.cls === 'minor' && releaseOnGoal && !coincidentRow(i, r)) {
           const goal = oppEvents
-            .filter(e => isScoredFromPlay(e) && e.time_seconds > cursor && e.time_seconds < end)
+            .filter(e => isScoredFromPlay(e) && e.time_seconds > cursor && e.time_seconds < end && shorthandedAt(e.time_seconds))
             .sort((a, b) => a.time_seconds - b.time_seconds)[0];
           if (goal) end = goal.time_seconds;
         }
@@ -450,10 +487,11 @@ export const ProtocolSheet = ({
     });
   };
 
-  // Что показать в графе «Окон» формы: конец последней строки меньшинства, у 20 и ШБ — прочерк
-  const previewGroupEnd = (kind, startSecs, who, violation) => {
+  // Что показать в графе «Окон» формы: конец последней строки меньшинства, у 20 и ШБ — прочерк.
+  // options — как у buildGroupRows (обоюдный штраф голом не прекращается)
+  const previewGroupEnd = (kind, startSecs, who, violation, options = {}) => {
     if (startSecs === null || isNaN(startSecs)) return '';
-    const rows = buildGroupRows(kind, startSecs, who, violation);
+    const rows = buildGroupRows(kind, startSecs, who, violation, options);
     const timed = rows.filter(r => r.penalty_end_time !== null && r.penalty_class !== 'penalty_shot');
     if (timed.length === 0) return '—';
     return formatTime(timed[timed.length - 1].penalty_end_time);
@@ -483,9 +521,9 @@ export const ProtocolSheet = ({
   const firstRowTimed = (kind) => !['game_misconduct', 'penalty_shot'].includes(kindSpec(kind).rows[0].cls);
 
   // Окончание первой строки, которое получится само
-  const autoFirstRowEnd = (kind, startSecs) => {
+  const autoFirstRowEnd = (kind, startSecs, options = {}) => {
     if (startSecs === null || startSecs === undefined || isNaN(startSecs) || !firstRowTimed(kind)) return null;
-    return buildGroupRows(kind, startSecs, null, '')[0].penalty_end_time;
+    return buildGroupRows(kind, startSecs, null, '', options)[0].penalty_end_time;
   };
 
   // Вписанное окончание: { value: секунды } или { value: null } — поле пустое;
@@ -523,6 +561,93 @@ export const ProtocolSheet = ({
     ? times
     : { time_seconds: times.time_seconds + delta, penalty_end_time: times.penalty_end_time + delta };
 
+  // ─── ПАРА ОБОЮДНОГО УДАЛЕНИЯ ────────────────────────────────────────────────
+  // Строки парной группы соперника, по порядку; пары нет — пусто
+  const partnerRowsOf = (p) => {
+    const pairId = p ? groupRowsOf(p)[0]?.penalty_pair_id : null;
+    if (!pairId) return [];
+    return oppPenalties
+      .filter(r => penaltyGroupKey(r) === pairId)
+      .sort((a, b) => (Number(a.penalty_group_seq) || 1) - (Number(b.penalty_group_seq) || 1));
+  };
+
+  const sameSize = (a, b) => !!a && !!b && a.penalty_class === b.penalty_class && Number(a.penalty_minutes) === Number(b.penalty_minutes);
+  const ALL_ROWS = () => true;
+  // Какие строки группы будут обоюдными после сохранения: пустой двойник повторит вид
+  // целиком — обоюдны все, заполненный — только строки того же размера
+  const coincidentRowsWith = (partner) => (partner.length === 0 || partner[0].penalty_unfilled
+    ? ALL_ROWS
+    : (i, row) => sameSize(partner[i], { penalty_class: row.cls, penalty_minutes: row.minutes }));
+
+  // Галочка «Обоюдное» действует, если лига её показывает, и не у ШБ: штрафной бросок
+  // назначают одной команде. Без галочки на экране (лига её убрала) уже связанная пара
+  // остаётся парой — разорвать её можно, только сменив вид на ШБ.
+  const wantsPair = (kind, checked, wasPaired) => kind !== 'penalty_shot'
+    && (coincidentEnabled ? !!checked : wasPaired);
+
+  // Строки двойника: то же время и тот же вид, но без нарушителя, отбывающего и причины —
+  // кроме десятки и двадцатки у «2+10», «4+10», «5+20»: их причину задаёт вид, а не судья
+  const twinRowsFor = (kind, rows) => rows.map((r, i) => ({
+    time_seconds: r.time_seconds, penalty_end_time: r.penalty_end_time,
+    penalty_minutes: r.penalty_minutes, penalty_class: r.penalty_class,
+    penalty_served_by_id: null,
+    penalty_violation: kindSpec(kind).rows[i]?.fixedReason ? r.penalty_violation : null,
+    penalty_violation_code: kindSpec(kind).rows[i]?.fixedReason ? r.penalty_violation_code : null,
+    penalty_reason_id: null,
+  }));
+
+  // Время заполненной второй стороны после правки этой: строки того же размера получают
+  // ровно те же начало и окончание, остальные идут цепочкой со своей длительностью,
+  // двадцатка стоит на времени нарушения
+  const syncedPartnerTimes = (ownRows, partner) => {
+    const start = ownRows[0].time_seconds;
+    let cursor = start;
+    return partner.map((pr, i) => {
+      let time = start;
+      let end = null;
+      if (pr.penalty_class === 'penalty_shot') {
+        end = start;
+      } else if (pr.penalty_class !== 'game_misconduct') {
+        if (sameSize(ownRows[i], pr)) {
+          time = ownRows[i].time_seconds;
+          end = ownRows[i].penalty_end_time;
+        } else {
+          const prStart = toSecs(pr.time_seconds) || 0;
+          const prEnd = toSecs(pr.penalty_end_time);
+          time = cursor;
+          end = time + (prEnd === null ? Number(pr.penalty_minutes) * 60 : Math.max(0, prEnd - prStart));
+        }
+        cursor = end;
+      }
+      return { time_seconds: time, penalty_end_time: end };
+    });
+  };
+
+  // Вторая сторона пары в запросе сохранения (см. savePenaltyPair в GameLiveDeskController):
+  // пары ещё нет — заводим двойника, двойник пустой — повторяет вид и строки целиком,
+  // заполненная сторона — получает только время
+  const pairPayload = (kind, rows, partner) => {
+    if (partner.length === 0) return { mode: 'create', penalty_kind: kind, rows: twinRowsFor(kind, rows) };
+    if (partner[0].penalty_unfilled) return { mode: 'mirror', penalty_kind: kind, rows: twinRowsFor(kind, rows) };
+    return { mode: 'times', rows: syncedPartnerTimes(rows, partner) };
+  };
+
+  // Галочка «Обоюдное» в окне вида штрафа (настройка лиги): одна на окно, выбранный вид
+  // забирает её состояние
+  const coincidentToggle = (checked, onChange) => (coincidentEnabled ? (
+    <Checkbox
+      className=""
+      checked={!!checked}
+      onChange={(e) => onChange(e.target.checked)}
+      label={
+        <span className="flex flex-col text-left">
+          <span className="text-[14px] font-bold text-graphite">Обоюдное удаление</span>
+          <span className="text-[12px] font-medium text-graphite/50 leading-snug">Такой же штраф заведётся сопернику — с «?» вместо нарушителя и причины. К ШБ не относится.</span>
+        </span>
+      }
+    />
+  ) : null);
+
   // Правка группы. Пока вид и начало прежние, времена строк не пересчитываются, а
   // берутся записанные: иначе сохранение ради причины или нарушителя стёрло бы
   // вписанные руками окончания и досрочные выходы после голов.
@@ -535,26 +660,38 @@ export const ProtocolSheet = ({
     return { existing, startSecs, keepsTimes, offset: existing[0] ? shownOffset(existing[0]) : 0 };
   };
 
+  // Сборка строк в редакторе группы: её прежние строки не в счёт меньшинства, а
+  // обоюдные (если пара остаётся) голом не прекращаются
+  const editBuildOptions = (data) => {
+    const target = penalties.find(r => r.id === editPenaltyId);
+    if (!target) return {};
+    const wasPaired = !!groupRowsOf(target)[0]?.penalty_pair_id;
+    return {
+      excludeGroupKey: penaltyGroupKey(target),
+      coincidentRow: wantsPair(data.kind, data.coincident, wasPaired) ? coincidentRowsWith(partnerRowsOf(target)) : undefined,
+    };
+  };
+
   // Подсказка в пустом поле окончания редактора группы: что встанет, если не вписывать
   const groupEditEndHint = () => {
     const { existing, startSecs, keepsTimes, offset } = groupEditState(editPenaltyData);
     if (startSecs === null || isNaN(startSecs) || !firstRowTimed(editPenaltyData.kind)) return '';
-    const stored = keepsTimes ? toSecs(existing[0].penalty_end_time) : autoFirstRowEnd(editPenaltyData.kind, startSecs);
+    const stored = keepsTimes ? toSecs(existing[0].penalty_end_time) : autoFirstRowEnd(editPenaltyData.kind, startSecs, editBuildOptions(editPenaltyData));
     return stored === null ? '' : formatTime(stored + offset);
   };
 
   // Строки группы при правке с ручным окончанием. manualShown — вписанное окончание
   // первой строки в единицах графы «Окон», null — не вписано. Вид и начало прежние —
   // времена записанные, а новое окончание первой строки сдвигает следующие.
-  const manualGroupEditRows = (data, manualShown) => {
+  const manualGroupEditRows = (data, manualShown, options = {}) => {
     const { existing, keepsTimes, offset } = groupEditState(data);
     const manualStored = manualShown === null ? null : manualShown - offset;
     if (!keepsTimes) {
-      return buildGroupRows(data.kind, data.startSecs, data.who, data.violation, { firstRowEnd: manualStored });
+      return buildGroupRows(data.kind, data.startSecs, data.who, data.violation, { ...options, firstRowEnd: manualStored });
     }
     const oldFirstEnd = toSecs(existing[0].penalty_end_time);
     const delta = manualStored === null || oldFirstEnd === null ? 0 : manualStored - oldFirstEnd;
-    return buildGroupRows(data.kind, data.startSecs, data.who, data.violation).map((r, i) => {
+    return buildGroupRows(data.kind, data.startSecs, data.who, data.violation, options).map((r, i) => {
       const times = { time_seconds: toSecs(existing[i].time_seconds) ?? r.time_seconds, penalty_end_time: toSecs(existing[i].penalty_end_time) };
       if (i === 0) return { ...r, ...times, penalty_end_time: manualStored ?? times.penalty_end_time };
       return { ...r, ...shiftTimes(times, r.penalty_class, delta) };
@@ -605,13 +742,25 @@ export const ProtocolSheet = ({
 
   const [paperPenSaving, savePaperPen] = usePaperDraftSaving(penaltiesWithTimeline.length, () => setPaperPen(EMPTY_PAPER_PENALTY));
 
+  // Новый штраф целиком: строки по виду и, с галочкой «Обоюдное», его двойник сопернику.
+  // Обоюдный штраф голом не прекращается — двойник повторит его вид, пара одного размера.
+  const newPenaltyPayload = (data, firstRowEnd) => {
+    const paired = wantsPair(data.kind, data.coincident, false);
+    const rows = buildGroupRows(data.kind, data.startSecs, data.who, data.violation, { firstRowEnd, coincidentRow: paired ? ALL_ROWS : undefined });
+    const payload = groupPayload(data, rows);
+    if (paired) payload.pair = pairPayload(data.kind, rows, []);
+    return payload;
+  };
+  // Предпросмотр окончания в строке ввода — с тем же правилом для обоюдного
+  const newBuildOptions = (kind, checked) => (wantsPair(kind, checked, false) ? { coincidentRow: ALL_ROWS } : {});
+
   const handleAddPaperPenalty = () => {
     if (!paperPenReady || paperPenSaving) return;
     const { errs, who } = penaltyErrors(paperPen.whoText, paperPen.start, 'p');
     const manual = newManualEnd(paperPen.kind, paperPen.end, paperPenStart);
     if (manual.error) errs['p.end'] = manual.error;
     if (!reportErrors(errs, 'p', 'Удаление не добавлено')) return;
-    savePaperPen(() => onSavePenaltyGroup(teamId, groupPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart, firstRowEnd: manual.value })));
+    savePaperPen(() => onSavePenaltyGroup(teamId, newPenaltyPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart, coincident: paperPen.coincident }, manual.value)));
   };
 
   const startEditGoal = (g) => {
@@ -695,7 +844,7 @@ export const ProtocolSheet = ({
       onToast?.({ title: 'Удаление не добавлено', message: manual.error, type: 'error' });
       return;
     }
-    const ok = await onSavePenaltyGroup(teamId, groupPayload({ ...newPenalty, startSecs: newPenaltyStart, firstRowEnd: manual.value }));
+    const ok = await onSavePenaltyGroup(teamId, newPenaltyPayload({ ...newPenalty, startSecs: newPenaltyStart }, manual.value));
     if (ok) setNewPenalty(EMPTY_PENALTY);
   };
 
@@ -712,12 +861,15 @@ export const ProtocolSheet = ({
     // whoText — нарушитель так, как его вписывают в бумажном виде: «5 / 12», «ОПК».
     // origKind/origStart — с чем редактор открыт: по ним видно, остались ли вид и начало
     // прежними (см. groupEditState). end — ручное окончание первой строки, пока пустое.
+    // coincident — галочка «Обоюдное» в окне вида: у штрафа из пары она стоит.
+    // unfilled — двойник обоюдного, у которого судья ещё не вписал нарушителя.
     clearRowErrors('pe');
     const who = whoFromEvent(p);
     setEditPenaltyId(p.id);
     setEditPenaltyData({
-      mode: 'group', who, whoText: formatPenaltyOffender(who), kind, violation: rows[0]?.penalty_violation || '',
+      mode: 'group', who, whoText: rows[0]?.penalty_unfilled ? '' : formatPenaltyOffender(who), kind, violation: rows[0]?.penalty_violation || '',
       start: formatTime(p.time_seconds), end: '', origKind: kind, origStart: toSecs(p.time_seconds),
+      coincident: !!rows[0]?.penalty_pair_id, unfilled: !!rows[0]?.penalty_unfilled,
     });
   };
 
@@ -725,25 +877,49 @@ export const ProtocolSheet = ({
     const startSecs = parseTime(editPenaltyData.start);
     const hasStart = startSecs !== null && !isNaN(startSecs);
     let who = editPenaltyData.who;
+    // Двойнику обоюдного нарушителя можно пока не вписывать — он так и останется «?»
+    const whoBlank = !!editPenaltyData.unfilled
+      && (paperMode ? ['', '?'].includes((editPenaltyData.whoText || '').trim()) : !who?.type);
     const manual = manualPenaltyEnd && hasStart && firstRowTimed(editPenaltyData.kind)
       ? readManualEnd(editPenaltyData.end, startSecs + groupEditState(editPenaltyData).offset)
       : { value: null };
     if (paperMode) {
       const { errs, who: parsed } = penaltyErrors(editPenaltyData.whoText, editPenaltyData.start, 'pe', { requireStart: true });
+      if (whoBlank) delete errs['pe.who'];
       if (manual.error) errs['pe.end'] = manual.error;
       if (!reportErrors(errs, 'pe', 'Удаление не сохранено')) return;
-      who = parsed;
+      who = whoBlank ? null : parsed;
     } else if (manual.error) {
       onToast?.({ title: 'Удаление не сохранено', message: manual.error, type: 'error' });
       return;
     }
     if (!hasStart) return;
     const target = penalties.find(r => r.id === editPenaltyId);
+    const groupKey = penaltyGroupKey(target);
+    const wasPaired = !!groupRowsOf(target)[0]?.penalty_pair_id;
+    const paired = wantsPair(editPenaltyData.kind, editPenaltyData.coincident, wasPaired);
     const data = { ...editPenaltyData, who, startSecs };
-    // Без настройки лиги — как раньше: строки пересобираются по виду и началу
-    const rows = manualPenaltyEnd ? manualGroupEditRows(data, manual.value) : undefined;
-    const ok = await onSavePenaltyGroup(teamId, groupPayload(data, rows), penaltyGroupKey(target));
-    if (ok) setEditPenaltyId(null);
+    const options = editBuildOptions(editPenaltyData);
+    // Без ручного окончания — как раньше: строки пересобираются по виду и началу
+    const rows = manualPenaltyEnd
+      ? manualGroupEditRows(data, manual.value, options)
+      : buildGroupRows(data.kind, startSecs, who, data.violation, options);
+    const payload = groupPayload(data, rows);
+    if (whoBlank) payload.unfilled = true;
+    if (paired) payload.pair = pairPayload(data.kind, rows, partnerRowsOf(target));
+
+    const save = async () => {
+      const ok = await onSavePenaltyGroup(teamId, payload, groupKey);
+      if (ok) setEditPenaltyId(null);
+    };
+    // Галочку «Обоюдное» сняли (или вид стал ШБ): пара разрывается, и связанный штраф
+    // соперника удаляется целиком — сначала спрашиваем
+    if (wasPaired && !paired) {
+      payload.unpair = true;
+      setPendingUnpair(() => save);
+      return;
+    }
+    await save();
   };
 
   // Строка-продолжение (вторая двойка, десятка, двадцатка) — только свои поля: причина,
@@ -796,13 +972,19 @@ export const ProtocolSheet = ({
         if (e.id === p.id) return { ...base, ...reason, penalty_end_time: manualStored };
         return (Number(e.penalty_group_seq) || 1) > seq ? { ...base, ...shiftTimes(base, e.penalty_class, delta) } : base;
       });
-      const ok = await onSavePenaltyGroup(teamId, {
-        penalty_kind: first.penalty_kind || penaltyKindOf(first),
+      const kind = first.penalty_kind || penaltyKindOf(first);
+      const payload = {
+        penalty_kind: kind,
         time_seconds: rows[0].time_seconds,
         player_id: first.primary_player_id || null,
         penalty_offender_type: first.penalty_offender_type || (first.primary_player_id ? 'player' : 'team'),
+        // Незаполненный двойник обоюдного остаётся «?», а не становится командным
+        unfilled: !!first.penalty_unfilled,
         rows,
-      }, penaltyGroupKey(p));
+      };
+      // Штраф из обоюдной пары: окончание у пары общее — вторая сторона едет следом
+      if (first.penalty_pair_id) payload.pair = pairPayload(kind, rows, partnerRowsOf(first));
+      const ok = await onSavePenaltyGroup(teamId, payload, penaltyGroupKey(p));
       if (ok) setEditPenaltyId(null);
       return;
     }
@@ -811,7 +993,7 @@ export const ProtocolSheet = ({
     const success = await onSaveEvent(teamId, 'penalty', {
       time_seconds: p.time_seconds, penalty_end_time: oldEnd,
       player_id: p.primary_player_id || null,
-      penalty_offender_type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
+      penalty_offender_type: p.penalty_unfilled ? null : (p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team')),
       penalty_served_by_id: p.penalty_served_by_id || null,
       penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
       ...reason,
@@ -962,13 +1144,20 @@ export const ProtocolSheet = ({
                     <>
                       <td className={`${penaltyInputCell} !pl-2.5 rounded-l-md`}><PenaltyOffenderSelect ghost={penaltyGhost} hint="Игрок" title="Нарушитель" roster={roster} value={newPenalty.who} onChange={who=>setNewPenalty({...newPenalty, who})} className="!text-status-rejected font-bold" /></td>
                       <td className={penaltyInputCell}>
-                        {/* Смена вида: у одиночных 10 и 20 — предвыбор причины (см. reasonForKind) */}
-                        <CustomSelect
-                          ghost={penaltyGhost}
-                          title="Вид штрафа" options={penaltyKindOptions} value={newPenalty.kind}
-                          onChange={e=>setNewPenalty({...newPenalty, kind: e.target.value, violation: reasonForKind(e.target.value, newPenalty.violation)})}
-                          hideEmpty
-                        />
+                        {/* Смена вида: у одиночных 10 и 20 — предвыбор причины (см. reasonForKind).
+                            Галочка «Обоюдное» — в том же окне; выбранная, она видна значком ⇄ */}
+                        <div className="relative">
+                          <CustomSelect
+                            ghost={penaltyGhost}
+                            title="Вид штрафа" options={penaltyKindOptions} value={newPenalty.kind}
+                            onChange={e=>setNewPenalty(prev => ({...prev, kind: e.target.value, violation: reasonForKind(e.target.value, prev.violation)}))}
+                            hideEmpty
+                            extra={coincidentToggle(newPenalty.coincident, v => setNewPenalty(prev => ({ ...prev, coincident: v })))}
+                          />
+                          {wantsPair(newPenalty.kind, newPenalty.coincident, false) && (
+                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-orange text-[12px] font-black pointer-events-none" title="Обоюдное удаление">⇄</span>
+                          )}
+                        </div>
                       </td>
                       {/* Причина — одна на штраф, через окно со справочником */}
                       <td className={penaltyInputCell}>
@@ -999,13 +1188,13 @@ export const ProtocolSheet = ({
                           <StylishInput
                             ghost={penaltyGhost}
                             isTimeField title="Окончание штрафа" value={newPenalty.end}
-                            placeholder={formatTime(autoFirstRowEnd(newPenalty.kind, newPenaltyStart))}
+                            placeholder={formatTime(autoFirstRowEnd(newPenalty.kind, newPenaltyStart, newBuildOptions(newPenalty.kind, newPenalty.coincident)))}
                             onChange={e=>setNewPenalty({...newPenalty, end: formatTimeMask(e.target.value)})}
                           />
                         </td>
                       ) : (
                         <td className={`${penaltyInputCell} text-center font-mono text-[13px] text-graphite/40`} title="Окончание штрафа рассчитывается автоматически">
-                          {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violation)}
+                          {previewGroupEnd(newPenalty.kind, newPenaltyStart, newPenalty.who, newPenalty.violation, newBuildOptions(newPenalty.kind, newPenalty.coincident))}
                         </td>
                       )}
                       <td className={`${penaltyInputCell} text-center border-r-[6px] border-transparent bg-clip-padding rounded-r-[12px]`}>
@@ -1115,10 +1304,16 @@ export const ProtocolSheet = ({
         />
       </td>
       <td className={penDraftCell}>
-        <PaperSelect
-          title="Вид штрафа" options={penaltyKindOptions} hideEmpty value={paperPen.kind || undefined}
-          onChange={(v) => setPaperPen(d => ({ ...d, kind: v, violation: reasonForKind(v, d.violation) }))}
-        />
+        <div className="relative">
+          <PaperSelect
+            title="Вид штрафа" options={penaltyKindOptions} hideEmpty value={paperPen.kind || undefined}
+            onChange={(v) => setPaperPen(d => ({ ...d, kind: v, violation: reasonForKind(v, d.violation) }))}
+            extra={coincidentToggle(paperPen.coincident, v => setPaperPen(d => ({ ...d, coincident: v })))}
+          />
+          {paperPen.kind && wantsPair(paperPen.kind, paperPen.coincident, false) && (
+            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-orange text-[12px] font-black pointer-events-none" title="Обоюдное удаление">⇄</span>
+          )}
+        </div>
       </td>
       <td className={penDraftCell}><PaperPick title="Причина удаления" display={reasonCode(paperPen.violation)} onClick={() => setReasonsTarget('paper')} /></td>
       <td className={penDraftCell}><PaperInput type="time" title="Начало штрафа" value={paperPen.start} placeholder={autoTimePenalties ? formatTime(timerSeconds) : ''} error={hasError('p.start')} onChange={(v) => { clearError('p.start'); setPaperPen(d => ({ ...d, start: v })); }} onEnter={handleAddPaperPenalty} /></td>
@@ -1126,7 +1321,7 @@ export const ProtocolSheet = ({
         <td className={penDraftCell}>
           <PaperInput
             type="time" title="Окончание штрафа" value={paperPen.end}
-            placeholder={paperPen.kind ? formatTime(autoFirstRowEnd(paperPen.kind, paperPenStart)) : ''}
+            placeholder={paperPen.kind ? formatTime(autoFirstRowEnd(paperPen.kind, paperPenStart, newBuildOptions(paperPen.kind, paperPen.coincident))) : ''}
             error={hasError('p.end')}
             onChange={(v) => { clearError('p.end'); setPaperPen(d => ({ ...d, end: v })); }}
             onEnter={handleAddPaperPenalty}
@@ -1134,7 +1329,7 @@ export const ProtocolSheet = ({
         </td>
       ) : (
         <td className={`border-r border-graphite/[0.12] font-mono text-[13px] text-graphite/40 ${paperPenSaving ? PAPER_SAVING_CELL : ''}`} title="Окончание штрафа рассчитывается автоматически">
-          {paperPen.kind ? previewGroupEnd(paperPen.kind, paperPenStart, parseOffenderText(paperPen.whoText), paperPen.violation) : ''}
+          {paperPen.kind ? previewGroupEnd(paperPen.kind, paperPenStart, parseOffenderText(paperPen.whoText), paperPen.violation, newBuildOptions(paperPen.kind, paperPen.coincident)) : ''}
         </td>
       )}
       <td className="border-r border-graphite/30 p-0 text-center">
@@ -1151,6 +1346,7 @@ export const ProtocolSheet = ({
       <td className={editCell}>
         <PaperInput
           type="offender" title={offenderTitle} value={editPenaltyData.whoText} error={hasError('pe.who')}
+          placeholder={editPenaltyData.unfilled ? '?' : ''}
           onChange={(v) => { clearError('pe.who'); setEditPenaltyData(d => ({ ...d, whoText: v })); }}
           onBlur={() => setEditPenaltyData(d => ({ ...d, whoText: normalizeOffenderText(d.whoText) }))}
           onEnter={saveEditGroup}
@@ -1158,12 +1354,18 @@ export const ProtocolSheet = ({
         />
       </td>
       <td className={editCell}>
-        <PaperSelect
-          title="Вид штрафа" options={penaltyKindOptions} hideEmpty value={editPenaltyData.kind}
-          onChange={(v) => setEditPenaltyData(d => ({ ...d, kind: v, violation: reasonForKind(v, d.violation) }))}
-        />
+        <div className="relative">
+          <PaperSelect
+            title="Вид штрафа" options={penaltyKindOptions} hideEmpty value={editPenaltyData.kind}
+            onChange={(v) => setEditPenaltyData(d => ({ ...d, kind: v, violation: reasonForKind(v, d.violation) }))}
+            extra={coincidentToggle(editPenaltyData.coincident, v => setEditPenaltyData(d => ({ ...d, coincident: v })))}
+          />
+          {wantsPair(editPenaltyData.kind, editPenaltyData.coincident, !!editPenaltyData.coincident) && (
+            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-orange text-[12px] font-black pointer-events-none" title="Обоюдное удаление">⇄</span>
+          )}
+        </div>
       </td>
-      <td className={editCell}><PaperPick title="Причина удаления" display={reasonCode(editPenaltyData.violation)} onClick={() => setReasonsTarget('edit')} /></td>
+      <td className={editCell}><PaperPick title="Причина удаления" display={reasonCode(editPenaltyData.violation) || (editPenaltyData.unfilled ? '?' : '')} onClick={() => setReasonsTarget('edit')} /></td>
       <td className={editCell}><PaperInput type="time" title="Начало штрафа" value={editPenaltyData.start} error={hasError('pe.start')} onChange={(v) => { clearError('pe.start'); setEditPenaltyData(d => ({ ...d, start: v })); }} onEnter={saveEditGroup} /></td>
       {manualPenaltyEnd && firstRowTimed(editPenaltyData.kind) ? (
         <td className={editCell}>
@@ -1175,7 +1377,7 @@ export const ProtocolSheet = ({
         </td>
       ) : (
         <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-          {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), parseOffenderText(editPenaltyData.whoText), editPenaltyData.violation)}
+          {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), parseOffenderText(editPenaltyData.whoText), editPenaltyData.violation, editBuildOptions(editPenaltyData))}
         </td>
       )}
       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><PaperSaveButton onClick={saveEditGroup} /></td>
@@ -1456,17 +1658,23 @@ export const ProtocolSheet = ({
                   ) : isEditingPenalty && !isReadOnly && editPenaltyData.mode === 'group' ? (
                     <>
                       {/* Редактор группы: вид, нарушитель, причина, начало */}
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData({...editPenaltyData, who})} className="!text-status-rejected font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" hint={editPenaltyData.unfilled ? '?' : ''} roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData(prev => ({...prev, who}))} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
-                        <CustomSelect
-                          isEditing title="Вид штрафа" options={penaltyKindOptions} value={editPenaltyData.kind}
-                          onChange={e=>setEditPenaltyData({...editPenaltyData, kind: e.target.value, violation: reasonForKind(e.target.value, editPenaltyData.violation)})}
-                          hideEmpty
-                        />
+                        <div className="relative">
+                          <CustomSelect
+                            isEditing title="Вид штрафа" options={penaltyKindOptions} value={editPenaltyData.kind}
+                            onChange={e=>setEditPenaltyData(prev => ({...prev, kind: e.target.value, violation: reasonForKind(e.target.value, prev.violation)}))}
+                            hideEmpty
+                            extra={coincidentToggle(editPenaltyData.coincident, v => setEditPenaltyData(prev => ({ ...prev, coincident: v })))}
+                          />
+                          {wantsPair(editPenaltyData.kind, editPenaltyData.coincident, !!editPenaltyData.coincident) && (
+                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-orange text-[12px] font-black pointer-events-none" title="Обоюдное удаление">⇄</span>
+                          )}
+                        </div>
                       </td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <TriggerButton
-                          dim hint="Причина"
+                          dim hint={editPenaltyData.unfilled ? '?' : 'Причина'}
                           value={reasonCode(editPenaltyData.violation)}
                           onClick={() => setReasonsTarget('edit')}
                           className="h-[30px] !py-0 !px-1"
@@ -1487,7 +1695,7 @@ export const ProtocolSheet = ({
                         </td>
                       ) : (
                         <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10 text-center font-mono text-[13px] text-graphite-light" title="Окончание штрафа рассчитывается автоматически">
-                          {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violation)}
+                          {previewGroupEnd(editPenaltyData.kind, parseTime(editPenaltyData.start), editPenaltyData.who, editPenaltyData.violation, editBuildOptions(editPenaltyData))}
                         </td>
                       )}
                       <td className="border-r border-graphite/30 p-0 text-center bg-orange/10"><button onClick={saveEditGroup} className="bg-status-accepted text-white w-full h-full min-h-[34px] hover:bg-status-accepted/90 transition-colors flex items-center justify-center shadow-inner"><Icon name="save" className="w-5 h-5" /></button></td>
@@ -1523,11 +1731,13 @@ export const ProtocolSheet = ({
                       </td>
                       <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite" title={kindSpec(penaltyKindOf(penalty)).title || undefined}>
                         {isPenaltyShot ? 'ШБ' : penalty.penalty_group_id ? penalty.penalty_minutes : penaltyKindLabel(penalty)}
+                        {/* ⇄ — обоюдная строка: пара того же размера у соперника */}
+                        {pairedMarkIds.has(penalty.id) && <span className="ml-1 text-orange font-black" title="Обоюдное удаление">⇄</span>}
                       </td>
                       {/* В графе — только сокращение (снимок penalty_violation_code, для старых
                           записей — по наименованию), как и в PDF-протоколе; полная формулировка
                           остаётся в подсказке при наведении. */}
-                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation_code || getPenaltyReasonCode(penalty.penalty_violation)}</td>
+                      <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] px-2 text-[12px] truncate whitespace-nowrap overflow-hidden text-graphite-light font-semibold" title={penalty.penalty_violation}>{penalty.penalty_violation_code || getPenaltyReasonCode(penalty.penalty_violation) || (penalty.penalty_unfilled ? unfilledMark : '')}</td>
                       <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-mono font-semibold text-[13px] text-graphite-light">{formatTime(penalty.effStart)}</td>
                       <td className={`bg-status-rejected/[0.035] border-r border-graphite/[0.12] ${endTimeClass}`}>{endTimeDisplay}</td>
                       <td className="bg-status-rejected/[0.035] border-r border-graphite/30 p-0 text-center">
@@ -1552,6 +1762,17 @@ export const ProtocolSheet = ({
           </tbody>
         </table>
       </div>
+
+      {/* Галочку «Обоюдное» сняли — связанный штраф соперника удалится целиком */}
+      <ConfirmModal
+        isOpen={!!pendingUnpair}
+        onClose={() => setPendingUnpair(null)}
+        onConfirm={async () => { const run = pendingUnpair; setPendingUnpair(null); await run?.(); }}
+        title="Штраф больше не обоюдный"
+        message={`Связанный штраф команды «${oppTeamName || 'соперника'}» будет удалён целиком. Продолжить?`}
+        confirmLabel="Сохранить"
+        confirmingLabel="Сохранение..."
+      />
 
       {/* Причина штрафа — одна, выбор из справочника */}
       {reasonsModalState && (

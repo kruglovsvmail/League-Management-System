@@ -16,7 +16,7 @@ import { ProtocolBackAccordion } from '../components/GameLiveDesk/ProtocolBackAc
 import {
   getPeriodLimits, formatTime,
   calculatePenaltyTimelines, calculateOnIcePenalties, isMinorRow, isLegacyDoubleMinor,
-  calculatePeriodFromTime,
+  calculatePeriodFromTime, coincidentRowIds, penaltyGroupKey,
   PS_PENDING, PS_FAILED, isScoredFromPlay, sortRosterByPosition
 } from '../components/GameLiveDesk/GameDeskShared';
 import { isPauseStage, pauseStageSeconds } from '../components/GameLiveDesk/matchStages';
@@ -629,7 +629,8 @@ export function GameLiveDesk() {
       .filter(p => p.effEnd !== null && timerSeconds < p.effEnd && timerSeconds >= (parseInt(p.time_seconds, 10) || 0))
       .map(p => {
         const waiting = timerSeconds < p.effStart;
-        const servingJersey = p.penalty_served_by_id
+        // У двойника обоюдного удаления нарушитель ещё не вписан — вместо номера «?»
+        const servingJersey = p.penalty_unfilled ? '?' : p.penalty_served_by_id
           ? (rosterJersey(p.team_id, p.penalty_served_by_id) ?? p.primary_jersey_number)
           : p.primary_jersey_number;
         return { ...p, waiting, servingJersey, remaining: waiting ? p.effEnd - p.effStart : p.effEnd - timerSeconds };
@@ -744,7 +745,7 @@ export function GameLiveDesk() {
     period: p.period, event_type: 'penalty', team_id: p.team_id,
     time_seconds: p.time_seconds, penalty_end_time: p.penalty_end_time,
     player_id: p.primary_player_id || null,
-    penalty_offender_type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
+    penalty_offender_type: p.penalty_unfilled ? null : (p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team')),
     penalty_served_by_id: p.penalty_served_by_id || null,
     penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
     penalty_violation: p.penalty_violation, penalty_violation_code: p.penalty_violation_code,
@@ -763,7 +764,11 @@ export function GameLiveDesk() {
     const scoringTimeline = calculatePenaltyTimelines(events.filter(e => e.team_id === scoringTeamId && e.event_type === 'penalty'));
     // Строка в слоте меньшинства прямо сейчас: у группы 2+2 в один момент активна
     // ровно одна из двух двоек, так что счёт строк — это счёт удалённых на льду
-    const isActiveOnIce = (p, time) => p.onIce && p.effEnd !== null && time >= p.effStart && time < p.effEnd;
+    // Обоюдные строки (coincidentRowIds) — пара одного размера у обеих команд: голом не
+    // прекращаются и в счёт «кто в меньшинстве» не идут. Поэтому при обоюдном штрафе и ещё
+    // одном удалении у одной команды гол закрывает именно это удаление, а не обоюдное.
+    const coincident = coincidentRowIds(events.filter(e => e.event_type === 'penalty'));
+    const isActiveOnIce = (p, time) => p.onIce && !coincident.has(p.id) && p.effEnd !== null && time >= p.effStart && time < p.effEnd;
 
     const activeConceding = concedingTimeline.filter(p => isActiveOnIce(p, goalTime));
     const activeScoring = scoringTimeline.filter(p => isActiveOnIce(p, goalTime));
@@ -828,6 +833,13 @@ export function GameLiveDesk() {
       period: calculatePeriodFromTime(r.time_seconds, periodLength, otLength, periodsCount),
     }));
     const payload = { ...groupData, team_id: teamId, period: rows[0]?.period || currentPeriod, rows };
+    // Обоюдное удаление: строки второй стороны пары — с тем же расчётом периода
+    if (groupData.pair?.rows) {
+      payload.pair = {
+        ...groupData.pair,
+        rows: groupData.pair.rows.map(r => ({ ...r, period: calculatePeriodFromTime(r.time_seconds, periodLength, otLength, periodsCount) })),
+      };
+    }
 
     try {
       const url = groupId
@@ -882,6 +894,22 @@ export function GameLiveDesk() {
       }
     } catch (err) { console.error(err); } finally { setIsSaving(false); }
     return false;
+  };
+
+  // Удаление события. Штраф из обоюдной пары удаляется вместе со вторым (сервер удаляет
+  // обе группы), поэтому секретарь заранее видит, чей ещё штраф уйдёт.
+  const requestDeleteEvent = (id) => {
+    const ev = events.find(e => e.id === id);
+    let message;
+    if (ev?.event_type === 'penalty') {
+      const first = events.find(e => e.id === penaltyGroupKey(ev)) || ev;
+      if (first.penalty_pair_id) {
+        const partnerTeamId = first.team_id === game?.home_team_id ? game?.away_team_id : game?.home_team_id;
+        const partnerTeam = partnerTeamId === game?.home_team_id ? game?.home_team_name : game?.away_team_name;
+        message = `Удаление обоюдное: вместе с этим штрафом удалится связанный штраф команды «${partnerTeam || 'соперника'}». Это действие нельзя отменить.`;
+      }
+    }
+    setDeleteModalState({ isOpen: true, id, type: 'event', message });
   };
 
   const confirmDeleteAction = async () => {
@@ -1150,7 +1178,7 @@ export function GameLiveDesk() {
             timerSeconds={timerSeconds}
             onSaveEvent={saveEventRow}
             onSavePenaltyGroup={savePenaltyGroup}
-            onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, id, type: 'event' })}
+            onDeleteEvent={requestDeleteEvent}
             onToggleLineup={toggleLineup}
             trackPlusMinus={trackPlusMinus}
             onRequestPlusMinus={handleRequestPlusMinus}
@@ -1179,7 +1207,7 @@ export function GameLiveDesk() {
           <ShootoutAccordion 
             game={game} events={events} homeRoster={homeRoster} awayRoster={awayRoster}
             currentPeriod={currentPeriod} soLength={soLength} periodLength={periodLength} otLength={otLength} periodsCount={periodsCount}
-            onSaveEvent={saveEventRow} onDeleteEvent={(id) => setDeleteModalState({ isOpen: true, id, type: 'event' })}
+            onSaveEvent={saveEventRow} onDeleteEvent={requestDeleteEvent}
             onFinishShootout={handleFinishShootout} 
             onReopenShootout={handleReopenShootout} 
             onUpdateStatus={handleUpdateShootoutStatus} 
@@ -1235,6 +1263,7 @@ export function GameLiveDesk() {
       <ConfirmModal 
         isOpen={deleteModalState.isOpen} onClose={() => setDeleteModalState({ isOpen: false, id: null, type: null })}
         onConfirm={confirmDeleteAction} isLoading={isSaving}
+        {...(deleteModalState.message ? { message: deleteModalState.message } : {})}
       />
       <GamePlusMinusModal 
         isOpen={plusMinusModalState.isOpen} onClose={() => setPlusMinusModalState(p => ({ ...p, isOpen: false }))}

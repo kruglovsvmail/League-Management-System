@@ -6,6 +6,7 @@ import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly
 import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../utils/qualificationAccess.js';
 import { alignPersonAdmission } from '../utils/personAdmission.js';
 import { logPersonEvent, logPersonEvents } from '../utils/personLog.js';
+import { assertJerseyNumbersFree } from '../utils/jerseyNumbers.js';
 
 /**
  * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
@@ -668,6 +669,16 @@ export const createTeamApplication = async (req, res) => {
         }
 
         if (playerIds && playerIds.length > 0) {
+            // Номера в заявку приходят из состава команды — два одинаковых туда не пускаем
+            // (utils/jerseyNumbers.js). Выборка та же, что у вставки ниже.
+            const numbersRes = await client.query(`
+                SELECT tm.user_id AS player_id, tr.jersey_number
+                FROM team_rosters tr
+                JOIN team_members tm ON tr.member_id = tm.id
+                WHERE tm.team_id = $1 AND tm.user_id = ANY($2::int[])
+            `, [teamId, playerIds]);
+            await assertJerseyNumbersFree(client, appId, numbersRes.rows);
+
             const { rows } = await client.query(`
                 INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
                 SELECT $1, tm.user_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
@@ -769,6 +780,11 @@ export const addPlayerToApplication = async (req, res) => {
                 SELECT player_id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = ANY($2::int[])
             `, [appId, playerIds]);
             const existingPids = new Set(checkRes.rows.map(r => r.player_id));
+
+            // Номер из состава команды не должен быть занят в заявке другим игроком
+            // (utils/jerseyNumbers.js): база ловит повтор только у допущенных, и новый
+            // игрок «на проверке» встал бы с чужим номером молча
+            await assertJerseyNumbersFree(client, appId, pRes.rows.map(r => ({ player_id: r.pid, jersey_number: r.jersey_number })));
 
             const insertValues = [];
             const insertParams = [];

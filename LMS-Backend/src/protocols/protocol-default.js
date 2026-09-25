@@ -35,6 +35,8 @@ const formatTime = (totalSeconds) => {
 // по наличию игрока, как их и вводили: пусто = командный.
 const formatPenaltyOffender = (penalty) => {
     if (!penalty) return '';
+    // Двойник обоюдного удаления: нарушителя судья ещё не вписал — не «К», а «?»
+    if (penalty.penalty_unfilled) return '?';
     const type = penalty.penalty_offender_type || (penalty.scorer_number ? 'player' : 'team');
     const who = type === 'team' ? 'К' : type === 'official' ? 'ОПК' : (penalty.scorer_number || '');
     return penalty.served_by_number ? `${who} / ${penalty.served_by_number}` : who;
@@ -697,7 +699,7 @@ export const getHtml = (data) => {
             // Сокращение берём снимком из самого события: пункт справочника могли отредактировать
             // или удалить, а протокол должен печататься так, как его записал секретарь.
             // PENALTY_REASON_MAP — фолбэк для матчей, записанных до появления справочника.
-            const penaltyReason = penalty ? (penalty.penalty_violation_code || PENALTY_REASON_MAP[penalty.penalty_violation] || penalty.penalty_violation || '') : '';
+            const penaltyReason = penalty ? (penalty.penalty_violation_code || PENALTY_REASON_MAP[penalty.penalty_violation] || penalty.penalty_violation || (penalty.penalty_unfilled ? '?' : '')) : '';
             // ?? а не ||: у equal в карте пустая строка, и через || она проваливалась
             // в сырое значение — в графе печаталось «equal».
             const goalStrength = goal ? (GOAL_STRENGTH_MAP[goal.goal_strength] ?? goal.goal_strength ?? '') : '';

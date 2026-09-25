@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { assertPlayersAllowedInDivision } from '../utils/qualificationAccess.js';
 import { logPersonEvent } from '../utils/personLog.js';
+import { assertJerseyNumbersFree } from '../utils/jerseyNumbers.js';
 
 // 1. Получение списка всех трансферов
 export const getTransfers = async (req, res) => {
@@ -102,6 +103,10 @@ export const handleTransferAction = async (req, res) => {
                 // проверяется так же, как при обычной заявке.
                 await assertPlayersAllowedInDivision(client, tr.division_id, [tr.player_id]);
 
+                // Номер выбирали при подаче запроса, а к принятию его мог занять другой
+                // игрок заявки (utils/jerseyNumbers.js)
+                await assertJerseyNumbersFree(client, tr.tournament_team_id, [{ player_id: tr.player_id, jersey_number: tr.jersey_number }]);
+
                 const checkRoster = await client.query(
                     `SELECT id FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`, 
                     [tr.tournament_team_id, tr.player_id]
@@ -163,6 +168,14 @@ export const handleTransferAction = async (req, res) => {
             } else if (tr.request_type === 'remove') {
                 if (!isAdmin) throw new Error('Нет прав: только администратор может откатывать трансферы');
 
+                // Игрок возвращается со своим прежним номером — пока его не было, номер
+                // могли отдать другому (utils/jerseyNumbers.js)
+                const returning = await client.query(
+                    `SELECT player_id, jersey_number FROM tournament_rosters WHERE tournament_team_id = $1 AND player_id = $2`,
+                    [tr.tournament_team_id, tr.player_id]
+                );
+                await assertJerseyNumbersFree(client, tr.tournament_team_id, returning.rows);
+
                 await client.query(`
                     UPDATE tournament_rosters SET period_end = NULL, updated_at = NOW()
                     WHERE tournament_team_id = $1 AND player_id = $2
@@ -189,10 +202,13 @@ export const getTransferPlayers = async (req, res) => {
         const { divisionId, teamId, type } = req.query;
         let players = [];
         
+        // Занятым считается номер любого действующего игрока заявки, с допуском или без:
+        // то же правило проверяет принятие трансфера (utils/jerseyNumbers.js), и номер,
+        // предложенный здесь, там не должен отказать
         const takenNumbersRes = await pool.query(`
             SELECT tr.jersey_number FROM tournament_rosters tr
             JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-            WHERE tt.division_id = $1 AND tt.team_id = $2 AND tr.period_end IS NULL AND tr.application_status != 'declined'
+            WHERE tt.division_id = $1 AND tt.team_id = $2 AND tr.period_end IS NULL
         `, [divisionId, teamId]);
         const takenNumbers = takenNumbersRes.rows.map(r => r.jersey_number).filter(n => n !== null);
 

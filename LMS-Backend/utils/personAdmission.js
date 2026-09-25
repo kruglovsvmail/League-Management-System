@@ -24,6 +24,7 @@
  */
 import pool from '../config/db.js';
 import { logPersonEvent, logPersonEvents } from './personLog.js';
+import { assertApprovalNumberFree } from './jerseyNumbers.js';
 
 /**
  * Ставит допуск человеку в заявке разом в обеих таблицах.
@@ -43,6 +44,9 @@ export const setPersonAdmission = async (appId, userId, status, { actorId = null
         await client.query('BEGIN');
 
         if (admitted) {
+            // Два допущенных игрока с одним номером база не пропустит — отказываем заранее
+            // и называем, у кого этот номер (utils/jerseyNumbers.js)
+            await assertApprovalNumberFree(client, appId, userId);
             await client.query(`
                 UPDATE tournament_rosters tr
                    SET application_status = $3,

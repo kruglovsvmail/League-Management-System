@@ -96,9 +96,14 @@ const syncTimerToDB = async (gameId, timerObj) => {
     // Длительности разминки и перерыва сюда не пишем: NULL в строке значит «брать из
     // дивизиона», своё значение у матча появляется, только когда его меняет секретарь
     // (updateTimerSettings). Иначе первый же «Стоп» навсегда отвязал бы матч от дивизиона.
+    //
+    // WHERE EXISTS: матч могли удалить, пока его таймер жил в памяти (удалить можно
+    // предстоящий пустой матч, а панель или оверлей OBS к нему уже открывали). Тогда
+    // писать некуда — строка просто не вставляется, вместо ошибки внешнего ключа в логе.
     await pool.query(`
       INSERT INTO game_timers (game_id, time_seconds, is_running, controller, penalties, period_length, ot_length, so_length, periods_count, period, auto_stop_on_event, arena_announcer, stage, stage_seconds, stage_running, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+      WHERE EXISTS (SELECT 1 FROM games WHERE id = $1)
       ON CONFLICT (game_id) DO UPDATE
       SET time_seconds = EXCLUDED.time_seconds,
           is_running = EXCLUDED.is_running,

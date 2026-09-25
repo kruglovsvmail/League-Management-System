@@ -221,6 +221,9 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
         // поменял обе записи, поэтому вкладку представителей перечитываем целиком.
         await loadTeamData(selectedTeam.id);
         onRefresh(true);
+      } else {
+        // Например, номер допускаемого уже у другого допущенного игрока — сервер называет, у кого
+        setGlobalToast({ title: 'Ошибка', message: data.error || 'Не удалось изменить допуск', type: 'error' });
       }
     } catch (err) { setGlobalToast({ title: 'Ошибка', message: 'Сбой сети', type: 'error' }); }
   };

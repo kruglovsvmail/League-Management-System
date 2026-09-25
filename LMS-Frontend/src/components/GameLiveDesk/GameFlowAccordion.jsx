@@ -42,6 +42,8 @@ export const GameFlowAccordion = ({
   // настроек: гол досрочно закрывает малый штраф, окончание считается само.
   const releaseOnGoal = game?.sec_penalty_release_on_goal ?? true;
   const manualPenaltyEnd = game?.sec_penalty_manual_end ?? false;
+  // Галочка «Обоюдное» в окне вида штрафа — тоже настройка лиги, по умолчанию есть
+  const coincidentEnabled = game?.sec_coincident_penalties ?? true;
 
   return (
     <div className="bg-white shadow-lg flex flex-col font-sans rounded-md transition-all duration-500 ease-in-out">
@@ -63,6 +65,7 @@ export const GameFlowAccordion = ({
                   teamId={game.home_team_id}
                   teamLetter="А"
                   teamName={game.home_team_name}
+                  oppTeamName={game.away_team_name}
                   teamLogo={getImageUrl(game.home_team_logo || game.home_logo_url || game.home_logo)}
                   roster={homeRoster}
                   league={league}
@@ -85,6 +88,7 @@ export const GameFlowAccordion = ({
                   paperMode={paperMode}
                   releaseOnGoal={releaseOnGoal}
                   manualPenaltyEnd={manualPenaltyEnd}
+                  coincidentEnabled={coincidentEnabled}
                   onToast={onToast}
                 />
 
@@ -92,6 +96,7 @@ export const GameFlowAccordion = ({
                   teamId={game.away_team_id}
                   teamLetter="Б"
                   teamName={game.away_team_name}
+                  oppTeamName={game.home_team_name}
                   teamLogo={getImageUrl(game.away_team_logo || game.away_logo_url || game.away_logo)}
                   roster={awayRoster}
                   league={league}
@@ -114,6 +119,7 @@ export const GameFlowAccordion = ({
                   paperMode={paperMode}
                   releaseOnGoal={releaseOnGoal}
                   manualPenaltyEnd={manualPenaltyEnd}
+                  coincidentEnabled={coincidentEnabled}
                   onToast={onToast}
                 />
 

@@ -14,7 +14,9 @@ import { isTouchDevice } from '../utils/device';
 // Строка поиска появляется сама на длинных списках; `searchable` позволяет решить явно.
 // `dense` ужимает строки (справочник причин удаления): в фиксированную высоту списка
 // помещается заметно больше пунктов, и листать приходится меньше.
-export function OptionListModal({ isOpen, onClose, title = 'Выбор', options = [], value, onSelect, hideEmpty = false, emptyLabel, searchable, dense = false }) {
+// extra — строка над списком (галочка «Обоюдное» в окне вида штрафа): её состояние
+// держит вызывающий, а выбор варианта его просто забирает
+export function OptionListModal({ isOpen, onClose, title = 'Выбор', options = [], value, onSelect, hideEmpty = false, emptyLabel, searchable, dense = false, extra = null }) {
   const [query, setQuery] = useState('');
 
   // Сбрасываем поиск при каждом открытии, иначе список приедет уже отфильтрованным
@@ -43,6 +45,7 @@ export function OptionListModal({ isOpen, onClose, title = 'Выбор', options
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="normal">
+      {extra && <div className="mb-3">{extra}</div>}
       {showSearch && (
         <input
           type="text"

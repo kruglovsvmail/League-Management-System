@@ -78,7 +78,10 @@ const fetchRawProtocolData = async (gameId) => {
             -- Штраф на команду («К») / представителя («ОПК») и номер отбывающего за
             -- нарушителя — графа «№» блока «Удаление» печатает «ОПК/75», «12/44»
             ge.penalty_offender_type, gr_srv.jersey_number as served_by_number,
-            ge.penalty_kind, ge.penalty_group_id, ge.penalty_group_seq
+            ge.penalty_kind, ge.penalty_group_id, ge.penalty_group_seq,
+            -- Двойник обоюдного удаления, которого ещё не заполнили: в графах «№» и
+            -- «Причина» печатается «?», а не командный штраф
+            ge.penalty_unfilled
         FROM game_events ge
         -- COALESCE обязателен: у штрафа автора нет, нарушитель лежит в
         -- penalty_player_id, и без него в графе «№» блока «Удаление» печаталась

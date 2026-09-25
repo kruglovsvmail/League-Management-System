@@ -32,7 +32,10 @@ export const getLeaguePreferences = async (req, res) => {
               sec_panel_view,
               -- Единственный вратарь из заявки сам встаёт в журнал на 0:00; гол в
               -- большинстве досрочно закрывает малый штраф; окончание удаления руками
-              sec_goalie_autofill, sec_penalty_release_on_goal, sec_penalty_manual_end
+              sec_goalie_autofill, sec_penalty_release_on_goal, sec_penalty_manual_end,
+              -- Галочка «Обоюдное» в окне вида штрафа: штраф заводится парой, второй команде
+              -- двойник без нарушителя и причины
+              sec_coincident_penalties
        FROM leagues WHERE id = $1`,
       [leagueId]
     );
@@ -54,7 +57,8 @@ export const updateLeaguePreferences = async (req, res) => {
             allow_match_jersey_change, allow_match_letters_change,
             sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log,
             sec_panel_view,
-            sec_goalie_autofill, sec_penalty_release_on_goal, sec_penalty_manual_end } = req.body;
+            sec_goalie_autofill, sec_penalty_release_on_goal, sec_penalty_manual_end,
+            sec_coincident_penalties } = req.body;
 
     // Тумблеры: undefined — поле не прислали (вкладка «Арены» шлёт только своё),
     // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
@@ -89,7 +93,8 @@ export const updateLeaguePreferences = async (req, res) => {
          sec_panel_view = COALESCE($17, sec_panel_view),
          sec_goalie_autofill = COALESCE($18, sec_goalie_autofill),
          sec_penalty_release_on_goal = COALESCE($19, sec_penalty_release_on_goal),
-         sec_penalty_manual_end = COALESCE($20, sec_penalty_manual_end)
+         sec_penalty_manual_end = COALESCE($20, sec_penalty_manual_end),
+         sec_coincident_penalties = COALESCE($21, sec_coincident_penalties)
        WHERE id = $16`,
       [sec_access_before_hours ?? null, sec_access_after_hours ?? null, arena_sort_order ?? null,
        toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
@@ -98,7 +103,8 @@ export const updateLeaguePreferences = async (req, res) => {
        toggle(allow_match_jersey_change), toggle(allow_match_letters_change),
        toggle(sec_auto_time_goals), toggle(sec_auto_time_penalties), toggle(sec_auto_time_goalie_log),
        leagueId, sec_panel_view ?? null,
-       toggle(sec_goalie_autofill), toggle(sec_penalty_release_on_goal), toggle(sec_penalty_manual_end)]
+       toggle(sec_goalie_autofill), toggle(sec_penalty_release_on_goal), toggle(sec_penalty_manual_end),
+       toggle(sec_coincident_penalties)]
     );
     res.json({ success: true });
   } catch (err) {

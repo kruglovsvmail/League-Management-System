@@ -1134,6 +1134,48 @@ export const saveTournamentTeamComposition = async (req, res) => {
             if (diff) logEvent(player.player_id, 'card', diff);
         }
 
+        // --- Освобождение номеров ---------------------------------------------
+        // Правило базы «номер в заявке не повторяется» (idx_tournament_rosters_uniq_number)
+        // Postgres проверяет после каждой строки, а не в конце запроса. Когда номер
+        // переходит от игрока к игроку — обменялись номерами или номер ушедшего отдали
+        // другому, — на полпути он оказывался у двоих, и сохранение падало целиком.
+        // Поэтому сначала из заявки уходят убранные, а у тех, кому номер меняют, старый
+        // снимается, — и только потом раздаются новые.
+        if (removedIds.length > 0) {
+            if (app.division_has_games) {
+                // Матчи уже сыграны: строку сохраняем, игрок уходит в «Отзаявленные».
+                const removed = await client.query(`
+                    UPDATE tournament_rosters
+                    SET period_end = CURRENT_DATE, updated_at = NOW()
+                    WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
+                    RETURNING player_id
+                `, [id, removedIds]);
+                for (const row of removed.rows) logEvent(row.player_id, 'removed');
+            } else {
+                // Запись журнала переживает удаление строки: журнал привязан к паре
+                // «заявка + человек», а не к строке состава
+                const deleted = await client.query(`
+                    DELETE FROM tournament_rosters
+                    WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
+                    RETURNING player_id
+                `, [id, removedIds]);
+                for (const row of deleted.rows) logEvent(row.player_id, 'deleted');
+            }
+        }
+
+        const renumberedIds = incomingPlayers
+            .filter(p => {
+                const before = activeRows.get(p.player_id);
+                return before && before.jersey_number !== null && before.jersey_number !== p.jersey_number;
+            })
+            .map(p => p.player_id);
+        if (renumberedIds.length > 0) {
+            await client.query(`
+                UPDATE tournament_rosters SET jersey_number = NULL
+                WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
+            `, [id, renumberedIds]);
+        }
+
         const playersJson = JSON.stringify(incomingPlayers);
 
         if (incomingPlayers.length > 0) {
@@ -1188,28 +1230,6 @@ export const saveTournamentTeamComposition = async (req, res) => {
                 RETURNING player_id
             `, [id, playersJson]);
             for (const row of inserted.rows) logEvent(row.player_id, 'added');
-        }
-
-        if (removedIds.length > 0) {
-            if (app.division_has_games) {
-                // Матчи уже сыграны: строку сохраняем, игрок уходит в «Отзаявленные».
-                const removed = await client.query(`
-                    UPDATE tournament_rosters
-                    SET period_end = CURRENT_DATE, updated_at = NOW()
-                    WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
-                    RETURNING player_id
-                `, [id, removedIds]);
-                for (const row of removed.rows) logEvent(row.player_id, 'removed');
-            } else {
-                // Запись журнала переживает удаление строки: журнал привязан к паре
-                // «заявка + человек», а не к строке состава
-                const deleted = await client.query(`
-                    DELETE FROM tournament_rosters
-                    WHERE tournament_team_id = $1 AND player_id = ANY($2::int[]) AND period_end IS NULL
-                    RETURNING player_id
-                `, [id, removedIds]);
-                for (const row of deleted.rows) logEvent(row.player_id, 'deleted');
-            }
         }
 
         // --- Штаб -------------------------------------------------------------

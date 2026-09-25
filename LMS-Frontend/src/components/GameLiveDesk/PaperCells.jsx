@@ -68,7 +68,8 @@ export function PaperPick({ display, onClick, error = false, title, className = 
 // Выбор из списка через OptionListModal. value === undefined — ещё не выбрано (пусто);
 // emptyDisplay — что писать, если выбран пустой пункт ('': «Пустые ворота»);
 // blankValues — значения, которые в ячейке не пишутся («равные составы» — пустая ИС).
-export function PaperSelect({ value, onChange, options = [], title, error = false, hideEmpty = false, emptyLabel, emptyDisplay = '', blankValues = [], className = '' }) {
+// extra — строка над списком в окне (галочка «Обоюдное» у вида штрафа)
+export function PaperSelect({ value, onChange, options = [], title, error = false, hideEmpty = false, emptyLabel, emptyDisplay = '', blankValues = [], className = '', extra = null }) {
   const [isOpen, setIsOpen] = useState(false);
   const selected = options.find(o => String(o.value) === String(value));
   const display = blankValues.includes(value) ? ''
@@ -88,6 +89,7 @@ export function PaperSelect({ value, onChange, options = [], title, error = fals
         onSelect={(v) => onChange(v)}
         hideEmpty={hideEmpty}
         emptyLabel={emptyLabel}
+        extra={extra}
       />
     </>
   );
