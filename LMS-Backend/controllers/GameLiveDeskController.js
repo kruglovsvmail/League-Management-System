@@ -56,18 +56,45 @@ const createPenaltyShotRow = async (client, gameId, penaltyEventId, penalizedTea
  * Для не-штрафов всё NULL — колонки штрафные.
  */
 const PENALTY_OFFENDER_TYPES = ['player', 'team', 'official'];
-const penaltyOffenderFields = (eventType, playerId, offenderType, servedById) => {
-    if (eventType !== 'penalty') return { playerId: null, offenderType: null, servedById: null };
+// unknown — номера нарушителя и отбывающего не из заявки ({ player, servedBy }), см. ниже
+const penaltyOffenderFields = (eventType, playerId, offenderType, servedById, unknown = {}) => {
+    if (eventType !== 'penalty') {
+        return { playerId: null, offenderType: null, servedById: null, playerUnknownJersey: null, servedByUnknownJersey: null };
+    }
     // Тип не прислали (старый клиент) — восстанавливаем по наличию игрока
     const type = PENALTY_OFFENDER_TYPES.includes(offenderType)
         ? offenderType
         : (playerId ? 'player' : 'team');
+    const player = type === 'player' ? (playerId || null) : null;
     return {
-        playerId: type === 'player' ? (playerId || null) : null,
+        playerId: player,
         offenderType: type,
         servedById: servedById || null,
+        playerUnknownJersey: type === 'player' && !player ? readUnknownJersey(unknown.player) : null,
+        servedByUnknownJersey: servedById ? null : readUnknownJersey(unknown.servedBy),
     };
 };
+
+/**
+ * ─── НОМЕР НЕ ИЗ ЗАЯВКИ ──────────────────────────────────────────────────────
+ *
+ * В бумажном виде панели номера вписываются с клавиатуры. Номер, которого нет в
+ * составе команды на матч, событие не останавливает: игрока у события нет, а сам номер
+ * лежит в *_unknown_jersey — панель рисует его в ячейке красным, чтобы секретарь
+ * исправил. Статистика, диктор, графика и печатный протокол эти колонки не читают:
+ * для них это гол без автора и штраф без нарушителя.
+ *
+ * Номер хранится, только пока игрока нет, — найденный игрок его стирает.
+ */
+const readUnknownJersey = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = parseInt(value, 10);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+};
+
+// Правка одной строки: поле не прислали (старая версия панели) — номер остаётся прежним.
+// Иначе переключение «Бр» или сдвиг окончания штрафа после гола стирали бы его.
+const keptUnknownJersey = (value, previous) => (value === undefined ? previous : value);
 
 /**
  * Правка счёта матча на ±1. Вынесено отдельно, потому что дёргается из трёх мест:
@@ -146,6 +173,10 @@ export const getGameEvents = async (req, res) => {
                 -- Обоюдное удаление: ссылка на парный штраф другой команды (в первой строке
                 -- группы) и незаполненный двойник — нарушитель и причина ещё не вписаны
                 ge.penalty_pair_id, ge.penalty_unfilled,
+                -- Номера не из заявки (игрока нет — номер вписан руками): панель рисует
+                -- их красным. primary — автор гола или нарушитель, как primary_player_id
+                COALESCE(ge.scorer_unknown_jersey, ge.penalty_player_unknown_jersey) as primary_unknown_jersey,
+                ge.assist1_unknown_jersey, ge.assist2_unknown_jersey, ge.penalty_served_by_unknown_jersey,
                 ge.against_goalie_id, ge.from_shot, ge.linked_event_id,
                 -- Вид штрафа и строки его группы (2+2, 2+10 …): по ним панель рисует
                 -- цепочку строк, а плашка и диктор получают все причины разом
@@ -257,6 +288,7 @@ const readPenaltyGroupBody = (body) => {
         penalty_violation_code: r.penalty_violation_code || null,
         penalty_reason_id: r.penalty_reason_id || null,
         penalty_served_by_id: r.penalty_served_by_id || null,
+        penalty_served_by_unknown_jersey: r.penalty_served_by_id ? null : readUnknownJersey(r.penalty_served_by_unknown_jersey),
     }));
 
     if (normalized.some(r => penaltyEndsBeforeStart(r.time_seconds, r.penalty_end_time))) {
@@ -280,8 +312,9 @@ const PENALTY_ROW_INSERT = `
         penalty_player_id, penalty_violation, penalty_violation_code, penalty_reason_id,
         penalty_minutes, penalty_class, penalty_end_time,
         penalty_offender_type, penalty_served_by_id,
-        penalty_kind, penalty_group_id, penalty_group_seq, penalty_unfilled
-    ) VALUES ($1, $2, $3, 'penalty', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        penalty_kind, penalty_group_id, penalty_group_seq, penalty_unfilled,
+        penalty_player_unknown_jersey, penalty_served_by_unknown_jersey
+    ) VALUES ($1, $2, $3, 'penalty', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING id
 `;
 
@@ -291,6 +324,7 @@ const penaltyRowParams = (gameId, teamId, who, kind, groupId, seq, r, unfilled =
     r.penalty_minutes, r.penalty_class, r.penalty_end_time,
     who.offenderType, r.penalty_served_by_id || null,
     kind, groupId, seq, unfilled,
+    who.playerUnknownJersey ?? null, r.penalty_served_by_unknown_jersey ?? null,
 ];
 
 // Строки группы, какие есть сейчас, по порядку. Старая запись (до групп) — одиночная
@@ -328,14 +362,16 @@ const rewritePenaltyGroup = async (client, gameId, existing, teamId, who, kind, 
                     penalty_player_id = $4, penalty_violation = $5, penalty_violation_code = $6, penalty_reason_id = $7,
                     penalty_minutes = $8, penalty_class = $9, penalty_end_time = $10,
                     penalty_offender_type = $11, penalty_served_by_id = $12,
-                    penalty_kind = $13, penalty_group_id = $14, penalty_group_seq = $15, penalty_unfilled = $16
-                WHERE id = $17
+                    penalty_kind = $13, penalty_group_id = $14, penalty_group_seq = $15, penalty_unfilled = $16,
+                    penalty_player_unknown_jersey = $17, penalty_served_by_unknown_jersey = $18
+                WHERE id = $19
             `, [
                 r.period, r.time_seconds, teamId,
                 who.playerId, r.penalty_violation, r.penalty_violation_code, r.penalty_reason_id,
                 r.penalty_minutes, r.penalty_class, r.penalty_end_time,
                 who.offenderType, r.penalty_served_by_id || null,
                 kind, firstId, i + 1, unfilled,
+                who.playerUnknownJersey ?? null, r.penalty_served_by_unknown_jersey ?? null,
                 target.id,
             ]);
         } else {
@@ -369,7 +405,7 @@ const rewritePenaltyGroup = async (client, gameId, existing, teamId, who, kind, 
  * Что пара значит для игры, считает панель: обоюдные строки одинакового размера голом
  * не прекращаются и большинства не дают (coincidentRowIds в GameDeskShared.jsx).
  */
-const UNFILLED_WHO = { playerId: null, offenderType: null };
+const UNFILLED_WHO = { playerId: null, offenderType: null, playerUnknownJersey: null };
 
 const deletePenaltyGroupRows = (client, gameId, groupId) => client.query(
     `DELETE FROM game_events WHERE game_id = $1 AND event_type = 'penalty' AND (penalty_group_id = $2 OR id = $2)`,
@@ -431,7 +467,7 @@ export const createPenaltyGroup = async (req, res) => {
         if (parsed.error) return res.status(400).json({ success: false, error: parsed.error });
         const { kind, rows } = parsed;
 
-        const who = penaltyOffenderFields('penalty', player_id, penalty_offender_type, null);
+        const who = penaltyOffenderFields('penalty', player_id, penalty_offender_type, null, { player: req.body.player_unknown_jersey });
 
         await client.query('BEGIN');
 
@@ -475,7 +511,7 @@ export const updatePenaltyGroup = async (req, res) => {
         // Двойник обоюдного удаления, у которого судья ещё не вписал нарушителя, остаётся
         // незаполненным: не игрок и не командный штраф, а «?»
         const unfilled = !!req.body.unfilled;
-        const who = unfilled ? UNFILLED_WHO : penaltyOffenderFields('penalty', player_id, penalty_offender_type, null);
+        const who = unfilled ? UNFILLED_WHO : penaltyOffenderFields('penalty', player_id, penalty_offender_type, null, { player: req.body.player_unknown_jersey });
 
         await client.query('BEGIN');
 
@@ -538,7 +574,9 @@ export const createGameEvent = async (req, res) => {
             penalty_violation, penalty_violation_code, penalty_reason_id,
             penalty_minutes, penalty_class, penalty_end_time,
             against_goalie_id, from_shot, linked_event_id,
-            penalty_offender_type, penalty_served_by_id
+            penalty_offender_type, penalty_served_by_id,
+            // Номера не из заявки (см. «НОМЕР НЕ ИЗ ЗАЯВКИ»): player — автора или нарушителя
+            player_unknown_jersey, assist1_unknown_jersey, assist2_unknown_jersey, penalty_served_by_unknown_jersey
         } = req.body;
 
         if (event_type === 'penalty' && penaltyEndsBeforeStart(time_seconds, penalty_end_time)) {
@@ -549,11 +587,13 @@ export const createGameEvent = async (req, res) => {
 
         const isGoalEvent = (event_type === 'goal');
         const isShootoutEvent = (event_type === 'shootout_goal' || event_type === 'shootout_miss');
-        const penaltyWho = penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id);
+        const penaltyWho = penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id,
+            { player: player_unknown_jersey, servedBy: penalty_served_by_unknown_jersey });
         // Штрафной бросок по ходу матча: бьющий хранится в scorer_id так же, как
         // автор гола — реализованный бросок становится обычным голом с ИС «ШБ»,
         // и игрок при смене типа события никуда переезжать не должен.
         const isPenaltyShotRow = PENALTY_SHOT_ROW_TYPES.includes(event_type);
+        const hasScorer = isGoalEvent || isShootoutEvent || isPenaltyShotRow;
 
         // from_shot имеет смысл только для голов в основное время;
         // для прочих типов оставляем default БД (true).
@@ -566,12 +606,14 @@ export const createGameEvent = async (req, res) => {
                 penalty_player_id, penalty_violation, penalty_violation_code, penalty_reason_id,
                 penalty_minutes, penalty_class, penalty_end_time,
                 against_goalie_id, from_shot, linked_event_id,
-                penalty_offender_type, penalty_served_by_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                penalty_offender_type, penalty_served_by_id,
+                scorer_unknown_jersey, assist1_unknown_jersey, assist2_unknown_jersey,
+                penalty_player_unknown_jersey, penalty_served_by_unknown_jersey
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
             RETURNING id
         `, [
             gameId, period, time_seconds || 0, event_type, team_id || null,
-            (isGoalEvent || isShootoutEvent || isPenaltyShotRow) ? player_id : null,
+            hasScorer ? player_id : null,
             assist1_id || null, assist2_id || null, goal_strength || null,
             penaltyWho.playerId,
             // Причина сохраняется снимком (наименование + сокращение) плюс ссылкой на пункт
@@ -579,7 +621,11 @@ export const createGameEvent = async (req, res) => {
             penalty_violation || null, penalty_violation_code || null, penalty_reason_id || null,
             penalty_minutes || null, penalty_class || null, penalty_end_time || null,
             against_goalie_id || null, fromShotValue, linked_event_id || null,
-            penaltyWho.offenderType, penaltyWho.servedById
+            penaltyWho.offenderType, penaltyWho.servedById,
+            hasScorer && !player_id ? readUnknownJersey(player_unknown_jersey) : null,
+            isGoalEvent && !assist1_id ? readUnknownJersey(assist1_unknown_jersey) : null,
+            isGoalEvent && !assist2_id ? readUnknownJersey(assist2_unknown_jersey) : null,
+            penaltyWho.playerUnknownJersey, penaltyWho.servedByUnknownJersey
         ]);
 
         const eventId = eventRes.rows[0].id;
@@ -619,7 +665,8 @@ export const updateGameEvent = async (req, res) => {
             penalty_violation, penalty_violation_code, penalty_reason_id,
             penalty_minutes, penalty_class, penalty_end_time,
             against_goalie_id, from_shot,
-            penalty_offender_type, penalty_served_by_id
+            penalty_offender_type, penalty_served_by_id,
+            player_unknown_jersey, assist1_unknown_jersey, assist2_unknown_jersey, penalty_served_by_unknown_jersey
         } = req.body;
 
         if (event_type === 'penalty' && penaltyEndsBeforeStart(time_seconds, penalty_end_time)) {
@@ -628,7 +675,12 @@ export const updateGameEvent = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const oldEvRes = await client.query('SELECT event_type, team_id, penalty_class, penalty_unfilled FROM game_events WHERE id = $1', [eventId]);
+        const oldEvRes = await client.query(`
+            SELECT event_type, team_id, penalty_class, penalty_unfilled,
+                   scorer_unknown_jersey, assist1_unknown_jersey, assist2_unknown_jersey,
+                   penalty_player_unknown_jersey, penalty_served_by_unknown_jersey
+            FROM game_events WHERE id = $1
+        `, [eventId]);
         if (oldEvRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Событие не найдено' });
@@ -636,14 +688,23 @@ export const updateGameEvent = async (req, res) => {
 
         const oldEvent = oldEvRes.rows[0];
 
+        // Номера не из заявки: не прислали — прежние (см. keptUnknownJersey)
+        const unknownPlayer = keptUnknownJersey(player_unknown_jersey,
+            oldEvent.event_type === 'penalty' ? oldEvent.penalty_player_unknown_jersey : oldEvent.scorer_unknown_jersey);
+        const unknownServedBy = keptUnknownJersey(penalty_served_by_unknown_jersey, oldEvent.penalty_served_by_unknown_jersey);
+
         // Строка незаполненного двойника обоюдного удаления (правка одной строки — причина
         // продолжения или окончание) так и остаётся «?»: без присланного нарушителя
         // penaltyOffenderFields записал бы её командным штрафом
         const staysUnfilled = event_type === 'penalty' && !!oldEvent.penalty_unfilled
             && !player_id && !PENALTY_OFFENDER_TYPES.includes(penalty_offender_type);
         const penaltyWho = staysUnfilled
-            ? { playerId: null, offenderType: null, servedById: penalty_served_by_id || null }
-            : penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id);
+            ? {
+                playerId: null, offenderType: null, servedById: penalty_served_by_id || null,
+                playerUnknownJersey: null, servedByUnknownJersey: penalty_served_by_id ? null : readUnknownJersey(unknownServedBy),
+            }
+            : penaltyOffenderFields(event_type, player_id, penalty_offender_type, penalty_served_by_id,
+                { player: unknownPlayer, servedBy: unknownServedBy });
 
         // Счёт правится по фактическому изменению «был гол / стал гол». Одним
         // правилом закрываются оба случая: перенос гола другой команде и смена
@@ -656,6 +717,7 @@ export const updateGameEvent = async (req, res) => {
 
         const isShootoutEvent = (event_type === 'shootout_goal' || event_type === 'shootout_miss');
         const isPenaltyShotRow = PENALTY_SHOT_ROW_TYPES.includes(event_type);
+        const hasScorer = isGoalEvent || isShootoutEvent || isPenaltyShotRow;
 
         // from_shot имеет смысл только для голов в основное время;
         // для прочих типов оставляем true (default БД).
@@ -668,18 +730,24 @@ export const updateGameEvent = async (req, res) => {
         penalty_player_id = $8, penalty_violation = $9, penalty_minutes = $10, penalty_class = $11, penalty_end_time = $12,
         against_goalie_id = $13, event_type = $15, from_shot = $16,
         penalty_violation_code = $17, penalty_reason_id = $18,
-        penalty_offender_type = $19, penalty_served_by_id = $20, penalty_unfilled = $21
+        penalty_offender_type = $19, penalty_served_by_id = $20, penalty_unfilled = $21,
+        scorer_unknown_jersey = $22, assist1_unknown_jersey = $23, assist2_unknown_jersey = $24,
+        penalty_player_unknown_jersey = $25, penalty_served_by_unknown_jersey = $26
     WHERE id = $14
 `, [
     period, time_seconds || 0, team_id || null,
-    (isGoalEvent || isShootoutEvent || isPenaltyShotRow) ? player_id : null, assist1_id || null, assist2_id || null, goal_strength || null,
+    hasScorer ? player_id : null, assist1_id || null, assist2_id || null, goal_strength || null,
     penaltyWho.playerId, penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
     against_goalie_id || null,
     eventId,
     event_type,
     fromShotValue,
     penalty_violation_code || null, penalty_reason_id || null,
-    penaltyWho.offenderType, penaltyWho.servedById, staysUnfilled
+    penaltyWho.offenderType, penaltyWho.servedById, staysUnfilled,
+    hasScorer && !player_id ? readUnknownJersey(unknownPlayer) : null,
+    isGoalEvent && !assist1_id ? readUnknownJersey(keptUnknownJersey(assist1_unknown_jersey, oldEvent.assist1_unknown_jersey)) : null,
+    isGoalEvent && !assist2_id ? readUnknownJersey(keptUnknownJersey(assist2_unknown_jersey, oldEvent.assist2_unknown_jersey)) : null,
+    penaltyWho.playerUnknownJersey, penaltyWho.servedByUnknownJersey
 ]);
 
         // Строка броска живёт ровно столько, сколько штраф остаётся «ШБ».

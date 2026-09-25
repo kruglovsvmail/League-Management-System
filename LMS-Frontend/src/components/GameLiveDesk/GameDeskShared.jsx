@@ -547,7 +547,8 @@ export const TriggerButton = ({ onClick, value, options = [], placeholder = '', 
 // телефоне был раньше и убран: он выглядел чужим и не умел подписи ролей и пояснения.
 // taken — номера, занятые в этом же событии другой ролью ({ '7': 'Автор' }): в модалке
 // они гаснут с подписью роли под номером. Пустые ключи (роль ещё не выбрана) отбрасываются.
-export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, className, roster, title, isEditing = false, ghost = false, hint = '' }) => {
+// warn — в поле номер не из заявки (вписан в бумажном виде): красная рамка.
+export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, className, roster, title, isEditing = false, ghost = false, hint = '', warn = false }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const takenClean = Object.fromEntries(Object.entries(taken).filter(([k]) => k && k !== 'undefined' && k !== 'null'));
@@ -566,7 +567,7 @@ export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, class
 
   return (
     <>
-      <TriggerButton onClick={() => setIsOpen(true)} value={value} options={options} className={mergedClassName} dim={isEditing} ghost={ghost} hint={hint} />
+      <TriggerButton onClick={() => setIsOpen(true)} value={value} options={options} className={mergedClassName} dim={isEditing} ghost={ghost} hint={hint} warn={warn} />
       <NumberPickerModal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
@@ -582,15 +583,15 @@ export const StylishSelect = ({ value, onChange, exclude = [], taken = {}, class
 
 // Графа «#» таблицы «Удаления»: нарушитель (номер, «К» или «ОПК») и отбывающий за него.
 // value — объект { type, jersey, server } (см. PenaltyOffenderModal), onChange получает
-// такой же объект.
-export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className, title, isEditing = false, ghost = false, hint = '' }) => {
+// такой же объект. warn — как у StylishSelect.
+export const PenaltyOffenderSelect = ({ value, onChange, roster = [], className, title, isEditing = false, ghost = false, hint = '', warn = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const options = sortRosterByNumber(roster).map(p => ({ value: String(p.jersey_number), label: String(p.jersey_number) }));
   const label = formatPenaltyOffender(value);
 
   return (
     <>
-      <TriggerButton onClick={() => setIsOpen(true)} value={label} className={`h-[30px] !py-0 !px-2 ${className || ''}`} dim={isEditing} ghost={ghost} hint={hint} />
+      <TriggerButton onClick={() => setIsOpen(true)} value={label} className={`h-[30px] !py-0 !px-2 ${className || ''}`} dim={isEditing} ghost={ghost} hint={hint} warn={warn} />
       <PenaltyOffenderModal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
-export function Tooltip({ children, logo, title, subtitle, position = 'top', noUnderline = false, trigger = 'hover' }) {
+// block — триггер на всю ширину родителя (вся ячейка таблицы, а не только текст в ней)
+export function Tooltip({ children, logo, title, subtitle, position = 'top', noUnderline = false, trigger = 'hover', block = false }) {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: -9999, left: -9999 });
 
@@ -101,7 +102,7 @@ export function Tooltip({ children, logo, title, subtitle, position = 'top', noU
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={handleClick}
-      className="inline-block relative cursor-pointer"
+      className={`${block ? 'block w-full' : 'inline-block'} relative cursor-pointer`}
     >
       {/* Если передали noUnderline - выводим без span с пунктиром */}
       {noUnderline ? (

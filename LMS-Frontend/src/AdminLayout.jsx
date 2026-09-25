@@ -10,7 +10,7 @@ const complexMeshGradient = {
 
   return (
     // Убрали bg-[#dededeff], добавили style
-    <div className="flex min-h-screen" style={complexMeshGradient}>
+    <div className="heco-admin-surface flex min-h-screen" style={complexMeshGradient}>
       <Sidebar 
         user={user} 
         onLogout={onLogout} 

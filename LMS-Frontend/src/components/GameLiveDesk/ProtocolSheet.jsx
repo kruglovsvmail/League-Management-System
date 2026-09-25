@@ -18,6 +18,7 @@ import {
 } from './PaperCells';
 import { Icon } from '../../ui/Icon';
 import { EquipmentMark } from '../../ui/EquipmentMark';
+import { Tooltip } from '../../ui/Tooltip';
 
 // Обратный отсчёт тайм-аута: 30 секунд с момента нажатия кнопки, потом ещё
 // минуту висит на нуле, чтобы секретарь видел, что тайм-аут закончился, и
@@ -301,28 +302,98 @@ export const ProtocolSheet = ({
      }
   }, [newGoalTime, goalieLog, manualStr]);
 
-  const getPlayerId = (jersey) => roster.find(r => r.jersey_number == jersey)?.player_id || null;
+  // Пустой номер — не игрок: иначе `0 == ''` находило бы в составе игрока №0
+  const getPlayerId = (jersey) => (jersey === '' || jersey === null || jersey === undefined
+    ? null
+    : roster.find(r => r.jersey_number == jersey)?.player_id || null);
   const getJersey = (id) => roster.find(r => r.player_id == id)?.jersey_number || '';
+
+  // ── Номер не из заявки ──
+  // Номер, которого нет в составе на матч, событие не останавливает: игрока у события нет,
+  // а сам номер хранится в записи (см. «НОМЕР НЕ ИЗ ЗАЯВКИ» в GameLiveDeskController) и
+  // горит в ячейке красным, пока секретарь его не исправит. Для статистики, диктора и
+  // графики это гол без автора и штраф без нарушителя.
+  // Номер в ячейке: у игрока из состава — его номер, иначе вписанный руками
+  const jerseyOf = (playerId, unknownJersey) => {
+    if (playerId) return getJersey(playerId);
+    return unknownJersey === null || unknownJersey === undefined ? '' : String(unknownJersey);
+  };
+  // В запрос: номер вписан, а игрока с ним в составе нет — уходит сам номер
+  const unknownOf = (jersey) => (jersey && !getPlayerId(jersey) ? jersey : null);
 
   // Нарушитель/отбывающий: из события — в объект модалки и обратно в поля запроса.
   // У старых записей типа нет: пустой игрок значил командный штраф.
   // Незаполненный двойник обоюдного удаления — ни игрок, ни «К»: нарушителя ещё нет.
   const whoFromEvent = (p) => (p.penalty_unfilled ? { ...EMPTY_WHO } : {
     type: p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team'),
-    jersey: getJersey(p.primary_player_id),
-    server: getJersey(p.penalty_served_by_id),
+    jersey: jerseyOf(p.primary_player_id, p.primary_unknown_jersey),
+    server: jerseyOf(p.penalty_served_by_id, p.penalty_served_by_unknown_jersey),
+  });
+  // Номера нарушителя и отбывающего записи, которых нет в заявке
+  const offenderUnknownOf = (p) => (p.penalty_unfilled ? { jersey: '', server: '' } : {
+    jersey: p.primary_player_id ? '' : jerseyOf(null, p.primary_unknown_jersey),
+    server: p.penalty_served_by_id ? '' : jerseyOf(null, p.penalty_served_by_unknown_jersey),
   });
   // «?» у незаполненного двойника — в графах нарушителя и причины, пока их не впишут
   const unfilledMark = <span className="text-orange font-black" title="Обоюдное удаление: впишите нарушителя и причину">?</span>;
   // В графе «#» списка: нарушитель жирно, отбывающий за ним — бледнее, чтобы «5/3»
-  // не читалось как счёт
-  const renderOffender = (p) => {
+  // не читалось как счёт. onRed — ячейка залита красным (номер не из заявки)
+  const renderOffender = (p, onRed = false) => {
     if (p.penalty_unfilled) return unfilledMark;
     const who = whoFromEvent(p);
     const head = formatPenaltyOffender({ ...who, server: '' });
     return who.server
-      ? <>{head}<span className="text-graphite/40 font-medium"> / {who.server}</span></>
+      ? <>{head}<span className={`${onRed ? 'text-white/75' : 'text-graphite/40'} font-medium`}> / {who.server}</span></>
       : head;
+  };
+
+  // Подсказка к красной ячейке. Игрока с этим номером могли уже добавить в заявку — запись
+  // от этого к нему не привязалась, её достаточно пересохранить.
+  // consequence — что записано без игрока («Гол записан без автора.»)
+  const unknownTip = (jerseys, consequence) => {
+    const list = jerseys.map(j => `№${j}`).join(' и ');
+    if (jerseys.every(j => getPlayerId(j))) {
+      return {
+        title: `${list} уже в заявке`,
+        text: 'Запись сделана, когда игрока с этим номером в заявке ещё не было. Откройте правку строки и сохраните её — номер привяжется к игроку.',
+      };
+    }
+    return {
+      title: `${jerseys.length > 1 ? 'Игроков' : 'Игрока'} ${list} нет в заявке`,
+      text: `В заявке команды «${teamName}» на этот матч нет игрока с таким номером. ${consequence} Исправьте номер в правке строки.`,
+    };
+  };
+  // Ячейка номера не из заявки: залита красным, по нажатию — подсказка
+  const unknownCell = (content, tip, className = '') => (
+    <td className={`relative border-r border-graphite/[0.12] p-0 bg-status-rejected text-white font-bold text-[13px] whitespace-nowrap ${className}`}>
+      <Tooltip trigger="click" block noUnderline title={tip.title} subtitle={tip.text}>
+        <span className="flex items-center justify-center h-[33px] px-1">{content}</span>
+      </Tooltip>
+    </td>
+  );
+  // Графа номера у гола: номер не из заявки — красная ячейка, остальные как были
+  const goalJerseyCell = (playerId, unknownJersey, textClass, consequence) => {
+    const jersey = jerseyOf(playerId, unknownJersey);
+    if (playerId || !jersey) return <td className={`${GOAL_TINT} border-r border-graphite/[0.12] text-[13px] ${textClass}`}>{jersey}</td>;
+    return unknownCell(jersey, unknownTip([jersey], consequence));
+  };
+  // Графа «#» удаления: нарушитель и отбывающий в одной ячейке — красная, если номер не из
+  // заявки хоть у одного. continuation — строка-продолжение группы, у неё впереди «↳».
+  const penaltyOffenderCell = (p, continuation, title) => {
+    const unknown = offenderUnknownOf(p);
+    const jerseys = [unknown.jersey, unknown.server].filter(Boolean);
+    const arrow = (tone) => continuation && <span className={`absolute left-1.5 top-1/2 -translate-y-1/2 font-medium ${tone}`}>↳</span>;
+    if (jerseys.length === 0) {
+      return (
+        <td className="relative bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite whitespace-nowrap" title={title}>
+          {arrow('text-graphite/30')}
+          {renderOffender(p)}
+        </td>
+      );
+    }
+    const consequence = unknown.jersey && unknown.server ? 'Штраф записан без нарушителя и отбывающего.'
+      : unknown.jersey ? 'Штраф записан без нарушителя.' : 'Отбывающий не записан.';
+    return unknownCell(<>{arrow('text-white/60')}{renderOffender(p, true)}</>, unknownTip(jerseys, consequence));
   };
   const whoToPayload = (who) => ({
     player_id: who?.type === 'player' ? getPlayerId(who.jersey) : null,
@@ -331,18 +402,20 @@ export const ProtocolSheet = ({
   });
 
   // ─── ПРОВЕРКА ВВОДА БУМАЖНОГО ВИДА ──────────────────────────────────────────
-  // Номера вписываются с клавиатуры, поэтому проверяем по «+» (и по сохранению правки):
-  // событие привязывается к игроку из состава на матч — чужой номер записать нельзя.
-  // Ошибочные ячейки подсвечиваются, секретарю — уведомление, что именно не так.
-  const hasJersey = (num) => roster.some(r => String(r.jersey_number) === String(num));
+  // Номера вписываются с клавиатуры, поэтому проверяем по «+» (и по сохранению правки).
+  // errs — ошибки, с ними событие не записывается. warns — номера, которых нет в составе
+  // на матч: событие записывается без игрока, номер горит в записи красным (см. «Номер не
+  // из заявки» выше). Ячейки подсвечиваются и у тех, и у других, секретарю — уведомление.
+  const hasJersey = (num) => !!getPlayerId(num);
 
   const GOAL_ROLES = [['scorer', 'Автор'], ['ast1', 'Ассистент 1'], ['ast2', 'Ассистент 2']];
   const goalErrors = (d, prefix, { requireTime = false } = {}) => {
     const errs = {};
+    const warns = {};
     if (requireTime && !d.time) errs[`${prefix}.time`] = 'Время: укажите время гола';
     else if (!isClockValid(d.time)) errs[`${prefix}.time`] = 'Время: секунд не больше 59';
     GOAL_ROLES.forEach(([f, label]) => {
-      if (d[f] && !hasJersey(d[f])) errs[`${prefix}.${f}`] = `${label}: игрока №${d[f]} нет в составе на матч`;
+      if (d[f] && !hasJersey(d[f])) warns[`${prefix}.${f}`] = `${label}: игрока №${d[f]} нет в составе на матч`;
     });
     GOAL_ROLES.forEach(([a, la], i) => GOAL_ROLES.slice(i + 1).forEach(([b, lb]) => {
       if (d[a] && d[a] === d[b]) {
@@ -351,34 +424,48 @@ export const ProtocolSheet = ({
         errs[`${prefix}.${b}`] = errs[`${prefix}.${b}`] || msg;
       }
     }));
-    return errs;
+    return { errs, warns };
   };
+
+  // Номера нарушителя и отбывающего, которых нет в составе на матч — одним сообщением
+  const offenderWarning = (who) => [
+    who?.type === 'player' && who.jersey && !hasJersey(who.jersey) ? `Нарушитель: игрока №${who.jersey} нет в составе на матч` : null,
+    who?.server && !hasJersey(who.server) ? `Отбывающий: игрока №${who.server} нет в составе на матч` : null,
+  ].filter(Boolean).join('. ');
 
   const penaltyErrors = (whoText, start, prefix, { requireStart = false } = {}) => {
     const errs = {};
+    const warns = {};
     const who = parseOffenderText(whoText);
     if (!who) errs[`${prefix}.who`] = 'Нарушитель: номер игрока, К или ОПК; отбывающий — через «/», например 5 / 12';
-    else if (who.type === 'player' && !hasJersey(who.jersey)) errs[`${prefix}.who`] = `Нарушитель: игрока №${who.jersey} нет в составе на матч`;
-    else if (who.server && !hasJersey(who.server)) errs[`${prefix}.who`] = `Отбывающий: игрока №${who.server} нет в составе на матч`;
     else if (who.type === 'player' && who.server === who.jersey) errs[`${prefix}.who`] = 'Нарушитель и отбывающий — один и тот же игрок';
+    else if (offenderWarning(who)) warns[`${prefix}.who`] = offenderWarning(who);
     if (requireStart && !start) errs[`${prefix}.start`] = 'Начало: укажите время штрафа';
     else if (!isClockValid(start)) errs[`${prefix}.start`] = 'Начало: секунд не больше 59';
-    return { errs, who };
+    return { errs, warns, who };
   };
 
-  // Ошибок нет — true. Есть — подсветка ячеек этой строки и уведомление с перечнем.
-  const reportErrors = (errs, prefix, title) => {
-    setFieldErrors(prev => ({
-      ...Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${prefix}.`))),
-      ...errs,
-    }));
+  const withoutRow = (errors, prefix) => Object.fromEntries(Object.entries(errors).filter(([k]) => !k.startsWith(`${prefix}.`)));
+  // Ошибок нет — true. Есть — подсветка ячеек этой строки (вместе с номерами не из
+  // заявки) и уведомление с перечнем ошибок.
+  const reportErrors = (errs, prefix, title, warns = {}) => {
+    setFieldErrors(prev => ({ ...withoutRow(prev, prefix), ...warns, ...errs }));
     const messages = [...new Set(Object.values(errs))];
     if (messages.length === 0) return true;
     onToast?.({ title, message: messages.join('. '), type: 'error' });
     return false;
   };
-  const clearRowErrors = (prefix) => setFieldErrors(prev =>
-    Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${prefix}.`))));
+  const clearRowErrors = (prefix) => setFieldErrors(prev => withoutRow(prev, prefix));
+  // Событие записано, но с номерами не из заявки — уведомление о них. savedTitle —
+  // что произошло («Гол добавлен»)
+  const reportUnknown = (warns, savedTitle) => {
+    // У нарушителя с отбывающим два номера в одной ячейке — и два сообщения через точку
+    const messages = [...new Set(Object.values(warns).flatMap(m => m.split('. ')))];
+    if (messages.length === 0) return;
+    onToast?.({ title: `${savedTitle} — проверьте ${messages.length > 1 ? 'номера' : 'номер'}`, message: messages.join('. '), type: 'error' });
+  };
+  // Правка открыта — номера не из заявки подсвечены сразу: видно, что исправлять
+  const markUnknown = (warns, prefix) => setFieldErrors(prev => ({ ...withoutRow(prev, prefix), ...warns }));
 
   // ─── СБОРКА СТРОК ШТРАФА ────────────────────────────────────────────────────
   // Вид даёт набор строк (см. PENALTY_KINDS); здесь у каждой считаются начало и
@@ -448,6 +535,7 @@ export const ProtocolSheet = ({
   const buildGroupRows = (kind, startSecs, who, violation, { firstRowEnd = null, coincidentRow = () => false, excludeGroupKey = null } = {}) => {
     const spec = kindSpec(kind);
     const serverId = who?.server ? getPlayerId(who.server) : null;
+    const serverUnknown = unknownOf(who?.server);
     let cursor = startSecs;
     const shorthandedAt = (t) => activeOnIceAt(penaltiesWithTimeline, t, excludeGroupKey) + 1 > activeOnIceAt(oppTimeline, t);
 
@@ -482,6 +570,7 @@ export const ProtocolSheet = ({
         // Отбывающий пишется в строки, где может сидеть партнёр: двойки (и у 2, 2+2, и при
         // 2+10), пятёрка при 5+20. Десятка и двадцатка — всегда сам нарушитель.
         penalty_served_by_id: r.needsServer ? serverId : null,
+        penalty_served_by_unknown_jersey: r.needsServer ? serverUnknown : null,
         ...penaltySnapshot(rowViolation(r, violation)),
       };
     });
@@ -505,6 +594,7 @@ export const ProtocolSheet = ({
       penalty_kind: data.kind,
       time_seconds: startSecs,
       player_id: data.who?.type === 'player' ? getPlayerId(data.who.jersey) : null,
+      player_unknown_jersey: data.who?.type === 'player' ? unknownOf(data.who.jersey) : null,
       penalty_offender_type: data.who?.type || 'team',
       rows: rows || buildGroupRows(data.kind, startSecs, data.who, data.violation, { firstRowEnd: data.firstRowEnd ?? null }),
     };
@@ -698,13 +788,18 @@ export const ProtocolSheet = ({
     });
   };
 
+  // Автор и ассистенты для запроса: игроки из состава, а номера не из заявки — сами номера
+  const goalPlayersPayload = (d) => ({
+    player_id: getPlayerId(d.scorer), player_unknown_jersey: unknownOf(d.scorer),
+    assist1_id: getPlayerId(d.ast1), assist1_unknown_jersey: unknownOf(d.ast1),
+    assist2_id: getPlayerId(d.ast2), assist2_unknown_jersey: unknownOf(d.ast2),
+  });
+
   const handleAddGoal = () => {
     if (goalTimeMissing) return;
     onSaveEvent(teamId, 'goal', {
       time_seconds: newGoalTime,
-      player_id: getPlayerId(newGoal.scorer),
-      assist1_id: getPlayerId(newGoal.ast1),
-      assist2_id: getPlayerId(newGoal.ast2),
+      ...goalPlayersPayload(newGoal),
       goal_strength: newGoal.str,
       from_shot: newGoal.from_shot
     });
@@ -720,27 +815,31 @@ export const ProtocolSheet = ({
   const paperGoalReady = paperGoalTime !== null;
   const paperGoalHasContent = !!(paperGoal.time || paperGoal.scorer || paperGoal.ast1 || paperGoal.ast2);
 
-  // Строка ввода очищается в тот момент, когда гол встал в таблицу, — не позже
-  const [paperGoalSaving, savePaperGoal] = usePaperDraftSaving(goals.length, () => setPaperGoal(EMPTY_PAPER_GOAL));
+  // Строка ввода очищается в тот момент, когда гол встал в таблицу, — не позже. Вместе с
+  // ней гаснет и подсветка номеров не из заявки: теперь они горят в самой записи.
+  const [paperGoalSaving, savePaperGoal] = usePaperDraftSaving(goals.length, () => { setPaperGoal(EMPTY_PAPER_GOAL); clearRowErrors('g'); });
 
   const handleAddPaperGoal = () => {
     if (!paperGoalReady || paperGoalSaving) return;
-    if (!reportErrors(goalErrors(paperGoal, 'g'), 'g', 'Гол не добавлен')) return;
-    savePaperGoal(() => onSaveEvent(teamId, 'goal', {
-      time_seconds: paperGoalTime,
-      player_id: getPlayerId(paperGoal.scorer),
-      assist1_id: getPlayerId(paperGoal.ast1),
-      assist2_id: getPlayerId(paperGoal.ast2),
-      goal_strength: paperGoalStr || 'equal',
-      from_shot: paperGoal.fromShot ?? true,
-    }));
+    const { errs, warns } = goalErrors(paperGoal, 'g');
+    if (!reportErrors(errs, 'g', 'Гол не добавлен', warns)) return;
+    savePaperGoal(async () => {
+      const ok = await onSaveEvent(teamId, 'goal', {
+        time_seconds: paperGoalTime,
+        ...goalPlayersPayload(paperGoal),
+        goal_strength: paperGoalStr || 'equal',
+        from_shot: paperGoal.fromShot ?? true,
+      });
+      if (ok) reportUnknown(warns, 'Гол добавлен');
+      return ok;
+    });
   };
 
   // Удаление: «+» активен, когда вписан нарушитель, выбран вид и есть время
   const paperPenStart = parseTime(paperPen.start) ?? (autoTimePenalties ? timerSeconds : null);
   const paperPenReady = !!paperPen.whoText.trim() && !!paperPen.kind && paperPenStart !== null;
 
-  const [paperPenSaving, savePaperPen] = usePaperDraftSaving(penaltiesWithTimeline.length, () => setPaperPen(EMPTY_PAPER_PENALTY));
+  const [paperPenSaving, savePaperPen] = usePaperDraftSaving(penaltiesWithTimeline.length, () => { setPaperPen(EMPTY_PAPER_PENALTY); clearRowErrors('p'); });
 
   // Новый штраф целиком: строки по виду и, с галочкой «Обоюдное», его двойник сопернику.
   // Обоюдный штраф голом не прекращается — двойник повторит его вид, пара одного размера.
@@ -756,33 +855,44 @@ export const ProtocolSheet = ({
 
   const handleAddPaperPenalty = () => {
     if (!paperPenReady || paperPenSaving) return;
-    const { errs, who } = penaltyErrors(paperPen.whoText, paperPen.start, 'p');
+    const { errs, warns, who } = penaltyErrors(paperPen.whoText, paperPen.start, 'p');
     const manual = newManualEnd(paperPen.kind, paperPen.end, paperPenStart);
     if (manual.error) errs['p.end'] = manual.error;
-    if (!reportErrors(errs, 'p', 'Удаление не добавлено')) return;
-    savePaperPen(() => onSavePenaltyGroup(teamId, newPenaltyPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart, coincident: paperPen.coincident }, manual.value)));
-  };
-
-  const startEditGoal = (g) => {
-    clearRowErrors('ge');
-    setEditGoalId(g.id);
-    setEditGoalData({
-      time: formatTime(g.time_seconds), scorer: getJersey(g.primary_player_id),
-      ast1: getJersey(g.assist1_id), ast2: getJersey(g.assist2_id), str: g.goal_strength || 'equal',
-      from_shot: g.from_shot ?? true,
-      psOutcome: g.event_type,
+    if (!reportErrors(errs, 'p', 'Удаление не добавлено', warns)) return;
+    savePaperPen(async () => {
+      const ok = await onSavePenaltyGroup(teamId, newPenaltyPayload({ who, kind: paperPen.kind, violation: paperPen.violation, startSecs: paperPenStart, coincident: paperPen.coincident }, manual.value));
+      if (ok) reportUnknown(warns, 'Удаление добавлено');
+      return ok;
     });
   };
 
+  const startEditGoal = (g) => {
+    const data = {
+      time: formatTime(g.time_seconds), scorer: jerseyOf(g.primary_player_id, g.primary_unknown_jersey),
+      ast1: jerseyOf(g.assist1_id, g.assist1_unknown_jersey), ast2: jerseyOf(g.assist2_id, g.assist2_unknown_jersey),
+      str: g.goal_strength || 'equal',
+      from_shot: g.from_shot ?? true,
+      psOutcome: g.event_type,
+    };
+    markUnknown(goalErrors(data, 'ge').warns, 'ge');
+    setEditGoalId(g.id);
+    setEditGoalData(data);
+  };
+
   const saveEditGoal = async () => {
-    // Бумажный вид: номера вписаны руками — проверяем так же, как по «+»
-    if (paperMode && !reportErrors(goalErrors(editGoalData, 'ge', { requireTime: true }), 'ge', 'Гол не сохранён')) return;
+    // Бумажный вид: номера вписаны руками — проверяем так же, как по «+». Номер не из
+    // заявки сохранению не мешает (в классическом виде он мог остаться от бумажного)
+    const { errs, warns } = goalErrors(editGoalData, 'ge', { requireTime: true });
+    if (paperMode && !reportErrors(errs, 'ge', 'Гол не сохранён', warns)) return;
     const success = await onSaveEvent(teamId, 'goal', {
-      time_seconds: parseTime(editGoalData.time), player_id: getPlayerId(editGoalData.scorer),
-      assist1_id: getPlayerId(editGoalData.ast1), assist2_id: getPlayerId(editGoalData.ast2), goal_strength: editGoalData.str,
-      from_shot: editGoalData.from_shot
+      time_seconds: parseTime(editGoalData.time), ...goalPlayersPayload(editGoalData),
+      goal_strength: editGoalData.str, from_shot: editGoalData.from_shot
     }, editGoalId);
-    if (success) setEditGoalId(null);
+    if (success) {
+      setEditGoalId(null);
+      clearRowErrors('ge');
+      reportUnknown(warns, 'Гол сохранён');
+    }
   };
 
   // ─── ШТРАФНОЙ БРОСОК ──────────────────────────────────────────────────────
@@ -814,16 +924,22 @@ export const ProtocolSheet = ({
   };
 
   const saveEditPs = async (ev) => {
-    if (paperMode && !reportErrors(goalErrors({ time: editGoalData.time, scorer: editGoalData.scorer }, 'ge', { requireTime: true }), 'ge', 'Штрафной бросок не сохранён')) return;
+    const { errs, warns } = goalErrors({ time: editGoalData.time, scorer: editGoalData.scorer }, 'ge', { requireTime: true });
+    if (paperMode && !reportErrors(errs, 'ge', 'Штрафной бросок не сохранён', warns)) return;
     const success = await onSaveEvent(teamId, editGoalData.psOutcome || ev.event_type, {
       time_seconds: parseTime(editGoalData.time),
       player_id: getPlayerId(editGoalData.scorer),
+      player_unknown_jersey: unknownOf(editGoalData.scorer),
       // ИС у штрафного броска всегда «ШБ», менять её нельзя.
       goal_strength: 'ps',
       // Буллит — всегда бросок в створ: секретарь заносит его и в броски по вратарю.
       from_shot: true,
     }, ev.id);
-    if (success) setEditGoalId(null);
+    if (success) {
+      setEditGoalId(null);
+      clearRowErrors('ge');
+      reportUnknown(warns, 'Штрафной бросок сохранён');
+    }
   };
 
   const toggleGoalFromShot = (g) => {
@@ -832,6 +948,9 @@ export const ProtocolSheet = ({
       player_id: g.primary_player_id,
       assist1_id: g.assist1_id,
       assist2_id: g.assist2_id,
+      player_unknown_jersey: g.primary_unknown_jersey ?? null,
+      assist1_unknown_jersey: g.assist1_unknown_jersey ?? null,
+      assist2_unknown_jersey: g.assist2_unknown_jersey ?? null,
       goal_strength: g.goal_strength,
       from_shot: !(g.from_shot ?? true)
     }, g.id);
@@ -863,8 +982,9 @@ export const ProtocolSheet = ({
     // прежними (см. groupEditState). end — ручное окончание первой строки, пока пустое.
     // coincident — галочка «Обоюдное» в окне вида: у штрафа из пары она стоит.
     // unfilled — двойник обоюдного, у которого судья ещё не вписал нарушителя.
-    clearRowErrors('pe');
     const who = whoFromEvent(p);
+    const warning = rows[0]?.penalty_unfilled ? '' : offenderWarning(who);
+    markUnknown(warning ? { 'pe.who': warning } : {}, 'pe');
     setEditPenaltyId(p.id);
     setEditPenaltyData({
       mode: 'group', who, whoText: rows[0]?.penalty_unfilled ? '' : formatPenaltyOffender(who), kind, violation: rows[0]?.penalty_violation || '',
@@ -883,15 +1003,20 @@ export const ProtocolSheet = ({
     const manual = manualPenaltyEnd && hasStart && firstRowTimed(editPenaltyData.kind)
       ? readManualEnd(editPenaltyData.end, startSecs + groupEditState(editPenaltyData).offset)
       : { value: null };
+    // Номера не из заявки — сохранению не мешают, уведомление после записи
+    let warns = {};
     if (paperMode) {
-      const { errs, who: parsed } = penaltyErrors(editPenaltyData.whoText, editPenaltyData.start, 'pe', { requireStart: true });
-      if (whoBlank) delete errs['pe.who'];
+      const { errs, warns: found, who: parsed } = penaltyErrors(editPenaltyData.whoText, editPenaltyData.start, 'pe', { requireStart: true });
+      if (whoBlank) { delete errs['pe.who']; delete found['pe.who']; }
       if (manual.error) errs['pe.end'] = manual.error;
-      if (!reportErrors(errs, 'pe', 'Удаление не сохранено')) return;
+      if (!reportErrors(errs, 'pe', 'Удаление не сохранено', found)) return;
       who = whoBlank ? null : parsed;
+      warns = found;
     } else if (manual.error) {
       onToast?.({ title: 'Удаление не сохранено', message: manual.error, type: 'error' });
       return;
+    } else if (!whoBlank && offenderWarning(who)) {
+      warns = { 'pe.who': offenderWarning(who) };
     }
     if (!hasStart) return;
     const target = penalties.find(r => r.id === editPenaltyId);
@@ -910,7 +1035,11 @@ export const ProtocolSheet = ({
 
     const save = async () => {
       const ok = await onSavePenaltyGroup(teamId, payload, groupKey);
-      if (ok) setEditPenaltyId(null);
+      if (ok) {
+        setEditPenaltyId(null);
+        clearRowErrors('pe');
+        reportUnknown(warns, 'Удаление сохранено');
+      }
     };
     // Галочку «Обоюдное» сняли (или вид стал ШБ): пара разрывается, и связанный штраф
     // соперника удаляется целиком — сначала спрашиваем
@@ -966,6 +1095,7 @@ export const ProtocolSheet = ({
           time_seconds: toSecs(e.time_seconds) || 0, penalty_end_time: toSecs(e.penalty_end_time),
           penalty_minutes: e.penalty_minutes, penalty_class: e.penalty_class,
           penalty_served_by_id: e.penalty_served_by_id || null,
+          penalty_served_by_unknown_jersey: e.penalty_served_by_unknown_jersey ?? null,
           penalty_violation: e.penalty_violation || null, penalty_violation_code: e.penalty_violation_code || null,
           penalty_reason_id: e.penalty_reason_id || null,
         };
@@ -977,6 +1107,7 @@ export const ProtocolSheet = ({
         penalty_kind: kind,
         time_seconds: rows[0].time_seconds,
         player_id: first.primary_player_id || null,
+        player_unknown_jersey: first.primary_unknown_jersey ?? null,
         penalty_offender_type: first.penalty_offender_type || (first.primary_player_id ? 'player' : 'team'),
         // Незаполненный двойник обоюдного остаётся «?», а не становится командным
         unfilled: !!first.penalty_unfilled,
@@ -993,8 +1124,10 @@ export const ProtocolSheet = ({
     const success = await onSaveEvent(teamId, 'penalty', {
       time_seconds: p.time_seconds, penalty_end_time: oldEnd,
       player_id: p.primary_player_id || null,
+      player_unknown_jersey: p.primary_unknown_jersey ?? null,
       penalty_offender_type: p.penalty_unfilled ? null : (p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team')),
       penalty_served_by_id: p.penalty_served_by_id || null,
+      penalty_served_by_unknown_jersey: p.penalty_served_by_unknown_jersey ?? null,
       penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
       ...reason,
     }, p.id);
@@ -1547,7 +1680,7 @@ export const ProtocolSheet = ({
                   ) : isEditingGoal && !isReadOnly && isPenaltyShotEvent(goal) ? (
                     <>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishInput isEditing isTimeField title="Время штрафного броска" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Бьющий" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing warn={!!unknownOf(editGoalData.scorer)} title="Бьющий" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} className="!text-status-accepted font-bold" /></td>
                       <td colSpan="2" className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                           isEditing
@@ -1567,7 +1700,7 @@ export const ProtocolSheet = ({
                   ) : goal && isPenaltyShotEvent(goal) ? (
                     <>
                       <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
-                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
+                      {goalJerseyCell(goal.primary_player_id, goal.primary_unknown_jersey, 'font-bold text-graphite', 'Бросок записан без бьющего.')}
                       {/* Ассистентов у штрафного броска нет — вместо двух ячеек одна
                           с исходом. ИС и «Бр» на месте, но правке не подлежат. */}
                       <td colSpan="2" className={`bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-[11px] uppercase tracking-wider ${(PS_OUTCOME_VIEW[goal.event_type] || PS_OUTCOME_VIEW[PS_PENDING]).className}`}>
@@ -1589,9 +1722,9 @@ export const ProtocolSheet = ({
                   ) : isEditingGoal && !isReadOnly ? (
                     <>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishInput isEditing isTimeField title="Время гола" value={editGoalData.time} onChange={e=>setEditGoalData({...editGoalData, time: formatTimeMask(e.target.value)})} /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} taken={{ [editGoalData.ast1]: 'Ассистент 1', [editGoalData.ast2]: 'Ассистент 2' }} className="!text-status-accepted font-bold" /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 1" roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} taken={{ [editGoalData.scorer]: 'Автор', [editGoalData.ast2]: 'Ассистент 2' }} /></td>
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing title="Ассистент 2" roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} taken={{ [editGoalData.scorer]: 'Автор', [editGoalData.ast1]: 'Ассистент 1' }} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing warn={!!unknownOf(editGoalData.scorer)} title="Автор гола" roster={roster} value={editGoalData.scorer} onChange={e=>setEditGoalData({...editGoalData, scorer: e.target.value})} taken={{ [editGoalData.ast1]: 'Ассистент 1', [editGoalData.ast2]: 'Ассистент 2' }} className="!text-status-accepted font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing warn={!!unknownOf(editGoalData.ast1)} title="Ассистент 1" roster={roster} value={editGoalData.ast1} onChange={e=>setEditGoalData({...editGoalData, ast1: e.target.value})} taken={{ [editGoalData.scorer]: 'Автор', [editGoalData.ast2]: 'Ассистент 2' }} /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><StylishSelect isEditing warn={!!unknownOf(editGoalData.ast2)} title="Ассистент 2" roster={roster} value={editGoalData.ast2} onChange={e=>setEditGoalData({...editGoalData, ast2: e.target.value})} taken={{ [editGoalData.scorer]: 'Автор', [editGoalData.ast1]: 'Ассистент 1' }} /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <CustomSelect
                            isEditing
@@ -1619,9 +1752,9 @@ export const ProtocolSheet = ({
                   ) : goal ? (
                     <>
                       <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-mono text-[13px] font-semibold text-graphite-light">{formatTime(goal.time_seconds)}</td>
-                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite">{getJersey(goal.primary_player_id)}</td>
-                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist1_id)}</td>
-                      <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite-light">{getJersey(goal.assist2_id)}</td>
+                      {goalJerseyCell(goal.primary_player_id, goal.primary_unknown_jersey, 'font-bold text-graphite', 'Гол записан без автора.')}
+                      {goalJerseyCell(goal.assist1_id, goal.assist1_unknown_jersey, 'font-semibold text-graphite-light', 'Передача никому не записана.')}
+                      {goalJerseyCell(goal.assist2_id, goal.assist2_unknown_jersey, 'font-semibold text-graphite-light', 'Передача никому не записана.')}
                       <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-[10px] text-graphite/60 uppercase font-bold">{GOAL_STRENGTH_DISPLAY[goal.goal_strength] || ''}</td>
                       {shotsTrackingEnabled && (
                       <td className="bg-status-accepted/[0.035] border-r border-graphite/[0.12] text-center">
@@ -1658,7 +1791,7 @@ export const ProtocolSheet = ({
                   ) : isEditingPenalty && !isReadOnly && editPenaltyData.mode === 'group' ? (
                     <>
                       {/* Редактор группы: вид, нарушитель, причина, начало */}
-                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing title="Нарушитель" hint={editPenaltyData.unfilled ? '?' : ''} roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData(prev => ({...prev, who}))} className="!text-status-rejected font-bold" /></td>
+                      <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10"><PenaltyOffenderSelect isEditing warn={!!offenderWarning(editPenaltyData.who)} title="Нарушитель" hint={editPenaltyData.unfilled ? '?' : ''} roster={roster} value={editPenaltyData.who} onChange={who=>setEditPenaltyData(prev => ({...prev, who}))} className="!text-status-rejected font-bold" /></td>
                       <td className="border-r border-graphite/[0.12] p-0.5 bg-orange/10">
                         <div className="relative">
                           <CustomSelect
@@ -1725,10 +1858,7 @@ export const ProtocolSheet = ({
                   ) : penalty ? (
                     <>
                       {/* «↳» — продолжение группы: та же запись, следующая строка протокола */}
-                      <td className="relative bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-bold text-[13px] text-graphite whitespace-nowrap" title={isPenaltyContinuation ? `Продолжение: ${kindSpec(penaltyKindOf(penalty)).title}` : penalty.penalty_served_by_id ? 'Нарушитель / отбывающий' : undefined}>
-                        {isPenaltyContinuation && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-graphite/30 font-medium">↳</span>}
-                        {renderOffender(penalty)}
-                      </td>
+                      {penaltyOffenderCell(penalty, isPenaltyContinuation, isPenaltyContinuation ? `Продолжение: ${kindSpec(penaltyKindOf(penalty)).title}` : penalty.penalty_served_by_id ? 'Нарушитель / отбывающий' : undefined)}
                       <td className="bg-status-rejected/[0.035] border-r border-graphite/[0.12] font-semibold text-[13px] text-graphite" title={kindSpec(penaltyKindOf(penalty)).title || undefined}>
                         {isPenaltyShot ? 'ШБ' : penalty.penalty_group_id ? penalty.penalty_minutes : penaltyKindLabel(penalty)}
                         {/* ⇄ — обоюдная строка: пара того же размера у соперника */}

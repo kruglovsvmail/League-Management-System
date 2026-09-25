@@ -6,7 +6,7 @@ export function Header({ title = "Раздел", breadcrumbs = [], actions, subt
   
   // Синхронизируем заголовок компонента с вкладкой браузера
   useEffect(() => {
-    document.title = title ? `${title} | LMS` : 'LMS';
+    document.title = title ? `${title} | Heco LMS` : 'Heco LMS';
   }, [title]);
 
   return (

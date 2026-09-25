@@ -249,10 +249,7 @@ export function LoginPage({ onLoginSuccess }) {
   return (
     <div className="min-h-[100dvh] flex items-start sm:items-center justify-center relative p-4 pt-10 pb-28 sm:pt-4 sm:pb-4 font-sans overflow-x-hidden overflow-y-auto">
       
-      <div className="fixed inset-0 z-[-1] bg-[#e0e0e0ff]">
-        <div className="absolute top-[-15%] right-[-5%] w-[600px] h-[600px] rounded-full bg-graphite-light/30 blur-[120px] pointer-events-none"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-[700px] h-[700px] rounded-full bg-graphite-dark/20 blur-[150px] pointer-events-none"></div>
-      </div>
+      <div aria-hidden="true" className="heco-login-background fixed inset-0 z-0 pointer-events-none" />
 
       <div className={`relative flex flex-col mt-[-3rem] sm:flex-row items-stretch bg-white/60 backdrop-blur-xl border border-white/80 sm:rounded-[1rem] shadow-2xl shadow-black/5 z-20 ${isReady ? 'transition-all duration-500 ease-in-out' : ''}`}>
         
@@ -482,14 +479,14 @@ export function LoginPage({ onLoginSuccess }) {
 
         <div 
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className={`absolute z-[40] cursor-pointer group hover:bg-graphite/10 transition-colors bg-white/20 border border-white/50 flex items-center justify-center
+          className={`absolute z-[40] cursor-pointer group bg-orange hover:bg-orange-hover border border-orange flex items-center justify-center shadow-[0_4px_14px_rgb(var(--orange)/0.28)] transition-colors
             sm:left-full sm:top-[16%] sm:translate-x-0 sm:translate-y-0 sm:rounded-r-full sm:px-1.5 sm:py-6 sm:rounded-b-none
             left-3/4 -translate-x-1/2 top-full w-[120px] h-[30px] sm:h-[90px] sm:w-[30px] rounded-b-full px-6 py-2
           `}
           title={isMenuOpen ? "Скрыть меню" : "Установка PWA"}
         >
             <svg 
-              className={`text-white/80 w-5 h-5 ${isReady ? 'transition-transform duration-500' : ''}`} 
+              className={`text-white w-5 h-5 ${isReady ? 'transition-transform duration-500' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor"
             >
               <path 

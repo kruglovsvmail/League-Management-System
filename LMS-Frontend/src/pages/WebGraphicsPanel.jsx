@@ -37,7 +37,7 @@ export function WebGraphicsPanel() {
 
   // Устанавливаем заголовок вкладки
   useEffect(() => {
-    document.title = 'Панель управления трансляцией | LMS';
+    document.title = 'Панель управления трансляцией | Heco LMS';
   }, []);
   
   const {

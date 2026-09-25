@@ -17,14 +17,14 @@ export default defineConfig({
         navigateFallback: 'index.html',
       },
 
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'fonts/Manrope.ttf', 'brand/*.svg'],
       
       manifest: {
-        name: 'HockeyEco LMS',
-        short_name: 'HockeyEco',
+        name: 'Heco LMS',
+        short_name: 'Heco LMS',
         description: 'Система управления лигой HockeyEco',
-        theme_color: '#303030ff',
-        background_color: '#303030ff',
+        theme_color: '#1D1E1E',
+        background_color: '#1D1E1E',
         display: 'fullscreen', // Это убирает навигацию браузера
         orientation: 'any',    // Разрешаем поворот экрана
         icons: [
@@ -37,7 +37,13 @@ export default defineConfig({
             src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: '/maskable-icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       },

@@ -88,7 +88,7 @@ export function Sidebar({ user, onLogout, selectedLeague, onLeagueChange }) {
 
   return (
     <>
-      <aside className="fixed left-0 top-0 h-screen w-[200px] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white flex flex-col z-40 border-r border-white/5 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
+      <aside className="heco-dark-panel heco-panel-edge fixed left-0 top-0 h-screen w-[200px] text-white flex flex-col z-40 border-r border-white/5 shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
         
         <div className="p-7 pb-2">
           {user?.leagues && user.leagues.length > 0 && (

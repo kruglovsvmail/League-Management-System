@@ -166,7 +166,7 @@ export default function App() {
 
       {showGlobalLoader && (
         <div className={`fixed inset-0 z-[10000] flex items-center justify-center transition-opacity duration-500 ease-in-out ${isInitializing ? 'opacity-100' : 'opacity-0'}`}>
-          <Loader text="Запуск HockeyEco Pro..." />
+          <Loader text="Запуск Heco LMS..." />
         </div>
       )}
 

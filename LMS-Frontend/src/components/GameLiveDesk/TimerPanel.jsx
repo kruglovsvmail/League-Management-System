@@ -73,7 +73,7 @@ export const TimerPanel = ({
   const techAway = typeof isTech === 'string' ? isTech.split('/')[1] : '-';
 
   return (
-    <div className="w-[20%] h-full flex flex-col z-10 border-l border-white/5 shadow-[-4px_0_24px_rgba(0,0,0,0.2)] bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-[#2a2d32] via-[#1a1c1e] to-[#0a0b0c] text-white p-6 overflow-y-auto custom-scrollbar">
+    <div className="heco-dark-panel heco-panel-edge relative w-[20%] h-full flex flex-col z-10 border-l border-white/5 shadow-[-4px_0_24px_rgba(0,0,0,0.2)] text-white p-6 overflow-y-auto custom-scrollbar">
 
       <div className="flex justify-center items-center gap-4 mb-4 bg-white/5 py-5 px-3 border border-white/10 rounded-md shadow-inner relative">
         {isTech && (

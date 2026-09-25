@@ -142,7 +142,7 @@ export function GameLiveDesk() {
   const navigate = useNavigate(); 
 
   useEffect(() => {
-    document.title = 'Панель секретаря | LMS';
+    document.title = 'Панель секретаря | Heco LMS';
   }, []);
 
   const [game, setGame] = useState(null);
@@ -617,7 +617,8 @@ export function GameLiveDesk() {
   // На бейдже — номер того, кто СИДИТ на скамейке штрафников: по нему секретарь понимает,
   // кого выпускать. Если за нарушителя сидит партнёр (2+10, 5+20, командный штраф, штраф
   // вратаря или представителя), это penalty_served_by_id — его номер берём из состава на
-  // матч, как лист протокола; иначе сидит сам нарушитель.
+  // матч, как лист протокола; иначе сидит сам нарушитель. Номер не из заявки (вписан в
+  // бумажном виде, игрока с ним в составе нет) — сам этот номер: выпускать того, кто сидит.
   const activePenalties = useMemo(() => {
     const penalties = events.filter(e => e.event_type === 'penalty');
     if (penalties.length === 0) return [];
@@ -632,7 +633,7 @@ export function GameLiveDesk() {
         // У двойника обоюдного удаления нарушитель ещё не вписан — вместо номера «?»
         const servingJersey = p.penalty_unfilled ? '?' : p.penalty_served_by_id
           ? (rosterJersey(p.team_id, p.penalty_served_by_id) ?? p.primary_jersey_number)
-          : p.primary_jersey_number;
+          : p.penalty_served_by_unknown_jersey ?? p.primary_jersey_number ?? p.primary_unknown_jersey;
         return { ...p, waiting, servingJersey, remaining: waiting ? p.effEnd - p.effStart : p.effEnd - timerSeconds };
       });
   }, [events, timerSeconds, game?.home_team_id, homeRoster, awayRoster]);
@@ -745,8 +746,10 @@ export function GameLiveDesk() {
     period: p.period, event_type: 'penalty', team_id: p.team_id,
     time_seconds: p.time_seconds, penalty_end_time: p.penalty_end_time,
     player_id: p.primary_player_id || null,
+    player_unknown_jersey: p.primary_unknown_jersey ?? null,
     penalty_offender_type: p.penalty_unfilled ? null : (p.penalty_offender_type || (p.primary_player_id ? 'player' : 'team')),
     penalty_served_by_id: p.penalty_served_by_id || null,
+    penalty_served_by_unknown_jersey: p.penalty_served_by_unknown_jersey ?? null,
     penalty_minutes: p.penalty_minutes, penalty_class: p.penalty_class,
     penalty_violation: p.penalty_violation, penalty_violation_code: p.penalty_violation_code,
     penalty_reason_id: p.penalty_reason_id,

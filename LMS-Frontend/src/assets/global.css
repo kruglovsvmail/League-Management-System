@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/Manrope.ttf') format('truetype');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+.heco-login-background { background: #F8F8F5 url('/brand/heco-lms-pattern-light.svg') right bottom / min(70vw, 840px) auto no-repeat; }
+.heco-dark-panel {
+  background-color: #1D1E1E;
+}
+.heco-panel-edge::after, .heco-admin-surface::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 180px;
+  background: url('/brand/heco-lms-pattern-dark.svg') right bottom / 540px 180px no-repeat;
+  pointer-events: none;
+}
+.heco-admin-surface::after { position: fixed; width: 20px; background-image: url('/brand/heco-lms-pattern-light.svg'); }
+
 html {
   /* Ваше свойство: резервирует место, чтобы контент не прыгал */
   scrollbar-gutter: stable; 
@@ -17,11 +41,11 @@ html {
 
 :root {
   /* Базовые цвета в формате RGB (для поддержки opacity в Tailwind) */
-  --orange: 255 100 50;
-  --orange-hover: 180 80 30;
-  --graphite: 20 20 20;
+  --orange: 244 154 104;
+  --orange-hover: 221 126 77;
+  --graphite: 32 34 34;
   --graphite-light: 72 72 74;
-  --graphite-dark: 32 32 34;
+  --graphite-dark: 29 30 30;
   --white: 255 255 255;
   --gray-light: 229 229 234;
   --gray-bg-light: 248 249 250;
@@ -47,7 +71,7 @@ html {
   --radius-circle: 50%;
 
   /* Новые темные оттенки для сайдбара */
-  --sidebar-bg: #1A1C1E;
+  --sidebar-bg: #1D1E1E;
   --sidebar-item-hover: rgba(255, 255, 255, 0.05);
   --sidebar-active-glass: rgba(255, 255, 255, 0.1);
 }
@@ -61,7 +85,7 @@ html {
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Manrope', Arial, sans-serif;
   color: rgb(var(--graphite));
   min-height: 100vh;
   overflow-x: hidden;

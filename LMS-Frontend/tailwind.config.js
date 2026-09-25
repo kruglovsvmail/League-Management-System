@@ -6,6 +6,9 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Manrope', 'Arial', 'sans-serif'],
+      },
      colors: {
         orange: 'rgb(var(--orange) / <alpha-value>)',
         'orange-hover': 'rgb(var(--orange-hover) / <alpha-value>)',
