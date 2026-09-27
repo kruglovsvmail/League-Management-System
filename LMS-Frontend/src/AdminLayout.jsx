@@ -3,14 +3,12 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from "./components/Sidebar";
 
 export function AdminLayout({ user, onLogout, selectedLeague, onLeagueChange, onPatchSelectedLeague, onPatchLeague }) {
-  // Наш супер-сложный фон
-const complexMeshGradient = {
-  backgroundColor: '#e2e4e7'
-};
+  const complexMeshGradient = {
+    backgroundColor: '#dfdcd7'
+  };
 
   return (
-    // Убрали bg-[#dededeff], добавили style
-    <div className="heco-admin-surface flex min-h-screen" style={complexMeshGradient}>
+    <div className="flex min-h-screen" style={complexMeshGradient}>
       <Sidebar 
         user={user} 
         onLogout={onLogout} 

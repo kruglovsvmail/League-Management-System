@@ -10,11 +10,11 @@
   font-display: swap;
 }
 
-.heco-login-background { background: #F8F8F5 url('/brand/heco-lms-pattern-light.svg') right bottom / min(70vw, 840px) auto no-repeat; }
+.heco-login-background { background-color: #dfdcd7; }
 .heco-dark-panel {
   background-color: #1D1E1E;
 }
-.heco-panel-edge::after, .heco-admin-surface::after {
+.heco-panel-edge::after {
   content: '';
   position: absolute;
   right: 0;
@@ -24,7 +24,6 @@
   background: url('/brand/heco-lms-pattern-dark.svg') right bottom / 540px 180px no-repeat;
   pointer-events: none;
 }
-.heco-admin-surface::after { position: fixed; width: 20px; background-image: url('/brand/heco-lms-pattern-light.svg'); }
 
 html {
   /* Ваше свойство: резервирует место, чтобы контент не прыгал */
@@ -51,8 +50,8 @@ html {
   --gray-bg-light: 248 249 250;
 
   /* Градиенты фона (можно оставить HEX) */
-  --bg-grad-1: #e2e4e7;
-  --bg-grad-2: #e2e4e7;
+  --bg-grad-1: #dfdcd7;
+  --bg-grad-2: #dfdcd7;
 
   /* Яркие цвета для Статусов (RGB) */
   --status-pending: 0 122 255; 
