@@ -214,7 +214,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
 
   const isPunish = decisions[decisionIndex] === 'punish';
 
-  const penaltyInputs = { targetType: penaltyTargetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput };
+  const penaltyInputs = { targetType: penaltyTargetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput, preserveZeros: true };
   const isPenaltyValid = !isPunish || arePenaltyFieldsValid(penaltyInputs);
   const isViolationValid = isCatalogSource ? !!violationTypeId : !!manualViolationTitle.trim();
 
@@ -226,14 +226,11 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
     || (hearingBasisType === 'team_protest' && !!hearingBasisTeamId)
     || (hearingBasisType === 'other' && !!hearingBasis.trim());
 
-  // Отказ наказывать — тоже решение, его причину комиссия обязана записать
-  const isVerdictValid = isPunish || !!verdictDescription.trim();
-
   // Дивизион и команду требуем для всех целей, кроме "иного лица": оно не заявлено
   // ни за одну команду, и привязывать штраф к чужой заявке ради сохранения незачем
   const isTargetTeamValid = submitTargetType === 'other' || !!tournamentTeamId;
 
-  const isFormValid = isTargetTeamValid && isViolationValid && isPenaltyValid && isBasisValid && isVerdictValid && (
+  const isFormValid = isTargetTeamValid && isViolationValid && isPenaltyValid && isBasisValid && (
     submitTargetType === 'team' ? (!isSplitMode || selectedMemberIds.length > 0) :
     submitTargetType === 'other' ? !!otherPersonName.trim() :
     submitTargetType === 'staff' ? !!selectedTeamRoleId :
@@ -470,7 +467,7 @@ export function CreateSdkDecisionDrawer({ isOpen, onClose, meetingId, seasonId, 
                           <div className="flex flex-col gap-1.5 p-4 bg-graphite/5 border border-graphite/10 rounded-md animate-zoom-in">
                             <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Почему не наказываем</span>
                             <textarea
-                              placeholder="Причина, по которой комиссия не назначает наказание"
+                              placeholder="Причина, по которой комиссия не назначает наказание (необязательно)"
                               rows={5}
                               value={verdictDescription}
                               onChange={e => setVerdictDescription(e.target.value)}

@@ -194,9 +194,6 @@ export const SummaryTablesAccordion = ({
   const lastGoalieLog = goalieLog.length > 0 ? goalieLog[goalieLog.length - 1] : null;
   const lastHomeValue = lastGoalieLog ? (lastGoalieLog.home_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastGoalieLog.home_goalie_id || '')) : '';
   const lastAwayValue = lastGoalieLog ? (lastGoalieLog.away_goalie_unspecified ? UNSPECIFIED_GOALIE : (lastGoalieLog.away_goalie_id || '')) : '';
-  const isGoaliesMatch = lastGoalieLog &&
-    String(lastHomeValue) === String(newLogData.home_goalie) &&
-    String(lastAwayValue) === String(newLogData.away_goalie);
 
   // Время новой записи: введённое, иначе с таймера — если лига это разрешила
   // (sec_auto_time_goalie_log, приезжает вместе с матчем). null — времени нет,
@@ -204,8 +201,8 @@ export const SummaryTablesAccordion = ({
   const autoTimeGoalieLog = game?.sec_auto_time_goalie_log ?? true;
   const newLogTime = parseTime(newLogData.time) ?? (autoTimeGoalieLog ? (timerSeconds || 0) : null);
   const logTimeMissing = newLogTime === null;
-  const addDisabled = isGoaliesMatch || logTimeMissing;
-  const addTitle = logTimeMissing ? 'Укажите время смены' : isGoaliesMatch ? 'Вратари не изменились' : 'Добавить запись';
+  const addDisabled = logTimeMissing;
+  const addTitle = logTimeMissing ? 'Укажите время смены' : 'Добавить запись';
 
   // ── Бумажный вид ──
   // «+» активен, как только известно время; остальное проверяется по нажатию. Пустая
@@ -222,9 +219,6 @@ export const SummaryTablesAccordion = ({
     const away = paperLog.away ?? (lastGoalieLog ? lastAwayValue : UNSPECIFIED_GOALIE);
     const errors = {};
     if (!isClockValid(paperLog.time)) errors.time = 'Время: секунд не больше 59';
-    if (lastGoalieLog && String(home) === String(lastHomeValue) && String(away) === String(lastAwayValue)) {
-      errors.goalies = 'Вратари не изменились — выберите нового вратаря хотя бы одной команды';
-    }
     setPaperLogErrors(errors);
     if (Object.keys(errors).length) {
       onToast?.({ title: 'Запись не добавлена', message: Object.values(errors).join('. '), type: 'error' });

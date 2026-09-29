@@ -23,7 +23,23 @@ export function computeLiveAdditional(additionalAmountInput, additionalGamesInpu
 // матчи отбываются всегда. Если заполнены и доп.матчи, и доп.штраф — оба фиксируются одновременно с
 // penalty_logic='or': нарушитель сам гасит дисквал тем, что наступит раньше (отбыл матчи целиком ИЛИ
 // оплатил штраф) — комиссия/администратор здесь ничего не выбирают.
-export function computePenaltyFromInputs({ targetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput }) {
+const optionalPenaltyNumber = (value) => value == null || value === '' ? null : Number(value);
+
+export function computePenaltyFromInputs({ targetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput, preserveZeros = false }) {
+  // Решение СДК сохраняет явно заданный ноль отдельно от незаполненного поля.
+  if (preserveZeros) {
+    const moneyOnly = targetType === 'team';
+    const mandatoryGames = moneyOnly ? null : optionalPenaltyNumber(mandatoryGamesInput);
+    const additionalGames = moneyOnly ? null : optionalPenaltyNumber(additionalGamesInput);
+    const mandatoryAmount = moneyOnly ? optionalPenaltyNumber(mandatoryAmountInput) : null;
+    const additionalAmount = optionalPenaltyNumber(additionalAmountInput);
+    const games = mandatoryGames == null && additionalGames == null
+      ? null : (mandatoryGames ?? 0) + (additionalGames ?? 0);
+    const amount = mandatoryAmount == null && additionalAmount == null
+      ? null : (mandatoryAmount ?? 0) + (additionalAmount ?? 0);
+    const logic = games > 0 && amount > 0 ? (additionalGames > 0 ? 'or' : 'and') : null;
+    return { games, amount, logic, mandatoryGames, additionalGames, mandatoryAmount, additionalAmount };
+  }
   if (targetType === 'team') {
     // Командный штраф складывается из двух денежных частей: обязательной (вписывается руками,
     // справочник её не знает) и дополнительной из таблицы штрафов. В ledger уходит сумма.
@@ -62,7 +78,15 @@ export function computePenaltyFromInputs({ targetType, mandatoryGamesInput, addi
   return { games: gamesTotal > 0 ? gamesTotal : null, amount: null, logic: null, ...breakdown };
 }
 
-export function arePenaltyFieldsValid({ targetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput }) {
+export function arePenaltyFieldsValid({ targetType, mandatoryGamesInput, additionalGamesInput, additionalAmountInput, mandatoryAmountInput, preserveZeros = false }) {
+  if (preserveZeros) {
+    const values = (targetType === 'team'
+      ? [mandatoryAmountInput, additionalAmountInput]
+      : [mandatoryGamesInput, additionalGamesInput, additionalAmountInput])
+      .map(optionalPenaltyNumber);
+    return values.some(value => value != null)
+      && values.every(value => value == null || (Number.isFinite(value) && value >= 0));
+  }
   if (targetType === 'team') return ((Number(mandatoryAmountInput) || 0) + (Number(additionalAmountInput) || 0)) > 0;
   const mandatoryVal = Number(mandatoryGamesInput) || 0;
   const additionalGamesVal = Number(additionalGamesInput) || 0;

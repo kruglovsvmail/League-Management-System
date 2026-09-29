@@ -2,6 +2,10 @@
 import pool from '../config/db.js';
 import bcrypt from 'bcrypt';
 import puppeteer from 'puppeteer';
+import { randomUUID } from 'node:crypto';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import s3 from '../config/s3.js';
+import { hasProtocolBackContent, renderProtocolWebp } from '../utils/protocolScreenshot.js';
 // Импортируем бэкенд-фабрику для выбора шаблона
 import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
 import { fetchProtocolBack, CHECK_RESULTS } from './protocolBackController.js';
@@ -570,6 +574,71 @@ export const downloadProtocolPDF = async (req, res) => {
     } catch (error) {
         console.error('Ошибка генерации PDF через Puppeteer:', error);
         res.status(500).json({ success: false, error: 'Ошибка генерации PDF файла' });
+    }
+};
+
+// Публикация по кнопке «Скрин»: один постоянный объект на матч, новая версия ссылки.
+// Подпись секретаря не мешает публикации: содержимое протокола здесь не редактируется.
+export const publishProtocolScreenshot = async (req, res) => {
+    const gameId = Number(req.params.gameId);
+    if (!Number.isSafeInteger(gameId) || gameId <= 0 || gameId > 2147483647) {
+        return res.status(400).json({ success: false, error: 'Некорректный номер матча' });
+    }
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        // Блокировка действует и при нескольких процессах LMS: два скрина одного
+        // матча не смогут перезаписать друг друга в обратном порядке.
+        const lock = await client.query('SELECT pg_try_advisory_xact_lock(73101, $1) AS acquired', [gameId]);
+        if (!lock.rows[0].acquired) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ success: false, error: 'Скрин этого матча уже создаётся. Дождитесь завершения.' });
+        }
+        const { rows } = await client.query(`
+            SELECT g.protocol_image_key, g.division_id, d.season_id, s.league_id
+            FROM games g
+            JOIN divisions d ON d.id = g.division_id
+            JOIN seasons s ON s.id = d.season_id
+            WHERE g.id = $1
+        `, [gameId]);
+        const game = rows[0];
+        if (!game) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, error: 'Матч лиги не найден' });
+        }
+
+        const rawData = await fetchRawProtocolData(gameId);
+        if (!rawData) throw new Error('Матч удалён во время подготовки скрина');
+        const data = prepareProtocolData(rawData);
+        const html = await getProtocolHtml(game.league_id, data);
+        const buffer = await renderProtocolWebp(html, hasProtocolBackContent(data));
+        // Существующий ключ сохраняем даже при переносе матча в другой дивизион.
+        const key = game.protocol_image_key
+            || `protocols/league-${game.league_id}/season-${game.season_id}/division-${game.division_id}/match-${gameId}.webp`;
+        const version = randomUUID();
+
+        await s3.send(new PutObjectCommand({
+            Bucket: 'hockeyeco-uploads',
+            Key: key,
+            Body: buffer,
+            ContentType: 'image/webp',
+            ContentDisposition: `inline; filename="match-${gameId}.webp"`,
+            CacheControl: 'no-cache, max-age=0, must-revalidate',
+        }), { abortSignal: AbortSignal.timeout(30000) });
+        await client.query(`
+            UPDATE games SET protocol_image_key = $2, protocol_image_version = $3 WHERE id = $1
+        `, [gameId, key, version]);
+        await client.query('COMMIT');
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ success: true });
+    } catch (error) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        console.error('Ошибка публикации скрина протокола:', error);
+        res.status(500).json({ success: false, error: 'Не удалось создать и сохранить скрин протокола. Попробуйте ещё раз.' });
+    } finally {
+        client?.release();
     }
 };
 

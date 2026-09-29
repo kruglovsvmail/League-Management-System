@@ -153,13 +153,14 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
               ? Math.min(Math.max(dqServed - (d.mandatory_games || 0), 0), d.additional_games)
               : null;
 
-            const gamesText = !hasSplit && d.penalty_games ? `${d.penalty_games} ${pluralizeMatches(d.penalty_games)}` : null;
-            const amountText = d.penalty_amount ? `${Math.round(Number(d.penalty_amount)).toLocaleString('ru-RU')} ₽` : null;
+            const gamesText = !hasSplit && d.penalty_games != null ? `${d.penalty_games} ${pluralizeMatches(d.penalty_games)}` : null;
+            const amountText = d.penalty_amount != null ? `${Math.round(Number(d.penalty_amount)).toLocaleString('ru-RU')} ₽` : null;
+            const hasPayableAmount = Number(d.penalty_amount) > 0;
             // Командный штраф складывается из обязательной и дополнительной частей — показываем состав суммы
-            const hasAmountSplit = Number(d.mandatory_amount) > 0 && Number(d.additional_amount) > 0;
-            const amountSplitText = hasAmountSplit
-              ? `${Math.round(Number(d.mandatory_amount)).toLocaleString('ru-RU')} + ${Math.round(Number(d.additional_amount)).toLocaleString('ru-RU')}`
-              : null;
+            const amountSplitText = [
+              d.mandatory_amount != null ? `обяз.: ${Math.round(Number(d.mandatory_amount)).toLocaleString('ru-RU')} ₽` : null,
+              d.additional_amount != null ? `доп.: ${Math.round(Number(d.additional_amount)).toLocaleString('ru-RU')} ₽` : null
+            ].filter(Boolean).join(' · ');
             const hasSanction = isPunish && (gamesText || amountText || hasSplit);
 
             const gamesRemaining = !hasSplit && d.penalty_games && d.dq_games_assigned != null
@@ -262,12 +263,15 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                       {isPunish && (hasSplit || gamesText) && amountText && (
                         <span className="text-[10px] font-bold text-graphite-light/60 uppercase">{d.penalty_logic === 'or' ? 'или' : 'и'}</span>
                       )}
-                      {isPunish && amountText && isSplitPenalty && (
+                      {isPunish && amountText && !hasPayableAmount && (
+                        <Pill className="bg-graphite/5 text-graphite/70 border border-graphite/10">{amountText}</Pill>
+                      )}
+                      {isPunish && amountText && hasPayableAmount && isSplitPenalty && (
                         <Pill className="bg-status-pending/10 text-status-pending border border-status-pending/20">
                           {amountText} на {members.length} чел. · оплатили {paidMembersCount} из {members.length}
                         </Pill>
                       )}
-                      {isPunish && amountText && !isSplitPenalty && (
+                      {isPunish && amountText && hasPayableAmount && !isSplitPenalty && (
                         <button
                           onClick={() => canManage && handleTogglePaid(d)}
                           disabled={!canManage}
@@ -279,7 +283,7 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                         </button>
                       )}
                       {isPunish && amountSplitText && (
-                        <span className="text-[10px] font-bold text-graphite-light/60">обяз. + доп.: {amountSplitText} ₽</span>
+                        <span className="text-[10px] font-bold text-graphite-light/60">{amountSplitText}</span>
                       )}
                       {isPunish && d.team_penalty_mode === 'whole' && (
                         <span className="text-[10px] font-bold text-graphite-light/60 uppercase">на всю команду</span>

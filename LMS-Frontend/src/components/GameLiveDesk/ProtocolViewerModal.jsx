@@ -1,5 +1,5 @@
 // src/components/GameLiveDesk/PDF-Protocol/ProtocolViewerModal.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getToken } from '../../utils/helpers';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
@@ -14,6 +14,9 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, onSigned }) {
   
   const [formState, setFormState] = useState({});
   const [isSigning, setIsSigning] = useState(null);
+  const [isSavingScreenshot, setIsSavingScreenshot] = useState(false);
+  const [screenshotMessage, setScreenshotMessage] = useState(null);
+  const screenshotBusy = useRef(false);
   const [zoom, setZoom] = useState(1.0);
   // Протокол занимает несколько листов A4 (лицевая сторона + оборот), причём их
   // количество задаёт шаблон лиги. Реальную высоту документа меряем по загруженному
@@ -82,6 +85,7 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, onSigned }) {
       setIsSigning(null);
       setZoom(1.0);
       setSheetHeightMm(A4_HEIGHT_MM);
+      setScreenshotMessage(null);
     } else {
       setHtmlContent('');
     }
@@ -129,6 +133,28 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, onSigned }) {
     if (iframe && iframe.contentWindow) {
       iframe.focus();
       iframe.contentWindow.print();
+    }
+  };
+
+  const handleScreenshot = async () => {
+    if (screenshotBusy.current) return;
+    screenshotBusy.current = true;
+    setIsSavingScreenshot(true);
+    setScreenshotMessage(null);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/protocol/${gameId}/screenshot`, {
+        method: 'POST', headers,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Не удалось сохранить скрин протокола');
+      }
+      setScreenshotMessage({ text: 'Скрин создан и сохранён для сайта лиги.', error: false });
+    } catch (error) {
+      setScreenshotMessage({ text: error.message, error: true });
+    } finally {
+      screenshotBusy.current = false;
+      setIsSavingScreenshot(false);
     }
   };
 
@@ -344,6 +370,15 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, onSigned }) {
                       <Icon name="download" className="w-4 h-4" />
                       Печать
                   </button>
+                  <button
+                      onClick={handleScreenshot}
+                      disabled={isSavingScreenshot || !!isSigning || !htmlContent}
+                      className="flex items-center gap-2 hover:text-orange transition-colors uppercase text-[11px] font-bold tracking-wider border-r border-white/50 pr-5 whitespace-nowrap disabled:opacity-50 disabled:cursor-wait"
+                      title="Создать изображение протокола и сохранить для сайта лиги"
+                  >
+                      <Icon name="save" className="w-4 h-4" />
+                      {isSavingScreenshot ? 'Создаём…' : 'Скрин'}
+                  </button>
                   
                   <div className="flex items-center gap-4 pl-1">
                       <button onClick={zoomOut} className="w-9 h-9 flex items-center justify-center rounded-[12px] hover:text-orange hover:bg-white/20 transition-colors font-black text-2xl leading-none" title="Уменьшить масштаб">-</button>
@@ -353,6 +388,12 @@ export function ProtocolViewerModal({ isOpen, onClose, gameId, onSigned }) {
               </div>
 
               {/* ЦЕНТРИРОВАННЫЙ ЛИСТ А4 */}
+              {screenshotMessage && (
+                  <div role={screenshotMessage.error ? 'alert' : 'status'}
+                      className={`absolute top-20 left-1/2 -translate-x-1/2 z-50 max-w-[90%] rounded-lg bg-white px-4 py-2 shadow-lg text-sm ${screenshotMessage.error ? 'text-status-rejected' : 'text-graphite'}`}>
+                      {screenshotMessage.text}
+                  </div>
+              )}
               <div className="flex-1 overflow-auto w-full flex justify-center py-20 custom-scrollbar">
                   {/* Тень и белый фон рисует уже сам лист внутри iframe (.page),
                       поэтому обёртка прозрачная — иначе зазор между страницами был бы белым. */}

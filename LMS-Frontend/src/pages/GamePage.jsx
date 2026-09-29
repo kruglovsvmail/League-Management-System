@@ -697,14 +697,14 @@ export function GamePage() {
               {tabIndex === 1 && (
                 <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg p-8 shadow-sm w-full min-h-[400px] animate-zoom-in">
                   <div className="flex justify-between items-center mb-10 border-b border-graphite/5 pb-4">
-                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Обслуживающие матч</h3>
+                    <h3 className="font-black text-[16px] uppercase text-graphite tracking-wide">Работающие на матче</h3>
                   </div>
                   
                   {hasOfficials ? (
                     <div className="flex flex-col gap-8">
                       {/* Судьи на льду */}
                       <div>
-                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Судьи на льду</h4>
+                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Судьи в поле</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                            <OfficialCard label="Главный судья" official={officials['main-1']} />
                            <OfficialCard label="Главный судья" official={officials['main-2']} />
@@ -715,7 +715,7 @@ export function GamePage() {
 
                       {/* Судейский столик */}
                       <div>
-                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Судейский столик (Оф. лица)</h4>
+                         <h4 className="text-[11px] font-black text-graphite/40 uppercase tracking-widest mb-4 px-1">Бригада за бортом</h4>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                            <OfficialCard label="Секретарь матча" official={officials['secretary']} />
                            <OfficialCard label="Судья времени матча" official={officials['timekeeper']} />

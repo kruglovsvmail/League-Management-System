@@ -4,7 +4,8 @@ import {
     getProtocolData, 
     signProtocol, 
     downloadProtocolPDF, 
-    getProtocolHtmlView 
+    getProtocolHtmlView,
+    publishProtocolScreenshot
 } from '../controllers/ProtocolPDFController.js';
 
 const router = express.Router();
@@ -32,5 +33,8 @@ router.post('/protocol/:gameId/sign', requireProtocolAccess, signProtocol);
 
 // Эндпоинт: Скачивание PDF-файла напрямую с сервера
 router.get('/protocol/:gameId/download', requireProtocolAccess, downloadProtocolPDF);
+
+// Создаёт WebP в хранилище для сайта лиги и возвращает подтверждение сохранения.
+router.post('/protocol/:gameId/screenshot', requireProtocolAccess, publishProtocolScreenshot);
 
 export default router;

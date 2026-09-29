@@ -1037,19 +1037,20 @@ const normalizeDecisionBody = (body) => {
   // Для команды и "иного лица" допустим только денежный штраф: счётчика матчей у команды нет,
   // а иное лицо не заявлено ни за одну команду — пропускать матчи ему нечего.
   const moneyOnly = targetType === 'team' || targetType === 'other';
-  const penaltyGames = moneyOnly ? null : (body.penalty_games || null);
+  const optionalPenaltyNumber = (value) => value == null || value === '' ? null : Number(value);
+  const penaltyGames = moneyOnly ? null : optionalPenaltyNumber(body.penalty_games);
 
   return {
     targetType,
     teamPenaltyMode,
     penaltyGames,
-    mandatoryGames: moneyOnly ? null : (body.mandatory_games || null),
-    additionalGames: moneyOnly ? null : (body.additional_games || null),
-    penaltyAmount: body.penalty_amount || null,
+    mandatoryGames: moneyOnly ? null : optionalPenaltyNumber(body.mandatory_games),
+    additionalGames: moneyOnly ? null : optionalPenaltyNumber(body.additional_games),
+    penaltyAmount: optionalPenaltyNumber(body.penalty_amount),
     // Разбивка денежного штрафа: обязательная часть есть только у командных наказаний,
     // penalty_amount при этом всегда остаётся итогом (обяз. + доп.), как и у матчей
-    mandatoryAmount: moneyOnly ? (body.mandatory_amount || null) : null,
-    additionalAmount: body.additional_amount || null,
+    mandatoryAmount: moneyOnly ? optionalPenaltyNumber(body.mandatory_amount) : null,
+    additionalAmount: optionalPenaltyNumber(body.additional_amount),
     penaltyLogic: (penaltyGames && body.penalty_amount) ? (body.penalty_logic || 'and') : null,
     otherPersonName: targetType === 'other' ? (body.other_person_name?.trim() || null) : null,
 
