@@ -25,7 +25,10 @@ const FILTERS = {
 const ERROR_CELL = 'bg-status-rejected/10 ring-1 ring-inset ring-status-rejected/60';
 // Строка ввода, пока её запись сохраняется: приглушена и не трогается
 export const PAPER_SAVING_CELL = 'opacity-60 pointer-events-none';
-const FOCUS_CELL = 'hover:bg-orange/5 focus:bg-orange/5 focus:ring-1 focus:ring-inset focus:ring-orange/50';
+// Подсветка ячейки: под курсором — заливка и тонкая рамка, ячейка с вводом — рамка ярче.
+// Заметнее, чем строка правки (bg-orange/10 в ProtocolSheet), иначе на ней ячейку не видно.
+export const PAPER_CELL_HIGHLIGHT = 'hover:bg-orange/20 hover:ring-1 hover:ring-inset hover:ring-orange/60 focus:bg-orange/15 focus:ring-2 focus:ring-inset focus:ring-orange';
+const FOCUS_CELL = PAPER_CELL_HIGHLIGHT;
 
 // Поле ввода на всю ячейку. На телефоне у цифровых полей — цифровая клавиатура, у
 // нарушителя — обычная: на цифровой нет «/» и букв «К», «ОПК».

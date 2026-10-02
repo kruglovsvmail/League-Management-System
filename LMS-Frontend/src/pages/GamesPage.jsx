@@ -12,6 +12,9 @@ import { Checkbox } from '../ui/Checkbox';
 import { useAccess } from '../hooks/useAccess';
 import { GameCard } from '../components/Games/GameCard';
 import { AccessFallback } from '../ui/AccessFallback';
+import { Icon } from '../ui/Icon';
+import { Tooltip } from '../ui/Tooltip';
+import { AnnounceModal } from '../modals/AnnounceModal';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru'; 
 
@@ -68,6 +71,8 @@ export function GamesPage() {
 
     const [gameToDelete, setGameToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    const [isAnnounceOpen, setIsAnnounceOpen] = useState(false);
 
     const canView = checkAccess('SCHEDULE_VIEW');
     const canEdit = checkAccess('SCHEDULE_EDIT');
@@ -373,6 +378,19 @@ export function GamesPage() {
                 title="Расписание матчей" 
                 actions={
                     <div className="flex items-center gap-6">
+                        {/* Анонс матчей для соцсетей — по матчам выбранного дивизиона */}
+                        {selectedDivisionId && (
+                            <Tooltip title="Анонс матчей" noUnderline={true}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAnnounceOpen(true)}
+                                    className="flex items-center justify-center w-10 h-10 bg-white/70 rounded-md border border-graphite/10 shadow-sm text-graphite/40 hover:text-orange transition-colors animate-zoom-in"
+                                >
+                                    <Icon name="image" className="w-5 h-5" />
+                                </button>
+                            </Tooltip>
+                        )}
+
                         <div className="flex items-center gap-4 bg-white/70 px-4 py-2 rounded-md border border-graphite/10 shadow-sm animate-zoom-in">
                             <Checkbox
                                 label="Завершенные"
@@ -426,8 +444,17 @@ export function GamesPage() {
 
             {toast && <div className="fixed top-[110px] right-10 z-[9999]"><Toast {...toast} onClose={() => setToast(null)} /></div>}
 
-            <ConfirmModal 
-                isOpen={!!gameToDelete} 
+            <AnnounceModal
+                isOpen={isAnnounceOpen}
+                onClose={() => setIsAnnounceOpen(false)}
+                divisionId={selectedDivisionId}
+                leagueId={selectedLeague?.id}
+                canEditBackground={checkAccess('ANNOUNCE_BACKGROUND_EDIT')}
+                games={games}
+            />
+
+            <ConfirmModal
+                isOpen={!!gameToDelete}
                 onClose={() => !isDeleting && setGameToDelete(null)} 
                 onConfirm={confirmDelete} 
                 isLoading={isDeleting} 

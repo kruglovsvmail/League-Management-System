@@ -54,7 +54,8 @@ export function PreferencesTab({ setToast }) {
     sec_goalie_autofill: true,
     sec_penalty_release_on_goal: true,
     sec_penalty_manual_end: false,
-    sec_coincident_penalties: true
+    sec_coincident_penalties: true,
+    protocol_esign_label: false
   });
 
   useEffect(() => {
@@ -87,7 +88,8 @@ export function PreferencesTab({ setToast }) {
             sec_goalie_autofill: data.data.sec_goalie_autofill ?? true,
             sec_penalty_release_on_goal: data.data.sec_penalty_release_on_goal ?? true,
             sec_penalty_manual_end: data.data.sec_penalty_manual_end ?? false,
-            sec_coincident_penalties: data.data.sec_coincident_penalties ?? true
+            sec_coincident_penalties: data.data.sec_coincident_penalties ?? true,
+            protocol_esign_label: data.data.protocol_esign_label ?? false
           });
         }
       } catch (err) {
@@ -416,6 +418,28 @@ export function PreferencesTab({ setToast }) {
               <Switch
                 checked={formData.sec_coincident_penalties}
                 onChange={(e) => handleStepChange('sec_coincident_penalties', e.target.checked)}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+        </SettingsCard>
+
+        {/* ПРОТОКОЛ МАТЧА — как подписи официальных лиц выглядят в печатном протоколе.
+            Отметка декоративная: ничего не блокирует и в базу не пишется */}
+        <SettingsCard
+          icon="edit"
+          title="Протокол матча"
+          description="Для лиг, где судьи и секретарь не подписывают протокол ПИН-кодом в панели секретаря."
+        >
+          <div
+            className="flex items-center justify-between gap-3"
+            title="У завершённых матчей под фамилией главных судей и секретаря протокол пишет «подписано электронной подписью», даже если они не подписывали его ПИН-кодом. Надпись ничего не блокирует. Кто подписал ПИН-кодом — печатается со своей настоящей подписью и кодом. Подписание в панели секретаря остаётся. Матч запоминает положение тумблера в момент завершения: переключение потом не меняет уже закрытые протоколы (кроме матчей, завершённых до появления этой настройки, — они следуют тумблеру)."
+          >
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">«Подписано электронной подписью» под судьями и секретарём</span>
+            <div className="shrink-0">
+              <Switch
+                checked={formData.protocol_esign_label}
+                onChange={(e) => handleStepChange('protocol_esign_label', e.target.checked)}
                 disabled={!canEdit}
               />
             </div>

@@ -58,10 +58,12 @@ const formatPenaltyMinutes = (penalty) => {
 };
 
 // Графа «Окончание»: у дисциплинарного до конца матча окончания нет — прочерк,
-// как и у штрафного броска.
+// как и у штрафного броска. Удаление, которое к концу матча не истекло, окончания
+// не получает — графа пустая (penalty_outlives_match, см. ProtocolPDFController.js).
 const formatPenaltyEnd = (penalty) => {
     if (!penalty) return '';
     if (penalty.penalty_class === 'penalty_shot' || penalty.penalty_class === 'game_misconduct') return '—';
+    if (penalty.penalty_outlives_match) return '';
     if (penalty.penalty_end_time === null || penalty.penalty_end_time === undefined) return '—';
     return formatTime(penalty.penalty_end_time);
 };
@@ -358,6 +360,14 @@ const signatureValue = (value) => value
     ? `<span style="font-size: 7pt; color: #000;">${t(value)}</span>`
     : `<span style="font-size: 7pt; color: #d1d1d1;">—</span>`;
 
+// Отметка под фамилией главного судьи и секретаря — настройка лиги «подписано электронной
+// подписью» (флаги officials.esignLabel готовит ProtocolPDFController). Декоративная:
+// у подписавшего ПИН-кодом её нет, он печатается со своей подписью и кодом.
+const ESIGN_NOTE = 'подписано электронной подписью';
+const esignNote = (show) => (show ? `<span class="esignNote">${ESIGN_NOTE}</span>` : '');
+// Строка подписи оборота с отметкой: фамилия и отметка в 13pt не помещаются
+const ESIGN_ROW_H = '16pt';
+
 // --- Блок 1, левая колонка: индексация штрафов -------------------------------
 // Справочник причин удаления лига ведёт сама, и пунктов в нём может быть больше, чем
 // 42 строки бумажного бланка. Тогда строки и кегль поджимаются, чтобы блок уместился
@@ -457,10 +467,11 @@ const renderShootoutLegendAndSignatures = (data) => {
     // Колонка подписей шире, чем в таблице обозначений: иначе «Главный тренер команды «А»»
     // переносится на вторую строку и строки блока получаются разной высоты.
     const SIGN_LABEL = 35;
-    const signatureRow = (label, value, height) => `
-        <div class="p2Row" style="min-height: ${height};">
+    // esign — отметка «подписано электронной подписью» под фамилией (только судья и секретарь)
+    const signatureRow = (label, value, height, esign = false) => `
+        <div class="p2Row" style="min-height: ${esign ? ESIGN_ROW_H : height};">
           <div class="p2Cell p2CellL" style="width: ${SIGN_LABEL}%;"><span class="p2Label">${t(label)}</span></div>
-          <div class="p2Cell p2CellL" style="width: ${100 - SIGN_LABEL}%;">${signatureValue(value)}</div>
+          <div class="p2Cell p2CellL${esign ? ' p2Esign' : ''}" style="width: ${100 - SIGN_LABEL}%;">${signatureValue(value)}${esignNote(esign)}</div>
         </div>
     `;
 
@@ -482,8 +493,8 @@ const renderShootoutLegendAndSignatures = (data) => {
       <div class="p2Gap" style="height: 4pt;"></div>
 
       <div class="p2Col">
-        ${signatureRow('Подпись секретаря:', officials['secretary'], '13pt')}
-        ${signatureRow('Подпись главного судьи:', officials['main-1'], '13pt')}
+        ${signatureRow('Подпись секретаря:', officials['secretary'], '13pt', officials.esignLabel?.['secretary'])}
+        ${signatureRow('Подпись главного судьи:', officials['main-1'], '13pt', officials.esignLabel?.['main-1'])}
         ${signatureRow('Главный тренер команды «А»:', data.home?.coachSig, '12pt')}
         ${signatureRow('Главный тренер команды «Б»:', data.away?.coachSig, '12pt')}
         <div class="thickBorder" style="top: 0; left: 0; width: 100%; height: 100%;"></div>
@@ -811,6 +822,11 @@ export const getHtml = (data) => {
             .sectionTitle { font-size: 7.5pt; font-weight: bold; text-transform: uppercase; }
             .columnTitle { font-size: 6.5pt; font-weight: normal; }
             .dataText { font-size: 7pt; }
+            /* Отметка «подписано электронной подписью» второй строкой под фамилией */
+            .esignNote { font-size: 5pt; line-height: 1.1; color: #555; font-style: italic; }
+            /* В строке подписи оборота фамилия и отметка ставятся плотно — строка
+               подрастает всего на 3pt (ESIGN_ROW_H), и низ оборота не уезжает на третий лист */
+            .p2Esign > span { line-height: 1.05; }
             .footerMainContainer { width: 100%; margin-top: 5pt; flex-direction: row; }
             .footerColumnLeft { width: 22%; position: relative; }
             .footerColumnMiddle { width: 44%; position: relative; }
@@ -986,15 +1002,15 @@ export const getHtml = (data) => {
             </div>
             <div class="rowTall">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Секретарь игры</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['secretary']) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['secretary']) || ''}</span>${esignNote(officials.esignLabel?.['secretary'])}</div>
             </div>
             <div class="rowTall">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Главный судья</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['main-1']) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['main-1']) || ''}</span>${esignNote(officials.esignLabel?.['main-1'])}</div>
             </div>
             <div class="rowTall">
               <div class="cellCenter" style="width: 40%;"><span class="columnTitle">Главный судья</span></div>
-              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['main-2']) || ''}</span></div>
+              <div class="cellCenter" style="width: 60%;"><span class="dataText">${t(officials['main-2']) || ''}</span>${esignNote(officials.esignLabel?.['main-2'])}</div>
             </div>
             <div class="thickBorder" style="top: 0; left: 0; width: 100%; height: 24pt; border-left-width: 0;"></div>
             <div class="thickBorder" style="top: 24pt; left: 0; width: 100%; height: 24pt; border-left-width: 0; border-top-width: 0;"></div>

@@ -10,6 +10,7 @@ import { hasProtocolBackContent, renderProtocolWebp } from '../utils/protocolScr
 import { getProtocolHtml } from '../src/protocols/protocol-factory.js';
 import { fetchProtocolBack, CHECK_RESULTS } from './protocolBackController.js';
 import { sortPenaltyRows } from '../utils/penaltyGroups.js';
+import { getMatchEndSecs } from '../utils/periodLimits.js';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
@@ -37,10 +38,15 @@ const fetchRawProtocolData = async (gameId) => {
             COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_away.snap_name, at.name) as away_team_name,
             g.division_id, g.home_team_id, g.away_team_id,
             g.home_score, g.away_score,
-            g.actual_start_time, g.actual_end_time, g.spectators
+            g.actual_start_time, g.actual_end_time, g.spectators,
+            g.end_type AS game_end_type, g.status AS game_status,
+            -- Надпись «подписано электронной подписью»: снимок тумблера лиги на момент
+            -- завершения матча; у матчей, завершённых до снимков (NULL), — тумблер сейчас
+            COALESCE(g.protocol_esign_label, l.protocol_esign_label) AS protocol_esign_label
         FROM games g
         LEFT JOIN divisions d ON g.division_id = d.id
         LEFT JOIN seasons s ON d.season_id = s.id
+        LEFT JOIN leagues l ON l.id = s.league_id
         LEFT JOIN arenas a ON g.arena_id = a.id
         LEFT JOIN teams ht ON g.home_team_id = ht.id
         LEFT JOIN teams at ON g.away_team_id = at.id
@@ -204,7 +210,7 @@ const fetchRawProtocolData = async (gameId) => {
         GROUP BY team_id, period
         ORDER BY team_id, period
     `, [gameId]);
-    const timerResult = await pool.query('SELECT periods_count FROM game_timers WHERE game_id = $1', [gameId]);
+    const timerResult = await pool.query('SELECT periods_count, period_length, ot_length FROM game_timers WHERE game_id = $1', [gameId]);
 
     // Справочник причин удаления сезона — для блока «Индексация штрафов» на обороте протокола.
     // Пустой результат означает, что лига справочник не заполнила: вторая страница
@@ -250,7 +256,21 @@ const fetchRawProtocolData = async (gameId) => {
         signatures, prefilledTeamStaff, prefilledOfficials,
         goalieLog: goalieLogResult.rows, shotsSummary: shotsSummaryResult.rows,
         timerSettings: timerResult.rows[0] || { periods_count: 3 },
+        // Конец матча на часах: удалению, которое к нему не истекло, графа «Окончание»
+        // остаётся пустой (см. prepareProtocolData). end_type сюда — отдельным полем, а не
+        // в info: от info.end_type зависит блок буллитов, его этот расчёт не трогает.
+        matchEndSeconds: getMatchEndSecs({
+            events: eventsResult.rows,
+            endType: game.game_end_type,
+            periodLength: timerResult.rows[0]?.period_length,
+            otLength: timerResult.rows[0]?.ot_length,
+            periodsCount: timerResult.rows[0]?.periods_count,
+        }),
         penaltyTypes: penaltyTypesResult.rows,
+        // «Подписано электронной подписью» (снимок на момент завершения, см. updateGameStatus)
+        // и статус матча — для отметки под главными судьями и секретарём (esignLabelFor)
+        esignLabelEnabled: !!game.protocol_esign_label,
+        gameStatus: game.game_status,
         protocolBack
     };
 };
@@ -263,7 +283,15 @@ const prepareProtocolData = (apiData) => {
   
     const homeId = String(apiData.teams.home.id);
     const awayId = String(apiData.teams.away.id);
-  
+
+    // Удаление не истекло к концу матча (окончание позже конца матча на часах). У ШБ и
+    // дисциплинарного до конца матча своего окончания нет — их графа и так с прочерком.
+    const matchEnd = apiData.matchEndSeconds;
+    const outlivesMatch = (e) => matchEnd !== null && matchEnd !== undefined
+        && e.penalty_class !== 'penalty_shot' && e.penalty_class !== 'game_misconduct'
+        && e.penalty_end_time !== null && e.penalty_end_time !== undefined
+        && parseInt(e.penalty_end_time, 10) > matchEnd;
+
     const periodsCount = apiData.timerSettings?.periods_count || 3;
     const periods = [];
     for(let i=1; i<=periodsCount; i++) periods.push(i.toString());
@@ -373,13 +401,25 @@ const prepareProtocolData = (apiData) => {
         goals: teamEvents
           .filter(e => e.event_type === 'goal' || e.event_type === 'failed_ps' || e.event_type === 'pending_ps')
           .sort((a, b) => a.time_seconds - b.time_seconds),
-        // Строки одной группы (2+2, 2+10) — подряд, как в бумажном бланке
-        penalties: sortPenaltyRows(teamEvents.filter(e => e.event_type === 'penalty')),
+        // Строки одной группы (2+2, 2+10) — подряд, как в бумажном бланке.
+        // penalty_outlives_match — матч кончился раньше удаления: окончание не печатается,
+        // штрафные минуты игроку засчитаны как обычно
+        penalties: sortPenaltyRows(teamEvents.filter(e => e.event_type === 'penalty')).map(e => ({
+          ...e,
+          penalty_outlives_match: outlivesMatch(e),
+        })),
         timeout: teamEvents.find(e => e.event_type === 'timeout')?.time_seconds,
         coachSig: getSig('coach'), off1Sig: getSig('off1'), off2Sig: getSig('off2'),
       };
     };
   
+    // Отметка «подписано электронной подписью» под фамилией (настройка лиги protocol_esign_label).
+    // Декоративная: ничего не блокирует и в базу не пишется. Только у завершённого матча,
+    // только у назначенного на матч и только если он не подписал ПИН-кодом — подписавший
+    // печатается со своей настоящей подписью и её кодом.
+    const esignLabelFor = (roleKey) => !!apiData.esignLabelEnabled && apiData.gameStatus === 'finished'
+      && !apiData.signatures?.[roleKey] && !!apiData.prefilledOfficials?.[roleKey];
+
     const getSigOrPrefilled = (roleKey) => {
       const sig = apiData.signatures ? apiData.signatures[roleKey] : null;
       if (sig) return sig.hash ? `${sig.name} [${sig.hash}]` : sig.name;
@@ -476,6 +516,11 @@ const prepareProtocolData = (apiData) => {
         'linesman-2': getSigOrPrefilled('linesman-2'),
         'timekeeper': getSigOrPrefilled('timekeeper'),
         'informant': getSigOrPrefilled('informant'),
+        esignLabel: {
+          'secretary': esignLabelFor('secretary'),
+          'main-1': esignLabelFor('main-1'),
+          'main-2': esignLabelFor('main-2'),
+        },
       },
       prefilledTeamStaff: apiData.prefilledTeamStaff || { home: {}, away: {} },
       prefilledOfficials: apiData.prefilledOfficials || {},

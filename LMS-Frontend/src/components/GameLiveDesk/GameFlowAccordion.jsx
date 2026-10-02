@@ -23,7 +23,9 @@ export const GameFlowAccordion = ({
   // Нужна только значкам экипировки по возрасту в протоколе
   league,
   // Уведомление об ошибке ввода — снизу справа (бумажный вид, см. ProtocolSheet)
-  onToast
+  onToast,
+  // Конец матча на часах (getMatchEndSecs): удалению, не истёкшему к нему, окончание не пишется
+  matchEndSecs = null
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -89,6 +91,8 @@ export const GameFlowAccordion = ({
                   releaseOnGoal={releaseOnGoal}
                   manualPenaltyEnd={manualPenaltyEnd}
                   coincidentEnabled={coincidentEnabled}
+                  matchEndSecs={matchEndSecs}
+                  gameFinished={game?.status === 'finished'}
                   onToast={onToast}
                 />
 
@@ -120,6 +124,8 @@ export const GameFlowAccordion = ({
                   releaseOnGoal={releaseOnGoal}
                   manualPenaltyEnd={manualPenaltyEnd}
                   coincidentEnabled={coincidentEnabled}
+                  matchEndSecs={matchEndSecs}
+                  gameFinished={game?.status === 'finished'}
                   onToast={onToast}
                 />
 

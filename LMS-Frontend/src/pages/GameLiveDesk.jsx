@@ -16,7 +16,7 @@ import { ProtocolBackAccordion } from '../components/GameLiveDesk/ProtocolBackAc
 import {
   getPeriodLimits, formatTime,
   calculatePenaltyTimelines, calculateOnIcePenalties, isMinorRow, isLegacyDoubleMinor,
-  calculatePeriodFromTime, coincidentRowIds, penaltyGroupKey,
+  calculatePeriodFromTime, coincidentRowIds, penaltyGroupKey, getMatchEndSecs,
   PS_PENDING, PS_FAILED, isScoredFromPlay, sortRosterByPosition
 } from '../components/GameLiveDesk/GameDeskShared';
 import { isPauseStage, pauseStageSeconds } from '../components/GameLiveDesk/matchStages';
@@ -638,6 +638,12 @@ export function GameLiveDesk() {
       });
   }, [events, timerSeconds, game?.home_team_id, homeRoster, awayRoster]);
 
+  // Конец матча на часах: удалению, которое к нему не истекло, графа «Окон» в протоколе
+  // окончание не пишет (см. ProtocolSheet)
+  const matchEndSecs = useMemo(() => getMatchEndSecs({
+    events, currentPeriod, endType: game?.end_type, periodLength, otLength, periodsCount,
+  }), [events, currentPeriod, game?.end_type, periodLength, otLength, periodsCount]);
+
   // Стрелки карусели этапов. Этап встаёт на стартовые значения, часы стоят (автостарт только
   // у перерыва сразу после сирены) — так же, как при автопереходе (enterPeriod / enterPause
   // в timerHandler.js). Период — на своём начале; разминка и перерыв — их часы с 0:00, а
@@ -1190,6 +1196,7 @@ export function GameLiveDesk() {
             onGoalieChange={saveGoalieLog}
             isReadOnly={isReadOnly}
             onToast={showInputError}
+            matchEndSecs={matchEndSecs}
           />
 
           <SummaryTablesAccordion

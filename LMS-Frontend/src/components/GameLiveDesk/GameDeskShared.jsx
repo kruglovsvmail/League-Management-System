@@ -99,6 +99,28 @@ export const calculatePeriodFromTime = (seconds, pLen, otLen, pCount = 3) => {
   return 'SO';
 };
 
+// Конец матча на игровых часах: конец основного времени; если дошли до овертайма —
+// его конец, а если овертайм закончился голом — время этого гола. По нему графа «Окон»
+// не пишет окончание удалению, которое к концу матча так и не истекло (ProtocolSheet).
+// Тот же расчёт для печатного протокола — matchEndSeconds в ProtocolPDFController.js.
+export const getMatchEndSecs = ({ events = [], currentPeriod, endType, periodLength, otLength, periodsCount }) => {
+  const regEnd = getPeriodLimits(String(parseInt(periodsCount, 10) || 3), periodLength, otLength, periodsCount).end;
+  const ot = getPeriodLimits('OT', periodLength, otLength, periodsCount);
+  const hasOt = ot.end > ot.start;
+  const reachedOt = hasOt && (
+    currentPeriod === 'OT' || currentPeriod === 'SO' || endType === 'ot' || endType === 'so'
+    || events.some(e => e.period === 'OT' || e.period === 'SO')
+  );
+  if (!reachedOt) return regEnd;
+  // Овертайм играется до гола: забитый в нём гол и есть конец матча
+  const otGoal = events
+    .filter(e => e.event_type === 'goal' && e.period === 'OT')
+    .map(e => parseInt(e.time_seconds, 10))
+    .filter(t => !isNaN(t))
+    .sort((a, b) => a - b)[0];
+  return otGoal ?? ot.end;
+};
+
 // ─── ВИДЫ ШТРАФОВ ────────────────────────────────────────────────────────────
 // Секретарь выбирает вид, а строк протокола получается столько, сколько у вида:
 // «4» — две строки по 2, «2+10» — двойка и десятка, «5+20» — пятёрка и двадцатка.

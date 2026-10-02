@@ -14,7 +14,7 @@ import { ConfirmModal } from '../../modals/ConfirmModal';
 import {
   PaperInput, PaperPick, PaperSelect, PaperAddButton, PaperSaveButton,
   parseOffenderText, normalizeOffenderText, isClockValid,
-  usePaperDraftSaving, PAPER_SAVING_CELL
+  usePaperDraftSaving, PAPER_SAVING_CELL, PAPER_CELL_HIGHLIGHT
 } from './PaperCells';
 import { Icon } from '../../ui/Icon';
 import { EquipmentMark } from '../../ui/EquipmentMark';
@@ -152,7 +152,11 @@ export const ProtocolSheet = ({
   coincidentEnabled = true,
   oppTeamName = '',
   // Уведомление об ошибке ввода ({ title, message, type }) — снизу справа
-  onToast
+  onToast,
+  // Конец матча на часах (getMatchEndSecs в GameDeskShared) и завершён ли матч: удалению,
+  // которое к концу матча не истекло, окончание в графе «Окон» не пишется
+  matchEndSecs = null,
+  gameFinished = false
 }) => {
   // Причина уходит в событие снимком: наименование + сокращение + ссылка на пункт.
   // Пункт справочника потом могут отредактировать или удалить — протокол от этого
@@ -1359,7 +1363,7 @@ export const ProtocolSheet = ({
       type="button"
       onClick={onToggle}
       title={value === false ? 'Без броска (нажмите чтобы переключить)' : 'С броска (нажмите чтобы переключить)'}
-      className="w-full h-[33px] flex items-center justify-center hover:bg-orange/5 transition-colors"
+      className={`w-full h-[33px] flex items-center justify-center outline-none transition-colors ${PAPER_CELL_HIGHLIGHT}`}
     >
       {value !== null && value !== undefined && (
         <Icon name={value ? 'shootout_goal' : 'shootout_miss'} className={`w-5 h-5 ${value ? 'text-status-accepted' : 'text-status-rejected'}`} />
@@ -1642,7 +1646,15 @@ export const ProtocolSheet = ({
                 endTimeDisplay = '—'; endTimeClass = 'font-mono font-medium text-[13px] text-graphite/25';
               } else if (penalty && !isEditingPenalty) {
                 const pStart = penalty.effStart; const pEnd = penalty.effEnd;
-                if (!isNaN(pStart) && !isNaN(pEnd)) {
+                // Матч закончился раньше, чем удаление: графа «Окон» остаётся пустой, как
+                // в бумажном протоколе. Штрафные минуты игроку засчитываются как обычно —
+                // они берутся из вида штрафа, а не из окончания. До конца матча (и когда
+                // игра ушла в овертайм) удаление тикает, как любое другое.
+                const outlivesMatch = matchEndSecs !== null && !isNaN(pEnd) && pEnd > matchEndSecs
+                  && (gameFinished || timerSeconds >= matchEndSecs);
+                if (outlivesMatch) {
+                  isFinished = true; endTimeDisplay = '';
+                } else if (!isNaN(pStart) && !isNaN(pEnd)) {
                   isFinished = timerSeconds >= pEnd;
                   const isActive = timerSeconds >= pStart && timerSeconds < pEnd;
                   const isDelayed = timerSeconds < pStart;

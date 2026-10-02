@@ -87,6 +87,9 @@ export function Icon({ name, className = "w-6 h-6" }) {
     share: <svg {...baseProps}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,
     currency: <svg {...baseProps}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><circle cx="16" cy="14" r="1" fill="currentColor" stroke="none"/></svg>,
 
+    // Картинка: анонс матчей для соцсетей
+    image: <svg {...baseProps} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>,
+
     // Иконка раздела "Метрика" (столбчатый график с трендом)
     metrics: <svg {...baseProps}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
 

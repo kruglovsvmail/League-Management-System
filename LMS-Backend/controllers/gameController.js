@@ -1002,6 +1002,22 @@ export const updateGameStatus = async (req, res) => {
         // игровым дисквалификациям обеих команд этого дивизиона (списание идёт по факту того,
         // что команда сыграла матч, а не по факту участия конкретного игрока в протоколе).
         const isNewlyFinished = status === 'finished' && game.status !== 'finished';
+
+        // Снимок тумблера лиги «подписано электронной подписью» на момент завершения: протокол
+        // матча печатается по нему, и выключение тумблера потом старые протоколы не меняет
+        // (как длина периодов в game_timers). Только при переходе в «завершён» — повторное
+        // сохранение уже завершённого матча снимок не трогает; переоткрыли и завершили
+        // снова — снимается заново. У матчей без лиги строки не найдётся — остаётся NULL.
+        if (isNewlyFinished) {
+            await client.query(`
+                UPDATE games g SET protocol_esign_label = l.protocol_esign_label
+                FROM divisions d
+                JOIN seasons s ON s.id = d.season_id
+                JOIN leagues l ON l.id = s.league_id
+                WHERE g.id = $1 AND d.id = g.division_id
+            `, [gameId]);
+        }
+
         if (isNewlyFinished && game.division_id) {
             const teamsInGame = [game.home_team_id, game.away_team_id].filter(Boolean);
             if (teamsInGame.length > 0) {

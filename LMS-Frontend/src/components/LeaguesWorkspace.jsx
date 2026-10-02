@@ -9,6 +9,7 @@ import { Icon } from '../ui/Icon';
 import { Switch } from '../ui/Switch';
 import { SegmentButton } from '../ui/SegmentButton';
 import { ArenaAnnouncerSection } from './ArenaAnnouncerSection';
+import { AnnounceAssetsSection } from './AnnounceAssetsSection';
 import { SettingsCard } from './Settings/SettingsCard';
 
 /**
@@ -29,6 +30,9 @@ import { SettingsCard } from './Settings/SettingsCard';
  * перенесённый сюда с вкладки «Параметры».
  *
  * Третий — диктор арены: звуки лиги и сценарий бипа (см. ArenaAnnouncerSection).
+ *
+ * Четвёртый — файлы картинки анонса матчей: фон, логотип, шрифт (см. AnnounceAssetsSection).
+ * Общие файлы дефолтного шаблона живут на экране выбора лиги — они не принадлежат ни одной.
  */
 
 const DISQUALIFICATION_MODES = [
@@ -281,6 +285,9 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
             </div>
           )}
         </div>
+
+        {/* Общие файлы анонса — для всех лиг без своих */}
+        <AnnounceAssetsSection scope="default" showToast={showToast} />
       </div>
     );
   }
@@ -382,6 +389,9 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
 
       {/* ДИКТОР АРЕНЫ — key пересоздаёт блок при смене лиги: звуки и сценарий прежней не мелькают */}
       <ArenaAnnouncerSection key={selectedLeague.id} leagueId={selectedLeague.id} showToast={showToast} />
+
+      {/* АНОНС МАТЧЕЙ — фон, логотип и шрифт картинки анонса этой лиги */}
+      <AnnounceAssetsSection key={`announce-${selectedLeague.id}`} scope={selectedLeague.id} showToast={showToast} />
 
       <div className="flex flex-col lg:flex-row gap-8 items-start">
 

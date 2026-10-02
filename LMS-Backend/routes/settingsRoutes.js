@@ -14,10 +14,14 @@ import {
 import {
   getArenaAnnouncer, uploadArenaAudioFile, deleteArenaAudioFile, updateBeepSchedule, updateBeepLeads
 } from '../controllers/arenaAssetsController.js';
+import {
+  getAnnounceAssets, uploadAnnounceAsset, deleteAnnounceAsset, uploadLeagueBackground
+} from '../controllers/announceAssetsController.js';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import upload from '../config/upload.js'; // ИМПОРТИРУЕМ НАШ UPLOAD
 import uploadBroadcast from '../config/uploadBroadcast.js';
 import uploadArenaAudio from '../config/uploadArenaAudio.js';
+import uploadAnnounce from '../config/uploadAnnounce.js';
 
 const router = express.Router();
 router.use(verifyToken);
@@ -54,6 +58,18 @@ router.post('/leagues/:leagueId/arena-announcer/files/:file', requirePermission(
 router.delete('/leagues/:leagueId/arena-announcer/files/:file', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), deleteArenaAudioFile);
 router.put('/leagues/:leagueId/arena-announcer/beep-schedule', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateBeepSchedule);
 router.put('/leagues/:leagueId/arena-announcer/beep-leads', express.json(), requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), updateBeepLeads);
+
+// АНОНС МАТЧЕЙ — фон, логотип и шрифты шаблона, там же и с тем же правом.
+// Общие файлы дефолтного шаблона лиги не принадлежат: право с пустым списком ролей
+// пропускает глобального администратора, не спрашивая контекст лиги.
+router.get('/leagues/:leagueId/announce-assets', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), getAnnounceAssets);
+router.post('/leagues/:leagueId/announce-assets/:slot', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), uploadAnnounce.single('file'), uploadAnnounceAsset);
+router.delete('/leagues/:leagueId/announce-assets/:slot', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), deleteAnnounceAsset);
+router.get('/announce-assets/default', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), getAnnounceAssets);
+router.post('/announce-assets/default/:slot', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), uploadAnnounce.single('file'), uploadAnnounceAsset);
+router.delete('/announce-assets/default/:slot', requirePermission('LEAGUE_GLOBAL_PARAMS_MANAGE'), deleteAnnounceAsset);
+// Фон анонса лиги можно сменить и из самого окна анонса — это право шире (руководство и медиа лиги)
+router.post('/leagues/:leagueId/announce-background', requirePermission('ANNOUNCE_BACKGROUND_EDIT'), uploadAnnounce.single('file'), uploadLeagueBackground);
 
 // КВАЛИФИКАЦИИ
 router.get('/leagues/:leagueId/settings-qualifications', requirePermission('SETTINGS_QUAL_VIEW'), getSettingsQualifications);

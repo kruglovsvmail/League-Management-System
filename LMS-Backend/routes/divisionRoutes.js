@@ -37,6 +37,8 @@ import {
     deleteReserveGoalie
 } from '../controllers/reserveGoalieController.js';
 
+import { previewAnnounce, renderAnnounce } from '../controllers/announceController.js';
+
 const router = express.Router();
 
 // Глобальный охранник для всех эндпоинтов дивизионов (пользователь должен быть авторизован)
@@ -101,5 +103,12 @@ router.get('/divisions/:divisionId/reserve-goalies', requirePermission('SETTINGS
 router.post('/divisions/:divisionId/reserve-goalies', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), addReserveGoalie);
 router.put('/divisions/:divisionId/reserve-goalies/:reserveId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), updateReserveGoalie);
 router.delete('/divisions/:divisionId/reserve-goalies/:reserveId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), deleteReserveGoalie);
+
+// --- АНОНС МАТЧЕЙ ---
+// Картинка для соцсетей из расписания дивизиона. Право то же, что у самой страницы
+// расписания: анонс только читает матчи и ничего в базе не меняет. POST — потому что
+// список матчей идёт в теле запроса.
+router.post('/divisions/:divisionId/announce/preview', requirePermission('SCHEDULE_VIEW'), previewAnnounce);
+router.post('/divisions/:divisionId/announce/render', requirePermission('SCHEDULE_VIEW'), renderAnnounce);
 
 export default router;

@@ -47,6 +47,7 @@ export const PERMISSIONS = {                                                    
   SCHEDULE_EDIT: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                               // Право на редактирование даты, времени и арены у существующих матчей
   SCHEDULE_CREATE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                             // Право на ручное создание новых карточек матчей в расписании
   SCHEDULE_DELETE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                             // Право на удаление матча из расписания (если он еще не начался)
+  ANNOUNCE_BACKGROUND_EDIT: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN, ROLES.MEDIA],       // Право сменить фон картинки анонса матчей лиги прямо из окна анонса (Расписание → кнопка анонса)
 
   // -------------------------------------------------------------------------- 
   // РАЗДЕЛ: СТРАНИЦА МАТЧА                                                     
