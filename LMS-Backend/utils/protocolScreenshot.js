@@ -26,7 +26,7 @@ export const renderProtocolWebp = async (html, includeBack) => {
     try {
         browser = await puppeteer.launch(options);
         const page = await browser.newPage();
-        // Рендерим с запасом разрешения, затем приводим изображение к высоте 1200px.
+        // Рендерим с запасом разрешения, затем приводим изображение к высоте 1600px.
         await page.setViewport({ width: 1600, height: 1200, deviceScaleFactor: 2 });
         await page.setJavaScriptEnabled(false);
         await page.emulateMediaType('print');
@@ -67,7 +67,7 @@ export const renderProtocolWebp = async (html, includeBack) => {
             image.src = `data:image/png;base64,${base64}`;
             await image.decode();
             const canvas = document.createElement('canvas');
-            canvas.height = 1200;
+            canvas.height = 1600;
             canvas.width = Math.round(image.naturalWidth * canvas.height / image.naturalHeight);
             const context = canvas.getContext('2d');
             context.imageSmoothingEnabled = true;
