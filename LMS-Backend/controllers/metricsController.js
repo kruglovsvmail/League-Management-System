@@ -9,6 +9,9 @@ const PAGE_LABELS = {
 
 const labelFor = (page) => PAGE_LABELS[page] || page;
 
+// Доля в процентах с одним знаком после запятой
+const pct = (part, total) => (total > 0 ? Math.round((part / total) * 1000) / 10 : 0);
+
 // Часовой пояс, по которому считаются календарные сутки в метриках.
 // ВАЖНО: должен совпадать с таймзоной ЗАПИСИ визитов в TR-Backend
 // (Team-Room/TR-Backend/controllers/AnalyticsController.js) — иначе границы суток
@@ -86,6 +89,8 @@ const TOP_USERS_SORT_COLUMNS = {
   name: { expr: 'u.last_name, u.first_name', defaultDir: 'ASC' },
   visits: { expr: 'total_visits', defaultDir: 'DESC' },
   push: { expr: 'push_device_count', defaultDir: 'DESC' },
+  // Те, у кого способ входа ещё не определён (NULL), всегда внизу — в любом направлении
+  client: { expr: 'u.last_seen_client', nulls: 'LAST', defaultDir: 'ASC' },
 };
 
 // Фильтр по периоду последнего визита — те же окна, что и DAU/WAU/MAU в getAudience
@@ -158,6 +163,7 @@ export const getTopUsers = async (req, res) => {
       `SELECT u.id, u.first_name, u.last_name, u.avatar_url,
               SUM(pv.visit_count) AS total_visits,
               GREATEST(MAX(pv.last_visited_at), u.last_seen_at) AS last_visited_at,
+              u.last_seen_client,
               COALESCE(ps.device_count, 0) AS push_device_count
        FROM page_visits pv
        JOIN users u ON u.id = pv.user_id
@@ -167,7 +173,7 @@ export const getTopUsers = async (req, res) => {
          GROUP BY user_id
        ) ps ON ps.user_id = u.id
        WHERE ${searchWhere}
-       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, u.last_seen_at, ps.device_count
+       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, u.last_seen_at, u.last_seen_client, ps.device_count
        HAVING ${periodHaving}
        ORDER BY ${orderByExpr}, u.id ASC
        LIMIT $5 OFFSET $6`,
@@ -380,8 +386,6 @@ export const getDaily = async (req, res) => {
 // 3) Охват — сколько игроков команд реально пользуются Team-Room.
 export const getAudience = async (req, res) => {
   try {
-    const pct = (part, total) => (total > 0 ? Math.round((part / total) * 1000) / 10 : 0);
-
     const accountsRes = await pool.query(
       `SELECT
          COUNT(*) AS total,
@@ -446,34 +450,45 @@ export const getAudience = async (req, res) => {
   }
 };
 
-// ── GET /api/metrics/engagement ──────────────────────────────────────────
-// Глубина использования: сколько пользователей задействуют 1, 2, 3 или все 4 раздела приложения.
-export const getEngagement = async (req, res) => {
+// Способы входа в Team-Room — те же значения, что пишет TR-Backend в users.last_seen_client
+// (Team-Room/TR-Backend/middleware/auth.js). Порядок — порядок сегментов в диаграмме.
+const CLIENT_MODES = ['app_ios', 'app_android', 'app_desktop', 'web_mobile', 'web_desktop'];
+
+// ── GET /api/metrics/clients ─────────────────────────────────────────────
+// Откуда пользователи заходили в последний раз: установленное приложение (iOS / Android / ПК)
+// или обычный браузер (телефон / ПК). Берём тех же людей, что и в таблице «Пользователи»
+// (хотя бы один визит в page_visits), каждого — по способу его последнего входа, поэтому
+// сумма долей даёт 100%. Проценты считаются от тех, у кого способ уже определён: пока человек
+// не зайдёт после появления колонки, у него NULL — такие идут отдельным числом unknown.
+export const getClients = async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT sections_count, COUNT(*) AS user_count
-       FROM (
-         SELECT user_id, COUNT(DISTINCT page) AS sections_count
-         FROM page_visits
-         GROUP BY user_id
-       ) t
-       GROUP BY sections_count
-       ORDER BY sections_count`
+      `SELECT u.last_seen_client AS client, COUNT(*) AS user_count
+       FROM users u
+       WHERE EXISTS (SELECT 1 FROM page_visits pv WHERE pv.user_id = u.id)
+       GROUP BY u.last_seen_client`
     );
 
-    const plural = (n) => (n === 1 ? 'раздел' : n >= 2 && n <= 4 ? 'раздела' : 'разделов');
+    const counts = new Map(rows.map((r) => [r.client, Number(r.user_count)]));
+    const identified = CLIENT_MODES.reduce((sum, mode) => sum + (counts.get(mode) || 0), 0);
+    const inApp = CLIENT_MODES.filter((mode) => mode.startsWith('app_'))
+      .reduce((sum, mode) => sum + (counts.get(mode) || 0), 0);
 
     res.json({
       success: true,
-      distribution: rows.map((r) => ({
-        sections: Number(r.sections_count),
-        label: `${r.sections_count} ${plural(Number(r.sections_count))}`,
-        user_count: Number(r.user_count),
+      items: CLIENT_MODES.map((mode) => ({
+        mode,
+        user_count: counts.get(mode) || 0,
+        pct: pct(counts.get(mode) || 0, identified),
       })),
+      identified,
+      unknown: counts.get(null) || 0,
+      in_app: inApp,
+      in_app_pct: pct(inApp, identified),
     });
   } catch (err) {
-    console.error('Ошибка в metricsController.getEngagement:', err);
-    res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке глубины использования' });
+    console.error('Ошибка в metricsController.getClients:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке статистики способов входа' });
   }
 };
 

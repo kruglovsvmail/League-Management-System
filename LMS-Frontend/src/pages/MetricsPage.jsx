@@ -25,9 +25,18 @@ const CHART_GRID = 'rgba(44,44,46,0.08)';
 // специально прозрачный (годится для текста и осей), в толстом сегменте кольца он выглядел
 // бы бледным пятном, здесь нужен solid-цвет
 const CHART_NEUTRAL = '#9a9a9d';
-// Ступени одного оттенка синего (светлый → тёмный) — для порядковых шкал
-// ("Глубина использования": 1 раздел, 2 раздела... это ступени, а не разные категории)
-const ORDINAL_BLUE_RAMP = ['#b7d3f6', '#6da7ec', '#2a78d6', '#184f95'];
+const CHART_NEUTRAL_LIGHT = '#c6c6c9';
+
+// Способы входа в Team-Room (users.last_seen_client). Порядок — порядок сегментов в диаграмме.
+// Цветом выделены три «приложения», а те, кто заходит из браузера, — оттенками серого:
+// диаграмма сразу показывает долю установивших как цветную часть кольца.
+const CLIENT_MODES = {
+  app_ios: { label: 'Приложение iOS', color: CHART_BLUE },
+  app_android: { label: 'Приложение Android', color: CHART_AQUA },
+  app_desktop: { label: 'Приложение ПК', color: CHART_ORANGE },
+  web_mobile: { label: 'Без приложения · телефон', color: CHART_NEUTRAL },
+  web_desktop: { label: 'Без приложения · ПК', color: CHART_NEUTRAL_LIGHT },
+};
 
 // Фиксированные цвета по разделам (не зависят от порядка в массиве). «Общие» —
 // не отдельная категория, а сумма остальных, поэтому получает нейтральный графит,
@@ -383,21 +392,21 @@ export function MetricsPage() {
   const [isUserDetailLoading, setIsUserDetailLoading] = useState(false);
 
   const [pushStats, setPushStats] = useState(null);
-  const [engagement, setEngagement] = useState(null);
+  const [clients, setClients] = useState(null);
   const [audience, setAudience] = useState(null);
 
   useEffect(() => {
     const fetchInitial = async () => {
       setIsLoading(true);
       try {
-        const [pushRes, engagementRes, audienceRes] = await Promise.all([
+        const [pushRes, clientsRes, audienceRes] = await Promise.all([
           fetch(`${import.meta.env.VITE_API_URL}/api/metrics/push`, { headers: getAuthHeaders() }),
-          fetch(`${import.meta.env.VITE_API_URL}/api/metrics/engagement`, { headers: getAuthHeaders() }),
+          fetch(`${import.meta.env.VITE_API_URL}/api/metrics/clients`, { headers: getAuthHeaders() }),
           fetch(`${import.meta.env.VITE_API_URL}/api/metrics/audience`, { headers: getAuthHeaders() }),
         ]);
-        const [pushData, engagementData, audienceData] = await Promise.all([pushRes.json(), engagementRes.json(), audienceRes.json()]);
+        const [pushData, clientsData, audienceData] = await Promise.all([pushRes.json(), clientsRes.json(), audienceRes.json()]);
         if (pushData.success) setPushStats(pushData);
-        if (engagementData.success) setEngagement(engagementData);
+        if (clientsData.success) setClients(clientsData);
         if (audienceData.success) setAudience(audienceData);
       } catch (err) {
         console.error('Ошибка загрузки метрик:', err);
@@ -689,7 +698,7 @@ export function MetricsPage() {
           </div>
         )}
 
-        {/* PUSH-УВЕДОМЛЕНИЯ + ГЛУБИНА ИСПОЛЬЗОВАНИЯ */}
+        {/* PUSH-УВЕДОМЛЕНИЯ + ОТКУДА ЗАХОДЯТ */}
         <div className="grid grid-cols-2 gap-6">
 
           {/* PUSH-УВЕДОМЛЕНИЯ */}
@@ -723,42 +732,38 @@ export function MetricsPage() {
             )}
           </div>
 
-          {/* ГЛУБИНА ИСПОЛЬЗОВАНИЯ */}
+          {/* ОТКУДА ЗАХОДЯТ */}
           <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
-            <h3 className="text-[16px] font-bold text-graphite mb-1">Глубина использования</h3>
+            <h3 className="text-[16px] font-bold text-graphite mb-1">Откуда заходят</h3>
             <p className="text-[12px] text-graphite-light mb-4">
-              Сколько разделов приложения использует каждый пользователь
+              Как пользователь открыл Team-Room в последний раз — приложением или через браузер
             </p>
 
-            {!engagement ? (
+            {!clients ? (
               <div className="h-20 flex items-center justify-center"><Loader text="" /></div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {/* Это порядковая шкала (1 раздел → 2 → 3...), а не отдельные категории —
-                    один оттенок синего, светлее → темнее, а не радуга из разных цветов */}
-                {engagement.distribution.map((d, idx) => {
-                  const maxCount = Math.max(1, ...engagement.distribution.map((x) => x.user_count));
-                  const pct = (d.user_count / maxCount) * 100;
-                  const rampColor = ORDINAL_BLUE_RAMP[Math.min(idx, ORDINAL_BLUE_RAMP.length - 1)];
-                  return (
-                    <div key={d.sections}>
-                      <div className="flex justify-between items-baseline text-[13px] mb-1.5">
-                        <span className="font-semibold text-graphite">{d.label}</span>
-                        <span className="text-graphite-light">{d.user_count} польз.</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full overflow-hidden" style={{ backgroundColor: `${rampColor}22` }}>
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${pct}%`, backgroundColor: rampColor }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                {engagement.distribution.length === 0 && (
-                  <div className="text-center py-8 text-graphite/40 text-[13px]">Данных пока нет</div>
-                )}
+            ) : clients.identified === 0 ? (
+              <div className="text-center py-8 text-graphite/40 text-[13px]">
+                Данных пока нет — они появятся, когда пользователи зайдут после обновления
               </div>
+            ) : (
+              <>
+                <DonutChart
+                  segments={clients.items.map((it) => ({
+                    label: CLIENT_MODES[it.mode].label,
+                    value: it.user_count,
+                    pct: it.pct,
+                    color: CLIENT_MODES[it.mode].color,
+                  }))}
+                  centerValue={`${clients.in_app_pct}%`}
+                  centerLabel="в приложении"
+                />
+                <div className="text-[12px] text-graphite-light mt-4">
+                  Учтено пользователей: <b className="text-graphite">{clients.identified.toLocaleString('ru')}</b>
+                  {clients.unknown > 0 && (
+                    <> · ещё не определено: {clients.unknown.toLocaleString('ru')} (появятся в диаграмме, когда зайдут в следующий раз)</>
+                  )}
+                </div>
+              </>
             )}
           </div>
 
@@ -799,6 +804,7 @@ export function MetricsPage() {
                     <th className="py-3 px-2 text-[11px] uppercase text-graphite/40 font-bold tracking-wide text-left">Команды</th>
                     <SortableTh label="Визиты" sortKey="visits" sort={usersSort} onSort={handleUsersSort} align="center" />
                     <SortableTh label="Push" sortKey="push" sort={usersSort} onSort={handleUsersSort} align="center" />
+                    <SortableTh label="Откуда" sortKey="client" sort={usersSort} onSort={handleUsersSort} />
                     <SortableTh label="Последний визит" sortKey="last_visited" sort={usersSort} onSort={handleUsersSort} align="right" />
                     <th className="w-8" />
                   </tr>
@@ -854,6 +860,16 @@ export function MetricsPage() {
                               <span className="text-graphite/20 text-[13px]">—</span>
                             )}
                           </td>
+                          <td className="py-2.5 px-2">
+                            {CLIENT_MODES[u.last_seen_client] ? (
+                              <span className="inline-flex items-center gap-1.5 text-[12px] text-graphite whitespace-nowrap">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: CLIENT_MODES[u.last_seen_client].color }} />
+                                {CLIENT_MODES[u.last_seen_client].label}
+                              </span>
+                            ) : (
+                              <span className="text-graphite/20 text-[13px]">—</span>
+                            )}
+                          </td>
                           <td className="py-2.5 px-2 text-right">
                             <span className="text-[12px] text-graphite-light">
                               {u.last_visited_at ? dayjs(u.last_visited_at).format('D MMMM, HH:mm') : '—'}
@@ -866,7 +882,7 @@ export function MetricsPage() {
 
                         {isExpanded && (
                           <tr className="border-b border-graphite/10 last:border-b-0">
-                            <td colSpan={6} className="pb-4 px-2">
+                            <td colSpan={7} className="pb-4 px-2">
                               {isUserDetailLoading ? (
                                 <div className="py-4"><Loader text="" /></div>
                               ) : (
