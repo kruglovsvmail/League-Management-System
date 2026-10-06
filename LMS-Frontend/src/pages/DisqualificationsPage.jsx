@@ -315,12 +315,12 @@ export function DisqualificationsPage() {
                             {/* Блок кнопок управления показывается только если есть права */}
                             {canAction && d.status === 'active' && (
                               <div className="flex gap-2 justify-end flex-wrap">
-                                {d.penalty_amount != null && (
+                                {Number(d.penalty_amount) > 0 && (
                                   <Button
                                     onClick={(e) => requestConfirm(e, d.id, 'paid')}
                                     className={d.penalty_amount_paid
                                       ? 'bg-status-accepted/10 text-status-accepted border-status-accepted/20 hover:border-status-accepted/40'
-                                      : 'bg-status-pending/10 text-status-pending border-status-pending/20 hover:border-status-pending/40'}
+                                      : 'bg-status-rejected/5 text-status-rejected border-status-rejected/10 hover:border-status-rejected/40'}
                                   >
                                     {d.penalty_amount_paid ? 'Штраф оплачен' : 'Отметить оплату'}
                                   </Button>

@@ -1,28 +1,24 @@
 import React from 'react';
 import { Badge } from './Badge';
 import { Tooltip } from './Tooltip';
+import { getPenaltyGameProgress, getPenaltyPillClass } from '../utils/penaltyDisplay';
 
 export const Pill = ({ children, className = '' }) => (
   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${className}`}>{children}</span>
 );
 
 // Пилюли одной дисквалификации: "Обяз. матчи: X/Y", "Доп. матчи: X/Y" и сумма штрафа
-// (синий = не оплачен, зелёный = оплачен). Для записей без разбивки (созданных до её введения) —
-// текстовый фолбэк по penalty_type. Используется и в тултипе (DisqualificationBadge), и напрямую
+// (серый = ноль, зелёный = исполнено, красный = осталось исполнить). Для временных и ручных
+// наказаний без числовых условий — текст по penalty_type. Используется и в тултипе, и напрямую
 // в карточке дисквалификации (DisqualificationsPage), чтобы вид был одинаковым везде.
 export function DisqualificationPills({ d }) {
   const hasSplit = d.mandatory_games != null || d.additional_games != null;
-  const dqServed = d.games_served || 0;
-  const mandatoryServed = hasSplit && d.mandatory_games != null ? Math.min(dqServed, d.mandatory_games) : null;
-  const additionalServed = hasSplit && d.additional_games != null
-    ? Math.min(Math.max(dqServed - (d.mandatory_games || 0), 0), d.additional_games)
-    : null;
+  const { gamesServed, mandatoryServed, additionalServed } = getPenaltyGameProgress(d);
+  const amount = Number(d.penalty_amount);
 
-  if (!hasSplit && d.penalty_amount == null) {
+  if (!hasSplit && d.games_assigned == null && d.penalty_amount == null) {
     let oldPenaltyText = '';
-    if (d.penalty_type === 'games' && d.games_assigned != null) {
-      oldPenaltyText = `Осталось матчей: ${Math.max(d.games_assigned - dqServed, 0)}`;
-    } else if (d.penalty_type === 'time') {
+    if (d.penalty_type === 'time') {
       oldPenaltyText = `До: ${new Date(d.end_date).toLocaleDateString('ru-RU')}`;
     } else if (d.penalty_type === 'manual') {
       oldPenaltyText = 'До решения СДК';
@@ -36,14 +32,17 @@ export function DisqualificationPills({ d }) {
         <Pill className="bg-graphite/10 text-graphite/70 border border-graphite/10">Штраф команды</Pill>
       )}
       {hasSplit && d.mandatory_games != null && (
-        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">Обяз. матчи: {mandatoryServed}/{d.mandatory_games}</Pill>
+        <Pill className={getPenaltyPillClass(d.mandatory_games, mandatoryServed >= Number(d.mandatory_games))}>Обяз. матчи: {mandatoryServed}/{d.mandatory_games}</Pill>
       )}
       {hasSplit && d.additional_games != null && (
-        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">Доп. матчи: {additionalServed}/{d.additional_games}</Pill>
+        <Pill className={getPenaltyPillClass(d.additional_games, additionalServed >= Number(d.additional_games))}>Доп. матчи: {additionalServed}/{d.additional_games}</Pill>
+      )}
+      {!hasSplit && d.games_assigned != null && (
+        <Pill className={getPenaltyPillClass(d.games_assigned, gamesServed >= Number(d.games_assigned))}>Матчи: {Math.min(gamesServed, Number(d.games_assigned))}/{d.games_assigned}</Pill>
       )}
       {d.penalty_amount != null && (
-        <Pill className={d.penalty_amount_paid ? 'bg-status-accepted/10 text-status-accepted border border-status-accepted/20' : 'bg-status-pending/10 text-status-pending border border-status-pending/20'}>
-          {d.penalty_amount} ₽ · {d.penalty_amount_paid ? 'оплачен' : 'не оплачен'}
+        <Pill className={getPenaltyPillClass(amount, d.penalty_amount_paid)}>
+          {amount.toLocaleString('ru-RU')} ₽{amount > 0 && ` · ${d.penalty_amount_paid ? 'оплачен' : 'не оплачен'}`}
         </Pill>
       )}
     </div>

@@ -5,6 +5,7 @@ import { Icon } from '../../ui/Icon';
 import { ConfirmModal } from '../../modals/ConfirmModal';
 import { CreateSdkDecisionDrawer } from '../../modals/CreateSdkDecisionDrawer';
 import { getImageUrl, getToken } from '../../utils/helpers';
+import { getPenaltyGameProgress, getPenaltyPillClass } from '../../utils/penaltyDisplay';
 
 const STATUS_PILL = {
   active: 'bg-status-rejected/10 text-status-rejected border border-status-rejected/20',
@@ -31,17 +32,6 @@ const basisText = (d) => {
     return `Протест команды${d.hearing_basis_team_name ? ` — ${d.hearing_basis_team_name}` : ''}`;
   }
   return d.hearing_basis || null;
-};
-
-// Склонение "матч" по числу: 1 матч, 2-4 матча, 5+/11-14 матчей
-const pluralizeMatches = (n) => {
-  const num = Math.abs(n);
-  const mod10 = num % 10;
-  const mod100 = num % 100;
-  if (mod100 >= 11 && mod100 <= 14) return 'матчей';
-  if (mod10 === 1) return 'матч';
-  if (mod10 >= 2 && mod10 <= 4) return 'матча';
-  return 'матчей';
 };
 
 // Кнопка "+ Новое решение" живёт в шапке страницы, поэтому состоянием шторки владеет она
@@ -147,25 +137,15 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
             // Обязательные/доп.матчи хранятся раздельно (mandatory_games/additional_games) только начиная с
             // введения этого разбиения — у решений, созданных раньше, будет только общий penalty_games.
             const hasSplit = d.mandatory_games != null || d.additional_games != null;
-            const dqServed = d.dq_games_served || 0;
-            const mandatoryServed = hasSplit && d.mandatory_games != null ? Math.min(dqServed, d.mandatory_games) : null;
-            const additionalServed = hasSplit && d.additional_games != null
-              ? Math.min(Math.max(dqServed - (d.mandatory_games || 0), 0), d.additional_games)
-              : null;
+            const { gamesServed, mandatoryServed, additionalServed } = getPenaltyGameProgress({
+              ...d, games_served: d.dq_games_served
+            });
 
-            const gamesText = !hasSplit && d.penalty_games != null ? `${d.penalty_games} ${pluralizeMatches(d.penalty_games)}` : null;
-            const amountText = d.penalty_amount != null ? `${Math.round(Number(d.penalty_amount)).toLocaleString('ru-RU')} ₽` : null;
+            const gamesText = !hasSplit && d.penalty_games != null
+              ? `Матчи: ${Math.min(gamesServed, Number(d.penalty_games))}/${d.penalty_games}` : null;
+            const amountText = d.penalty_amount != null ? `${Number(d.penalty_amount).toLocaleString('ru-RU')} ₽` : null;
             const hasPayableAmount = Number(d.penalty_amount) > 0;
-            // Командный штраф складывается из обязательной и дополнительной частей — показываем состав суммы
-            const amountSplitText = [
-              d.mandatory_amount != null ? `обяз.: ${Math.round(Number(d.mandatory_amount)).toLocaleString('ru-RU')} ₽` : null,
-              d.additional_amount != null ? `доп.: ${Math.round(Number(d.additional_amount)).toLocaleString('ru-RU')} ₽` : null
-            ].filter(Boolean).join(' · ');
             const hasSanction = isPunish && (gamesText || amountText || hasSplit);
-
-            const gamesRemaining = !hasSplit && d.penalty_games && d.dq_games_assigned != null
-              ? Math.max(d.dq_games_assigned - (d.dq_games_served || 0), 0)
-              : null;
 
             // Командный штраф с делением: общей записи нет, оплата идёт по долям участников
             const isSplitPenalty = d.team_penalty_mode === 'split';
@@ -245,29 +225,23 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                   <div className="flex items-center justify-between gap-3 pt-2 border-t border-graphite/10">
                     <div className="flex items-center gap-2 flex-wrap">
                       {isPunish && hasSplit && d.mandatory_games != null && (
-                        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">
+                        <Pill className={getPenaltyPillClass(d.mandatory_games, mandatoryServed >= Number(d.mandatory_games))}>
                           Обяз. матчи: {mandatoryServed}/{d.mandatory_games}
                         </Pill>
                       )}
                       {isPunish && hasSplit && d.additional_games != null && (
-                        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">
+                        <Pill className={getPenaltyPillClass(d.additional_games, additionalServed >= Number(d.additional_games))}>
                           Доп. матчи: {additionalServed}/{d.additional_games}
                         </Pill>
                       )}
                       {isPunish && !hasSplit && gamesText && (
-                        <Pill className="bg-status-rejected/5 text-status-rejected border border-status-rejected/10">{gamesText}</Pill>
-                      )}
-                      {isPunish && !hasSplit && gamesRemaining != null && d.status === 'active' && (
-                        <Pill className="bg-graphite/5 text-graphite/70 border border-graphite/10">Осталось {gamesRemaining}</Pill>
-                      )}
-                      {isPunish && (hasSplit || gamesText) && amountText && (
-                        <span className="text-[10px] font-bold text-graphite-light/60 uppercase">{d.penalty_logic === 'or' ? 'или' : 'и'}</span>
+                        <Pill className={getPenaltyPillClass(d.penalty_games, gamesServed >= Number(d.penalty_games))}>{gamesText}</Pill>
                       )}
                       {isPunish && amountText && !hasPayableAmount && (
-                        <Pill className="bg-graphite/5 text-graphite/70 border border-graphite/10">{amountText}</Pill>
+                        <Pill className={getPenaltyPillClass(d.penalty_amount, false)}>{amountText}</Pill>
                       )}
                       {isPunish && amountText && hasPayableAmount && isSplitPenalty && (
-                        <Pill className="bg-status-pending/10 text-status-pending border border-status-pending/20">
+                        <Pill className={getPenaltyPillClass(d.penalty_amount, members.length > 0 && members.every(m => Number(m.share_amount) <= 0 || m.paid))}>
                           {amountText} на {members.length} чел. · оплатили {paidMembersCount} из {members.length}
                         </Pill>
                       )}
@@ -277,13 +251,10 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                           disabled={!canManage}
                           className={canManage ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'}
                         >
-                          <Pill className={d.penalty_amount_paid ? 'bg-status-accepted/10 text-status-accepted border border-status-accepted/20' : 'bg-status-pending/10 text-status-pending border border-status-pending/20'}>
+                          <Pill className={getPenaltyPillClass(d.penalty_amount, d.penalty_amount_paid)}>
                             {amountText} · {d.penalty_amount_paid ? 'оплачен' : 'не оплачен'}
                           </Pill>
                         </button>
-                      )}
-                      {isPunish && amountSplitText && (
-                        <span className="text-[10px] font-bold text-graphite-light/60">{amountSplitText}</span>
                       )}
                       {isPunish && d.team_penalty_mode === 'whole' && (
                         <span className="text-[10px] font-bold text-graphite-light/60 uppercase">на всю команду</span>
@@ -309,7 +280,7 @@ export function SdkMeetingDecisionsTab({ meetingId, seasonId, canManage, setToas
                           disabled={!canManage}
                           className={canManage ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'}
                         >
-                          <Pill className={m.paid ? 'bg-status-accepted/10 text-status-accepted border border-status-accepted/20' : 'bg-status-pending/10 text-status-pending border border-status-pending/20'}>
+                          <Pill className={getPenaltyPillClass(m.share_amount, m.paid)}>
                             {m.full_name || `ID ${m.user_id}`} · {Math.round(Number(m.share_amount))} ₽
                           </Pill>
                         </button>
