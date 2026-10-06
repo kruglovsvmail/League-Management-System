@@ -1,12 +1,14 @@
 // LMS-Backend/src/announces/announce-default.js
 //
-// Дефолтный анонс матчей — пост 1080×1350 (4:5) по макету «Межсезон» (02.10.2026):
+// Дефолтный анонс матчей — пост 1080×1620 (2:3) по макету «Межсезон» (02.10.2026):
 // тёмный фон, шапка «логотип + название», плашка «МАТЧИ ТУРА» и матчи в виде
 // билетов — синий корешок с датой и временем, перфорация, серый билет с командами.
 // Им пользуются все лиги без своего файла. Прежний дефолт (сторис с ареной, макет
 // ТФХ) живёт в announce-3.js.
 //
-// Координаты сняты с макета (1122×1402) и приведены к ширине 1080. Шрифты — с Google
+// Координаты сняты с макета (1122×1402) и приведены к ширине 1080; под высоту 1620
+// (06.10.2026, просьба Сергея) билеты разнесены по вертикали, сами билеты не менялись.
+// Шрифты — с Google
 // Fonts, как Roboto у протоколов: Tektur (заголовок), Alumni Sans (команды, дата,
 // время), Montserrat (подписи с разрядкой). Своих шрифтов шаблону загружать не нужно.
 // Текстура бумаги и фона рисуется SVG-шумом прямо здесь — фон-картинка необязателен.
@@ -17,13 +19,13 @@
 
 export const meta = {
     width: 1080,
-    height: 1350,
+    height: 1620,
     // Матчей на одной картинке. Больше — фабрика поровну делит их на несколько картинок.
     perImage: 3,
     // Ячейки материалов. Обе own — только из папки лиги: общий фон этого шаблона —
     // нарисованная текстура, а не файл, и чужой фон из общей папки сюда не попадёт.
     files: {
-        background: { title: 'Фон', hint: 'Картинка 1080×1350 вместо тёмной текстуры', own: true },
+        background: { title: 'Фон', hint: 'Картинка 1080×1620 вместо тёмной текстуры', own: true },
         logo: { title: 'Логотип в шапке', hint: 'PNG с прозрачным фоном. Нет файла — логотип из настроек лиги', own: true },
     },
     fonts: {},
@@ -37,12 +39,13 @@ const BLUE = '#0442e6';
 // Билет: корешок слева, основная часть справа; вырезы-полукруги на внешних краях.
 const TICKET = { left: 38, width: 1006, height: 260, stub: 194, notch: 28 };
 
-// Центры билетов по вертикали и наклон (градусы) — по числу матчей. Три — как в
-// макете; один и два — по центру того же места.
+// Центры билетов по вертикали и наклон (градусы) — по числу матчей. Блок билетов
+// стоит между плашкой «МАТЧИ ТУРА» и подписью внизу; шаг 380 px, а один и два билета
+// держатся вокруг той же средней линии (900), что и три.
 const LAYOUTS = {
-    1: { centers: [797], tilt: [-1.2] },
-    2: { centers: [637, 957], tilt: [-1.8, 1.6] },
-    3: { centers: [478, 797, 1107], tilt: [-2.3, 0.3, 2.2] },
+    1: { centers: [900], tilt: [-1.2] },
+    2: { centers: [710, 1090], tilt: [-1.8, 1.6] },
+    3: { centers: [520, 900, 1280], tilt: [-2.3, 0.3, 2.2] },
 };
 
 const esc = (value) => String(value ?? '')
@@ -151,15 +154,15 @@ export const getHtml = ({ games, league, division, files }) => {
 <link rel="stylesheet" href="${FONTS_CSS}">
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1080px; height: 1350px; overflow: hidden; }
+    html, body { width: 1080px; height: 1620px; overflow: hidden; }
     body { background: #151716; -webkit-font-smoothing: antialiased; }
-    .stage { position: relative; width: 1080px; height: 1350px; overflow: hidden; }
+    .stage { position: relative; width: 1080px; height: 1620px; overflow: hidden; }
 
     /* Фон без файла: почти чёрный, с лёгким зерном и мягкой виньеткой */
     .bg-texture, .bg-vignette { position: absolute; inset: 0; }
     .bg-texture { background: ${GRAIN}; opacity: 0.08; }
     .bg-vignette { background: radial-gradient(ellipse at 50% 40%, rgba(255,255,255,0.03), rgba(0,0,0,0.45) 90%); }
-    .bg { position: absolute; inset: 0; width: 1080px; height: 1350px; object-fit: cover; }
+    .bg { position: absolute; inset: 0; width: 1080px; height: 1620px; object-fit: cover; }
 
     /* --- Шапка --- */
     .league-logo { position: absolute; left: 44px; top: 66px; width: 124px; height: 124px; object-fit: contain; }

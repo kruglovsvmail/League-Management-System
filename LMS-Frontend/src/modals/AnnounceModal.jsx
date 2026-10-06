@@ -220,7 +220,7 @@ export function AnnounceModal({ isOpen, onClose, divisionId, leagueId, canEditBa
     };
 
     const scale = PREVIEW_WIDTH / (preview?.width || 1080);
-    const previewHeight = Math.round((preview?.height || 1920) * scale);
+    const previewHeight = Math.round((preview?.height || 1620) * scale);
     const pagesCount = preview?.pages?.length || 0;
     const showBackgroundButton = canEditBackground && leagueId && preview?.background?.slot;
 

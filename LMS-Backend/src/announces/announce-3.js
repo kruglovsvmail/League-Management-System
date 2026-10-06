@@ -1,9 +1,10 @@
 // LMS-Backend/src/announces/announce-3.js
 //
-// Анонс матчей лиги 3 (ТФХ) — сторис 1080×1920 по макету «Анонс матчей — 2 тур»
-// (PSD, 29.09.2026). Тот же макет, что у дефолтного шаблона, плюс логотип
-// дивизиона под матчами (просьба Сергея 02.10.2026). Раскладка поэтому своя:
-// блок матчей стоит выше, чтобы логотипу дивизиона хватило места до низа сторис.
+// Анонс матчей лиги 3 (ТФХ) — 1080×1620 (2:3; с 06.10.2026, просьба Сергея, раньше
+// была сторис 1080×1920) по макету «Анонс матчей — 2 тур» (PSD, 29.09.2026). Карточки
+// матчей сняты с макета и не менялись, поэтому на картинку их помещается три, а не
+// четыре, а раскладка вокруг них своя: блок матчей стоит выше, чтобы логотипу
+// дивизиона (просьба Сергея 02.10.2026) хватило места до подписи внизу.
 //
 // Все координаты сняты со слоёв макета. Карточка матча — полоса высотой 318 px,
 // внутри неё всё отсчитывается от верхнего края полосы (там, где у предыдущей
@@ -17,15 +18,16 @@
 
 export const meta = {
     width: 1080,
-    height: 1920,
+    height: 1620,
     // Матчей на одной картинке. Больше — фабрика поровну делит их на несколько картинок.
-    perImage: 4,
+    // Четыре карточки по 318 px не оставляют места ни логотипу лиги, ни подписи.
+    perImage: 3,
     // Ячейки материалов — их загружает глобальный администратор (Команды → Лиги),
     // фон можно сменить и из окна анонса. Все ячейки own — только из папки лиги:
     // общая папка принадлежит дефолтному шаблону с другим дизайном, и его фон
     // со шрифтом сюда не подходят.
     files: {
-        background: { title: 'Фон', hint: 'Картинка 1080×1920 под всей сторис', own: true },
+        background: { title: 'Фон', hint: 'Картинка 1080×1620 под всей картинкой', own: true },
         logo: { title: 'Логотип над матчами', hint: 'PNG с прозрачным фоном. Нет файла — логотип из настроек лиги', own: true },
     },
     fonts: {
@@ -36,24 +38,21 @@ export const meta = {
 const CARD = 318;           // шаг карточек: от линии до линии
 const PANEL_INSET = 15;     // тёмная подложка начинается на 15 px ниже верха первой карточки
 
-// Раскладка по числу матчей. С логотипом дивизиона: три матча — как в макете, а
-// логотип дивизиона под ними; один и два — блок «матчи + логотип дивизиона»
-// по центру свободного места; при четырёх всё поднимается и мельчает, чтобы снизу
-// остался запас под интерфейс сторис. divGap — от последней линии до логотипа
-// дивизиона, divSize — его высота.
+// Раскладка по числу матчей. С логотипом дивизиона: один и два матча — логотип лиги
+// наверху, а блок «матчи + логотип дивизиона» по центру свободного места под ним;
+// при трёх всё поднимается и мельчает, чтобы логотип дивизиона не залез на подпись
+// внизу. divGap — от последней линии до логотипа дивизиона, divSize — его высота.
 const LAYOUTS = {
-    1: { logoTop: 116, logoSize: 288, panelTop: 880, divGap: 60, divSize: 200 },
-    2: { logoTop: 116, logoSize: 288, panelTop: 720, divGap: 60, divSize: 200 },
-    3: { logoTop: 116, logoSize: 288, panelTop: 526, divGap: 60, divSize: 200 },
-    4: { logoTop: 70, logoSize: 210, panelTop: 350, divGap: 40, divSize: 150 },
+    1: { logoTop: 116, logoSize: 288, panelTop: 710, divGap: 60, divSize: 200 },
+    2: { logoTop: 116, logoSize: 288, panelTop: 550, divGap: 60, divSize: 200 },
+    3: { logoTop: 60, logoSize: 220, panelTop: 369, divGap: 40, divSize: 150 },
 };
 
-// У дивизиона нет логотипа — раскладка дефолтного шаблона, без пустого места внизу.
+// У дивизиона нет логотипа — без пустого места под матчами, логотип лиги крупнее.
 const LAYOUTS_NO_DIVISION_LOGO = {
-    1: { logoTop: 116, logoSize: 288, panelTop: 845 },
-    2: { logoTop: 116, logoSize: 288, panelTop: 686 },
-    3: { logoTop: 116, logoSize: 288, panelTop: 526 },
-    4: { logoTop: 96, logoSize: 240, panelTop: 426 },
+    1: { logoTop: 116, logoSize: 288, panelTop: 800 },
+    2: { logoTop: 116, logoSize: 288, panelTop: 650 },
+    3: { logoTop: 96, logoSize: 288, panelTop: 506 },
 };
 
 const esc = (value) => String(value ?? '')
@@ -166,10 +165,10 @@ export const getHtml = ({ games, league, division, files, fonts }) => {
 <style>
     ${fonts.font ? `@font-face { font-family: 'AnnounceDisplay'; src: url(${fonts.font}); }` : ''}
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1080px; height: 1920px; overflow: hidden; }
+    html, body { width: 1080px; height: 1620px; overflow: hidden; }
     body { background: linear-gradient(180deg, #0b2a52 0%, #04142b 100%); -webkit-font-smoothing: antialiased; }
-    .stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
-    .bg { position: absolute; inset: 0; width: 1080px; height: 1920px; object-fit: cover; }
+    .stage { position: relative; width: 1080px; height: 1620px; overflow: hidden; }
+    .bg { position: absolute; inset: 0; width: 1080px; height: 1620px; object-fit: cover; }
 
     .league-logo {
         position: absolute; left: 50%; transform: translateX(-50%);
