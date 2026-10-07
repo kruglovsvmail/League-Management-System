@@ -1346,11 +1346,11 @@ export const getGameAudioUrl = async (req, res) => {
         `, [gameId]);
 
         if (gameRes.rows.length === 0) {
-            return res.json({ success: true, url: `https://s3.twcstorage.ru/hockeyeco-uploads/audio/league-default/Intro.mp3?t=${Date.now()}` });
+            return res.json({ success: true, url: `https://s3.twcstorage.ru/hockeyeco-uploads/leagues/default/audio/Intro.mp3?t=${Date.now()}` });
         }
 
         const leagueId = gameRes.rows[0].league_id;
-        const leagueKey = `audio/league-${leagueId}/Intro.mp3`;
+        const leagueKey = `leagues/league-${leagueId}/audio/Intro.mp3`;
 
         try {
             await s3.send(new HeadObjectCommand({
@@ -1359,7 +1359,7 @@ export const getGameAudioUrl = async (req, res) => {
             }));
             return res.json({ success: true, url: `https://s3.twcstorage.ru/hockeyeco-uploads/${leagueKey}?t=${Date.now()}` });
         } catch (e) {
-            return res.json({ success: true, url: `https://s3.twcstorage.ru/hockeyeco-uploads/audio/league-default/Intro.mp3?t=${Date.now()}` });
+            return res.json({ success: true, url: `https://s3.twcstorage.ru/hockeyeco-uploads/leagues/default/audio/Intro.mp3?t=${Date.now()}` });
         }
     } catch (err) {
         console.error('Ошибка получения аудио URL:', err);

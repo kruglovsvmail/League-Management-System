@@ -5,8 +5,8 @@
 // администратор: Команды → Лиги (announceAssetsController.js).
 //
 // Раскладка по соглашению путей, как у файлов трансляций и диктора:
-//   announce/league-{id}/{ячейка}       — файлы лиги
-//   announce/league-default/{ячейка}    — общие файлы дефолтного шаблона
+//   leagues/league-{id}/announce/{ячейка} — файлы лиги
+//   leagues/default/announce/{ячейка}    — общие файлы дефолтного шаблона
 // Имя объекта — имя ячейки шаблона БЕЗ расширения («background», «logo», «font»):
 // формат знает Content-Type, сохранённый при загрузке. Так фон можно залить и JPG,
 // и PNG, а шаблону не нужно перебирать варианты имени.
@@ -22,7 +22,7 @@ const PUBLIC_BASE = 'https://s3.twcstorage.ru/hockeyeco-uploads';
 export const DEFAULT_SCOPE = 'default';
 
 // scope — id лиги или DEFAULT_SCOPE
-export const assetKey = (scope, slot) => `announce/league-${scope}/${slot}`;
+export const assetKey = (scope, slot) => `leagues/${scope === DEFAULT_SCOPE ? 'default' : `league-${scope}`}/announce/${slot}`;
 
 // Ячейки шаблона одним списком: картинки и шрифты.
 export const templateSlots = (meta) => [

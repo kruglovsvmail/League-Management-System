@@ -484,7 +484,7 @@ export function GlobalRegistryPage() {
   const allColumns = [
     [ // 0: Leagues
       { label: 'ID', key: 'id', width: 'w-14' },
-      { label: 'Лого', width: 'w-14', render: (r) => <div className="w-8 h-8 shrink-0"><img src={getCachedImageUrl(r.logo_url || '/default/Logo_league_default.webp')} className="w-full h-full object-contain" /></div> },
+      { label: 'Лого', width: 'w-14', render: (r) => <div className="w-8 h-8 shrink-0"><img src={getCachedImageUrl(r.logo_url || '/leagues/default/logos/Logo_league_default.webp')} className="w-full h-full object-contain" /></div> },
       { label: 'Название', key: 'name' },
       { label: 'Город', key: 'city', width: 'w-40' }
     ],

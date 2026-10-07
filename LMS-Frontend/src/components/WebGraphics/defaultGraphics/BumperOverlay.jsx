@@ -9,7 +9,7 @@
 // game.transition_url. Вход в ролик всегда переходом, выход — по кнопке в
 // панели.
 import React, { useState, useEffect, useRef } from 'react';
-import { SWEEP_MS, COVER_MS } from './bumperFrame';
+import { SWEEP_MS as DEFAULT_SWEEP_MS, COVER_MS as DEFAULT_COVER_MS } from './bumperFrame';
 
 // Длину ролика берём у самого элемента: в БД лежит цифра, посчитанная при
 // загрузке файла, и после замены ролика она может отстать от правды.
@@ -18,7 +18,15 @@ const durationMs = (el, meta) => {
   return (fromEl || Number(meta?.duration) || 15) * 1000;
 };
 
-export default function BumperOverlay({ game, overlay, sources }) {
+export default function BumperOverlay({ game, overlay, sources, timing }) {
+  const [transitionMetadata, setTransitionMetadata] = useState(null);
+  const transitionSource = sources?.transition || game?.transition_url || null;
+  const legacy = timing?.legacy;
+  const legacyFile = legacy && transitionMetadata?.source === transitionSource
+    && transitionMetadata.duration > (legacy.minDuration ?? 0)
+    && transitionMetadata.duration <= legacy.sweepMs / 1000 + 0.4;
+  const SWEEP_MS = legacyFile ? legacy.sweepMs : timing?.sweepMs ?? DEFAULT_SWEEP_MS;
+  const COVER_MS = legacyFile ? legacy.coverMs : timing?.coverMs ?? DEFAULT_COVER_MS;
   const isVisible = overlay.visible && overlay.type === 'bumper';
 
   // slot === null — режиссёр ничего не выбрал: играет только переход.
@@ -331,7 +339,7 @@ export default function BumperOverlay({ game, overlay, sources }) {
 
     return clearTimers;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVisible, slot, hasVideo, withOutro, transitionUrl, startedAt]);
+  }, [isVisible, slot, hasVideo, withOutro, transitionUrl, startedAt, SWEEP_MS, COVER_MS]);
 
   if (!game) return null;
 
@@ -394,6 +402,10 @@ export default function BumperOverlay({ game, overlay, sources }) {
           src={sources?.transition || transitionUrl}
           preload="auto"
           playsInline
+          onLoadedMetadata={event => {
+            const duration = event.currentTarget.duration;
+            if (Number.isFinite(duration)) setTransitionMetadata({ source: transitionSource, duration });
+          }}
           onError={(e) => {
             const err = e?.target?.error;
             console.warn('[Заставка] ошибка перехода', err?.code, err?.message);

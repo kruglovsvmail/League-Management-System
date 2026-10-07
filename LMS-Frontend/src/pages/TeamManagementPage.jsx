@@ -1143,7 +1143,7 @@ function ApplicationCard({ app, getRenderPhoto, showToast, onSendReview, onDelet
       <div className="p-5 flex items-center justify-between cursor-pointer group relative" onClick={() => setIsExpanded(!isExpanded)}>
         
         <div className="flex items-center gap-4 w-[700px] relative z-10">
-          <img src={getImageUrl(app.league_logo) || '/default/Logo_division_default.webp'} className="w-12 h-12 object-contain bg-graphite/5 rounded-lg p-1" />
+          <img src={getImageUrl(app.league_logo || '/leagues/default/logos/Logo_division_default.webp')} className="w-12 h-12 object-contain bg-graphite/5 rounded-lg p-1" />
           <div className="flex flex-col">
             <span className="text-[11px] font-bold text-orange uppercase tracking-wider">{app.season_name}</span>
             <div className="flex items-center gap-2">

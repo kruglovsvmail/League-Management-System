@@ -102,7 +102,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
         onClick={() => onTeamSelect && onTeamSelect(row)}
         className="w-[40px] h-[40px] flex items-center justify-center p-[2px] rounded-lg cursor-pointer hover:scale-105 transition-transform"
       >
-        <img src={getImageUrl(row.logo_url || '/default/Logo_division_default.webp')} className="w-full h-full object-contain drop-shadow-sm" alt="logo" />
+        <img src={getImageUrl(row.logo_url || '/leagues/default/logos/Logo_division_default.webp')} className="w-full h-full object-contain drop-shadow-sm" alt="logo" />
       </div>
     )},
     { label: 'Название', sortKey: 'name', width: 'w-[300px]', render: (row) => {
@@ -204,7 +204,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
       label: 'Команды', 
       width: 'w-[100px]', align: 'center',  
       render: (row) => {
-        const logoSrc = getImageUrl(row.logo_url || '/default/Logo_division_default.webp');
+        const logoSrc = getImageUrl(row.logo_url || '/leagues/default/logos/Logo_division_default.webp');
         const isSelected = selectedTeamId === row.id;
         
         return (

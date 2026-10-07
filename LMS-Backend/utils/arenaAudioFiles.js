@@ -1,5 +1,5 @@
 // LMS-Backend/utils/arenaAudioFiles.js
-// Статичные PA-файлы диктора арены (сирена, предупреждения, бип) — лежат в audio/league-{leagueId}/,
+// Статичные PA-файлы диктора арены (сирена, предупреждения, бип) — лежат в leagues/league-{leagueId}/audio/,
 // НЕ в arena-tts (та папка только для сгенерированных TTS-фраз голов/составов).
 // Загружает их глобальный администратор: Команды → Лиги → «Диктор арены».
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
@@ -18,7 +18,7 @@ export const ARENA_STATIC_AUDIO_FILES = [
     'beep.mp3',
 ];
 
-export const arenaAudioKey = (leagueId, filename) => `audio/league-${leagueId}/${filename}`;
+export const arenaAudioKey = (leagueId, filename) => `leagues/${leagueId === 'default' ? 'default' : `league-${leagueId}`}/audio/${filename}`;
 
 export async function arenaAudioFileExists(leagueId, filename) {
     try {

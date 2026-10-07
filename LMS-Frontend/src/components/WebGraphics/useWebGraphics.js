@@ -77,12 +77,12 @@ export function useWebGraphics(gameId) {
   useEffect(() => {
     if (!game?.league_id) return;
     const leagueId = game.league_id;
-    const base = 'https://s3.twcstorage.ru/hockeyeco-uploads/audio';
+    const base = 'https://s3.twcstorage.ru/hockeyeco-uploads/leagues';
 
     const loadSound = async (type) => {
       const bust = `?_=${Date.now()}`;
-      const leagueUrl  = `${base}/league-${leagueId}/${type}.mp3${bust}`;
-      const defaultUrl = `${base}/league-default/${type}.mp3${bust}`;
+      const leagueUrl  = `${base}/league-${leagueId}/audio/${type}.mp3${bust}`;
+      const defaultUrl = `${base}/default/audio/${type}.mp3${bust}`;
       try {
         let res = await fetch(leagueUrl);
         if (!res.ok) res = await fetch(defaultUrl);

@@ -362,6 +362,9 @@ export async function exportBumperWebm(opts) {
 
   const mod = await loadFrameModule(leagueId);
   const { drawBumperFrame, SWEEP_MS, FRAME_W, FRAME_H, HIT_MS } = mod;
+  const tailFrames = mod.RECORDING?.tailFrames ?? TAIL_FRAMES;
+  const flushFrames = mod.RECORDING?.flushFrames ?? 3;
+  const maxDurationMs = mod.RECORDING?.maxDurationMs;
 
   // Звук ставится только там, где графика сама назвала момент удара. Нет
   // HIT_MS — у этого набора графики удара в сценарии нет, файл выйдет немым.
@@ -383,10 +386,14 @@ export async function exportBumperWebm(opts) {
     await document.fonts?.ready;
   } catch { /* нет шрифта — подписи выйдут системным, но файл соберётся */ }
 
-  const assets = {
+  const rawAssets = {
     leagueImg, divisionImg, homeImg, awayImg,
     division, leagueName, homeName, awayName, title, homeColor, awayColor,
   };
+  const prepared = typeof mod.prepareBumperAssets === 'function';
+  const assets = prepared
+    ? await mod.prepareBumperAssets(rawAssets, { onProgress: value => onProgress?.(value * 0.55) })
+    : rawAssets;
 
   /**
    * Холст и поток под одну попытку записи.
@@ -407,6 +414,13 @@ export async function exportBumperWebm(opts) {
     cv.height = FRAME_H;
     const c2d = cv.getContext('2d', { alpha: true });
 
+    // Прогреваем копирование 3D-кадров и шрифты до записи, чтобы первый
+    // видимый кадр не задержался на инициализации графического конвейера.
+    if (prepared) {
+      drawBumperFrame(c2d, 0.2, assets);
+      drawBumperFrame(c2d, 0.72, assets);
+      c2d.getImageData(0, 0, 1, 1);
+    }
     // Первый кадр рисуем ДО старта записи — он прогревает кэш заготовок в
     // модуле отрисовки, чтобы дорогая подготовка не пришлась на кадр под запись.
     drawBumperFrame(c2d, 0, assets);
@@ -523,19 +537,23 @@ export async function exportBumperWebm(opts) {
         try { scheduleImpact(audioCtx, audio, audioCtx.currentTime + hitAt / 1000); } catch { /* картинка важнее */ }
       }
 
-      for (let i = 1; i <= total + TAIL_FRAMES; i += 1) {
+      for (let i = 1; i <= total + tailFrames; i += 1) {
         await ticker.waitUntil(t0 + i * FRAME_MS);
         if (failure) throw failure;
         push(i);
-        onProgress?.(Math.min(1, i / total));
+        onProgress?.(prepared ? 0.55 + Math.min(1, i / total) * 0.45 : Math.min(1, i / total));
       }
 
       const onstartAfter = await started;
       // Даём записи забрать последний кадр: остановка в тот же миг иногда
       // обрезает хвост.
-      await ticker.waitUntil(performance.now() + FRAME_MS * 3);
+      await ticker.waitUntil(performance.now() + FRAME_MS * flushFrames);
+      const recordingMs = performance.now() - t0;
       rec.stop();
       const blob = await stopped;
+      if (Number.isFinite(maxDurationMs) && recordingMs > maxDurationMs - FRAME_MS) {
+        throw new Error('Запись перехода превысила 3 секунды. Повторите сборку при меньшей нагрузке на компьютер.');
+      }
 
       // Пустой файл наверх не отдаём. Так выглядел бы «проценты пробежали, а
       // перехода нет»: запись поднялась, но кадры до неё не дошли — молча залить
@@ -543,6 +561,9 @@ export async function exportBumperWebm(opts) {
       if (!blob || blob.size < 1024) throw new Error('запись вернула пустой файл — кадры до неё не дошли');
 
       const stats = checkTimeline(readFrameTimes(await blob.arrayBuffer()), pushed);
+      if (Number.isFinite(maxDurationMs) && stats.last + FRAME_MS > maxDurationMs) {
+        throw new Error('Файл перехода превышает допустимую длительность. Повторите сборку.');
+      }
       console.info('[Переход] файл собран', { кодек: mimeType, кадров: stats.frames, конец_мс: stats.last, onstart_через_мс: onstartAfter, размер: blob.size });
       return blob;
     } finally {
@@ -586,5 +607,6 @@ export async function exportBumperWebm(opts) {
   } finally {
     ticker.close();
     try { await audioCtx?.close?.(); } catch { /* уже закрыт */ }
+    mod.disposeBumperAssets?.(assets);
   }
 }

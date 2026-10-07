@@ -68,7 +68,7 @@ export function DivisionStandings({ division }) {
         <div className="flex items-center gap-3 py-1">
           <div className="w-8 h-8 shrink-0 flex items-center justify-center">
              <img 
-               src={getImageUrl(row.logo_url || '/default/Logo_division_default.webp')} 
+               src={getImageUrl(row.logo_url || '/leagues/default/logos/Logo_division_default.webp')}
                alt="logo" 
                className="w-full h-full object-contain" 
              />

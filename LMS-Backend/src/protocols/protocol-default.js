@@ -9,6 +9,8 @@
 //
 // Данные готовит prepareProtocolData в controllers/ProtocolPDFController.js.
 
+import { hasProtocolBackContent } from '../../utils/protocolBackContent.js';
+
 // Значение для вставки в разметку. Экранирование обязательно: на обороте печатается
 // свободный текст, который вводит секретарь, а предпросмотр протокола открывается
 // в srcDoc-iframe того же origin, что и сам LMS. Заодно защищает названия команд
@@ -140,8 +142,7 @@ const PENALTY_REASON_MAP = {
 };
 
 // Скошенный овал поверх ячейки — так строку «Замечание: да / нет / на обороте»
-// отмечают от руки. Рисуем им «да», когда на обороте есть вписанные замечания,
-// и «нет», когда их нет.
+// отмечают от руки. Рисуем им «да», когда оборот заполнен, и «нет», когда он пуст.
 // preserveAspectRatio="none" растягивает овал по ячейке, non-scaling-stroke не даёт
 // линии растянуться вместе с ним и остаться неровной по толщине.
 const MARK_OVAL = `
@@ -661,16 +662,8 @@ export const getHtml = (data) => {
     const goalieRows = Array.from({ length: 10 }, (_, i) => data.goalieLog[i] || { time_seconds: null, home_jersey: '', away_jersey: '' });
     const periodsAndTotal = [...(data.periods || []), 'Общ.'];
 
-    // Строку «Замечание» в подвале первой страницы отмечаем овалом всегда: «да», если
-    // на обороте есть вписанные замечания, иначе «нет» — пустой строки в подписанном
-    // протоколе быть не должно. Уведомление о протесте сюда не входит — у него на
-    // обороте своя отметка «Да»/«Нет» по каждой команде.
-    const backNotes = data.notes || {};
-    const hasBackNotes = Boolean(
-        (backNotes.referee || '').trim() ||
-        (backNotes.inspector || '').trim() ||
-        (backNotes.medical || '').trim()
-    );
+    // Отметка совпадает с условием включения оборота в скрин для всех лиг.
+    const hasBackNotes = hasProtocolBackContent(data);
 
     const renderMiddleDataSection = (title, homeKey, awayKey) => `
         <div style="flex-direction: row; height: 24pt;">

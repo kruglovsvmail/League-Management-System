@@ -416,7 +416,7 @@ export const createLeagueServiceAccount = async (req, res) => {
     // 3. Загружаем фото в S3, если есть файл
     if (req.file) {
       const ext = path.extname(req.file.originalname).toLowerCase();
-      const s3Key = `uploads/service_accounts_${newAccountId}_logo${ext}`;
+      const s3Key = `leagues/league-${leagueId}/service-accounts/service_accounts_${newAccountId}_logo${ext}`;
 
       await s3.send(new PutObjectCommand({
         Bucket: process.env.S3_BUCKET_NAME || process.env.S3_BUCKET,
@@ -492,7 +492,7 @@ export const updateLeagueServiceAccount = async (req, res) => {
     // Если прилетел новый файл - загружаем и переписываем
     else if (req.file) {
       const ext = path.extname(req.file.originalname).toLowerCase();
-      const s3Key = `uploads/service_accounts_${id}_logo${ext}`;
+      const s3Key = `leagues/league-${leagueId}/service-accounts/service_accounts_${id}_logo${ext}`;
 
       await s3.send(new PutObjectCommand({
         Bucket: process.env.S3_BUCKET_NAME || process.env.S3_BUCKET,

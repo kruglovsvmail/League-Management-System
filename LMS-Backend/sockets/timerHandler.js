@@ -390,7 +390,7 @@ export default function setupTimerSockets(io) {
   // Нет у лиги beep.mp3 — молчим, как и с остальными звуками.
   const playArenaBeep = async (gameId, state, leagueId) => {
     if (!(await checkStaticAudioFile(state, leagueId, 'beep.mp3'))) return;
-    io.to(`game_${gameId}`).emit('arena_play', { url: `${S3_BASE}/audio/league-${leagueId}/beep.mp3?t=${Date.now()}`, overlay: true });
+    io.to(`game_${gameId}`).emit('arena_play', { url: `${S3_BASE}/leagues/league-${leagueId}/audio/beep.mp3?t=${Date.now()}`, overlay: true });
   };
 
   // Приоритет: 1=сирена, 2=гол, 3=штраф, 4=предупреждения о конце периода.
@@ -435,7 +435,7 @@ export default function setupTimerSockets(io) {
       if (!state.processedFired[key]) {
         state.processedFired[key] = true;
         if (await checkStaticAudioFile(state, leagueId, 'end.mp3')) {
-          enqueueAnnouncement(state, { priority: 1, kind: 'siren', url: `${S3_BASE}/audio/league-${leagueId}/end.mp3?t=${Date.now()}` });
+          enqueueAnnouncement(state, { priority: 1, kind: 'siren', url: `${S3_BASE}/leagues/league-${leagueId}/audio/end.mp3?t=${Date.now()}` });
         }
       }
     }
@@ -469,7 +469,7 @@ export default function setupTimerSockets(io) {
         if (!state.processedFired[key]) {
           state.processedFired[key] = true;
           if (await checkStaticAudioFile(state, leagueId, warnFile)) {
-            enqueueAnnouncement(state, { priority: 4, kind: 'warn', url: `${S3_BASE}/audio/league-${leagueId}/${warnFile}?t=${Date.now()}` });
+            enqueueAnnouncement(state, { priority: 4, kind: 'warn', url: `${S3_BASE}/leagues/league-${leagueId}/audio/${warnFile}?t=${Date.now()}` });
           }
         }
       }

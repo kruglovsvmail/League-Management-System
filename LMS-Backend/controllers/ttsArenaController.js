@@ -1,6 +1,6 @@
 /**
  * TTS — ДИКТОР АРЕНЫ (панель секретаря)
- * Голос: filipp | Эхо: 10% | S3-prefix: audio/tts/
+ * Голос: filipp | Эхо: 10% | S3-prefix: leagues/league-{leagueId}/audio/arena-tts/
  */
 
 import https from 'https';
@@ -174,7 +174,7 @@ export const generateRosterAnnouncement = async (req, res) => {
 
         const leagueId = (await getLeagueIdForGame(gameId)) || 'default';
         const text  = buildAnnouncementText(game, homeRoster, awayRoster);
-        const s3Key = `audio/league-${leagueId}/arena-tts/game-${gameId}-roster.ogg`;
+        const s3Key = `leagues/${leagueId === 'default' ? 'default' : `league-${leagueId}`}/audio/arena-tts/game-${gameId}-roster.ogg`;
         const url   = await generateAndUpload(text, s3Key, SPEED_ROSTER);
 
         res.json({ success: true, url });
@@ -192,7 +192,7 @@ export async function generateArenaEventAudio({ gameId, leagueId, eventId, event
     if (text === null) return null;
 
     const id    = eventId || 'latest';
-    const s3Key = `audio/league-${leagueId || 'default'}/arena-tts/${id.startsWith('arena-') ? id : `game-${gameId}-event-${id}`}.ogg`;
+    const s3Key = `leagues/${leagueId && leagueId !== 'default' ? `league-${leagueId}` : 'default'}/audio/arena-tts/${id.startsWith('arena-') ? id : `game-${gameId}-event-${id}`}.ogg`;
     const url   = await generateAndUpload(text, s3Key, SPEED_EVENT);
 
     return `${url}?t=${Date.now()}`;

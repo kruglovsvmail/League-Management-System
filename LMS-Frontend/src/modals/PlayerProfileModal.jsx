@@ -153,12 +153,12 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   const skaterColumns = [
     { label: 'Сезон', render: r => <span className="font-semibold">{r.season_name}</span> },
     { label: 'Лига', render: r => (
-       <Tooltip logo={getImageUrl(r.league_logo || '/default/Logo_league_default.webp')} title={r.league_full_name} subtitle={r.league_city}>
+       <Tooltip logo={getImageUrl(r.league_logo || '/leagues/default/logos/Logo_league_default.webp')} title={r.league_full_name} subtitle={r.league_city}>
          <span className="font-semibold text-graphite hover:text-orange">{r.league_name}</span>
        </Tooltip>
     )},
     { label: 'Дивизион', width: 'w-[220px]', render: r => (
-       <Tooltip logo={getImageUrl(r.division_logo || '/default/Logo_division_default.webp')} title={r.division_name}>
+       <Tooltip logo={getImageUrl(r.division_logo || '/leagues/default/logos/Logo_division_default.webp')} title={r.division_name}>
          <span className="text-graphite hover:text-orange transition-colors cursor-default">{r.division_short_name || r.division_name}</span>
        </Tooltip>
     )},
@@ -187,12 +187,12 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
   const goalieColumns = [
     { label: 'Сезон', render: r => <span className="font-semibold">{r.season_name}</span> },
     { label: 'Лига', render: r => (
-       <Tooltip logo={getImageUrl(r.league_logo || '/default/Logo_league_default.webp')} title={r.league_full_name} subtitle={r.league_city}>
+       <Tooltip logo={getImageUrl(r.league_logo || '/leagues/default/logos/Logo_league_default.webp')} title={r.league_full_name} subtitle={r.league_city}>
          <span className="font-semibold text-graphite hover:text-orange">{r.league_name}</span>
        </Tooltip>
     )},
     { label: 'Дивизион', width: 'w-[220px]', render: r => (
-       <Tooltip logo={getImageUrl(r.division_logo || '/default/Logo_division_default.webp')} title={r.division_name}>
+       <Tooltip logo={getImageUrl(r.division_logo || '/leagues/default/logos/Logo_division_default.webp')} title={r.division_name}>
          <span className="text-graphite hover:text-orange transition-colors cursor-default">{r.division_short_name || r.division_name}</span>
        </Tooltip>
     )},
@@ -238,7 +238,7 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
           const name = r.external_tournament_short_name || r.external_tournament_name || 'Внешний турнир';
           return (
             <div className="whitespace-nowrap flex gap-1.5 items-center">
-              <Tooltip logo={getImageUrl(r.external_tournament_logo || '/default/Logo_league_default.webp')} title={r.external_tournament_name || 'Внешний турнир'} subtitle={r.external_tournament_city || 'Внешний турнир'}>
+              <Tooltip logo={getImageUrl(r.external_tournament_logo || '/leagues/default/logos/Logo_league_default.webp')} title={r.external_tournament_name || 'Внешний турнир'} subtitle={r.external_tournament_city || 'Внешний турнир'}>
                 <span className="text-[13px] text-graphite hover:text-orange">{name}</span>
               </Tooltip>
               <span className="text-graphite/40">/</span>
@@ -248,11 +248,11 @@ export function PlayerProfileModal({ isOpen, onClose, playerId }) {
         }
         return (
         <div className="whitespace-nowrap flex gap-1.5 items-center">
-           <Tooltip logo={getImageUrl(r.league_logo || '/default/Logo_league_default.webp')} title={r.league_full_name || r.league_name} subtitle={r.league_city}>
+           <Tooltip logo={getImageUrl(r.league_logo || '/leagues/default/logos/Logo_league_default.webp')} title={r.league_full_name || r.league_name} subtitle={r.league_city}>
              <span className="text-[13px] text-graphite hover:text-orange">{r.league_name || '-'}</span>
            </Tooltip>
            <span className="text-graphite/40">/</span>
-           <Tooltip logo={getImageUrl(r.division_logo || '/default/Logo_division_default.webp')} title={r.division_name || '-'}>
+           <Tooltip logo={getImageUrl(r.division_logo || '/leagues/default/logos/Logo_division_default.webp')} title={r.division_name || '-'}>
              <span className="text-graphite-light text-[13px] hover:text-orange transition-colors">{r.division_short_name || r.division_name || '-'}</span>
            </Tooltip>
         </div>

@@ -660,7 +660,8 @@ export const publishProtocolScreenshot = async (req, res) => {
         const buffer = await renderProtocolWebp(html, hasProtocolBackContent(data));
         // Существующий ключ сохраняем даже при переносе матча в другой дивизион.
         const key = game.protocol_image_key
-            || `protocols/league-${game.league_id}/season-${game.season_id}/division-${game.division_id}/match-${gameId}.webp`;
+            ? game.protocol_image_key.replace(/^protocols\/league-(\d+)\//, 'leagues/league-$1/protocols/')
+            : `leagues/league-${game.league_id}/protocols/season-${game.season_id}/division-${game.division_id}/match-${gameId}.webp`;
         const version = randomUUID();
 
         await s3.send(new PutObjectCommand({

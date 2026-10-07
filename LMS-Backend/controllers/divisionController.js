@@ -394,11 +394,20 @@ export const uploadDivisionFile = async (req, res) => {
     try {
         const { id, type } = req.params;
         if (!req.file) return res.status(400).json({ success: false, error: 'Файл не найден' });
+        const { rows } = await pool.query(`
+            SELECT s.league_id
+            FROM divisions d
+            JOIN seasons s ON s.id = d.season_id
+            WHERE d.id = $1
+        `, [id]);
+        if (rows.length === 0 || !rows[0].league_id) return res.status(404).json({ success: false, error: 'Дивизион или его лига не найдены' });
+        const leagueId = rows[0].league_id;
         const ext = req.file.originalname.split('.').pop();
         const prefix = type === 'logo' ? 'logo' : 'regulations';
         
         const timestamp = Date.now();
-        const fileName = `uploads/${prefix}_divisions_${id}_${timestamp}.${ext}`;
+        const folder = type === 'logo' ? 'logos' : 'documents';
+        const fileName = `leagues/league-${leagueId}/${folder}/${prefix}_divisions_${id}_${timestamp}.${ext}`;
         
         await s3.send(new PutObjectCommand({
             Bucket: 'hockeyeco-uploads',

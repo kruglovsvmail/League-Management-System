@@ -7,25 +7,26 @@
 // что и звуки появления/исчезновения плашек (см. useWebGraphics.js) и интро
 // (см. getGameAudioUrl):
 //
-//   audio/league-{id}/Intro.mp3
-//   bumpers/league-{id}/slot-{1..3}-{версия}.mp4
+//   leagues/league-{id}/audio/Intro.mp3
+//   leagues/league-{id}/bumpers/slot-{1..3}-{версия}.mp4
 //
 // В БД (leagues.broadcast_bumpers) хранятся ТОЛЬКО названия слотов и
 // длительность ролика — то, что режиссёр видит в панели. Благодаря этому
 // оверлей в OBS строит ссылку сам, без обращения к защищённым эндпоинтам.
 //
-// Фолбэка на league-default у заставок НЕТ намеренно: интро — общая мелодия, а
+// Фолбэка на default у заставок НЕТ намеренно: интро — общая мелодия, а
 // заставка почти всегда рекламная интеграция конкретной лиги, и показать чужую
 // в эфире хуже, чем не показать никакой.
 import pool from '../config/db.js';
 import s3 from '../config/s3.js';
+import { getLeagueIdForGame } from '../utils/leagueLookup.js';
 import { PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 
 const BUCKET = process.env.S3_BUCKET_NAME || process.env.S3_BUCKET;
 const PUBLIC_BASE = 'https://s3.twcstorage.ru/hockeyeco-uploads';
 export const BUMPER_SLOTS = [1, 2, 3];
 
-const introKey = (leagueId) => `audio/league-${leagueId}/Intro.mp3`;
+const introKey = (leagueId) => `leagues/${leagueId === 'default' ? 'default' : `league-${leagueId}`}/audio/Intro.mp3`;
 // ВЕРСИЯ ЛЕЖИТ В ИМЕНИ ОБЪЕКТА, А НЕ В СТРОКЕ ЗАПРОСА.
 //
 // Сначала имя было постоянным, а разной делалась только метка `?v=`. Этого не
@@ -40,7 +41,7 @@ const introKey = (leagueId) => `audio/league-${leagueId}/Intro.mp3`;
 // k = 0 или его отсутствие — файл, залитый до версионирования: он лежит по
 // старому постоянному имени и продолжает работать, пока его не перезальют.
 const bumperKey = (leagueId, slot, ext = 'mp4', k = 0) =>
-  `bumpers/league-${leagueId}/slot-${slot}${k ? `-${k}` : ''}.${ext}`;
+  `leagues/league-${leagueId}/bumpers/slot-${slot}${k ? `-${k}` : ''}.${ext}`;
 
 // Все возможные имена слота, кроме текущего: прошлая версия и легаси-имена без
 // версии во всех контейнерах. Нужны, чтобы убирать за собой при перезаливке и
@@ -295,7 +296,10 @@ export const getGameBumpers = async (req, res) => {
 // Имя файла постоянное — пересборка просто перезаписывает объект. Кэш при этом
 // не мешает: ссылка наружу отдаётся с меткой времени последней записи, и после
 // перезаписи она меняется сама.
-const transitionKey = (gameId) => `bumpers/game-${gameId}/transition.webm`;
+const transitionKey = async (gameId) => {
+  const leagueId = await getLeagueIdForGame(gameId);
+  return `leagues/${leagueId ? `league-${leagueId}` : 'default'}/bumpers/game-${gameId}/transition.webm`;
+};
 
 // POST /api/games/:gameId/broadcast/transition — приём собранного WebM.
 export const uploadGameTransition = async (req, res) => {
@@ -303,7 +307,7 @@ export const uploadGameTransition = async (req, res) => {
     const { gameId } = req.params;
     if (!req.file) return res.status(400).json({ success: false, error: 'Файл не передан' });
 
-    const key = transitionKey(gameId);
+    const key = await transitionKey(gameId);
 
     await s3.send(new PutObjectCommand({
       Bucket: BUCKET,
@@ -324,7 +328,7 @@ export const uploadGameTransition = async (req, res) => {
 export const getGameTransition = async (req, res) => {
   try {
     const { gameId } = req.params;
-    const key = transitionKey(gameId);
+    const key = await transitionKey(gameId);
 
     let head;
     try {
@@ -352,7 +356,7 @@ export const getGameTransition = async (req, res) => {
 export const downloadGameTransition = async (req, res) => {
   try {
     const { gameId } = req.params;
-    const key = transitionKey(gameId);
+    const key = await transitionKey(gameId);
 
     let obj;
     try {
@@ -376,7 +380,7 @@ export const downloadGameTransition = async (req, res) => {
 // оттуда и предзагружает вместе с роликами.
 export const findGameTransitionUrl = async (gameId) => {
   try {
-    const key = transitionKey(gameId);
+    const key = await transitionKey(gameId);
     const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
     // Метка времени последней записи в ссылке — единственный способ заставить
     // OBS перечитать файл после пересборки: имя объекта постоянное, и без неё
