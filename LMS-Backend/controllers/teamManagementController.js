@@ -7,6 +7,7 @@ import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDiv
 import { alignPersonAdmission } from '../utils/personAdmission.js';
 import { logPersonEvent, logPersonEvents } from '../utils/personLog.js';
 import { assertJerseyNumbersFree } from '../utils/jerseyNumbers.js';
+import { ROLES } from '../utils/permissions.js';
 
 /**
  * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
@@ -710,39 +711,35 @@ export const sendApplicationForReview = async (req, res) => {
     try {
         const { appId } = req.params;
 
+        // Исключение для заявки без представителей действует только для глобального
+        // администратора через LMS, независимо от настройки состава дивизиона.
+        const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [req.user?.id]);
+        if (userRes.rows[0]?.global_role !== ROLES.GLOBAL_ADMIN) {
+            return res.status(403).json({ success: false, error: 'Доступ разрешен только глобальному администратору' });
+        }
+
         // Состав мог быть собран до того, как лига сменила игроку квалификацию или список
         // допущенных в дивизион — поэтому перед отправкой проверяем заявку целиком.
         await assertApplicationRosterAllowed(pool, appId);
 
+        // В Team-Room требование представителей сохраняется; здесь их наличие
+        // определяет только текст уведомления глобальному администратору.
         const checkRes = await pool.query(`
-            SELECT
-                tt.paper_roster_league_url,
-                d.digital_applications_only,
-                d.league_managed_roster,
-                (SELECT COUNT(*) FROM tournament_team_roles WHERE tournament_team_id = tt.id AND left_at IS NULL) as staff_count
-            FROM tournament_teams tt
-            JOIN divisions d ON tt.division_id = d.id
-            WHERE tt.id = $1
+            SELECT COUNT(*) AS staff_count
+            FROM tournament_team_roles
+            WHERE tournament_team_id = $1 AND left_at IS NULL
         `, [appId]);
-
-        if (checkRes.rows.length > 0) {
-            const appData = checkRes.rows[0];
-            // Состав ведёт лига — представителей вносит она же, требовать их от отправителя
-            // заявки бессмысленно: он их добавить не может.
-            const isLeagueManaged = !appData.digital_applications_only && appData.league_managed_roster;
-
-            if (!isLeagueManaged && (appData.digital_applications_only || appData.paper_roster_league_url !== null)) {
-                if (parseInt(appData.staff_count) === 0) {
-                    throw new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или менеджера).');
-                }
-            }
-        }
+        const withoutRepresentatives = Number(checkRes.rows[0].staff_count) === 0;
 
         await pool.query(`UPDATE tournament_teams SET status = 'pending' WHERE id = $1`, [appId]);
-        res.json({ success: true });
-        
-    } catch (err) { 
-        res.status(400).json({ success: false, error: err.message }); 
+        res.json({
+            success: true,
+            message: withoutRepresentatives
+                ? 'Заявка отправлена без представителей. Это доступно только вам как глобальному администратору через LMS.'
+                : 'Заявка отправлена'
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
     }
 };
 

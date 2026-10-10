@@ -1,6 +1,7 @@
 import React, { Suspense, useMemo, useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebGraphics } from '../components/WebGraphics/useWebGraphics';
+import { useBroadcastData } from '../components/WebGraphics/useBroadcastData';
 
 const scoreboards = import.meta.glob('../components/WebGraphics/*/Scoreboard.jsx');
 const scoreBarOverlays = import.meta.glob('../components/WebGraphics/*/ScoreBarOverlay.jsx');
@@ -12,7 +13,11 @@ const teamLeadersOverlays = import.meta.glob('../components/WebGraphics/*/TeamLe
 const teamRosterOverlays = import.meta.glob('../components/WebGraphics/*/TeamRosterOverlay.jsx');
 const intermissionOverlays = import.meta.glob('../components/WebGraphics/*/IntermissionOverlay.jsx');
 const commentatorOverlays = import.meta.glob('../components/WebGraphics/*/CommentatorOverlay.jsx'); 
-const refereesOverlays = import.meta.glob('../components/WebGraphics/*/RefereesOverlay.jsx'); 
+const refereesOverlays = import.meta.glob('../components/WebGraphics/*/RefereesOverlay.jsx');
+const comparisonOverlays = import.meta.glob('../components/WebGraphics/*/TeamComparisonOverlay.jsx');
+const tournamentOverlays = import.meta.glob('../components/WebGraphics/*/TournamentOverlay.jsx');
+const nominationOverlays = import.meta.glob('../components/WebGraphics/*/DivisionNominationsOverlay.jsx');
+const rosterLinesOverlays = import.meta.glob('../components/WebGraphics/*/TeamRosterLinesOverlay.jsx');
 
 export function WebGraphics() {
   const { gameId } = useParams();
@@ -20,10 +25,22 @@ export function WebGraphics() {
   const {
     game, events, timerSeconds, currentPeriod, isTimerRunning,
     activePenalties, periodLength, otLength, soLength, overlay,
-    isScoreboardVisible, playOverlaySound, bumperSources
+    isScoreboardVisible, playOverlaySound, bumperSources, broadcastSocket
   } = useWebGraphics(gameId);
 
+  const broadcast = useBroadcastData(gameId, !!game, broadcastSocket);
   const [scale, setScale] = useState(1);
+  useEffect(() => {
+    if (!game) return;
+    const modules = [
+      ['TeamComparisonOverlay', comparisonOverlays], ['TournamentOverlay', tournamentOverlays],
+      ['DivisionNominationsOverlay', nominationOverlays], ['TeamRosterLinesOverlay', rosterLinesOverlays],
+    ];
+    for (const [name, variants] of modules) {
+      const load = variants[`../components/WebGraphics/Graphics_${game.league_id}/${name}.jsx`] || variants[`../components/WebGraphics/defaultGraphics/${name}.jsx`];
+      load?.().catch(() => {});
+    }
+  }, [game?.league_id]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -137,6 +154,18 @@ export function WebGraphics() {
     return importFn ? React.lazy(importFn) : () => null;
   }, [game?.league_id]);
 
+  const extraComponents = useMemo(() => {
+    if (!game) return {};
+    const load = (name, modules) => React.lazy(modules[`../components/WebGraphics/Graphics_${game.league_id}/${name}.jsx`] || modules[`../components/WebGraphics/defaultGraphics/${name}.jsx`]);
+    return {
+      comparison: load('TeamComparisonOverlay', comparisonOverlays),
+      tournament: load('TournamentOverlay', tournamentOverlays),
+      nominations: load('DivisionNominationsOverlay', nominationOverlays),
+      rosterLines: load('TeamRosterLinesOverlay', rosterLinesOverlays),
+    };
+  }, [game?.league_id]);
+  const { comparison: Comparison, tournament: Tournament, nominations: Nominations, rosterLines: RosterLines } = extraComponents;
+
   if (!game) return null;
 
   return (
@@ -188,7 +217,11 @@ export function WebGraphics() {
           {ArenaOverlayComponent && <ArenaOverlayComponent game={game} overlay={overlay} />}
           {PreMatchOverlayComponent && <PreMatchOverlayComponent game={game} overlay={overlay} />}
           {TeamLeadersOverlayComponent && <TeamLeadersOverlayComponent game={game} overlay={overlay} />}
-          {TeamRosterOverlayComponent && <TeamRosterOverlayComponent game={game} overlay={overlay} />}
+          {TeamRosterOverlayComponent && overlay.data?.rosterView !== 'lines' && <TeamRosterOverlayComponent game={game} overlay={overlay} />}
+          {RosterLines && overlay.type === 'team_roster' && overlay.data?.rosterView === 'lines' && <RosterLines game={game} overlay={overlay} broadcast={broadcast} />}
+          {Comparison && overlay.type === 'team_comparison' && <Comparison game={game} overlay={overlay} broadcast={broadcast} />}
+          {Tournament && overlay.type === 'tournament' && <Tournament game={game} overlay={overlay} broadcast={broadcast} />}
+          {Nominations && overlay.type === 'division_nominations' && <Nominations game={game} overlay={overlay} broadcast={broadcast} />}
           {CommentatorOverlayComponent && <CommentatorOverlayComponent game={game} overlay={overlay} />}
           {RefereesOverlayComponent && <RefereesOverlayComponent game={game} overlay={overlay} />}
           

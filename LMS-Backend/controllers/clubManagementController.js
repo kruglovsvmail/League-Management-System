@@ -1,4 +1,7 @@
 import pool from '../config/db.js';
+import s3 from '../config/s3.js';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Управление клубами из LMS (глобальный админ).
@@ -14,6 +17,145 @@ export const CLUB_ROLES = ['top_manager', 'club_admin', 'coach'];
 const normalizeClubRoles = (roles) => {
     if (!Array.isArray(roles)) return [];
     return [...new Set(roles)].filter(r => CLUB_ROLES.includes(r));
+};
+
+const CLUB_PROFILE_COLUMNS = 'id, name, city, description, logo_url, color_1, color_2, owner_id, created_at';
+const CLUB_LOGO_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+const clubError = (message, status = 400) => Object.assign(new Error(message), { status });
+const clubIdFromRequest = (req) => {
+    const id = Number(req.params.clubId);
+    if (!Number.isSafeInteger(id) || id <= 0) throw clubError('Некорректный клуб');
+    return id;
+};
+
+const readClubProfile = (body) => {
+    const text = (field) => {
+        const value = body[field];
+        if (value === undefined || value === null) return '';
+        if (typeof value !== 'string') throw clubError('Некорректное поле профиля клуба');
+        return value.trim();
+    };
+    const name = text('name');
+    const city = text('city');
+    if (!name) throw clubError('Укажите название клуба');
+    if (name.length > 255) throw clubError('Название клуба не должно превышать 255 символов');
+    if (city.length > 100) throw clubError('Город не должен превышать 100 символов');
+    const color = (field) => {
+        const value = text(field);
+        if (value && !/^#[0-9a-f]{6}$/i.test(value)) throw clubError('Цвет клуба должен быть в формате #RRGGBB');
+        return value || null;
+    };
+    return { name, city: city || null, description: text('description') || null, color_1: color('color_1'), color_2: color('color_2') };
+};
+
+export const getClubProfile = async (req, res) => {
+    try {
+        const { rows } = await pool.query(`SELECT ${CLUB_PROFILE_COLUMNS} FROM clubs WHERE id = $1`, [clubIdFromRequest(req)]);
+        if (!rows[0]) throw clubError('Клуб не найден', 404);
+        res.json({ success: true, club: rows[0] });
+    } catch (err) {
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Не удалось загрузить профиль клуба' });
+    }
+};
+
+// Текст и логотип сохраняются вместе. При сбое новый объект удаляем из S3,
+// прежний логотип не трогаем: до COMMIT профиль остаётся прежним.
+const saveClubProfile = async (req, res, create) => {
+    let client;
+    let uploadedKey;
+    try {
+        const profile = readClubProfile(req.body);
+        if (req.file && !CLUB_LOGO_TYPES[req.file.mimetype]) {
+            throw clubError('Для логотипа доступны только JPG, PNG и WebP');
+        }
+        const requestedId = create ? null : clubIdFromRequest(req);
+        client = await pool.connect();
+        await client.query('BEGIN');
+        let club;
+        if (create) {
+            const { rows } = await client.query(`
+                INSERT INTO clubs (name, city, description, color_1, color_2)
+                VALUES ($1, $2, $3, $4, $5) RETURNING ${CLUB_PROFILE_COLUMNS}
+            `, [profile.name, profile.city, profile.description, profile.color_1, profile.color_2]);
+            club = rows[0];
+        } else {
+            const { rows } = await client.query(`SELECT ${CLUB_PROFILE_COLUMNS} FROM clubs WHERE id = $1 FOR UPDATE`, [requestedId]);
+            if (!rows[0]) throw clubError('Клуб не найден', 404);
+            club = rows[0];
+        }
+
+        let logoUrl = club.logo_url;
+        if (req.file) {
+            uploadedKey = `uploads/clubs_${club.id}_logo_${Date.now()}_${randomUUID()}.${CLUB_LOGO_TYPES[req.file.mimetype]}`;
+            await s3.send(new PutObjectCommand({
+                Bucket: 'hockeyeco-uploads', Key: uploadedKey,
+                Body: req.file.buffer, ContentType: req.file.mimetype
+            }));
+            logoUrl = `/${uploadedKey}`;
+        } else if (req.body.delete_logo === 'true' || req.body.delete_logo === true) {
+            logoUrl = null;
+        }
+
+        if (!create || req.file) {
+            const { rows } = await client.query(`
+                UPDATE clubs SET name = $1, city = $2, description = $3,
+                    color_1 = $4, color_2 = $5, logo_url = $6
+                WHERE id = $7 RETURNING ${CLUB_PROFILE_COLUMNS}
+            `, [profile.name, profile.city, profile.description, profile.color_1, profile.color_2, logoUrl, club.id]);
+            club = rows[0];
+        }
+        await client.query('COMMIT');
+        uploadedKey = null;
+        res.status(create ? 201 : 200).json({ success: true, club });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        if (uploadedKey) {
+            await s3.send(new DeleteObjectCommand({ Bucket: 'hockeyeco-uploads', Key: uploadedKey }))
+                .catch(cleanupError => console.error('Не удалось убрать новый логотип клуба после сбоя:', cleanupError));
+        }
+        console.error('Ошибка сохранения клуба:', err);
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Не удалось сохранить клуб' });
+    } finally {
+        client?.release();
+    }
+};
+
+export const createClub = (req, res) => saveClubProfile(req, res, true);
+export const updateClubProfile = (req, res) => saveClubProfile(req, res, false);
+
+export const deleteClub = async (req, res) => {
+    let client;
+    try {
+        const clubId = clubIdFromRequest(req);
+        client = await pool.connect();
+        await client.query('BEGIN');
+        // FOR UPDATE блокирует и проверку FK при новой привязке команды к клубу:
+        // между проверкой отсутствия команд и удалением никто не сможет её добавить.
+        const { rows } = await client.query('SELECT id FROM clubs WHERE id = $1 FOR UPDATE', [clubId]);
+        if (!rows[0]) throw clubError('Клуб не найден', 404);
+        const teamRes = await client.query('SELECT EXISTS (SELECT 1 FROM teams WHERE club_id = $1) AS has_teams', [clubId]);
+        if (teamRes.rows[0].has_teams) {
+            throw clubError('Нельзя удалить клуб, пока к нему привязана хотя бы одна команда. Сначала отвяжите все команды.', 409);
+        }
+        // После отвязки команды в старых строках могут остаться ссылки на клуб.
+        // Эти FK имеют ON DELETE CASCADE: очищаем их, сохраняя составы и справочники
+        // самостоятельных команд. Клубные данные удаляются каскадом самой БД.
+        await client.query('UPDATE team_rosters SET club_id = NULL WHERE club_id = $1', [clubId]);
+        await client.query('UPDATE external_opponents SET club_id = NULL WHERE club_id = $1 AND team_id IS NOT NULL', [clubId]);
+        await client.query('DELETE FROM clubs WHERE id = $1', [clubId]);
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        console.error('Ошибка удаления клуба:', err);
+        res.status(err.status || (err.code === '23503' ? 409 : 500)).json({
+            success: false,
+            error: err.status ? err.message : (err.code === '23503' ? 'Клуб нельзя удалить: есть связанные данные. Обновите страницу.' : 'Не удалось удалить клуб')
+        });
+    } finally {
+        client?.release();
+    }
 };
 
 export const searchClubs = async (req, res) => {

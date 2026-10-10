@@ -29,6 +29,9 @@ import { useAccess } from '../hooks/useAccess';
 import { AccessFallback } from '../ui/AccessFallback';
 import { Icon } from '../ui/Icon';
 import { getToken } from '../utils/helpers';
+import { useBroadcastData } from '../components/WebGraphics/useBroadcastData';
+import { EXTRA_DEFAULTS,seconds,comparisonMetrics,selectedNominations,tournamentMode,tournamentPages,broadcastCycleDuration } from '../components/WebGraphics/broadcastConfig';
+import { RosterSettings,TournamentSettings,ComparisonSettings,NominationSettings } from '../components/WebGraphicsPanel/BroadcastDataSettings';
 import { exportBumperWebm, checkBumperExportSupport, getBumperTiming } from '../utils/exportBumperWebm';
 
 export function WebGraphicsPanel() {
@@ -60,6 +63,23 @@ export function WebGraphicsPanel() {
     overlayMismatch,
     bumperWarmup,
   } = useWebGraphicsPanel(gameId);
+  const broadcast = useBroadcastData(gameId, !!game, socket);
+  const [extraSettings, setExtraSettings] = useState(EXTRA_DEFAULTS);
+  useEffect(() => { setExtraSettings(EXTRA_DEFAULTS); }, [gameId]);
+  const comparisonCount = comparisonMetrics(broadcast.data, extraSettings.comparisonMetrics).length;
+  const nominationCount = selectedNominations(broadcast.data, extraSettings.nominationIds).length;
+  const tournamentCount = tournamentPages(game, broadcast.data, extraSettings).length;
+  const unavailablePlaylistStep = playlistSteps.find(step =>
+    (step.type === 'team_comparison' && !comparisonCount) ||
+    (step.type === 'tournament' && !tournamentCount) ||
+    (step.type === 'division_nominations' && !nominationCount) ||
+    (step.type === 'team_roster' && extraSettings.rosterView === 'lines' && !broadcast.data?.roster_page_count));
+  const handleExtraSetting = (type, key, value) => {
+    const next = { ...extraSettings, [key]: value };
+    setExtraSettings(next);
+    persistParams({ [key]: value });
+    if (activeStaticOverlay === type) toggleStaticOverlay(type, getOverlayPayload(type, next), true);
+  };
 
   // Вкладка правой колонки. Запоминаем на матч: режиссёр возвращается в панель
   // (перезагрузка, вторая вкладка) к тому же виджету, с которым работал.
@@ -116,6 +136,18 @@ export function WebGraphicsPanel() {
   useEffect(() => {
     if (!overlayParams) return;
     const p = overlayParams;
+    setExtraSettings(previous => {
+      const next = { ...previous };
+      for (const key of Object.keys(EXTRA_DEFAULTS)) {
+        if (!Object.prototype.hasOwnProperty.call(p, key)) continue;
+        if (key.endsWith('Switch')) next[key] = seconds(p[key]);
+        else if (['comparisonMetrics', 'nominationIds'].includes(key)) next[key] = Array.isArray(p[key]) ? [...new Set(p[key])] : null;
+        else if (key === 'rosterView') next[key] = p[key] === 'lines' ? 'lines' : 'list';
+        else if (key === 'tournamentMode') next[key] = ['auto', 'standings', 'playoff'].includes(p[key]) ? p[key] : 'auto';
+        else next[key] = p[key] ?? null;
+      }
+      return next;
+    });
     if (typeof p.rosterSwitch === 'number') setRosterSwitchSecs(p.rosterSwitch);
     if (typeof p.leadersSwitch === 'number') setLeadersSwitchSecs(p.leadersSwitch);
     if (typeof p.arenaDuration === 'number') setArenaDurationSecs(p.arenaDuration);
@@ -154,7 +186,14 @@ export function WebGraphicsPanel() {
 
   // Старт серверного автопилота: разрешаем плейлист (каждый шаг получает свои данные через getOverlayPayload).
   const handleStartAutopilot = () => {
-    const resolved = playlistSteps.map(s => ({ id: s.id, type: s.type, label: s.label, data: getOverlayPayload(s.type) }));
+    if (unavailablePlaylistStep) return;
+    const resolved = playlistSteps.map(s => {
+        const data = getOverlayPayload(s.type);
+        const cycle = broadcastCycleDuration(s.type, game, broadcast.data, data);
+        return { id: s.id, type: s.type, label: s.label, data, ...(cycle ? { duration: Math.max(autopilotDuration, cycle) } : {}) };
+      });
+    if (!resolved.length) return;
+    setPlaylistSteps(resolved);
     startAutopilotServer(resolved, autopilotDuration, autopilotLoop && playlistSteps.length > 1);
   };
 
@@ -495,8 +534,8 @@ export function WebGraphicsPanel() {
   };
 
   const [rosterSwitchSecs, setRosterSwitchSecs] = useState(8);
-  const handleRosterStepper = (newSecs) => { setRosterSwitchSecs(newSecs); persistParams({ rosterSwitch: newSecs }); if (activeStaticOverlay === 'team_roster') toggleStaticOverlay('team_roster', { switchDuration: newSecs }, true); };
-  const handleRosterToggle = () => { activeStaticOverlay !== 'team_roster' ? toggleStaticOverlay('team_roster', { switchDuration: rosterSwitchSecs }) : toggleStaticOverlay('team_roster'); };
+  const handleRosterStepper = (newSecs) => { setRosterSwitchSecs(newSecs); persistParams({ rosterSwitch: newSecs }); if (activeStaticOverlay === 'team_roster') toggleStaticOverlay('team_roster', { ...getOverlayPayload('team_roster'), switchDuration: newSecs }, true); };
+  const handleRosterToggle = () => { activeStaticOverlay !== 'team_roster' ? toggleStaticOverlay('team_roster', getOverlayPayload('team_roster')) : toggleStaticOverlay('team_roster'); };
 
   const [leadersSwitchSecs, setLeadersSwitchSecs] = useState(7);
   const handleLeadersStepper = (newSecs) => { setLeadersSwitchSecs(newSecs); persistParams({ leadersSwitch: newSecs }); if (activeStaticOverlay === 'team_leaders') toggleStaticOverlay('team_leaders', { switchDuration: newSecs }, true); };
@@ -525,12 +564,15 @@ export function WebGraphicsPanel() {
     return () => clearTimeout(timer);
   }, [activeStaticOverlay, arenaDurationSecs, commentatorDurationSecs, refereesDurationSecs, bumperTotalSecs, toggleStaticOverlay]);
 
-  const getOverlayPayload = (type) => {
+  const getOverlayPayload = (type, settings = extraSettings) => {
     // scorebar сюда не попадает намеренно: у табло по центру нет настраиваемых
     // параметров, все данные оно берёт из живого состояния матча.
     if (type === 'prematch') return { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null };
     if (type === 'intermission') return { isPaused: !isIntermissionRunning, timeLeft: intermissionTimeLeft, endTime: isIntermissionRunning ? Date.now() + intermissionTimeLeft * 1000 : null };
-    if (type === 'team_roster') return { switchDuration: rosterSwitchSecs };
+    if (type === 'team_roster') return { switchDuration: rosterSwitchSecs, rosterView: settings.rosterView };
+    if (type === 'team_comparison') return { comparisonMetrics: settings.comparisonMetrics, comparisonSwitch: settings.comparisonSwitch };
+    if (type === 'tournament') return { tournamentMode: settings.tournamentMode, tournamentBracket: settings.tournamentBracket };
+    if (type === 'division_nominations') return { nominationIds: settings.nominationIds };
     if (type === 'team_leaders') return { switchDuration: leadersSwitchSecs };
     if (type === 'arena') return { displayDuration: arenaDurationSecs };
     if (type === 'commentator') return { displayDuration: commentatorDurationSecs };
@@ -813,6 +855,22 @@ export function WebGraphicsPanel() {
                       front: <TileHint>Показатель меняется каждые {leadersSwitchSecs} с</TileHint>,
                       back: <TileStepperSetting label="Смена показателя (сек)" value={leadersSwitchSecs} min={3} max={30} onChange={handleLeadersStepper} />,
                     },
+                    {
+                      key: 'team_comparison', title: 'Сравнение команд', dragType: comparisonCount ? 'team_comparison' : null,
+                      isLive: activeStaticOverlay === 'team_comparison',
+                      onAir: takeAir(() => toggleStaticOverlay('team_comparison', getOverlayPayload('team_comparison'))),
+                      airDisabled: activeStaticOverlay !== 'team_comparison' && !comparisonCount,
+                      front: <TileHint>{comparisonCount ? `Показателей: ${comparisonCount} · смена ${extraSettings.comparisonSwitch} с` : broadcast.loading ? 'Загрузка данных' : 'Выберите показатели в настройках'}</TileHint>,
+                      back: <ComparisonSettings settings={extraSettings} broadcast={broadcast} onChange={(key, value) => handleExtraSetting('team_comparison', key, value)} />,
+                    },
+                    {
+                      key: 'tournament', title: tournamentMode(game, extraSettings) === 'playoff' ? 'Сетка плей-офф' : 'Турнирная таблица', dragType: tournamentCount ? 'tournament' : null,
+                      isLive: activeStaticOverlay === 'tournament',
+                      onAir: takeAir(() => toggleStaticOverlay('tournament', getOverlayPayload('tournament'))),
+                      airDisabled: activeStaticOverlay !== 'tournament' && !tournamentCount,
+                      front: <TileHint>{!game.division_id ? 'Матч вне турнира' : broadcast.loading ? 'Загрузка данных' : tournamentCount ? `${game.division_name || 'Дивизион матча'}` : 'Нет данных выбранного вида'}</TileHint>,
+                      back: <TournamentSettings settings={extraSettings} broadcast={broadcast} game={game} onChange={(key, value) => handleExtraSetting('tournament', key, value)} />,
+                    },
                   ]}
                 />
 
@@ -824,8 +882,16 @@ export function WebGraphicsPanel() {
                       dragType: 'team_roster',
                       isLive: activeStaticOverlay === 'team_roster',
                       onAir: takeAir(handleRosterToggle),
-                      front: <TileHint>Команда меняется каждые {rosterSwitchSecs} с</TileHint>,
-                      back: <TileStepperSetting label="Смена команды (сек)" value={rosterSwitchSecs} min={3} max={30} onChange={handleRosterStepper} />,
+                      front: <TileHint>{extraSettings.rosterView === 'lines' ? 'По звеньям · с фото · смена команды' : 'Списком · смена команды'} {rosterSwitchSecs} с</TileHint>,
+                      back: <RosterSettings view={extraSettings.rosterView} interval={rosterSwitchSecs} onViewChange={value => handleExtraSetting('team_roster', 'rosterView', value)} onIntervalChange={handleRosterStepper} />,
+                    },
+                    {
+                      key: 'division_nominations', title: 'Номинации', dragType: nominationCount ? 'division_nominations' : null,
+                      isLive: activeStaticOverlay === 'division_nominations',
+                      onAir: takeAir(() => toggleStaticOverlay('division_nominations', getOverlayPayload('division_nominations'))),
+                      airDisabled: activeStaticOverlay !== 'division_nominations' && !nominationCount,
+                      front: <TileHint>{nominationCount ? `Номинаций: ${nominationCount} · Топ 5` : broadcast.loading ? 'Загрузка данных' : !game.division_id ? 'Матч вне дивизиона' : 'Нет выбранных номинаций с результатами'}</TileHint>,
+                      back: <NominationSettings settings={extraSettings} broadcast={broadcast} onChange={(key, value) => handleExtraSetting('division_nominations', key, value)} />,
                     },
                   ]}
                 />
@@ -933,6 +999,7 @@ export function WebGraphicsPanel() {
                   isRunning={autopilotRunning}
                   currentIndex={autopilotIndex}
                   onStart={handleStartAutopilot}
+                  startDisabledReason={unavailablePlaylistStep ? `Для плашки «${unavailablePlaylistStep.label}» пока нет данных. Проверьте её настройки.` : ''}
                   onStop={stopAutopilotServer}
                 />
               )}

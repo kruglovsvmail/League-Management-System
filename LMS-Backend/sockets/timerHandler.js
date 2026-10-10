@@ -199,7 +199,7 @@ export default function setupTimerSockets(io) {
   // тоже не трогаем: панели применяют его, только если оно реально пришло.
   const stopAutopilot = async (gameId, keepOverlay = false) => {
     const ap = autopilotTimers[gameId];
-    if (ap?.interval) clearInterval(ap.interval);
+    if (ap?.interval) clearTimeout(ap.interval);
     const lastStep = ap?.steps?.[ap.index] || null;
     delete autopilotTimers[gameId];
 
@@ -222,6 +222,17 @@ export default function setupTimerSockets(io) {
       : { autopilotRunning: false, staticOverlay: null });
   };
 
+  // Новые многостраничные плашки успевают завершить цикл. У прежних шагов
+  // без duration остаётся общий интервал автопилота.
+  const scheduleAutopilotStep = (gameId) => {
+    const ap = autopilotTimers[gameId];
+    if (!ap) return;
+    if (ap.interval) clearTimeout(ap.interval);
+    const stepDuration = Number(ap.steps[ap.index]?.duration);
+    const duration = Number.isFinite(stepDuration) ? Math.max(ap.duration, Math.min(3600, stepDuration)) : ap.duration;
+    ap.interval = setTimeout(() => advanceAutopilot(gameId), duration * 1000);
+  };
+
   const advanceAutopilot = (gameId) => {
     const ap = autopilotTimers[gameId];
     if (!ap) return;
@@ -233,17 +244,18 @@ export default function setupTimerSockets(io) {
       ap.index = next;
     }
     showAutopilotStep(gameId);
+    scheduleAutopilotStep(gameId);
   };
 
   const startAutopilot = (gameId, steps, duration, loop, startIndex = 0) => {
     if (!Array.isArray(steps) || steps.length === 0) return;
     const prev = autopilotTimers[gameId];
-    if (prev?.interval) clearInterval(prev.interval);
+    if (prev?.interval) clearTimeout(prev.interval);
     const dur = Math.max(3, Number(duration) || 15);
     const idx = Math.min(Math.max(0, Number(startIndex) || 0), steps.length - 1);
     autopilotTimers[gameId] = { steps, duration: dur, loop: !!loop, index: idx, interval: null };
     showAutopilotStep(gameId);
-    autopilotTimers[gameId].interval = setInterval(() => advanceAutopilot(gameId), dur * 1000);
+    scheduleAutopilotStep(gameId);
   };
 
   // Комната опустела (нет панелей и OBS) — гасим тикающий интервал, но в БД оставляем running=true.
@@ -252,7 +264,7 @@ export default function setupTimerSockets(io) {
     const room = io.sockets.adapter.rooms.get(`game_${gameId}`);
     if (room && room.size > 0) return;
     const ap = autopilotTimers[gameId];
-    if (ap?.interval) clearInterval(ap.interval);
+    if (ap?.interval) clearTimeout(ap.interval);
     delete autopilotTimers[gameId];
   };
 

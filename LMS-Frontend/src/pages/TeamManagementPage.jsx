@@ -488,7 +488,7 @@ export function TeamManagementPage() {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams-manage/${selectedTeam.id}/applications/${appId}/send-review`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } });
       const data = await res.json();
-      if (data.success) { fetchApplications(selectedTeam.id); showToast('Успешно', 'Заявка отправлена', 'success'); } else showToast('Ошибка', data.error);
+      if (data.success) { fetchApplications(selectedTeam.id); showToast('Успешно', data.message || 'Заявка отправлена', 'success'); } else showToast('Ошибка', data.error);
     } catch (err) { showToast('Ошибка', 'Сбой сети'); }
   };
 

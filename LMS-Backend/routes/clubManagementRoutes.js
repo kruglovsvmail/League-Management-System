@@ -1,8 +1,13 @@
 import express from 'express';
+import upload from '../config/upload.js';
 
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import {
     searchClubs,
+    createClub,
+    getClubProfile,
+    updateClubProfile,
+    deleteClub,
     getClubDetails,
     setClubOwner,
     addClubMember,
@@ -21,6 +26,12 @@ router.use('/clubs-manage', verifyToken, requirePermission('TEAM_MANAGEMENT_ACCE
 // Конкретные пути объявляем раньше параметрических, чтобы «teams» не был прочитан как :clubId
 router.get('/clubs-manage/search', searchClubs);
 router.get('/clubs-manage/teams/search', searchTeamsForClub);
+
+// Создание, профиль и удаление клуба — только глобальный администратор.
+router.post('/clubs-manage', requirePermission('TEAM_MANAGEMENT_ACCESS'), upload.single('logo'), createClub);
+router.get('/clubs-manage/:clubId/profile', requirePermission('TEAM_MANAGEMENT_ACCESS'), getClubProfile);
+router.put('/clubs-manage/:clubId/profile', requirePermission('TEAM_MANAGEMENT_ACCESS'), upload.single('logo'), updateClubProfile);
+router.delete('/clubs-manage/:clubId', requirePermission('TEAM_MANAGEMENT_ACCESS'), deleteClub);
 
 router.get('/clubs-manage/:clubId/details', getClubDetails);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dayjs from 'dayjs';
 import { Button } from '../ui/Button';
 import { Table } from '../ui/Table2';
@@ -10,6 +10,7 @@ import { ClubOwnerDrawer } from '../modals/ClubOwnerDrawer';
 import { AddClubMemberDrawer } from '../modals/AddClubMemberDrawer';
 import { AttachTeamDrawer } from '../modals/AttachTeamDrawer';
 import { ConfirmModal } from '../modals/ConfirmModal';
+import { ClubProfileDrawer } from '../modals/ClubProfileDrawer';
 
 // Клубные роли — те же три, что и в Team-Room. Игрового ростера у клуба нет:
 // номера и амплуа живут в командах, поэтому вкладки здесь другие, чем у команды.
@@ -49,6 +50,11 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
   const [clubsPage, setClubsPage] = useState(1);
   const [clubSearchQuery, setClubSearchQuery] = useState('');
   const [isSearchingClubs, setIsSearchingClubs] = useState(false);
+  const [listRevision, setListRevision] = useState(0);
+  const [isProfileDrawerOpen, setIsProfileDrawerOpen] = useState(false);
+  const [detailsClubId, setDetailsClubId] = useState(null);
+  const selectedClubIdRef = useRef(selectedClub?.id);
+  selectedClubIdRef.current = selectedClub?.id;
 
   const [activeTab, setActiveTab] = useState('members');
 
@@ -68,23 +74,29 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
 
   // ── Список клубов ────────────────────────────────────────────────────────
   useEffect(() => {
+    const controller = new AbortController();
     const fetchClubs = async () => {
       setIsSearchingClubs(true);
       try {
         const url = `${import.meta.env.VITE_API_URL}/api/clubs-manage/search?q=${encodeURIComponent(clubSearchQuery)}&page=${clubsPage}&limit=${CLUBS_PER_PAGE}`;
-        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${getToken()}` }, signal: controller.signal });
         const data = await res.json();
-        if (data.success) {
+        if (data.success && !controller.signal.aborted) {
           setClubsList(data.data);
           setClubsTotal(data.total);
+          const lastPage = Math.max(1, Math.ceil(data.total / CLUBS_PER_PAGE));
+          if (clubsPage > lastPage) setClubsPage(lastPage);
         }
-      } catch (err) { console.error('Ошибка загрузки клубов:', err); }
-      setIsSearchingClubs(false);
+      } catch (err) {
+        if (!controller.signal.aborted) console.error('Ошибка загрузки клубов:', err);
+      } finally {
+        if (!controller.signal.aborted) setIsSearchingClubs(false);
+      }
     };
 
     const timer = setTimeout(fetchClubs, 300);
-    return () => clearTimeout(timer);
-  }, [clubSearchQuery, clubsPage]);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [clubSearchQuery, clubsPage, listRevision, selectedClub?.id]);
 
   useEffect(() => { setClubsPage(1); }, [clubSearchQuery]);
 
@@ -97,22 +109,30 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       const data = await res.json();
+      if (String(selectedClubIdRef.current) !== String(clubId)) return;
       if (data.success) {
+        setDetailsClubId(clubId);
         setMembers(data.members || []);
         setStaff(data.staff || []);
         setTeams(data.teams || []);
         setOwner(data.owner || null);
         // Название и логотип могли поменяться в Team-Room — освежаем карточку слева
-        if (data.club) onSelectClub(prev => (prev ? { ...prev, ...data.club } : prev));
+        if (data.club) onSelectClub(prev => (String(prev?.id) === String(clubId) ? { ...prev, ...data.club } : prev));
       }
     } catch (err) { console.error('Ошибка загрузки клуба:', err); }
-    setIsLoadingDetails(false);
+    if (String(selectedClubIdRef.current) === String(clubId)) setIsLoadingDetails(false);
   }, [onSelectClub]);
 
   // Смена клуба (в том числе сброс из шапки) — чистим всё, что относилось к прежнему,
   // и грузим новый; иначе до ответа сервера мигал бы чужой владелец и состав
   useEffect(() => {
     setOwner(undefined);
+    setDetailsClubId(null);
+    setIsProfileDrawerOpen(false);
+    setIsOwnerDrawerOpen(false);
+    setIsAddMemberDrawerOpen(false);
+    setIsAttachTeamDrawerOpen(false);
+    setConfirmState(null);
     setActiveTab('members');
     setMembers([]); setStaff([]); setTeams([]);
     if (selectedClub?.id) fetchClubDetails(selectedClub.id);
@@ -166,18 +186,50 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
     });
   };
 
+  const handleProfileSaved = (club) => {
+    const created = !selectedClub;
+    setIsProfileDrawerOpen(false);
+    setListRevision(value => value + 1);
+    if (created) {
+      setClubSearchQuery('');
+      setClubsPage(1);
+      onSelectClub(club);
+    } else {
+      onSelectClub(prev => (String(prev?.id) === String(club.id) ? { ...prev, ...club } : prev));
+    }
+    showToast?.('Успешно', created ? 'Клуб создан' : 'Профиль клуба обновлён', 'success');
+  };
+
+  const canDeleteClub = !!selectedClub && String(detailsClubId) === String(selectedClub.id) && !isLoadingDetails && teams.length === 0;
+  const requestDeleteClub = () => {
+    if (!canDeleteClub) return;
+    setConfirmState({
+      kind: 'club', id: selectedClub.id, title: 'Удалить клуб?',
+      message: `Клуб «${selectedClub.name}» будет удалён вместе с составом, клубными ролями, тренировками и собраниями. Аккаунты пользователей и данные самостоятельных команд сохранятся. Удаление нельзя отменить.`,
+      confirmLabel: 'Удалить клуб'
+    });
+  };
+
   const handleConfirm = async () => {
-    if (!confirmState) return;
+    if (!confirmState || isConfirming) return;
     setIsConfirming(true);
     try {
-      const url = confirmState.kind === 'member'
-        ? `${import.meta.env.VITE_API_URL}/api/clubs-manage/${selectedClub.id}/members/${confirmState.id}`
-        : `${import.meta.env.VITE_API_URL}/api/clubs-manage/${selectedClub.id}/teams/${confirmState.id}`;
+      const url = confirmState.kind === 'club'
+        ? `${import.meta.env.VITE_API_URL}/api/clubs-manage/${confirmState.id}`
+        : confirmState.kind === 'member'
+          ? `${import.meta.env.VITE_API_URL}/api/clubs-manage/${selectedClub.id}/members/${confirmState.id}`
+          : `${import.meta.env.VITE_API_URL}/api/clubs-manage/${selectedClub.id}/teams/${confirmState.id}`;
 
       const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Bearer ${getToken()}` } });
       const data = await res.json();
 
-      if (data.success) {
+      if (data.success && confirmState.kind === 'club') {
+        onSelectClub(null);
+        setDetailsClubId(null);
+        setListRevision(value => value + 1);
+        setConfirmState(null);
+        showToast?.('Успешно', 'Клуб удалён', 'success');
+      } else if (data.success) {
         const removed = Number(data.removedMembers) || 0;
         showToast?.(
           'Успешно',
@@ -192,6 +244,10 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
         setConfirmState(null);
       } else {
         showToast?.('Ошибка', data.error || 'Не удалось выполнить действие');
+        if (confirmState.kind === 'club') {
+          fetchClubDetails(confirmState.id);
+          setConfirmState(null);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -297,13 +353,14 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
   if (!selectedClub) {
     return (
       <div className="bg-white/40 border border-graphite/10 rounded-lg p-8 animate-zoom-in">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex-1">
             <Input placeholder="Поиск клуба..." value={clubSearchQuery} onChange={(e) => setClubSearchQuery(e.target.value)} />
           </div>
           <span className="shrink-0 bg-graphite/5 text-graphite/60 px-3 py-1.5 rounded-md text-[13px] font-black whitespace-nowrap">
             {clubsTotal} клубов
           </span>
+          <Button onClick={() => setIsProfileDrawerOpen(true)}>Создать клуб</Button>
         </div>
 
         {isSearchingClubs ? <Loader text="Поиск..." /> : (
@@ -344,11 +401,12 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
 
         {!isSearchingClubs && clubsList.length === 0 && (
           <div className="text-center py-16 text-graphite-light font-medium">
-            Клубы не найдены. Клуб создаётся в базе данных — здесь им можно только управлять.
+            Клубы не найдены. Создайте новый клуб или измените поиск.
           </div>
         )}
 
         <Pagination page={clubsPage} total={clubsTotal} limit={CLUBS_PER_PAGE} onChange={setClubsPage} className="mt-8" />
+        <ClubProfileDrawer isOpen={isProfileDrawerOpen} onClose={() => setIsProfileDrawerOpen(false)} onSaved={handleProfileSaved} />
       </div>
     );
   }
@@ -364,6 +422,10 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
           <span className="font-black text-[16px] leading-tight">{selectedClub.name}</span>
           {selectedClub.city && <span className="text-[12px] font-bold text-graphite-light mt-1">{selectedClub.city}</span>}
         </div>
+
+        <button onClick={() => setIsProfileDrawerOpen(true)} className="text-left px-4 py-3 rounded-md font-bold text-graphite-light hover:bg-white/70 hover:text-orange transition-colors">
+          Редактировать профиль
+        </button>
 
         {/* Владелец клуба — свойство самого клуба, поэтому виден с любой вкладки */}
         <button
@@ -397,6 +459,14 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
             </span>
           </button>
         ))}
+        <div className="mt-4 pt-4 border-t border-graphite/10">
+          <button onClick={requestDeleteClub} disabled={!canDeleteClub}
+            title={teams.length > 0 ? 'Сначала отвяжите все команды от клуба' : 'Удалить клуб'}
+            className="w-full text-left px-4 py-3 rounded-md font-bold text-status-rejected hover:bg-status-rejected/10 disabled:text-graphite/40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors">
+            Удалить клуб
+          </button>
+          {teams.length > 0 && <p className="px-4 text-[11px] text-graphite-light leading-snug">Удаление доступно после отвязки всех команд.</p>}
+        </div>
       </div>
 
       <div className="flex-1 relative z-10 min-h-[500px]">
@@ -471,6 +541,8 @@ export function ClubsWorkspace({ showToast, onOpenProfile, selectedClub, onSelec
           );
         }}
       />
+
+      <ClubProfileDrawer isOpen={isProfileDrawerOpen} onClose={() => setIsProfileDrawerOpen(false)} clubId={selectedClub.id} onSaved={handleProfileSaved} />
 
       <ConfirmModal
         isOpen={!!confirmState}

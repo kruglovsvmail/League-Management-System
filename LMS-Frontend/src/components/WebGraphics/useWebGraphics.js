@@ -7,7 +7,7 @@ import { useBumperWarmup } from './bumperWarmup';
 
 // Типы, которые режиссёр «нажимает» в панели и которые должны совпадать с тем, что OBS реально
 // показывает. События (goal/penalty) — временные наложения, мисматч-детектор их игнорирует.
-const STATIC_OVERLAY_TYPES = new Set(['prematch', 'scorebar', 'bumper', 'intermission', 'team_roster', 'team_leaders', 'arena', 'commentator', 'referees']);
+const STATIC_OVERLAY_TYPES = new Set(['prematch', 'scorebar', 'bumper', 'intermission', 'team_roster', 'team_leaders', 'arena', 'commentator', 'referees', 'team_comparison', 'tournament', 'division_nominations']);
 
 export function useWebGraphics(gameId) {
   const socketRef = useRef(null);   // нужен прогреву заставок, чтобы слать отчёт в панель
@@ -602,6 +602,6 @@ export function useWebGraphics(gameId) {
   return {
     game, events, timerSeconds, currentPeriod, isTimerRunning, activePenalties,
     periodLength, otLength, soLength, overlay, isScoreboardVisible, playOverlaySound,
-    bumperSources
+    bumperSources, broadcastSocket: socketRef.current
   };
 }

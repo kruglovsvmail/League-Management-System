@@ -72,6 +72,7 @@ export function AutoPlaylistWidget({
   duration, setDuration,           // длительность шага (конфиг)
   isLoop, setIsLoop,               // зациклить (конфиг)
   isRunning, currentIndex,         // рантайм с СЕРВЕРА (только отображаем)
+  startDisabledReason = '',
   onStart, onStop                  // старт/стоп серверного автопилота
 }) {
 
@@ -87,7 +88,7 @@ export function AutoPlaylistWidget({
   // Цикл крутится на СЕРВЕРЕ — панель лишь отправляет команду старт/стоп.
   const handleStartStop = () => {
     if (isRunning) onStop?.();
-    else if (validSequence.length > 0) onStart?.();
+    else if (validSequence.length > 0 && !startDisabledReason) onStart?.();
   };
 
   const removeStep = (idToRemove) => {
@@ -143,7 +144,7 @@ export function AutoPlaylistWidget({
                   isActiveStep={isRunning && currentIndex === idx}
                   isRunning={isRunning}
                   onRemove={removeStep}
-                  duration={duration}
+                  duration={Math.max(Number(duration) || 15, Number(step.duration) || 0)}
                 />
              ))}
            </SortableContext>
@@ -173,11 +174,12 @@ export function AutoPlaylistWidget({
               </span>
            </label>
 
+           {!!startDisabledReason && !isRunning && <p className="text-[10px] text-graphite/50 leading-snug">{startDisabledReason}</p>}
            <button
               onClick={handleStartStop}
-              disabled={validSequence.length === 0}
+              disabled={validSequence.length === 0 || (!isRunning && !!startDisabledReason)}
               className={`w-full h-[72px] mt-5 rounded-lg text-[13px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-1.5
-                ${validSequence.length === 0 ? 'bg-gray-bg-light border border-graphite/10 text-graphite/30 cursor-not-allowed'
+                ${validSequence.length === 0 || (!isRunning && !!startDisabledReason) ? 'bg-gray-bg-light border border-graphite/10 text-graphite/30 cursor-not-allowed'
                 : isRunning ? 'bg-status-rejected text-white hover:bg-status-rejected/90'
                 : 'bg-status-accepted text-white hover:bg-status-accepted/90'}`}
            >
