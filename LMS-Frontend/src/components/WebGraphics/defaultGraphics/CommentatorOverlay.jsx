@@ -19,9 +19,11 @@ export default function CommentatorOverlay({ game, overlay }) {
     return () => clearTimeout(timer);
   }, [isGlobalVisible, displayDuration, overlay.data]);
 
-  if (!game || !game.officials?.media) return null;
+  // Публичный эндпоинт матча отдаёт 'commentator-1'/'commentator-2', media — старый ключ про запас
+  const o = game?.officials || {};
+  const commentators = [o['commentator-1'] || o.media, o['commentator-2']].filter(Boolean);
 
-  const media = game.officials.media;
+  if (commentators.length === 0) return null;
 
   return (
     <AnimationWrapper
@@ -45,11 +47,13 @@ export default function CommentatorOverlay({ game, overlay }) {
         {/* Текст (компенсация скоса) */}
         <div className="flex flex-col justify-center px-10 py-5 z-10 min-w-[350px] skew-x-[10deg]">
           <span className="text-xs font-black text-zinc-500 uppercase tracking-[0.3em] mb-1.5">
-            КОММЕНТАТОР МАТЧА
+            {commentators.length > 1 ? 'КОММЕНТАТОРЫ МАТЧА' : 'КОММЕНТАТОР МАТЧА'}
           </span>
-          <span className="text-3xl font-black text-white uppercase tracking-widest leading-none drop-shadow-md">
-            {media.first_name} {media.last_name}
-          </span>
+          {commentators.map((c, i) => (
+            <span key={i} className={`${commentators.length > 1 ? 'text-2xl mb-2 last:mb-0' : 'text-3xl'} font-black text-white uppercase tracking-widest leading-none drop-shadow-md`}>
+              {c.first_name} {c.last_name}
+            </span>
+          ))}
         </div>
       </div>
     </AnimationWrapper>

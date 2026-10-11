@@ -20,11 +20,15 @@ export function BroadcastDataStatus({
     <button type="button" onClick={broadcast.refresh} className="ml-2 text-orange underline">Обновить</button>
   </div> : null;
 }
+// «По звеньям» листается по одному звену — для него своя настройка, сколько
+// секунд держать звено. «Списком» меняет команды — там смена команды.
 export function RosterSettings({
   view,
   onViewChange,
   interval,
-  onIntervalChange
+  onIntervalChange,
+  lineInterval,
+  onLineIntervalChange
 }) {
   return <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-1.5">
@@ -35,7 +39,9 @@ export function RosterSettings({
         <span className="text-[11px] font-bold uppercase">{label}</span>
       </button>)}
     </div>
-    <TileStepperSetting label="Смена команды (сек)" value={interval} min={3} max={30} onChange={onIntervalChange} />
+    {view === 'lines'
+      ? <TileStepperSetting label="Смена звена (сек)" value={lineInterval} min={3} max={15} onChange={onLineIntervalChange} />
+      : <TileStepperSetting label="Смена команды (сек)" value={interval} min={3} max={30} onChange={onIntervalChange} />}
   </div>;
 }
 export function TournamentSettings({

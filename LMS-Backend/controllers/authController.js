@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import transporter from '../config/mail.js';
+import transporter, { mailFrom } from '../config/mail.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PERMISSIONS, ROLES } from '../utils/permissions.js';
@@ -379,8 +379,6 @@ export const resetPassword = async (req, res) => {
     const newPassword = generateTempPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user.id]);
-
     const htmlTemplate = `
       <div style="font-family: Arial, sans-serif; background-color: #F8F9FA; padding: 40px 20px; color: #2C2C2E;">
         <div style="max-width: 500px; margin: 0 auto; background-color: #FFFFFF; border-radius: 16px; padding: 40px 30px; border: 1px solid #E5E5EA; text-align: center;">
@@ -396,11 +394,15 @@ export const resetPassword = async (req, res) => {
     `;
 
     await transporter.sendMail({
-      from: '"HockeyEco LMS" <kruglov.svmail@yandex.ru>',
+      from: mailFrom('HockeyEco LMS'),
       to: email,
       subject: 'Ваш новый пароль | HockeyEco LMS',
       html: htmlTemplate
     });
+
+    // Пароль меняем только после того, как письмо ушло. Раньше было наоборот, и при
+    // недоступной почте каждая попытка сбрасывала человеку пароль, который он не получал.
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user.id]);
 
     res.json({ success: true, message: 'Новый пароль отправлен на почту' });
   } catch (err) {
@@ -612,7 +614,7 @@ export const register = async (req, res) => {
     `;
 
     await transporter.sendMail({
-      from: '"HockeyEco LMS" <kruglov.svmail@yandex.ru>',
+      from: mailFrom('HockeyEco LMS'),
       to: email,
       subject: 'Активация аккаунта | HockeyEco LMS',
       html: htmlTemplate

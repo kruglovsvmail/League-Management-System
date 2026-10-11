@@ -19,10 +19,10 @@ export default function RefereesOverlay({ game, overlay }) {
     return () => clearTimeout(timer);
   }, [isGlobalVisible, displayDuration, overlay.data]);
 
-  if (!game || !game.officials) return null;
-
-  const heads = [game.officials.head_1, game.officials.head_2].filter(Boolean);
-  const linesmen = [game.officials.linesman_1, game.officials.linesman_2].filter(Boolean);
+  // Публичный эндпоинт матча отдаёт 'main-N'/'linesman-N', head_N/linesman_N — старые ключи про запас
+  const o = game?.officials || {};
+  const heads = [o['main-1'] || o.head_1, o['main-2'] || o.head_2].filter(Boolean);
+  const linesmen = [o['linesman-1'] || o.linesman_1, o['linesman-2'] || o.linesman_2].filter(Boolean);
 
   if (heads.length === 0 && linesmen.length === 0) return null;
 

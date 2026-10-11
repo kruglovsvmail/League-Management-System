@@ -4,8 +4,11 @@ export const COMPARISON_METRICS = [['games_played', 'Игры'], ['wins', 'По�
 }));
 export const DEFAULT_COMPARISON_METRICS = ['wins', 'draws', 'losses', 'points', 'rank', 'goals_diff', 'shots', 'penalty_minutes', 'power_play_pct'];
 export const COMPARISON_PAGE_SIZE = 10;
+// Состав «по звеньям» листается по одному звену; lineSwitch — секунд на звено.
+export const LINE_SWITCH_DEFAULT = 3;
 export const EXTRA_DEFAULTS = {
   rosterView: 'list',
+  lineSwitch: LINE_SWITCH_DEFAULT,
   comparisonMetrics: DEFAULT_COMPARISON_METRICS,
   comparisonSwitch: 8,
   tournamentMode: 'auto',
@@ -112,8 +115,38 @@ export function rosterPages(game, data) {
     }));
   });
 }
+// Страницы состава «по звеньям»: по ОДНОМУ звену на страницу — сначала все
+// звенья хозяев, потом гостей. Вратари своей команды едут на каждой её
+// странице. Игроки без звена — после звеньев своей команды, по 10 на страницу.
+// Нет ни звеньев, ни игроков — одна пустая страница команды.
+//
+// Строится поверх rosterPages: та раскладывает «лишних» и вратарей по
+// нескольким страницам с повторами, здесь их собираем обратно без дублей.
+export function rosterLinePages(game, data) {
+  if (!data) return [];
+  const sides = {};
+  for (const page of rosterPages(game, data)) {
+    const s = sides[page.side] || (sides[page.side] = { lines: page.lines, extras: [], goalies: [], seen: new Set() });
+    for (const p of [...page.extras, ...page.goalies]) {
+      const key = String(p.player_id);
+      if (s.seen.has(key)) continue;
+      s.seen.add(key);
+      (page.goalies.includes(p) ? s.goalies : s.extras).push(p);
+    }
+  }
+  return ['home', 'away'].flatMap(side => {
+    const s = sides[side];
+    if (!s) return [];
+    const base = { side, goalies: s.goalies, lineCount: s.lines.length };
+    const pages = s.lines.map((line, index) => ({ ...base, line, lineIndex: index, extras: [] }));
+    for (const extras of chunks(s.extras, 10)) pages.push({ ...base, line: null, lineIndex: null, extras });
+    if (!pages.length) pages.push({ ...base, line: null, lineIndex: null, extras: [] });
+    return pages;
+  });
+}
+
 export function broadcastCycleDuration(type, game, data, payload) {
   if (type === 'team_comparison') return Math.ceil(comparisonMetrics(data, payload?.comparisonMetrics).length / COMPARISON_PAGE_SIZE) * seconds(payload?.comparisonSwitch);
-  if (type === 'team_roster' && payload?.rosterView === 'lines') return rosterPages(game, data).length * seconds(payload?.switchDuration);
+  if (type === 'team_roster' && payload?.rosterView === 'lines') return rosterLinePages(game, data).length * seconds(payload?.lineSwitch ?? LINE_SWITCH_DEFAULT);
   return 0;
 }

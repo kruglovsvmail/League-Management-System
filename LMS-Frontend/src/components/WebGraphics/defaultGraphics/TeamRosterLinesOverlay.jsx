@@ -1,6 +1,6 @@
 import React from 'react';
 import { BroadcastFrame, BroadcastEmpty, BroadcastImage, BroadcastPage, useBroadcastPage } from './BroadcastFrame';
-import { rosterPages } from '../broadcastConfig';
+import { rosterLinePages, LINE_SWITCH_DEFAULT } from '../broadcastConfig';
 const AMPLUA = {
   goalie: 'Вратарь',
   defense: 'Защитник',
@@ -36,8 +36,9 @@ export default function TeamRosterLinesOverlay({
   broadcast
 }) {
   const visible = overlay.visible && overlay.type === 'team_roster' && overlay.data?.rosterView === 'lines';
-  const pages = rosterPages(game, broadcast.data);
-  const page = useBroadcastPage(visible, pages.length, overlay.data?.switchDuration, game.id);
+  // Листаем по одному звену (lineSwitch секунд) — так же считает и автопилот панели
+  const pages = rosterLinePages(game, broadcast.data).map(p => ({ ...p, lines: p.line ? [p.line] : [] }));
+  const page = useBroadcastPage(visible, pages.length, overlay.data?.lineSwitch ?? LINE_SWITCH_DEFAULT, game.id);
   const current = pages[page];
   return <BroadcastFrame game={game} title="Состав команды · по звеньям" visible={visible} type="team_roster" page={page} pages={pages.length}>
     {!current ? <BroadcastEmpty loading={broadcast.loading} error={broadcast.error} /> : <BroadcastPage pageKey={`${game.id}:${page}`} className="h-full flex">
@@ -68,7 +69,7 @@ export default function TeamRosterLinesOverlay({
             </section>)}
           </div>
           {!!current.extras.length && <section>
-            <div className="text-zinc-500 text-[13px] uppercase font-bold mb-1.5">{current.lines.length ? 'Без распределения' : 'Расстановка не задана'}</div>
+            <div className="text-zinc-500 text-[13px] uppercase font-bold mb-1.5">{current.lineCount ? 'Без распределения' : 'Расстановка не задана'}</div>
             <div className="grid grid-cols-5 gap-2">{current.extras.map(p => <Player key={p.player_id} player={p} />)}</div>
           </section>}
           {!current.lines.length && !current.extras.length && <div className="text-zinc-500 text-center text-2xl uppercase">Полевые игроки не заявлены</div>}

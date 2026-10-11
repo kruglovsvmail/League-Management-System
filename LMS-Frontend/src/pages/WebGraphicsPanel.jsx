@@ -569,7 +569,7 @@ export function WebGraphicsPanel() {
     // параметров, все данные оно берёт из живого состояния матча.
     if (type === 'prematch') return { isPaused: !isPrematchRunning, timeLeft: prematchTimeLeft, endTime: isPrematchRunning ? Date.now() + prematchTimeLeft * 1000 : null };
     if (type === 'intermission') return { isPaused: !isIntermissionRunning, timeLeft: intermissionTimeLeft, endTime: isIntermissionRunning ? Date.now() + intermissionTimeLeft * 1000 : null };
-    if (type === 'team_roster') return { switchDuration: rosterSwitchSecs, rosterView: settings.rosterView };
+    if (type === 'team_roster') return { switchDuration: rosterSwitchSecs, rosterView: settings.rosterView, lineSwitch: settings.lineSwitch };
     if (type === 'team_comparison') return { comparisonMetrics: settings.comparisonMetrics, comparisonSwitch: settings.comparisonSwitch };
     if (type === 'tournament') return { tournamentMode: settings.tournamentMode, tournamentBracket: settings.tournamentBracket };
     if (type === 'division_nominations') return { nominationIds: settings.nominationIds };
@@ -882,8 +882,8 @@ export function WebGraphicsPanel() {
                       dragType: 'team_roster',
                       isLive: activeStaticOverlay === 'team_roster',
                       onAir: takeAir(handleRosterToggle),
-                      front: <TileHint>{extraSettings.rosterView === 'lines' ? 'По звеньям · с фото · смена команды' : 'Списком · смена команды'} {rosterSwitchSecs} с</TileHint>,
-                      back: <RosterSettings view={extraSettings.rosterView} interval={rosterSwitchSecs} onViewChange={value => handleExtraSetting('team_roster', 'rosterView', value)} onIntervalChange={handleRosterStepper} />,
+                      front: <TileHint>{extraSettings.rosterView === 'lines' ? `По звеньям · смена звена ${extraSettings.lineSwitch} с` : `Списком · смена команды ${rosterSwitchSecs} с`}</TileHint>,
+                      back: <RosterSettings view={extraSettings.rosterView} interval={rosterSwitchSecs} lineInterval={extraSettings.lineSwitch} onViewChange={value => handleExtraSetting('team_roster', 'rosterView', value)} onIntervalChange={handleRosterStepper} onLineIntervalChange={value => handleExtraSetting('team_roster', 'lineSwitch', value)} />,
                     },
                     {
                       key: 'division_nominations', title: 'Номинации', dragType: nominationCount ? 'division_nominations' : null,
