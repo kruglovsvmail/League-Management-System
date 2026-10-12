@@ -1,173 +1,70 @@
-import React, { useState, useEffect } from 'react';
-import { getImageUrl } from '../../../utils/helpers';
-import { AnimationWrapper } from './AnimationWrapper';
-import { TickerBackground } from './TickerBackground';
-import { RippleField } from './RippleField';
+// src/components/WebGraphics/defaultGraphics/PreMatchOverlay.jsx
+//
+// Перед матчем: эмблемы команд, между ними обратный отсчёт.
+// Под интро эмблемы дышат в такт, от них расходятся круги (TileRipple).
+// Последняя минута отсчёта подсвечивается синим.
+import React from 'react';
+import { Crest, TileRipple, Kicker, FitText, useCountdown, beat } from './kit';
+import { Stage, BODY_H } from './Stage';
+import { C, ACCENT_FILL, teamColor, teamInk, countdown, rgba } from './theme';
+
+function Team({ game, side, delay }) {
+  const color = teamColor(game, side);
+  return (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' }}>
+      <div className="g2-pop" style={{ '--d': `${delay}ms`, position: 'relative' }}>
+        <TileRipple tile={300} area={560} />
+        <div style={beat(1)}>
+          <Crest url={game[`${side}_team_logo`]} size={300} />
+        </div>
+      </div>
+      <div className="g2-rise" style={{ '--d': `${delay + 160}ms`, marginTop: 44, width: '100%', textAlign: 'center' }}>
+        <Kicker size={17} color={teamInk(game, side)} spacing="0.2em">{side === 'home' ? 'Хозяева' : 'Гости'}</Kicker>
+        <FitText align="center" min={0.6} style={{ marginTop: 14, fontSize: 54, fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.05, color: C.text }}>
+          {game[`${side}_team_name`]}
+        </FitText>
+        <div style={{ width: 96, height: 6, borderRadius: 3, margin: '18px auto 0', background: color, boxShadow: `0 0 18px ${rgba(color, 0.6)}` }} />
+        <div style={{ width: 96, height: 6, borderRadius: 3, margin: '18px auto 0', background: color, boxShadow: `0 0 18px ${rgba(color, 0.6)}` }} />
+      </div>
+    </div>
+  );
+}
 
 export default function PreMatchOverlay({ game, overlay }) {
-  const isVisible = overlay.visible && overlay.type === 'prematch';
-  const [timeLeft, setTimeLeft] = useState(0);
-
-  useEffect(() => {
-    if (!isVisible || !overlay.data) return;
-
-    if (overlay.data.isPaused) {
-       setTimeLeft(overlay.data.timeLeft || 0);
-       return;
-    }
-
-    if (overlay.data.endTime) {
-       const updateTimer = () => {
-          setTimeLeft(Math.max(0, Math.floor((overlay.data.endTime - Date.now()) / 1000)));
-       };
-       updateTimer(); 
-       const interval = setInterval(updateTimer, 1000);
-       return () => clearInterval(interval);
-    }
-  }, [isVisible, overlay.data]);
-
+  const visible = overlay.visible && overlay.type === 'prematch';
+  const left = useCountdown(visible, overlay.data);
   if (!game) return null;
 
-  const formatCountdown = (s) => {
-    const m = Math.floor(s / 60);
-    const sc = ('0' + (s % 60)).slice(-2);
-    return `${m}:${sc}`;
-  };
-
-  const homeLogo = getImageUrl(game.home_team_logo);
-  const awayLogo = getImageUrl(game.away_team_logo);
-  const dateObj = game.game_date ? new Date(game.game_date) : null;
-  const dateStr = dateObj ? dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
-
-  // Подготовка данных для подвала
-  const cityText = game.arena_city ? game.arena_city.toUpperCase() : 'ГОРОД НЕ УКАЗАН';
-  const arenaText = (game.arena_name || game.location_text || 'ЛЕДОВАЯ АРЕНА').toUpperCase();
-  const displayDate = dateStr ? dateStr.toUpperCase() : 'ДАТА НЕ УКАЗАНА';
-
-  // Определяем стадию и номер матча
-  const isPlayoff = game.stage_type === 'playoff';
-  const stageLabel = game.stage_label ? game.stage_label.toUpperCase() : (isPlayoff ? 'РАУНД' : 'ПЕРИОД');
-  const matchNumberText = isPlayoff 
-    ? `МАТЧ № ${game.series_number || 1}` 
-    : `ТУР: ${game.series_number || 1}`;
+  const paused = !!overlay.data?.isPaused;
+  const hot = left <= 60 && !paused && left > 0;
 
   return (
-    <AnimationWrapper
-      type="prematch"
-      isVisible={isVisible}
-      className="absolute inset-0 flex items-center justify-center z-50 p-20"
-    >
-      {/* ГЛАВНЫЙ КОНТЕЙНЕР ПЛАШКИ (Общий для всего эффект блика) */}
-      <div className="flex flex-col items-center w-full max-w-[1500px] relative overflow-hidden rounded-[70px] shadow-2xl transform-gpu">
-        
-        {/* ГЛОБАЛЬНЫЙ БЛИК ПО ВСЕЙ ПЛАШКЕ - Наложен поверх всех секций для полного покрытия */}
-        <div className="absolute top-0 bottom-0 w-[80%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
+    <Stage game={game} visible={visible} title="Скоро начало" kicker="Матч дня" glow={[teamColor(game, 'home'), teamColor(game, 'away')]}>
+      <div style={{ display: 'flex', alignItems: 'stretch', height: BODY_H }}>
+        <Team game={game} side="home" delay={260} />
 
-        {/* Верхняя лента: Турнирная информация (Фон как у подвала) */}
-        <div className="flex justify-center items-center bg-black text-zinc-300 px-8 py-3 w-full relative z-10">
-          <span className="font-bold uppercase tracking-[0.15em] text-[26px] text-white/90">
-            {stageLabel} • {matchNumberText}
-          </span>
-        </div>
+        <div style={{ width: 420, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 26 }}>
+          <Kicker size={18} color={C.muted} spacing="0.2em" style={{ textAlign: 'center' }}>
+            <span className="g2-rise" style={{ '--d': '380ms', display: 'inline-block' }}>До начала матча</span>
+          </Kicker>
 
-        {/* Центральный блок: Команды и Таймер (Единый фон без лишних рамок) */}
-        <div className="flex w-full h-[550px] bg-zinc-950 overflow-hidden relative z-0">
-          <TickerBackground texts={[game.league_name, game.home_short_name, game.away_short_name, game.division_name, game.home_team_name, game.away_team_name]} />
-
-          {/* Блок Хозяев */}
-          <div className="w-[37%] flex items-center justify-center relative group">
-             {/* Крупный логотип на фоне (с сильным затемнением) */}
-             {homeLogo && (
-               <img src={homeLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-[150%] z-0 pointer-events-none" />
-             )}
-             
-             {/* Основной контент */}
-             <div className="flex flex-col items-center z-10 p-10 w-full text-center">
-               {homeLogo && (
-                 <div className="relative mb-10">
-                   {/* Рябь под интро — независимые волны на бас/средние/высокие, см. RippleField.jsx */}
-                   <RippleField size={520} />
-                   <img src={homeLogo} alt="Home" className="relative z-10 w-64 h-64 object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.8)]" style={{ transform: 'scale(calc(1 + var(--audio-beat, 0) * 0.10 + var(--audio-pulse, 0) * 0.05))', willChange: 'transform' }} onError={(e) => e.target.style.display = 'none'} />
-                 </div>
-               )}
-               <div className="w-full flex justify-center px-4">
-                 <span className="text-5xl font-black text-white uppercase tracking-tighter leading-none w-full line-clamp-2 drop-shadow-sm">
-                   {game.home_team_name}
-                 </span>
-               </div>
-             </div>
+          <div className="g2-pop" style={{ '--d': '420ms', position: 'relative', padding: '26px 44px', borderRadius: 32,
+                                             background: hot ? ACCENT_FILL : 'rgba(0,0,0,.34)',
+                                             boxShadow: hot ? `0 0 0 1px ${rgba(C.skate, 0.5)}, 0 20px 60px -10px ${rgba(C.accent, 0.7)}` : `inset 0 2px 8px rgba(0,0,0,.5), inset 0 0 0 1px ${C.rim}`,
+                                             transition: 'background .6s, box-shadow .6s' }}>
+            <span className="g2-num" style={{ display: 'block', fontSize: 132, fontWeight: 800, lineHeight: 1, color: '#fff', minWidth: 290, textAlign: 'center',
+                                               animation: paused ? 'g2Tick 1.6s ease-in-out infinite' : 'none' }}>
+              {countdown(left)}
+            </span>
           </div>
 
-          {/* Центральный блок: Время (Чистый единый фон bg-zinc-950) */}
-          <div className="w-[26%] flex items-center justify-center relative">
-             <div className="flex flex-col items-center justify-center bg-zinc-900 w-full h-full p-6 z-10 overflow-hidden relative">
-                {/* Индивидуальный блик на таймере убран для использования глобального блика */}
-                
-
-                <span className={`font-mono text-[80px] font-black tabular-nums tracking-tighter leading-none transition-colors z-10 ${timeLeft <= 60 && !overlay.data?.isPaused ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                  {formatCountdown(timeLeft)}
-                </span>
-                <div className="mt-8 text-3xl font-black text-zinc-700 italic leading-none z-10 select-none">
-                </div>
-             </div>
-          </div>
-
-          {/* Блок Гостей */}
-          <div className="w-[37%] flex items-center justify-center relative">
-             {/* Крупный логотип на фоне (с сильным затемнением) */}
-             {awayLogo && (
-               <img src={awayLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-[150%] z-0 pointer-events-none" />
-             )}
-             
-             {/* Основной контент */}
-             <div className="flex flex-col items-center z-10 p-10 w-full text-center">
-               {awayLogo && (
-                 <div className="relative mb-10">
-                   {/* Рябь под интро — независимые волны на бас/средние/высокие, см. RippleField.jsx */}
-                   <RippleField size={520} />
-                   <img src={awayLogo} alt="Away" className="relative z-10 w-64 h-64 object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.8)]" style={{ transform: 'scale(calc(1 + var(--audio-beat, 0) * 0.10 + var(--audio-pulse, 0) * 0.05))', willChange: 'transform' }} onError={(e) => e.target.style.display = 'none'} />
-                 </div>
-               )}
-               <div className="w-full flex justify-center px-4">
-                 <span className="text-5xl font-black text-white uppercase tracking-tighter leading-none w-full line-clamp-2 drop-shadow-sm">
-                   {game.away_team_name}
-                 </span>
-               </div>
-             </div>
-          </div>
-
-        </div>
-
-        {/* Нижняя лента: Место проведения (3-колончатая верстка) */}
-        <div className="flex justify-between items-center bg-black text-zinc-300 px-12 py-3 w-full relative z-10">
-          
-          {/* Слева: Дата с иконкой */}
-          <div className="flex items-center gap-4 text-left w-[33%]">
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-             </svg>
-             <span className={`font-bold uppercase tracking-widest text-[20px] ${dateStr ? 'text-zinc-200' : 'text-zinc-500'}`}>
-               {displayDate}
-             </span>
-          </div>
-
-          {/* По центру: Город */}
-          <div className="text-center w-[33%] px-4">
-             <span className={`font-bold uppercase tracking-widest text-[20px] ${game.arena_city ? 'text-zinc-200' : 'text-zinc-500'}`}>
-               {cityText}
-             </span>
-          </div>
-
-          {/* Справа: Арена */}
-          <div className="text-right w-[33%]">
-             <span className={`font-bold uppercase tracking-widest text-[20px] ${(game.arena_name || game.location_text) ? 'text-zinc-200' : 'text-zinc-500'}`}>
-               {arenaText}
-             </span>
+          <div className="g2-rise" style={{ '--d': '520ms', height: 24, fontSize: 17, fontWeight: 800, letterSpacing: '0.2em', color: C.muted }}>
+            {paused ? 'ОТСЧЁТ НА ПАУЗЕ' : ''}
           </div>
         </div>
 
+        <Team game={game} side="away" delay={340} />
       </div>
-    </AnimationWrapper>
+    </Stage>
   );
 }

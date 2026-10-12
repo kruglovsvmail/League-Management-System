@@ -392,6 +392,40 @@ export const findGameTransitionUrl = async (gameId) => {
   }
 };
 
+// GET /api/games/:gameId/broadcast/models/:name — 3D-модель для сборки перехода.
+//
+// Переход стандартной графики — 3D-сцена (WebGraphics/defaultGraphics/
+// bumperScene.js), шайба для неё лежит в S3. Отдаём через сервер по той же
+// причине, что и эмблемы ниже: CORS на бакете не включаем, а напрямую из S3
+// браузер панели модель кодом не прочитает.
+//
+// Только имена из списка и только из leagues/default/3d-models/ — произвольный
+// ключ превратил бы эндпоинт в чтение всего бакета.
+const BROADCAST_MODELS = new Set(['puck.glb']);
+const BROADCAST_MODELS_PREFIX = 'leagues/default/3d-models/';
+
+export const getBroadcastModel = async (req, res) => {
+  const { name } = req.params;
+  if (!BROADCAST_MODELS.has(name)) {
+    return res.status(404).json({ success: false, error: 'Неизвестная модель' });
+  }
+  const key = `${BROADCAST_MODELS_PREFIX}${name}`;
+  try {
+    let obj;
+    try {
+      obj = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    } catch {
+      return res.status(404).json({ success: false, error: `Модель не найдена в S3: ${key}` });
+    }
+    res.setHeader('Content-Type', 'model/gltf-binary');
+    if (obj.ContentLength) res.setHeader('Content-Length', obj.ContentLength);
+    obj.Body.pipe(res);
+  } catch (err) {
+    console.error('Ошибка отдачи 3D-модели перехода:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
 // GET /api/games/:gameId/broadcast/logos — эмблемы матча как data-URI.
 //
 // Нужно для выгрузки перехода в WebM. Кадры рисуются на canvas, а картинка,

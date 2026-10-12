@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/ArenaOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/ArenaOverlay.jsx
 //
 // Место проведения: название арены, под ним крупно город и погода в нём сейчас
 // (иконка и температура), без подписей.

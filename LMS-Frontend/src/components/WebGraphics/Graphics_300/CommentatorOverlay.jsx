@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/CommentatorOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/CommentatorOverlay.jsx
 //
 // Комментатор (или двое) — нижний титр слева с фото. Уходит сам через
 // displayDuration секунд.

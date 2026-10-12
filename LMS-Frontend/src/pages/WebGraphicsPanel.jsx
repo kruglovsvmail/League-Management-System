@@ -352,7 +352,15 @@ export function WebGraphicsPanel() {
   // проход — иначе кнопка с пустым выбором не делала бы ничего.
   const bumperFullSecs = !bumperHasVideo
     ? bumperSweep
-    : Math.round((currentBumper.duration || 15) + (bumperOutro ? bumperSweep : bumperCover));
+    : (currentBumper.duration || 15) + (bumperOutro ? bumperSweep : bumperCover);
+
+  // Запас к автоснятию. Снять заставку раньше, чем оверлей доиграл переход, —
+  // значит оборвать его конец: так пропадало раздвижение плит после ролика
+  // (12.10.2026). Причин отставания три: длина ролика из БД бывает меньше
+  // настоящей, оверлей запускает переход только когда файл догрузился, а
+  // раньше ещё и округляли сумму вниз. Снять позже безопасно — по концу
+  // перехода оверлей сам уходит в покой, и кадр уже чистый.
+  const BUMPER_OFF_MARGIN_SECS = 2;
 
   // Остаток от уже идущего титра: при перезагрузке панели плитка должна
   // погаснуть тогда же, когда картинка вернётся в эфир, а не через полный цикл.
@@ -362,7 +370,7 @@ export function WebGraphicsPanel() {
   // автоснятия. Полосе показа нужна неизменная длина и точка старта — иначе
   // браузер каждый раз заново раскладывает уже идущую анимацию.
   const bumperElapsed = liveBumper?.startedAt ? (Date.now() - Number(liveBumper.startedAt)) / 1000 : 0;
-  const bumperTotalSecs = Math.max(0.5, bumperFullSecs - bumperElapsed);
+  const bumperTotalSecs = Math.max(0.5, bumperFullSecs + BUMPER_OFF_MARGIN_SECS - bumperElapsed);
 
   // Прогрев выбранного слота в оверлеях. Пока файл не доехал, эфир придерживаем:
   // в кадре был бы стоп-кадр вместо ролика. Оверлеи молчат (никто не подключён,
@@ -396,8 +404,8 @@ export function WebGraphicsPanel() {
   // чужого домена «портит» холст, и кодировщик отказался бы с ним работать.
   const [bumperExporting, setBumperExporting] = useState(false);
   const [bumperExportProgress, setBumperExportProgress] = useState(0);
-  // null — ещё не проверяли; иначе { supported, reason }. Прозрачность в WebM
-  // умеет только запись canvas в VP8 через MediaRecorder — см. утилиту.
+  // null — ещё не проверяли; иначе { supported, reason }. Сборка покадровая через
+  // WebCodecs (Mediabunny), прозрачность — вторым потоком VP8, см. утилиту.
   const [bumperExportSupport, setBumperExportSupport] = useState(null);
 
   useEffect(() => { setBumperExportSupport(checkBumperExportSupport()); }, []);
@@ -436,8 +444,24 @@ export function WebGraphicsPanel() {
       homeName: game?.home_team_name,
       awayName: game?.away_team_name,
       title: currentBumper?.title,
-      homeColor: game?.home_color_1,
-      awayColor: game?.away_color_1,
+      // Цвет команды — цвета её ДОМАШНЕЙ формы, и у гостей тоже, как во всей
+      // эфирной графике (акцент; второй — если акцент почти чёрный).
+      homeColor: game?.home_team_color || game?.home_color_1,
+      awayColor: game?.away_team_color || game?.away_color_1,
+      homeColor2: game?.home_team_color_2 || game?.home_color_2,
+      awayColor2: game?.away_team_color_2 || game?.away_color_2,
+      // 3D-модели перехода (шайба) — через сервер, как и эмблемы: CORS на
+      // бакете не включаем.
+      loadModel: async (name) => {
+        const r = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/broadcast/models/${encodeURIComponent(name)}`, {
+          headers: { 'Authorization': `Bearer ${getToken()}` },
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => null);
+          throw new Error(err?.error || `сервер ответил ${r.status}`);
+        }
+        return r.arrayBuffer();
+      },
       onProgress: setBumperExportProgress,
     });
   };

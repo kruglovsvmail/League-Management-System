@@ -1,297 +1,219 @@
-// src/components/WebGraphics/Graphics_2/Scoreboard.jsx
-import React, { useState, useEffect, useRef } from 'react';
-import { getSafeUrl } from '../../../utils/graphicsHelpers';
-import { AnimationWrapper } from './AnimationWrapper';
+// src/components/WebGraphics/defaultGraphics/Scoreboard.jsx
+//
+// Угловое табло. Одна графитовая полоса: эмблема лиги, хозяева,
+// гости и синий блок времени — синий как основная кнопка TR. Ячейка команды
+// подкрашена её цветом слева направо. Цифры — Tektur, как на настоящем табло.
+// Под полосой «висят» удаления своей команды и подпись большинства под временем.
+//
+// Гол: ячейку заливает цвет команды, по ней проходит лезвие, счёт подпрыгивает,
+// а под табло на несколько секунд выпадает плашка «ГОЛ» цветом команды.
+//
+// В серии буллитов вместо времени — «БУЛЛИТЫ», под командами — попытки.
+// При техническом результате под командами — красная плашка.
+import React, { useEffect, useState } from 'react';
+import { Reveal, Blade, Img, Crest, SkateLines, FitText, useGoalFlash } from './kit';
+import {
+  C, GRAPHITE_WIDE, ACCENT_FILL, LIFT, rgba, teamColor, teamShort, formatClock, periodRemaining,
+  periodShort, strengthState, techScore, shootoutState, FULLSCREEN,
+} from './theme';
 
-const formatTime = (s) => {
-  if (s === undefined || s === null || isNaN(s) || s < 0) return '0:00';
-  return `${Math.floor(s / 60)}:${('0' + (s % 60)).slice(-2)}`;
-};
+const H = 70;          // высота полосы
+const CELL = 246;      // ячейка команды
+const CLOCK = 150;     // блок времени
+const LEAGUE = 84;     // эмблема лиги
 
-// Иконки для буллитов
-const ShootoutGoalIcon = () => (
-  <svg className="w-3.5 h-3.5 text-status-accepted drop-shadow-md" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="12" cy="12" r="10" />
-    <path fill="white" d="M10.5 16.5l-4-4 1.41-1.41L10.5 13.67l7.09-7.09L19 8l-8.5 8.5z" />
-  </svg>
-);
-const ShootoutMissIcon = () => (
-  <svg className="w-3.5 h-3.5 text-status-rejected drop-shadow-md" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="12" cy="12" r="10" />
-    <path fill="white" d="M15.5 14.09L14.09 15.5 12 13.41 9.91 15.5 8.5 14.09 10.59 12 8.5 9.91 9.91 8.5 12 10.59 14.09 8.5 15.5 9.91 13.41 12 15.5 14.09z" />
-  </svg>
-);
-
-export default function Scoreboard({ 
-  game, events = [], soLength = 3, timerSeconds, currentPeriod, isTimerRunning, 
-  activePenalties, periodLength, otLength, overlay, isScoreboardVisible 
-}) {
-
-  const getDisplaySeconds = () => {
-    let maxTime = 0;
-    if (currentPeriod === '1') maxTime = periodLength * 60;
-    else if (currentPeriod === '2') maxTime = periodLength * 2 * 60;
-    else if (currentPeriod === '3') maxTime = periodLength * 3 * 60;
-    else if (currentPeriod === 'OT') maxTime = (periodLength * 3 + otLength) * 60;
-    else return 0; 
-    
-    const remaining = maxTime - timerSeconds;
-    return remaining > 0 ? remaining : 0;
-  };
-
-  const getPeriodText = () => {
-    if (currentPeriod === 'OT') return 'ОТ';
-    if (currentPeriod === 'SO') return 'БУЛ';
-    return `${currentPeriod} ПЕР`;
-  };
-
-  const displaySeconds = getDisplaySeconds();
-  const homeShortName = game.home_short_name || game.home_team_name?.substring(0, 3).toUpperCase() || 'ХОЗ';
-  const awayShortName = game.away_short_name || game.away_team_name?.substring(0, 3).toUpperCase() || 'ГОС';
-  
-  const homeLogo = getSafeUrl(game.home_team_logo);
-  const awayLogo = getSafeUrl(game.away_team_logo);
-
-  const homeColorHex = game.home_color_1 || '#FF5722';
-  const awayColorHex = game.away_color_1 || '#0EA5E9';
-
-  // =======================================================================
-  // ЭФФЕКТ ГОЛА
-  // =======================================================================
-  const prevScoreRef = useRef({ home: game.home_score, away: game.away_score });
-  const [goalEffect, setGoalEffect] = useState(null); // 'home' | 'away' | null
-  const [shakeBoard, setShakeBoard] = useState(false);
-
-  useEffect(() => {
-    const prev = prevScoreRef.current;
-    const newHome = game.home_score ?? 0;
-    const newAway = game.away_score ?? 0;
-
-    if (prev.home !== undefined && newHome > prev.home) {
-      setGoalEffect('home');
-      setShakeBoard(true);
-      setTimeout(() => setShakeBoard(false), 800);
-      setTimeout(() => setGoalEffect(null), 3500);
-    } else if (prev.away !== undefined && newAway > prev.away) {
-      setGoalEffect('away');
-      setShakeBoard(true);
-      setTimeout(() => setShakeBoard(false), 800);
-      setTimeout(() => setGoalEffect(null), 3500);
-    }
-
-    prevScoreRef.current = { home: newHome, away: newAway };
-  }, [game.home_score, game.away_score]);
-
-  const isTech = !!game.is_technical;
-  const techHome = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+';
-  const techAway = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-';
-
-  // =======================================================================
-  // ЛОГИКА СЕРИИ БУЛЛИТОВ
-  // =======================================================================
-  const homeShootout = events.filter(e => e.period === 'SO' && e.team_id === game.home_team_id && ['shootout_goal', 'shootout_miss'].includes(e.event_type));
-  const awayShootout = events.filter(e => e.period === 'SO' && e.team_id === game.away_team_id && ['shootout_goal', 'shootout_miss'].includes(e.event_type));
-  
-  let displaySlots = soLength;
-
-  if (currentPeriod === 'SO') {
-    const maxTaken = Math.max(homeShootout.length, awayShootout.length);
-    const isRoundComplete = homeShootout.length === maxTaken && awayShootout.length === maxTaken;
-    const homeSOGoals = homeShootout.filter(s => s.event_type === 'shootout_goal').length;
-    const awaySOGoals = awayShootout.filter(s => s.event_type === 'shootout_goal').length;
-    
-    // Если раунд завершен, счет равный, и бросков сделано не меньше базового soLength - добавляем слот для sudden death
-    if (isRoundComplete && homeSOGoals === awaySOGoals && maxTaken >= displaySlots) {
-        displaySlots = maxTaken + 1; 
-    } else {
-        displaySlots = Math.max(displaySlots, maxTaken);
-    }
+function ShotMark({ shot }) {
+  if (!shot) {
+    return <span style={{ width: 16, height: 16, borderRadius: 8, border: `2px solid ${C.subtle}` }} />;
   }
+  const goal = shot.event_type === 'shootout_goal';
+  return (
+    <span style={{
+      width: 18, height: 18, borderRadius: 9, background: goal ? C.success : C.danger,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: `0 0 10px ${goal ? 'rgba(34,168,51,.55)' : 'rgba(220,38,38,.45)'}`,
+    }}>
+      <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {goal ? <path d="M2 5.2 4.1 7.2 8 3" /> : <path d="M2.6 2.6l4.8 4.8M7.4 2.6 2.6 7.4" />}
+      </svg>
+    </span>
+  );
+}
 
-  // =======================================================================
-  // УМНАЯ ЛОГИКА СКРЫТИЯ ТАБЛО (ЗАЩИТА ОТ МИГАНИЯ ПРИ ТРАНЗИШЕНАХ)
-  // =======================================================================
-  // scorebar — не полноэкранная плашка, но это РАЗВЁРНУТОЕ табло внизу кадра:
-  // вместе с компактным счёт висел бы в кадре дважды, поэтому прячемся так же.
-  const fullScreenOverlays = ['prematch', 'scorebar', 'bumper', 'intermission', 'team_leaders', 'team_roster', 'team_comparison', 'tournament', 'division_nominations'];
-  const isFullScreenActive = overlay?.visible && fullScreenOverlays.includes(overlay?.type);
+function TeamCell({ side, game, score, isTech, flash, flashKey, divider }) {
+  const color = teamColor(game, side);
+  const logo = game[`${side}_team_logo`];
+  return (
+    <div style={{ position: 'relative', width: CELL, height: H, display: 'flex', alignItems: 'center', overflow: 'hidden',
+                  borderLeft: divider ? `1px solid ${C.divider}` : 'none' }}>
+      {/* Цвет команды: полоса по кромке и подкраска ячейки, к счёту гаснет */}
+      <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, ${rgba(color, 0.34)} 0%, ${rgba(color, 0.1)} 55%, transparent 80%)` }} />
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 7, background: color }} />
 
-  const [hideForOverlay, setHideForOverlay] = useState(false);
+      {/* Гол: цвет команды заливает ячейку слева, следом проходит лезвие */}
+      {flash && (
+        <React.Fragment key={flashKey}>
+          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, ${rgba(color, 0.75)} 0%, ${rgba(color, 0.25)} 70%, transparent 100%)`,
+                        animation: 'g2Wash 2.8s cubic-bezier(.2,.8,.2,1) both' }} />
+          <div style={{ position: 'absolute', top: -10, bottom: -10, width: 6, background: '#BFE6FF', transform: 'skewX(-45deg)',
+                        boxShadow: '0 0 18px 6px rgba(67,181,245,.55)', animation: 'g2Slice 900ms cubic-bezier(.4,0,.2,1) both' }} />
+        </React.Fragment>
+      )}
 
-  useEffect(() => {
-    if (isFullScreenActive) setHideForOverlay(true);
-    else {
-      const timer = setTimeout(() => setHideForOverlay(false), 600);
-      return () => clearTimeout(timer);
-    }
-  }, [isFullScreenActive]);
-
-  const isHidden = !isScoreboardVisible || hideForOverlay;
-
-  // =======================================================================
-  // ЛОГИКА ШТРАФОВ
-  // =======================================================================
-  const safePenalties = Array.isArray(activePenalties) ? activePenalties : [];
-  const visibleHome = safePenalties.filter(p => p.team_id === game.home_team_id).slice(0, 2);
-  const visibleAway = safePenalties.filter(p => p.team_id === game.away_team_id).slice(0, 2);
-
-  const homePlayers = 5 - visibleHome.length;
-  const awayPlayers = 5 - visibleAway.length;
-
-  let strengthText = null;
-  let isPP = false;
-
-  if (homePlayers < 5 || awayPlayers < 5) {
-    if (homePlayers === awayPlayers) {
-        strengthText = `${homePlayers} НА ${awayPlayers}`;
-    } else {
-        isPP = true;
-        strengthText = `БОЛЬШИНСТВО`;
-    }
-  }
-
-  // =======================================================================
-  // ВНУТРЕННИЙ КОМПОНЕНТ СТРОКИ КОМАНДЫ
-  // =======================================================================
-  const TeamRow = ({ logo, shortName, score, color, penalties, shootoutShots, isTopRow, isTechnical, isGoalScored }) => (
-    <div className={`flex items-stretch h-[60px] bg-zinc-900 relative ${isTopRow ? 'border-b border-zinc-800' : ''}`}>
-      <div
-        className={`w-2 shrink-0 z-10 transition-all ${isGoalScored ? 'goal-stripe-flash' : ''}`}
-        style={{ backgroundColor: color, boxShadow: isGoalScored ? `0 0 20px 4px ${color}` : 'none' }}
-      ></div>
-
-      <div className="flex items-center justify-between w-[200px] px-4 skew-x-[10deg] z-10">
-        <div className="flex items-center gap-4">
-          {logo && (
-            <img src={logo} alt="logo" className="w-8 h-8 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
-          )}
-          <span className="font-bold text-[24px] uppercase tracking-wider text-white">
-            {shortName}
-          </span>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 20, flex: 1, minWidth: 0 }}>
+        <div style={{ width: 50, height: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Img url={logo} style={{ maxWidth: 50, maxHeight: 50, objectFit: 'contain', filter: 'drop-shadow(0 3px 6px rgba(0,0,0,.45))' }} />
         </div>
+        <FitText style={{ flex: 1, minWidth: 0, fontSize: 27, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', color: C.text, lineHeight: 1 }}>
+          {teamShort(game, side)}
+        </FitText>
+      </div>
+
+      <div style={{
+        position: 'relative', width: 64, height: 56, marginRight: 7, borderRadius: 13, flexShrink: 0, overflow: 'hidden',
+        background: C.ink, boxShadow: `inset 0 1px 2px rgba(0,0,0,.6), inset 0 0 0 1px ${C.rim}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <span style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, background: color }} />
         <span
-          className={`font-mono font-black text-3xl mr-1 tracking-tighter transition-transform ${isTechnical ? 'text-status-rejected' : 'text-white'} ${isGoalScored ? 'goal-score-pop' : ''}`}
-          style={isGoalScored ? { textShadow: `0 0 30px ${color}, 0 0 60px ${color}` } : {}}
+          key={flash ? flashKey : 'idle'}
+          className={`g2-num ${flash ? 'g2-score-pop' : ''}`}
+          style={{ fontSize: 38, fontWeight: 800, lineHeight: 1, color: isTech ? C.dangerSoft : C.text,
+                   textShadow: flash ? `0 0 18px ${rgba(color, 0.9)}, 0 0 36px ${rgba(color, 0.6)}` : 'none' }}
         >
           {score}
         </span>
       </div>
-
-      {/* Отрисовываем либо слоты Буллитов, либо таймеры Штрафов, если это НЕ технический результат */}
-      {!isTechnical && (
-        currentPeriod === 'SO' ? (
-          <div className="flex items-center bg-zinc-900/80 px-4 border-l border-zinc-800 z-0">
-            <div className="skew-x-[10deg] flex gap-2 items-center justify-center">
-              {Array.from({ length: displaySlots }).map((_, i) => {
-                const shot = shootoutShots[i];
-                if (!shot) return <div key={i} className="w-2.5 h-2.5 rounded-full border-2 border-zinc-600/50"></div>; // Пустой слот
-                if (shot.event_type === 'shootout_goal') return <ShootoutGoalIcon key={i} />; // Гол
-                return <ShootoutMissIcon key={i} />; // Мимо
-              })}
-            </div>
-          </div>
-        ) : penalties.length > 0 && (
-          <div className="flex items-center bg-yellow-400 px-3 border-l border-zinc-800 z-0">
-            <div className="skew-x-[10deg] flex gap-3 text-black font-mono font-black text-xl tracking-tighter">
-              {penalties.map(p => (
-                <span key={p.id}>{formatTime(p.remaining)}</span>
-              ))}
-            </div>
-          </div>
-        )
-      )}
     </div>
   );
+}
+
+function PenaltyChip({ p }) {
+  return (
+    <div className="g2-drop" style={{
+      display: 'flex', alignItems: 'center', gap: 9, height: 34, padding: '0 13px 0 11px', borderRadius: 10,
+      background: C.ink, boxShadow: `inset 0 0 0 1px ${C.rim}, 0 8px 18px -6px rgba(0,0,0,.6)`,
+    }}>
+      <span style={{ width: 4, height: 18, borderRadius: 2, background: C.danger, boxShadow: '0 0 8px rgba(220,38,38,.7)' }} />
+      {p.player_number != null && p.player_number !== '' && (
+        <span className="g2-num" style={{ fontSize: 15, fontWeight: 800, color: C.muted }}>#{p.player_number}</span>
+      )}
+      <span className="g2-num" style={{ fontSize: 20, fontWeight: 800, color: C.text, lineHeight: 1 }}>{formatClock(p.remaining)}</span>
+    </div>
+  );
+}
+
+export default function Scoreboard({
+  game, events = [], soLength = 3, timerSeconds, currentPeriod, isTimerRunning,
+  activePenalties, periodLength, otLength, overlay, isScoreboardVisible,
+}) {
+  const flash = useGoalFlash(game);
+
+  // Под полноэкранными плашками табло прячется; возвращается с задержкой,
+  // чтобы не мигнуть в промежутке между двумя плашками.
+  const fullscreen = overlay?.visible && FULLSCREEN.includes(overlay?.type);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (fullscreen) { setHidden(true); return undefined; }
+    const t = setTimeout(() => setHidden(false), 600);
+    return () => clearTimeout(t);
+  }, [fullscreen]);
+
+  const visible = isScoreboardVisible && !hidden;
+  const tech = techScore(game);
+  const st = strengthState(game, activePenalties);
+  const isSO = currentPeriod === 'SO';
+  const so = isSO ? shootoutState(game, events, currentPeriod, soLength) : null;
+  const ppShort = st.pp ? teamShort(game, st.pp) : null;
+  const flashColor = flash.side ? teamColor(game, flash.side) : null;
+
+  const clock = isSO ? null : formatClock(periodRemaining({ currentPeriod, timerSeconds, periodLength, otLength }));
 
   return (
-    <AnimationWrapper
-      type="scoreboard"
-      isVisible={!isHidden}
-      className="absolute top-10 left-12 flex flex-col items-start z-50 drop-shadow-2xl"
-    >
-      <style>{`
-        @keyframes goalScorePop {
-          0% { transform: scale(1); }
-          10% { transform: scale(2.2); }
-          25% { transform: scale(1.6); }
-          40% { transform: scale(2.0); }
-          55% { transform: scale(1.7); }
-          70% { transform: scale(1.85); }
-          85% { transform: scale(1.2); }
-          100% { transform: scale(1); }
-        }
-        @keyframes goalStripeFlash {
-          0% { width: 8px; opacity: 1; }
-          15% { width: 40px; opacity: 1; }
-          35% { width: 28px; opacity: 0.9; }
-          55% { width: 32px; opacity: 1; }
-          75% { width: 20px; opacity: 0.8; }
-          100% { width: 8px; opacity: 1; }
-        }
-        @keyframes boardShake {
-          0%, 100% { transform: skewX(-10deg) translateX(0); }
-          10% { transform: skewX(-10deg) translateX(-6px) translateY(3px); }
-          20% { transform: skewX(-10deg) translateX(5px) translateY(-2px); }
-          30% { transform: skewX(-10deg) translateX(-4px) translateY(2px); }
-          40% { transform: skewX(-10deg) translateX(3px) translateY(-1px); }
-          50% { transform: skewX(-10deg) translateX(-3px) translateY(1px); }
-          60% { transform: skewX(-10deg) translateX(2px); }
-          70% { transform: skewX(-10deg) translateX(-1px); }
-          80% { transform: skewX(-10deg) translateX(1px); }
-        }
-        .goal-score-pop { animation: goalScorePop 3s ease-out; }
-        .goal-stripe-flash { animation: goalStripeFlash 3s ease-out; }
-        .board-shake { animation: boardShake 0.8s ease-out; }
-      `}</style>
+    <Reveal visible={visible} margin={70} blade={false} style={{ position: 'absolute', zIndex: 50, top: 40, left: 48 }}>
+      {/* ---------- ПОЛОСА ---------- */}
+      <div style={{ position: 'relative', display: 'flex', height: H, borderRadius: 18, overflow: 'hidden', background: GRAPHITE_WIDE, boxShadow: LIFT }}>
+        <div className="g2-sheen" style={{ '--sheen': '9s', '--sheen-d': '3s' }} />
+        <Blade />
 
-      <div className={`flex items-stretch skew-x-[-10deg] overflow-hidden rounded-md bg-zinc-950 ${shakeBoard ? 'board-shake' : ''}`}>
-
-        <div className="flex flex-col">
-          <TeamRow
-            logo={homeLogo} shortName={homeShortName} score={isTech ? techHome : game.home_score}
-            color={homeColorHex} penalties={visibleHome} shootoutShots={homeShootout} isTopRow={true} isTechnical={isTech}
-            isGoalScored={goalEffect === 'home'}
-          />
-          <TeamRow
-            logo={awayLogo} shortName={awayShortName} score={isTech ? techAway : game.away_score}
-            color={awayColorHex} penalties={visibleAway} shootoutShots={awayShootout} isTopRow={false} isTechnical={isTech}
-            isGoalScored={goalEffect === 'away'}
-          />
+        {/* Эмблема лиги — без плитки, почти во всю высоту полосы */}
+        <div style={{ position: 'relative', width: LEAGUE, height: H, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Crest url={game.league_logo} size={62} />
         </div>
 
-        <div className="flex flex-col items-center justify-center w-[120px] bg-zinc-950 relative overflow-hidden">
-          <div className="absolute top-0 bottom-0 w-[200%] bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-[-20deg] animate-glare pointer-events-none z-0"></div>
-          
-          <div className="skew-x-[10deg] flex flex-col items-center z-10 w-full px-2">
-            <span className={`font-mono text-3xl font-black tabular-nums leading-none tracking-tight transition-colors ${isTimerRunning ? 'text-white' : 'text-zinc-500'}`}>
-              {currentPeriod === 'SO' ? '0:00' : formatTime(displaySeconds)}
+        <TeamCell side="home" game={game} score={tech.home} isTech={tech.isTech} divider
+                  flash={flash.side === 'home'} flashKey={flash.stamp} />
+        <TeamCell side="away" game={game} score={tech.away} isTech={tech.isTech} divider
+                  flash={flash.side === 'away'} flashKey={flash.stamp} />
+
+        {/* Время — синий блок, как основная кнопка TR */}
+        <div style={{ position: 'relative', width: CLOCK, height: H, background: ACCENT_FILL, display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center', gap: 5, overflow: 'hidden' }}>
+          <SkateLines corner="br" size={48} width={2} color="#FFFFFF" tint={false} opacity={0.5} />
+          {isSO ? (
+            <span className="g2-loud" style={{ fontSize: 20, color: '#fff' }}>БУЛЛИТЫ</span>
+          ) : (
+            <span className="g2-num" style={{ fontSize: 36, fontWeight: 800, lineHeight: 1, color: '#fff',
+                                               opacity: isTimerRunning ? 1 : 0.62, transition: 'opacity .3s' }}>
+              {clock}
             </span>
-            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mt-1">
-              {getPeriodText()}
-            </span>
-          </div>
+          )}
+          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(255,255,255,.9)', lineHeight: 1 }}>
+            {isSO ? 'СЕРИЯ' : periodShort(currentPeriod)}
+          </span>
         </div>
       </div>
 
-      {/* Вывод плашки Технического Результата или Большинства */}
-      {isTech ? (
-        <div className="flex justify-start ml-8 -mt-1 z-[-1]">
-          <div className="skew-x-[-10deg] px-5 py-1 rounded-b-sm border-x border-b border-zinc-950 shadow-md bg-status-rejected text-white">
-            <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em]">
+      {/* ---------- ПОД ПОЛОСОЙ ---------- */}
+      <div style={{ display: 'flex', marginTop: 6, minHeight: 0 }}>
+        <div style={{ width: LEAGUE, flexShrink: 0 }} />
+
+        {flash.side ? (
+          // Плашка «ГОЛ» под забившей командой, на время вспышки
+          <div style={{ width: CELL * 2, display: 'flex', justifyContent: flash.side === 'home' ? 'flex-start' : 'flex-end' }}>
+            <div key={flash.stamp} className="g2-drop" style={{
+              width: CELL, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+              background: `linear-gradient(180deg, #FFFFFF33 0%, #FFFFFF00 100%), linear-gradient(90deg, ${rgba(flashColor, 0.72)} 0%, ${flashColor} 100%), ${C.ink}`,
+              boxShadow: `0 10px 24px -8px ${rgba(flashColor, 0.8)}`,
+            }}>
+              <span className="g2-loud" style={{ fontSize: 22, color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,.35)' }}>ГОЛ!</span>
+              <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.12em', color: 'rgba(255,255,255,.92)' }}>{teamShort(game, flash.side)}</span>
+            </div>
+          </div>
+        ) : tech.isTech ? (
+          <div className="g2-drop" style={{ width: CELL * 2, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ padding: '8px 18px', borderRadius: 10, background: C.danger, color: '#fff', fontSize: 15, fontWeight: 800,
+                          letterSpacing: '0.16em', boxShadow: '0 8px 18px -6px rgba(220,38,38,.6)' }}>
               ТЕХНИЧЕСКИЙ РЕЗУЛЬТАТ
-            </span>
+            </div>
           </div>
-        </div>
-      ) : strengthText && currentPeriod !== 'SO' ? (
-        <div className="flex justify-start ml-8 -mt-1 z-[-1]">
-          <div className={`skew-x-[-10deg] px-5 py-1 rounded-b-sm border-x border-b border-zinc-950 shadow-md ${isPP ? 'bg-yellow-400 text-black' : 'bg-zinc-800 text-white'}`}>
-            <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em]">
-              {strengthText}
-            </span>
+        ) : (
+          ['home', 'away'].map(side => (
+            <div key={side} style={{ width: CELL, display: 'flex', gap: 6, paddingLeft: 10 }}>
+              {isSO ? (
+                <div className="g2-drop" style={{ display: 'flex', alignItems: 'center', gap: 7, height: 34, padding: '0 13px', borderRadius: 10,
+                                                   background: C.ink, boxShadow: `inset 0 0 0 1px ${C.rim}` }}>
+                  {Array.from({ length: so.slots }).map((_, i) => <ShotMark key={i} shot={so[side][i]} />)}
+                </div>
+              ) : (
+                st[side].map(p => <PenaltyChip key={p.id} p={p} />)
+              )}
+            </div>
+          ))
+        )}
+
+        {!tech.isTech && !isSO && st.label && (
+          <div style={{ width: CLOCK, display: 'flex', justifyContent: 'center' }}>
+            <div key={st.label + (ppShort || '')} className="g2-drop" style={{
+              height: 34, padding: '0 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
+              background: st.pp ? ACCENT_FILL : C.ink, boxShadow: st.pp ? '0 8px 18px -6px rgba(23,148,221,.6)' : `inset 0 0 0 1px ${C.rim}`,
+            }}>
+              {ppShort && <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.06em', color: 'rgba(255,255,255,.9)' }}>{ppShort}</span>}
+              <span className="g2-num" style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.04em', color: '#fff' }}>{st.label}</span>
+            </div>
           </div>
-        </div>
-      ) : null}
-      
-    </AnimationWrapper>
+        )}
+      </div>
+    </Reveal>
   );
 }

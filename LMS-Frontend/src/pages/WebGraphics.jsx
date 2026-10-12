@@ -2,10 +2,11 @@ import React, { Suspense, useMemo, useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebGraphics } from '../components/WebGraphics/useWebGraphics';
 import { useBroadcastData } from '../components/WebGraphics/useBroadcastData';
+// Заставка одна на все лиги — не из папки графики (почему — в самом файле).
+import BumperOverlay from '../components/WebGraphics/BumperOverlay';
 
 const scoreboards = import.meta.glob('../components/WebGraphics/*/Scoreboard.jsx');
 const scoreBarOverlays = import.meta.glob('../components/WebGraphics/*/ScoreBarOverlay.jsx');
-const bumperOverlays = import.meta.glob('../components/WebGraphics/*/BumperOverlay.jsx');
 const eventOverlays = import.meta.glob('../components/WebGraphics/*/EventOverlay.jsx');
 const arenaOverlays = import.meta.glob('../components/WebGraphics/*/ArenaOverlay.jsx');
 const preMatchOverlays = import.meta.glob('../components/WebGraphics/*/PreMatchOverlay.jsx');
@@ -70,15 +71,6 @@ export function WebGraphics() {
     const targetPath = `../components/WebGraphics/Graphics_${leagueId}/ScoreBarOverlay.jsx`;
     const defaultPath = '../components/WebGraphics/defaultGraphics/ScoreBarOverlay.jsx';
     const importFn = scoreBarOverlays[targetPath] || scoreBarOverlays[defaultPath];
-    return importFn ? React.lazy(importFn) : () => null;
-  }, [game?.league_id]);
-
-  const BumperOverlayComponent = useMemo(() => {
-    if (!game) return null;
-    const leagueId = game.league_id;
-    const targetPath = `../components/WebGraphics/Graphics_${leagueId}/BumperOverlay.jsx`;
-    const defaultPath = '../components/WebGraphics/defaultGraphics/BumperOverlay.jsx';
-    const importFn = bumperOverlays[targetPath] || bumperOverlays[defaultPath];
     return importFn ? React.lazy(importFn) : () => null;
   }, [game?.league_id]);
 
@@ -211,7 +203,7 @@ export function WebGraphics() {
               держат ролики лиги в кэше с самого запуска оверлея, чтобы между
               шторкой и роликом не было паузы на загрузку */}
           {/* sources — прогретые ролики: панель нажала кнопку, а файл уже в памяти. */}
-          {BumperOverlayComponent && <BumperOverlayComponent game={game} overlay={overlay} sources={bumperSources} />}
+          <BumperOverlay game={game} overlay={overlay} sources={bumperSources} />
 
           {EventOverlayComponent && <EventOverlayComponent game={game} overlay={overlay} />}
           {ArenaOverlayComponent && <ArenaOverlayComponent game={game} overlay={overlay} />}

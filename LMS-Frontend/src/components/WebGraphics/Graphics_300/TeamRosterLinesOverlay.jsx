@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/TeamRosterLinesOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/TeamRosterLinesOverlay.jsx
 //
 // Состав по звеньям — по ОДНОМУ звену на экран, как карточки звена в TR:
 // крупное квадратное фото, под ним фамилия и имя. Тройка нападения сверху,
@@ -99,7 +99,7 @@ export default function TeamRosterLinesOverlay({ game, overlay, broadcast }) {
           {/* Команда и вратари — меняются, только когда меняется команда */}
           <aside style={{ width: 420, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '34px 36px', borderRight: `1px solid ${C.divider}` }}>
             <Page pageKey={side} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
-              <Crest url={game[`${side}_team_logo`]} size={170} color={color} />
+              <Crest url={game[`${side}_team_logo`]} size={170} />
               <FitText align="center" min={0.6} style={{ width: '100%', marginTop: 22, fontSize: 36, fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.05, color: C.text }}>
                 {game[`${side}_team_name`]}
               </FitText>

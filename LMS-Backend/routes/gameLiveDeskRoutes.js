@@ -1,5 +1,5 @@
 import express from 'express';
-import { getGameBumpers, getGameLogos, uploadGameTransition, getGameTransition, downloadGameTransition } from '../controllers/broadcastAssetsController.js';
+import { getGameBumpers, getGameLogos, getBroadcastModel, uploadGameTransition, getGameTransition, downloadGameTransition } from '../controllers/broadcastAssetsController.js';
 import uploadBroadcast from '../config/uploadBroadcast.js';
 import rateLimit from 'express-rate-limit';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
@@ -114,6 +114,8 @@ router.get('/tts/test', testPronunciation);
 router.get('/games/:gameId/broadcast/bumpers', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), getGameBumpers);
 // Эмблемы матча как data-URI — для выгрузки перехода в WebM (см. контроллер).
 router.get('/games/:gameId/broadcast/logos', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), getGameLogos);
+// 3D-модели перехода из S3 через сервер — по той же причине, что и эмблемы.
+router.get('/games/:gameId/broadcast/models/:name', requirePermission('MATCH_WEB_GRAPHICS_PANEL'), getBroadcastModel);
 
 // Переход заставки: собирается в браузере режиссёра один раз и живёт файлом в
 // S3, эфир его только проигрывает (см. контроллер).

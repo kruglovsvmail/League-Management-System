@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/EventOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/EventOverlay.jsx
 //
 // Гол и удаление — титр внизу по центру.
 //
@@ -157,7 +157,7 @@ export default function EventOverlay({ game, overlay }) {
         <div style={{ position: 'relative', width: 196, flexShrink: 0, background: 'rgba(0,0,0,.25)', borderLeft: `1px solid ${C.divider}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="g2-pop" style={{ '--d': '360ms', display: 'flex' }}>
-            <Crest url={teamLogo} size={124} color={color} />
+            <Crest url={teamLogo} size={150} />
           </div>
         </div>
       </div>

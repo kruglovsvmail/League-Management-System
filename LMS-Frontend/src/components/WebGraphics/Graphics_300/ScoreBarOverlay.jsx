@@ -1,15 +1,15 @@
-// src/components/WebGraphics/Graphics_2/ScoreBarOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/ScoreBarOverlay.jsx
 //
-// Табло по центру: развёрнутая версия углового — полные названия, эмблемы в
-// плитках-иконках, крупный счёт, синий блок времени между цифрами и плитка
-// лиги на верхней кромке.
+// Табло по центру: развёрнутая версия углового — полные названия, эмблемы,
+// крупный счёт, синий блок времени между цифрами и логотип лиги на верхней
+// кромке.
 //
 // С угловым табло показывается взаимоисключающе: пока этот титр в эфире,
 // Scoreboard прячется сам (FULLSCREEN в theme.js) — иначе счёт висел бы дважды.
 import React from 'react';
-import { Reveal, Blade, Crest, Img, SkateLines, FitText, Kicker, useGoalFlash } from './kit';
+import { Reveal, Blade, Crest, SkateLines, FitText, Kicker, useGoalFlash } from './kit';
 import {
-  C, GRAPHITE, GRAPHITE_WIDE, ACCENT_FILL, LIFT, LIFT_SM, rgba, teamColor, teamShort, formatClock,
+  C, GRAPHITE_WIDE, ACCENT_FILL, LIFT, LIFT_SM, rgba, teamColor, teamShort, formatClock,
   periodRemaining, periodLong, strengthState, techScore, stageText, teamInk,
 } from './theme';
 
@@ -26,7 +26,7 @@ function Side({ game, side }) {
                   flexDirection: right ? 'row-reverse' : 'row',
                   background: `linear-gradient(${right ? 270 : 90}deg, ${rgba(color, 0.32)} 0%, ${rgba(color, 0.08)} 60%, transparent 100%)` }}>
       <div className="g2-pop" style={{ '--d': '220ms' }}>
-        <Crest url={game[`${side}_team_logo`]} size={92} color={color} />
+        <Crest url={game[`${side}_team_logo`]} size={112} />
       </div>
       <div className="g2-slide" style={{ flex: 1, minWidth: 0, '--d': '300ms', textAlign: right ? 'right' : 'left' }}>
         <Kicker size={15} color={teamInk(game, side)} style={{ marginBottom: 8 }}>{right ? 'Гости' : 'Хозяева'}</Kicker>
@@ -136,14 +136,11 @@ export default function ScoreBarOverlay({
           <Side game={game} side="away" />
         </div>
 
-        {/* Плитка лиги на верхней кромке, над временем */}
+        {/* Логотип лиги на верхней кромке, над временем — без плитки. Заходит
+            в полосу на те же 30 px, что освобождает отступ блока времени. */}
         {game.league_logo && (
-          <div className="g2-pop" style={{ position: 'absolute', top: -46, left: W / 2 - 38, '--d': '160ms' }}>
-            <div style={{ width: 76, height: 76, borderRadius: 18, background: GRAPHITE, boxShadow: LIFT,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-              <SkateLines corner="br" size={44} width={2} />
-              <Img url={game.league_logo} style={{ position: 'relative', width: 58, height: 58, objectFit: 'contain' }} />
-            </div>
+          <div className="g2-pop" style={{ position: 'absolute', top: -70, left: W / 2 - 50, '--d': '160ms' }}>
+            <Crest url={game.league_logo} size={100} />
           </div>
         )}
       </div>

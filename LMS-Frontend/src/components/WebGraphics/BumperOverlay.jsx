@@ -1,15 +1,32 @@
-// src/components/WebGraphics/defaultGraphics/BumperOverlay.jsx
+// src/components/WebGraphics/BumperOverlay.jsx
 //
 // Заставка: переход с прозрачным фоном закрывает кадр, под ним открывается
 // рекламный ролик, по концу ролика переход открывает картинку обратно.
 //
-// Логика один в один с Graphics_3/BumperOverlay.jsx — там же и подробности:
-// переход рисуется не здесь, а собирается один раз в панели трансляции
+// ОДНА НА ВСЕ ЛИГИ. Лежит вне папок графики намеренно: раньше у лиги 2 вместо
+// неё была прокладка «возьми заставку из defaultGraphics», и когда папку лиги 2
+// скопировали в defaultGraphics, прокладка стала ссылаться сама на себя —
+// React бесконечно вкладывал заставку в заставку, и оверлей OBS висел намертво.
+// В папках Graphics_N / defaultGraphics своего BumperOverlay.jsx быть не должно.
+//
+// Переход рисуется не здесь, а собирается один раз в панели трансляции
 // (canvas → WebM с альфой → S3) и приходит готовой ссылкой в
 // game.transition_url. Вход в ролик всегда переходом, выход — по кнопке в
 // панели.
+//
+// Свои у лиги только тайминги перехода (SWEEP_MS, COVER_MS) — они лежат в
+// bumperFrame.js её папки графики. Ищем его по тому же правилу, что и сборщик
+// перехода (utils/exportBumperWebm.js → loadFrameModule): Graphics_<лига>, иначе
+// defaultGraphics. Правило должно совпадать: отметки берутся из того же
+// рисунка, по которому записан файл перехода.
 import React, { useState, useEffect, useRef } from 'react';
-import { SWEEP_MS as DEFAULT_SWEEP_MS, COVER_MS as DEFAULT_COVER_MS } from './bumperFrame';
+
+const frameModules = import.meta.glob('./*/bumperFrame.js', { eager: true });
+
+function leagueTiming(leagueId) {
+  const mod = frameModules[`./Graphics_${leagueId}/bumperFrame.js`] || frameModules['./defaultGraphics/bumperFrame.js'];
+  return { sweepMs: mod.SWEEP_MS, coverMs: mod.COVER_MS };
+}
 
 // Длину ролика берём у самого элемента: в БД лежит цифра, посчитанная при
 // загрузке файла, и после замены ролика она может отстать от правды.
@@ -18,15 +35,8 @@ const durationMs = (el, meta) => {
   return (fromEl || Number(meta?.duration) || 15) * 1000;
 };
 
-export default function BumperOverlay({ game, overlay, sources, timing }) {
-  const [transitionMetadata, setTransitionMetadata] = useState(null);
-  const transitionSource = sources?.transition || game?.transition_url || null;
-  const legacy = timing?.legacy;
-  const legacyFile = legacy && transitionMetadata?.source === transitionSource
-    && transitionMetadata.duration > (legacy.minDuration ?? 0)
-    && transitionMetadata.duration <= legacy.sweepMs / 1000 + 0.4;
-  const SWEEP_MS = legacyFile ? legacy.sweepMs : timing?.sweepMs ?? DEFAULT_SWEEP_MS;
-  const COVER_MS = legacyFile ? legacy.coverMs : timing?.coverMs ?? DEFAULT_COVER_MS;
+export default function BumperOverlay({ game, overlay, sources }) {
+  const { sweepMs: SWEEP_MS, coverMs: COVER_MS } = leagueTiming(game?.league_id);
   const isVisible = overlay.visible && overlay.type === 'bumper';
 
   // slot === null — режиссёр ничего не выбрал: играет только переход.
@@ -402,10 +412,6 @@ export default function BumperOverlay({ game, overlay, sources, timing }) {
           src={sources?.transition || transitionUrl}
           preload="auto"
           playsInline
-          onLoadedMetadata={event => {
-            const duration = event.currentTarget.duration;
-            if (Number.isFinite(duration)) setTransitionMetadata({ source: transitionSource, duration });
-          }}
           onError={(e) => {
             const err = e?.target?.error;
             console.warn('[Заставка] ошибка перехода', err?.code, err?.message);

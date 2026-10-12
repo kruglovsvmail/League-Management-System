@@ -1,7 +1,7 @@
-// src/components/WebGraphics/Graphics_2/PreMatchOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/PreMatchOverlay.jsx
 //
-// Перед матчем: эмблемы команд в плитках-иконках, между ними обратный отсчёт.
-// Под интро плитки дышат в такт, от них расходятся контуры (TileRipple).
+// Перед матчем: эмблемы команд, между ними обратный отсчёт.
+// Под интро эмблемы дышат в такт, от них расходятся круги (TileRipple).
 // Последняя минута отсчёта подсвечивается синим.
 import React from 'react';
 import { Crest, TileRipple, Kicker, FitText, useCountdown, beat } from './kit';
@@ -15,7 +15,7 @@ function Team({ game, side, delay }) {
       <div className="g2-pop" style={{ '--d': `${delay}ms`, position: 'relative' }}>
         <TileRipple tile={300} area={560} />
         <div style={beat(1)}>
-          <Crest url={game[`${side}_team_logo`]} size={300} color={color} />
+          <Crest url={game[`${side}_team_logo`]} size={300} />
         </div>
       </div>
       <div className="g2-rise" style={{ '--d': `${delay + 160}ms`, marginTop: 44, width: '100%', textAlign: 'center' }}>

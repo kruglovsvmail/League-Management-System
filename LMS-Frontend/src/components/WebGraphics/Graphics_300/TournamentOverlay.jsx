@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/TournamentOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/TournamentOverlay.jsx
 //
 // Турнир: турнирная таблица дивизиона или сетка плей-офф (режим — из панели,
 // по умолчанию по стадии матча). Команды этого матча подсвечены своими
@@ -39,7 +39,7 @@ function Standings({ rows, game }) {
           }}>
             <span className="g2-num" style={{ textAlign: 'center', fontWeight: 800 }}>{r.rank}</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 14, paddingLeft: 12, minWidth: 0 }}>
-              <span style={{ width: rowH * 0.62, height: rowH * 0.62, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: rowH * 0.78, height: rowH * 0.78, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Img url={r.logo_url} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
               </span>
               <span style={{ fontWeight: 800, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.team_name}</span>
@@ -121,7 +121,7 @@ function Playoff({ rounds, game, bracket, brackets }) {
                 const lost = m.winner_id != null && known && !won;
                 return (
                   <div key={s} style={{ height: '50%', display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', borderTop: k ? `1px solid ${C.divider}` : 'none' }}>
-                    <span style={{ width: Math.min(30, p.cardH / 3), height: Math.min(30, p.cardH / 3), flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ width: Math.min(38, p.cardH / 2.6), height: Math.min(38, p.cardH / 2.6), flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <Img url={m[`${s}_logo`]} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                     </span>
                     <span style={{ flex: 1, minWidth: 0, fontSize: fs, fontWeight: 800, textTransform: known ? 'uppercase' : 'none', lineHeight: 1.1,

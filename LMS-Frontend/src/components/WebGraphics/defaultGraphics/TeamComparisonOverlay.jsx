@@ -1,42 +1,106 @@
+// src/components/WebGraphics/defaultGraphics/TeamComparisonOverlay.jsx
+//
+// Сравнение команд: по краям эмблемы, по центру строки показателей. У каждой
+// строки — двусторонняя шкала: чья доля больше, та половина ярче. Для
+// показателей, где меньше — лучше (пропущенные, штраф, место), шкала
+// перевёрнута. Страницы и их число — из broadcastConfig, как у панели.
 import React from 'react';
-import { BroadcastFrame, BroadcastEmpty, BroadcastImage, BroadcastPage, useBroadcastPage } from './BroadcastFrame';
+import { Crest, Kicker, FitText, usePager, Page } from './kit';
+import { Stage, StageEmpty, BODY_H } from './Stage';
 import { chunks, comparisonMetrics, COMPARISON_PAGE_SIZE } from '../broadcastConfig';
-const value = (stat, key) => {
+import { C, teamColor, teamInk, rgba } from './theme';
+
+const LOWER_IS_BETTER = new Set(['losses', 'losses_reg', 'losses_ot', 'rank', 'goals_against', 'goals_against_avg', 'penalty_minutes']);
+
+const fmt = (stat, key) => {
   const n = stat?.[key];
   if (n == null) return '—';
-  if (key === 'power_play_pct') return `${Number(n).toLocaleString('ru-RU', {
-    maximumFractionDigits: 1
-  })}%`;
-  if (key.endsWith('_avg')) return Number(n).toLocaleString('ru-RU', {
-    maximumFractionDigits: 2
-  });
+  if (key === 'power_play_pct') return `${Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`;
+  if (key.endsWith('_avg')) return Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
   return key === 'goals_diff' && Number(n) > 0 ? `+${n}` : n;
 };
-export default function TeamComparisonOverlay({
-  game,
-  overlay,
-  broadcast
-}) {
+
+// Доля хозяев 0..1 для шкалы. Отрицательные значения (разница шайб) сдвигаем.
+function share(h, a, key) {
+  let x = Number(h); let y = Number(a);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const min = Math.min(x, y, 0);
+  x -= min; y -= min;
+  if (x + y === 0) return 0.5;
+  let s = x / (x + y);
+  if (LOWER_IS_BETTER.has(key)) s = 1 - s;
+  return s;
+}
+
+function Side({ game, side }) {
+  const color = teamColor(game, side);
+  return (
+    <div style={{ width: 400, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 34px' }}>
+      <div className="g2-pop" style={{ '--d': side === 'home' ? '240ms' : '320ms' }}>
+        <Crest url={game[`${side}_team_logo`]} size={230} />
+      </div>
+      <div className="g2-rise" style={{ '--d': '380ms', width: '100%', marginTop: 34, textAlign: 'center' }}>
+        <Kicker size={16} color={teamInk(game, side)} spacing="0.2em">{side === 'home' ? 'Хозяева' : 'Гости'}</Kicker>
+        <FitText align="center" min={0.6} style={{ marginTop: 12, fontSize: 40, fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.05, color: C.text }}>
+          {game[`${side}_team_name`]}
+        </FitText>
+      </div>
+    </div>
+  );
+}
+
+export default function TeamComparisonOverlay({ game, overlay, broadcast }) {
   const visible = overlay.visible && overlay.type === 'team_comparison';
-  const metrics = comparisonMetrics(broadcast.data, overlay.data?.comparisonMetrics);
+  const metrics = comparisonMetrics(broadcast?.data, overlay.data?.comparisonMetrics);
   const pages = chunks(metrics, COMPARISON_PAGE_SIZE);
-  const page = useBroadcastPage(visible, pages.length, overlay.data?.comparisonSwitch, metrics.map(m => m.key).join(','));
-  return <BroadcastFrame game={game} title="Сравнение команд" visible={visible} type="team_comparison" page={page} pages={pages.length}>
-    {!pages.length ? <BroadcastEmpty loading={broadcast.loading} error={broadcast.error} /> : <BroadcastPage pageKey={`${metrics.map(m => m.key).join(',')}:${page}`} className="flex h-full">
-        {['home', 'center', 'away'].map(side => side === 'center' ? <div key={side} className="w-[42%] bg-zinc-900 px-6 py-6 flex flex-col">
-          <div className="text-center text-zinc-400 uppercase tracking-widest text-[16px] font-bold mb-4">{broadcast.data?.scope_label}</div>
-          <div className="flex-1 flex flex-col justify-center">
-            {pages[page].map(metric => <div key={metric.key} className="flex items-center min-h-[60px] border-b border-zinc-800 gap-3">
-              <span className="w-[96px] shrink-0 text-center text-white font-mono font-black text-[31px]">{value(broadcast.data?.comparison?.[game.home_team_id], metric.key)}</span>
-              <span className="flex-1 text-center uppercase font-bold tracking-wider text-zinc-400 text-[17px] leading-tight">{metric.label}</span>
-              <span className="w-[96px] shrink-0 text-center text-white font-mono font-black text-[31px]">{value(broadcast.data?.comparison?.[game.away_team_id], metric.key)}</span>
-            </div>)}
-          </div>
-        </div> : <div key={side} className="w-[29%] flex flex-col items-center justify-center px-8 relative overflow-hidden">
-          <BroadcastImage url={game[`${side}_team_logo`]} className="absolute inset-0 w-full h-full object-cover opacity-10 blur-xl scale-150" />
-          <BroadcastImage url={game[`${side}_team_logo`]} className="relative w-64 h-64 object-contain mb-8" />
-          <div className="relative text-white text-[52px] font-black uppercase leading-none text-center break-words">{game[`${side}_team_name`]}</div>
-        </div>)}
-      </BroadcastPage>}
-  </BroadcastFrame>;
+  const keyStr = metrics.map(m => m.key).join(',');
+  const page = usePager(visible, pages.length, overlay.data?.comparisonSwitch, keyStr);
+  const hs = broadcast?.data?.comparison?.[game.home_team_id];
+  const as = broadcast?.data?.comparison?.[game.away_team_id];
+  const homeColor = teamColor(game, 'home');
+  const awayColor = teamColor(game, 'away');
+  // Шкалы тонкие — цвет для них поднят до читаемого, как у текста
+  const homeBar = teamInk(game, 'home');
+  const awayBar = teamInk(game, 'away');
+  const rows = pages[page] || [];
+  const rowH = Math.min(70, Math.floor((BODY_H - 120) / Math.max(1, rows.length)));
+
+  return (
+    <Stage game={game} visible={visible} title="Сравнение команд" kicker={broadcast?.data?.scope_label} glow={[homeColor, awayColor]}
+           page={page} pages={pages.length}>
+      {!pages.length ? <StageEmpty loading={broadcast?.loading} error={broadcast?.error} /> : (
+        <div style={{ display: 'flex', height: BODY_H }}>
+          <Side game={game} side="home" />
+          <Page pageKey={`${keyStr}:${page}`} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 10px' }}>
+            {rows.map((m, i) => {
+              const s = share(hs?.[m.key], as?.[m.key], m.key);
+              const homeBetter = s != null && s > 0.5;
+              const awayBetter = s != null && s < 0.5;
+              return (
+                <div key={m.key} className="g2-rise" style={{ '--d': `${300 + i * 45}ms`, height: rowH, display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                                                             borderBottom: i < rows.length - 1 ? `1px solid ${C.divider}` : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span className="g2-num" style={{ width: 120, fontSize: 32, fontWeight: 800, color: homeBetter ? C.text : C.muted }}>{fmt(hs, m.key)}</span>
+                    <span style={{ flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.main }}>{m.label}</span>
+                    <span className="g2-num" style={{ width: 120, textAlign: 'right', fontSize: 32, fontWeight: 800, color: awayBetter ? C.text : C.muted }}>{fmt(as, m.key)}</span>
+                  </div>
+                  {s != null && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 8, height: 5 }}>
+                      <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+                        <div style={{ width: `${s * 100}%`, borderRadius: 3, background: homeBetter ? homeBar : rgba(homeBar, 0.4), transition: 'width .8s cubic-bezier(.2,.8,.2,1)' }} />
+                      </div>
+                      <div style={{ flex: 1, display: 'flex', borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+                        <div style={{ width: `${(1 - s) * 100}%`, borderRadius: 3, background: awayBetter ? awayBar : rgba(awayBar, 0.4), transition: 'width .8s cubic-bezier(.2,.8,.2,1)' }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </Page>
+          <Side game={game} side="away" />
+        </div>
+      )}
+    </Stage>
+  );
 }

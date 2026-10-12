@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/RefereesOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/RefereesOverlay.jsx
 //
 // Судьи матча: главные и линейные двумя колонками, с фото. Уходит сам через
 // displayDuration секунд.

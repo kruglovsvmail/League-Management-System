@@ -1,9 +1,9 @@
-// src/components/WebGraphics/Graphics_2/Stage.jsx
+// src/components/WebGraphics/defaultGraphics/Stage.jsx
 //
-// Сцена полноэкранных плашек лиги 2: предматчевая, перерыв, лидеры, составы,
+// Сцена полноэкранных плашек: предматчевая, перерыв, лидеры, составы,
 // сравнение, таблица, номинации.
 //
-//   шапка  — плитка лиги и название дивизиона | заголовок | этап и листалка
+//   шапка  — логотип лиги и название дивизиона | заголовок | этап и листалка
 //   тело   — своё у каждой плашки
 //   подвал — дата · арена · город
 //
@@ -11,7 +11,7 @@
 // Линии конька — в свободном правом нижнем углу, через содержимое не идут.
 // Под командными плашками по бокам светятся цвета команд.
 import React from 'react';
-import { Reveal, SkateLines, Img, Kicker, AccentChip, Icon } from './kit';
+import { Reveal, SkateLines, Crest, Kicker, AccentChip, Icon } from './kit';
 import { C, LIFT, rgba, dateText, stageText } from './theme';
 
 export const STAGE = { left: 110, top: 72, width: 1700, height: 936, head: 104, foot: 66 };
@@ -54,12 +54,7 @@ export function Stage({ game, visible, title, kicker, glow, page = 0, pages = 1,
         <div style={{ position: 'relative', height: STAGE.head, flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
                       padding: '0 44px', borderBottom: `1px solid ${C.divider}` }}>
           <div className="g2-slide" style={{ '--d': '260ms', display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
-            {game.league_logo && (
-              <div style={{ width: 58, height: 58, borderRadius: 14, background: 'rgba(0,0,0,.28)', boxShadow: `inset 0 0 0 1px ${C.rim}`,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Img url={game.league_logo} style={{ width: 44, height: 44, objectFit: 'contain' }} />
-              </div>
-            )}
+            {game.league_logo && <Crest url={game.league_logo} size={72} />}
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 19, fontWeight: 800, color: C.main, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {game.league_name}

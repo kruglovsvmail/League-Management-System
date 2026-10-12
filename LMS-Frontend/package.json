@@ -16,11 +16,13 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@react-pdf/renderer": "^4.4.1",
     "dayjs": "^1.11.20",
+    "mediabunny": "^1.61.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.1",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^1.1.0",

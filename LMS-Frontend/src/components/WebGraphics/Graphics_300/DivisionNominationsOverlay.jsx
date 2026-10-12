@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/DivisionNominationsOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/DivisionNominationsOverlay.jsx
 //
 // Номинации дивизиона, топ-5: колонка на номинацию — лидер крупно (фото,
 // значение синим), под ним места 2–5. Ширина колонок и кегли подстраиваются
@@ -7,7 +7,7 @@
 // Одна-две номинации в узкие колонки не ложатся — пустеют по краям. Для них
 // своя раскладка: карточка в ширину, лидер слева крупно, места 2–5 справа.
 import React from 'react';
-import { Photo, Img, FitText, Page } from './kit';
+import { Photo, Crest, FitText, Page } from './kit';
 import { Stage, StageEmpty, BODY_H, STAGE } from './Stage';
 import { selectedNominations } from '../broadcastConfig';
 import { C, ACCENT_FILL } from './theme';
@@ -35,10 +35,7 @@ function WideCard({ n, delay, single }) {
             <Photo url={w.avatar_url} style={{ width: '100%', height: '100%', borderRadius: '22%', boxShadow: `inset 0 0 0 1px ${C.rimHi}` }} />
             <span style={{ position: 'absolute', top: -10, left: -10, width: 44, height: 44, borderRadius: 12, background: ACCENT_FILL, display: 'flex', alignItems: 'center',
                            justifyContent: 'center', fontSize: 20, fontWeight: 800, color: '#fff', boxShadow: '0 8px 18px -6px rgba(23,148,221,.8)' }}>1</span>
-            <span style={{ position: 'absolute', right: -14, bottom: -14, width: photo * 0.3, height: photo * 0.3, borderRadius: '24%', background: C.g1,
-                           boxShadow: `inset 0 0 0 1px ${C.rimHi}, 0 8px 18px rgba(0,0,0,.5)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Img url={w.team_logo_url} style={{ width: '72%', height: '72%', objectFit: 'contain' }} />
-            </span>
+            <Crest url={w.team_logo_url} size={Math.round(photo * 0.38)} style={{ position: 'absolute', right: -18, bottom: -18 }} />
           </div>
           <FitText align="center" min={0.6} style={{ width: '100%', fontSize: single ? 38 : 32, fontWeight: 800, textTransform: 'uppercase', color: C.text, lineHeight: 1.1 }}>{w.last_name}</FitText>
           <div style={{ fontSize: single ? 21 : 18, fontWeight: 600, color: C.main, marginTop: 6 }}>{w.first_name}</div>
@@ -104,10 +101,7 @@ export default function DivisionNominationsOverlay({ game, overlay, broadcast })
                     <Photo url={w.avatar_url} style={{ width: '100%', height: '100%', borderRadius: '24%', boxShadow: `inset 0 0 0 1px ${C.rimHi}` }} />
                     <span style={{ position: 'absolute', top: -8, left: -8, width: 34, height: 34, borderRadius: 10, background: ACCENT_FILL, display: 'flex', alignItems: 'center',
                                    justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#fff', boxShadow: '0 6px 14px -4px rgba(23,148,221,.8)' }}>1</span>
-                    <span style={{ position: 'absolute', right: -10, bottom: -10, width: Math.max(34, photo * 0.3), height: Math.max(34, photo * 0.3), borderRadius: '24%',
-                                   background: C.g1, boxShadow: `inset 0 0 0 1px ${C.rimHi}, 0 6px 14px rgba(0,0,0,.5)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Img url={w.team_logo_url} style={{ width: '72%', height: '72%', objectFit: 'contain' }} />
-                    </span>
+                    <Crest url={w.team_logo_url} size={Math.round(Math.max(42, photo * 0.38))} style={{ position: 'absolute', right: -12, bottom: -12 }} />
                   </div>
                   <FitText align="center" min={0.6} style={{ width: '100%', fontSize: nameSize, fontWeight: 800, textTransform: 'uppercase', color: C.text, lineHeight: 1.1 }}>{w.last_name}</FitText>
                   <div style={{ fontSize: small ? 15 : 17, fontWeight: 600, color: C.muted, marginTop: 4, maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.first_name}</div>

@@ -1,61 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { AnimationWrapper } from './AnimationWrapper';
+// src/components/WebGraphics/defaultGraphics/CommentatorOverlay.jsx
+//
+// Комментатор (или двое) — нижний титр слева с фото. Уходит сам через
+// displayDuration секунд.
+import React from 'react';
+import { LowerThird, Kicker, Photo, useTimedVisible } from './kit';
+import { C, officialsOf } from './theme';
 
 export default function CommentatorOverlay({ game, overlay }) {
-  const isGlobalVisible = overlay.visible && overlay.type === 'commentator';
-  const [localVisible, setLocalVisible] = useState(false);
-  const displayDuration = overlay.data?.displayDuration || 10;
-
-  useEffect(() => {
-    let timer;
-    if (isGlobalVisible) {
-      setLocalVisible(true);
-      timer = setTimeout(() => {
-        setLocalVisible(false);
-      }, displayDuration * 1000);
-    } else {
-      setLocalVisible(false);
-    }
-    return () => clearTimeout(timer);
-  }, [isGlobalVisible, displayDuration, overlay.data]);
-
-  // Публичный эндпоинт матча отдаёт 'commentator-1'/'commentator-2', media — старый ключ про запас
-  const o = game?.officials || {};
-  const commentators = [o['commentator-1'] || o.media, o['commentator-2']].filter(Boolean);
-
-  if (commentators.length === 0) return null;
+  const globalVisible = overlay.visible && overlay.type === 'commentator';
+  const on = useTimedVisible(globalVisible, overlay.data?.displayDuration, overlay.data);
+  const people = officialsOf(game).commentators;
+  if (!game || !people.length) return null;
 
   return (
-    <AnimationWrapper
-      type="commentator"
-      isVisible={localVisible}
-      className="absolute bottom-16 left-12 z-40 drop-shadow-2xl"
-    >
-      {/* Главный контейнер со скосом */}
-      <div className="flex items-stretch bg-zinc-950 skew-x-[-10deg] overflow-hidden rounded-lg">
-        
-        {/* Пробегающий блик */}
-        <div className="absolute top-0 bottom-0 w-[300%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
-        
-        {/* Иконка (компенсация скоса) */}
-        <div className="flex items-center justify-center bg-zinc-800 px-8 relative z-10 skew-x-[0deg]">
-           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-           </svg>
+    <LowerThird visible={on} icon="mic">
+      <div>
+        <div className="g2-rise" style={{ '--d': '240ms' }}>
+          <Kicker size={16} color={C.accentSoft}>{people.length > 1 ? 'Комментаторы матча' : 'Комментатор матча'}</Kicker>
         </div>
-
-        {/* Текст (компенсация скоса) */}
-        <div className="flex flex-col justify-center px-10 py-5 z-10 min-w-[350px] skew-x-[10deg]">
-          <span className="text-xs font-black text-zinc-500 uppercase tracking-[0.3em] mb-1.5">
-            {commentators.length > 1 ? 'КОММЕНТАТОРЫ МАТЧА' : 'КОММЕНТАТОР МАТЧА'}
-          </span>
-          {commentators.map((c, i) => (
-            <span key={i} className={`${commentators.length > 1 ? 'text-2xl mb-2 last:mb-0' : 'text-3xl'} font-black text-white uppercase tracking-widest leading-none drop-shadow-md`}>
-              {c.first_name} {c.last_name}
-            </span>
+        <div style={{ display: 'flex', gap: 34, marginTop: 14 }}>
+          {people.map((p, i) => (
+            <div key={p.id || i} className="g2-slide" style={{ '--d': `${300 + i * 120}ms`, display: 'flex', alignItems: 'center', gap: 16 }}>
+              <Photo url={p.avatar_url} style={{ width: 62, height: 62, borderRadius: 16, boxShadow: `inset 0 0 0 1px ${C.rim}` }} />
+              <div style={{ lineHeight: 1.05, whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 32, fontWeight: 800, color: C.text, textTransform: 'uppercase' }}>{p.last_name}</div>
+                <div style={{ fontSize: 21, fontWeight: 600, color: C.main, marginTop: 4 }}>{p.first_name}</div>
+              </div>
+            </div>
           ))}
         </div>
       </div>
-    </AnimationWrapper>
+    </LowerThird>
   );
 }

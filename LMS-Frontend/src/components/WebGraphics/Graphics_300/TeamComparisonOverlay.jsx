@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/TeamComparisonOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/TeamComparisonOverlay.jsx
 //
 // Сравнение команд: по краям эмблемы, по центру строки показателей. У каждой
 // строки — двусторонняя шкала: чья доля больше, та половина ярче. Для
@@ -37,7 +37,7 @@ function Side({ game, side }) {
   return (
     <div style={{ width: 400, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 34px' }}>
       <div className="g2-pop" style={{ '--d': side === 'home' ? '240ms' : '320ms' }}>
-        <Crest url={game[`${side}_team_logo`]} size={230} color={color} />
+        <Crest url={game[`${side}_team_logo`]} size={230} />
       </div>
       <div className="g2-rise" style={{ '--d': '380ms', width: '100%', marginTop: 34, textAlign: 'center' }}>
         <Kicker size={16} color={teamInk(game, side)} spacing="0.2em">{side === 'home' ? 'Хозяева' : 'Гости'}</Kicker>

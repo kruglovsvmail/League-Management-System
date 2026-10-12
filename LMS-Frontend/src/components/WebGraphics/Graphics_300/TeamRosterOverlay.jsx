@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/TeamRosterOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/TeamRosterOverlay.jsx
 //
 // Состав команды списком: слева эмблема и название, справа два столбца —
 // вратари с защитниками и нападающие. Команды сменяются по очереди через
@@ -100,7 +100,7 @@ export default function TeamRosterOverlay({ game, overlay }) {
                         borderRight: `1px solid ${C.divider}`, ...fade }}>
           <div className="g2-pop" style={{ '--d': '240ms', position: 'relative' }}>
             <TileRipple tile={250} area={480} />
-            <div style={beat(1)}><Crest url={game[`${side}_team_logo`]} size={250} color={color} /></div>
+            <div style={beat(1)}><Crest url={game[`${side}_team_logo`]} size={250} /></div>
           </div>
           <div className="g2-rise" style={{ '--d': '360ms', width: '100%', marginTop: 40, textAlign: 'center' }}>
             <Kicker size={17} color={teamInk(game, side)} spacing="0.2em">{side === 'home' ? 'Хозяева' : 'Гости'}</Kicker>

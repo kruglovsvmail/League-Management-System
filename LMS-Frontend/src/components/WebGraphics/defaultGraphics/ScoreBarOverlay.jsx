@@ -1,76 +1,65 @@
 // src/components/WebGraphics/defaultGraphics/ScoreBarOverlay.jsx
 //
-// Табло по центру: тот же счёт, что в компактной плашке в углу, но развёрнутый
-// в широкий титр внизу кадра — полные названия команд, крупные цифры, время и
-// период между ними, эмблема лиги на верхней кромке.
+// Табло по центру: развёрнутая версия углового — полные названия, эмблемы,
+// крупный счёт, синий блок времени между цифрами и логотип лиги на верхней
+// кромке.
 //
-// С компактным табло показывается ВЗАИМОИСКЛЮЧАЮЩЕ: пока этот титр в эфире,
-// Scoreboard прячется сам (см. fullScreenOverlays в Scoreboard.jsx) — иначе счёт
-// висел бы в кадре дважды.
-//
-// Геометрия та же, что у остальных плашек дефолтной графики: параллелограммы
-// со скосом -10°, содержимое возвращается в вертикаль встречным +10°.
-import React, { useState, useEffect, useRef } from 'react';
-import { getImageUrl } from '../../../utils/helpers';
-import { AnimationWrapper } from './AnimationWrapper';
+// С угловым табло показывается взаимоисключающе: пока этот титр в эфире,
+// Scoreboard прячется сам (FULLSCREEN в theme.js) — иначе счёт висел бы дважды.
+import React from 'react';
+import { Reveal, Blade, Crest, SkateLines, FitText, Kicker, useGoalFlash } from './kit';
+import {
+  C, GRAPHITE_WIDE, ACCENT_FILL, LIFT, LIFT_SM, rgba, teamColor, teamShort, formatClock,
+  periodRemaining, periodLong, strengthState, techScore, stageText, teamInk,
+} from './theme';
 
-const BAR_W = 1360;
-const BAR_H = 150;
-const SCORE_W = 104;
-const CLOCK_W = 190;
+const W = 1400;
+const H = 132;
+const SCORE_W = 112;
+const CLOCK_W = 236;
 
-const formatTime = (s) => {
-  if (s === undefined || s === null || isNaN(s) || s < 0) return '0:00';
-  return `${Math.floor(s / 60)}:${('0' + (Math.floor(s) % 60)).slice(-2)}`;
-};
-
-// Компоненты — на уровне модуля: титр перерисовывается вместе с таймером матча,
-// и вложенный компонент React считал бы новым типом на каждом кадре, перезагружая
-// эмблемы команд.
-function TeamSide({ logo, name, align }) {
-  const right = align === 'right';
+function Side({ game, side }) {
+  const right = side === 'away';
+  const color = teamColor(game, side);
   return (
-    <div className={`flex-1 min-w-0 flex items-center gap-4 px-5 skew-x-[10deg] ${right ? 'flex-row-reverse' : ''}`}>
-      {logo && (
-        <img src={logo} alt="" className="w-[60px] h-[60px] object-contain shrink-0"
-             onError={(e) => { e.target.style.display = 'none'; }} />
-      )}
-      <span
-        className={`min-w-0 flex-1 truncate font-bold text-[28px] uppercase tracking-wide text-white ${right ? 'text-right' : ''}`}
-      >
-        {name}
-      </span>
+    <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 22, padding: '0 26px',
+                  flexDirection: right ? 'row-reverse' : 'row',
+                  background: `linear-gradient(${right ? 270 : 90}deg, ${rgba(color, 0.32)} 0%, ${rgba(color, 0.08)} 60%, transparent 100%)` }}>
+      <div className="g2-pop" style={{ '--d': '220ms' }}>
+        <Crest url={game[`${side}_team_logo`]} size={112} />
+      </div>
+      <div className="g2-slide" style={{ flex: 1, minWidth: 0, '--d': '300ms', textAlign: right ? 'right' : 'left' }}>
+        <Kicker size={15} color={teamInk(game, side)} style={{ marginBottom: 8 }}>{right ? 'Гости' : 'Хозяева'}</Kicker>
+        <FitText align={right ? 'right' : 'left'} style={{ fontSize: 36, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.01em', lineHeight: 1.05, color: C.text }}>
+          {game[`${side}_team_name`] || teamShort(game, side)}
+        </FitText>
+      </div>
     </div>
   );
 }
 
-function ScoreCell({ value, isTech, glow }) {
+function Score({ value, isTech, flash, flashKey, color }) {
   return (
-    <div className="shrink-0 flex items-center justify-center bg-zinc-900" style={{ width: SCORE_W }}>
-      <span
-        className={`skew-x-[10deg] font-mono font-black text-[62px] tabular-nums leading-none tracking-tighter ${isTech ? 'text-status-rejected' : 'text-white'} ${glow ? 'goal-score-pop' : ''}`}
-        style={glow ? { textShadow: `0 0 30px ${glow}, 0 0 60px ${glow}` } : {}}
-      >
+    <div style={{ width: SCORE_W, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: C.ink, boxShadow: `inset 0 2px 6px rgba(0,0,0,.6), inset 0 0 0 1px ${C.rim}` }}>
+      <span key={flash ? flashKey : 'idle'} className={`g2-num ${flash ? 'g2-score-pop' : ''}`}
+            style={{ fontSize: 80, fontWeight: 800, lineHeight: 1, color: isTech ? C.dangerSoft : C.text,
+                     textShadow: flash ? `0 0 26px ${rgba(color, 0.95)}, 0 0 60px ${rgba(color, 0.6)}` : 'none' }}>
         {value}
       </span>
     </div>
   );
 }
 
-// Колонка возвращается ВСЕГДА, даже пустой: в CSS Grid отсутствующий элемент
-// не оставляет за собой ячейку, соседи съезжают влево, и центральная метка
-// перестаёт стоять по центру.
-function PenaltyChips({ rows, align, column }) {
+function Chips({ rows, align }) {
   return (
-    <div
-      className={`flex items-center gap-2 ${align === 'right' ? 'justify-end' : 'justify-start'}`}
-      style={{ gridColumn: column }}
-    >
+    <div style={{ display: 'flex', gap: 8, justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
       {rows.map(p => (
-        <div key={p.id} className="skew-x-[-10deg] bg-yellow-400 px-4 py-1 rounded-sm shadow-md">
-          <span className="skew-x-[10deg] block font-mono font-black text-[19px] tabular-nums tracking-tighter text-black">
-            {formatTime(p.remaining)}
-          </span>
+        <div key={p.id} className="g2-drop" style={{ display: 'flex', alignItems: 'center', gap: 10, height: 36, padding: '0 14px 0 12px',
+                                                   borderRadius: 10, background: C.ink, boxShadow: `inset 0 0 0 1px ${C.rim}, 0 10px 22px -8px rgba(0,0,0,.6)` }}>
+          <span style={{ width: 4, height: 18, borderRadius: 2, background: C.danger, boxShadow: '0 0 8px rgba(220,38,38,.7)' }} />
+          {p.player_last_name && <span style={{ fontSize: 16, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{p.player_last_name}</span>}
+          <span className="g2-num" style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{formatClock(p.remaining)}</span>
         </div>
       ))}
     </div>
@@ -78,170 +67,90 @@ function PenaltyChips({ rows, align, column }) {
 }
 
 export default function ScoreBarOverlay({
-  game, timerSeconds, currentPeriod, isTimerRunning,
-  activePenalties, periodLength, otLength, overlay,
+  game, timerSeconds, currentPeriod, isTimerRunning, activePenalties, periodLength, otLength, overlay,
 }) {
-  const isVisible = overlay.visible && overlay.type === 'scorebar';
-
-  const prevScoreRef = useRef({ home: game?.home_score, away: game?.away_score });
-  const [goalEffect, setGoalEffect] = useState(null);
-
-  useEffect(() => {
-    const prev = prevScoreRef.current;
-    const h = game?.home_score ?? 0;
-    const a = game?.away_score ?? 0;
-    const scored = (prev.home !== undefined && h > prev.home) ? 'home'
-      : (prev.away !== undefined && a > prev.away) ? 'away' : null;
-
-    if (scored) {
-      setGoalEffect(scored);
-      setTimeout(() => setGoalEffect(null), 3000);
-    }
-    prevScoreRef.current = { home: h, away: a };
-  }, [game?.home_score, game?.away_score]);
-
+  const flash = useGoalFlash(game);
   if (!game) return null;
 
-  const getDisplaySeconds = () => {
-    let maxTime = 0;
-    if (currentPeriod === '1') maxTime = periodLength * 60;
-    else if (currentPeriod === '2') maxTime = periodLength * 2 * 60;
-    else if (currentPeriod === '3') maxTime = periodLength * 3 * 60;
-    else if (currentPeriod === 'OT') maxTime = (periodLength * 3 + otLength) * 60;
-    else return 0;
-    const remaining = maxTime - timerSeconds;
-    return remaining > 0 ? remaining : 0;
-  };
+  const visible = overlay.visible && overlay.type === 'scorebar';
+  const tech = techScore(game);
+  const st = strengthState(game, activePenalties);
+  const isSO = currentPeriod === 'SO';
+  const division = game.division_name || game.division_short_name;
+  const homeColor = teamColor(game, 'home');
+  const awayColor = teamColor(game, 'away');
 
-  const getPeriodText = () => {
-    if (currentPeriod === 'OT') return 'ОТ';
-    if (currentPeriod === 'SO') return 'БУЛЛИТЫ';
-    return `${currentPeriod} ПЕРИОД`;
-  };
-
-  const homeLogo = getImageUrl(game.home_team_logo);
-  const awayLogo = getImageUrl(game.away_team_logo);
-  const leagueLogo = getImageUrl(game.league_logo);
-
-  const homeColor = game.home_color_1 || '#facc15';
-  const awayColor = game.away_color_1 || '#ffffff';
-
-  const isTech = !!game.is_technical;
-  const techHome = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[0] : '+';
-  const techAway = isTech && typeof game.is_technical === 'string' ? game.is_technical.split('/')[1] : '-';
-
-  const safePenalties = Array.isArray(activePenalties) ? activePenalties : [];
-  const penHome = safePenalties.filter(p => p.team_id === game.home_team_id).slice(0, 2);
-  const penAway = safePenalties.filter(p => p.team_id === game.away_team_id).slice(0, 2);
-
-  const homePlayers = 5 - penHome.length;
-  const awayPlayers = 5 - penAway.length;
-
-  let strengthText = null;
-  let isPP = false;
-  if (homePlayers < 5 || awayPlayers < 5) {
-    if (homePlayers === awayPlayers) strengthText = `${homePlayers} НА ${awayPlayers}`;
-    else {
-      isPP = true;
-      const short = homePlayers > awayPlayers
-        ? (game.home_short_name || 'ХОЗЯЕВА')
-        : (game.away_short_name || 'ГОСТИ');
-      strengthText = `БОЛЬШИНСТВО ${short} · ${Math.max(homePlayers, awayPlayers)} НА ${Math.min(homePlayers, awayPlayers)}`;
-    }
+  let center = null;
+  if (tech.isTech) {
+    center = <div className="g2-drop" style={{ padding: '9px 20px', borderRadius: 10, background: C.danger, color: '#fff', fontSize: 16, fontWeight: 800, letterSpacing: '0.16em' }}>ТЕХНИЧЕСКИЙ РЕЗУЛЬТАТ</div>;
+  } else if (st.label && !isSO) {
+    center = (
+      <div key={st.label + st.pp} className="g2-drop" style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '9px 20px', borderRadius: 10, whiteSpace: 'nowrap',
+        background: st.pp ? ACCENT_FILL : C.ink, boxShadow: st.pp ? '0 10px 22px -8px rgba(23,148,221,.7)' : `inset 0 0 0 1px ${C.rim}`,
+      }}>
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.14em', color: '#fff' }}>
+          {st.pp ? `БОЛЬШИНСТВО · ${teamShort(game, st.pp)}` : 'НЕПОЛНЫЕ СОСТАВЫ'}
+        </span>
+        <span className="g2-num" style={{ fontSize: 18, fontWeight: 800, letterSpacing: '0.04em', color: '#fff' }}>{st.label}</span>
+      </div>
+    );
+  } else if (division) {
+    center = (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 20px', borderRadius: 10, background: GRAPHITE_WIDE, boxShadow: LIFT_SM }}>
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.14em', color: C.main, textTransform: 'uppercase' }}>{division}</span>
+        <span style={{ width: 4, height: 4, borderRadius: 2, background: C.skate }} />
+        <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.14em', color: C.accentSoft, textTransform: 'uppercase' }}>{stageText(game)}</span>
+      </div>
+    );
   }
 
-  const stageLabel = game.stage_type === 'playoff'
-    ? `МАТЧ ${game.series_number || 1}`
-    : `ТУР ${game.series_number || 1}`;
-  const division = game.division_name || game.division_short_name;
-
   return (
-    <AnimationWrapper
-      type="scorebar"
-      isVisible={isVisible}
-      // Центруем растяжкой на всю ширину плюс flex, а НЕ через -translate-x-1/2:
-      // AnimationWrapper держит анимацию на этом же элементе, а её кадры задают
-      // собственный transform и затирают переносом. С forwards последний кадр
-      // остаётся навсегда — титр так и уезжал вправо на половину своей ширины.
-      className="absolute bottom-16 inset-x-0 z-50 flex justify-center drop-shadow-2xl"
-    >
-      <div style={{ width: BAR_W }}>
+    <Reveal visible={visible} margin={90} inMs={820} blade={false}
+            style={{ position: 'absolute', zIndex: 50, bottom: 56, left: (1920 - W) / 2, width: W }}>
+      <div style={{ position: 'relative', height: H, marginTop: 50 }}>
+        <div style={{ position: 'relative', display: 'flex', height: H, borderRadius: 26, overflow: 'hidden', background: GRAPHITE_WIDE, boxShadow: LIFT }}>
+          <div className="g2-sheen" style={{ '--sheen': '8s', '--sheen-d': '2s' }} />
+          <Blade offsetY={50} />
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 10, background: homeColor, zIndex: 2 }} />
+          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 10, background: awayColor, zIndex: 2 }} />
+          <SkateLines corner="tl" size={110} color={homeColor} tint={false} opacity={0.6} />
+          <SkateLines corner="br" size={110} color={awayColor} tint={false} opacity={0.6} />
 
-        {/* ---------- ПОЛОСА СЧЁТА ---------- */}
-        <div className="relative" style={{ height: BAR_H }}>
-          <div
-            className="flex items-stretch skew-x-[-10deg] overflow-hidden rounded-md bg-zinc-950 h-full"
-          >
-            <div className="w-2 shrink-0" style={{ backgroundColor: homeColor }} />
+          <Side game={game} side="home" />
+          <Score value={tech.home} isTech={tech.isTech} flash={flash.side === 'home'} flashKey={flash.stamp} color={homeColor} />
 
-            <TeamSide logo={homeLogo} name={game.home_team_name} />
-            <ScoreCell value={isTech ? techHome : game.home_score} isTech={isTech} glow={goalEffect === 'home' ? homeColor : null} />
-
-            {/* Время и период — между цифрами счёта */}
-            <div className="shrink-0 flex flex-col items-center justify-center bg-zinc-950 relative overflow-hidden" style={{ width: CLOCK_W }}>
-              <div className="absolute top-0 bottom-0 w-[200%] bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-[-20deg] animate-glare pointer-events-none z-0"></div>
-              <div className="skew-x-[10deg] flex flex-col items-center z-10 w-full px-2">
-                <span className={`font-mono text-[46px] font-black tabular-nums leading-none tracking-tight transition-colors ${isTimerRunning ? 'text-white' : 'text-zinc-500'}`}>
-                  {currentPeriod === 'SO' ? '0:00' : formatTime(getDisplaySeconds())}
-                </span>
-                <span className="text-[12px] font-bold text-zinc-400 uppercase tracking-widest mt-2">
-                  {getPeriodText()}
-                </span>
-              </div>
-            </div>
-
-            <ScoreCell value={isTech ? techAway : game.away_score} isTech={isTech} glow={goalEffect === 'away' ? awayColor : null} />
-            <TeamSide logo={awayLogo} name={game.away_team_name} align="right" />
-
-            <div className="w-2 shrink-0" style={{ backgroundColor: awayColor }} />
+          <div style={{ position: 'relative', width: CLOCK_W, flexShrink: 0, background: ACCENT_FILL, display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', gap: 8, overflow: 'hidden', paddingTop: game.league_logo ? 30 : 0 }}>
+            <SkateLines corner="br" size={70} color="#FFFFFF" width={2} tint={false} opacity={0.45} />
+            <span className={isSO ? 'g2-loud' : 'g2-num'} style={{ fontSize: isSO ? 30 : 60, fontWeight: isSO ? 900 : 800, lineHeight: 1, color: '#fff',
+                                               opacity: isTimerRunning || isSO ? 1 : 0.62 }}>
+              {isSO ? 'БУЛЛИТЫ' : formatClock(periodRemaining({ currentPeriod, timerSeconds, periodLength, otLength }))}
+            </span>
+            <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(255,255,255,.9)' }}>
+              {isSO ? 'СЕРИЯ' : periodLong(currentPeriod)}
+            </span>
           </div>
 
-          {/* Эмблема лиги сидит на верхней кромке по центру и заполняет круг
-              целиком: логотипы лиг сами круглые, внутреннее поле только
-              уменьшало бы их без пользы. */}
-          {leagueLogo && (
-            <div className="absolute left-1/2 -translate-x-1/2 z-20" style={{ top: -46 }}>
-              <div className="w-[92px] h-[92px] rounded-full bg-zinc-950 border-2 border-zinc-800 overflow-hidden shadow-2xl">
-                <img src={leagueLogo} alt="" className="w-full h-full object-contain"
-                     onError={(e) => { e.target.style.display = 'none'; }} />
-              </div>
-            </div>
-          )}
+          <Score value={tech.away} isTech={tech.isTech} flash={flash.side === 'away'} flashKey={flash.stamp} color={awayColor} />
+          <Side game={game} side="away" />
         </div>
 
-        {/* ---------- НИЖНЯЯ СТРОКА ----------
-            Три колонки: штрафы под своей половиной полосы, а по центру всегда
-            ОДНА метка — дивизион с туром, которую на время неравных составов
-            ЗАМЕНЯЕТ подпись большинства. Две метки рядом сдвигали дивизион с
-            центра, а состояние составов важнее справки о турнире. */}
-        <div className="grid items-center mt-3" style={{ gridTemplateColumns: '1fr auto 1fr', gap: 16 }}>
-          <PenaltyChips rows={penHome} align="left" column={1} />
-
-          <div className="flex justify-center" style={{ gridColumn: 2 }}>
-            {isTech ? (
-              <div className="skew-x-[-10deg] bg-status-rejected px-5 py-1.5 rounded-sm shadow-md">
-                <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em] text-white">
-                  ТЕХНИЧЕСКИЙ РЕЗУЛЬТАТ
-                </span>
-              </div>
-            ) : strengthText && currentPeriod !== 'SO' ? (
-              <div className={`skew-x-[-10deg] px-5 py-1.5 rounded-sm shadow-md ${isPP ? 'bg-yellow-400' : 'bg-zinc-800'}`}>
-                <span className={`skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em] ${isPP ? 'text-black' : 'text-white'}`}>
-                  {strengthText}
-                </span>
-              </div>
-            ) : division ? (
-              <div className="skew-x-[-10deg] bg-zinc-900 px-5 py-1.5 rounded-sm shadow-md">
-                <span className="skew-x-[10deg] block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-300">
-                  {division} · {stageLabel}
-                </span>
-              </div>
-            ) : null}
+        {/* Логотип лиги на верхней кромке, над временем — без плитки. Заходит
+            в полосу на те же 30 px, что освобождает отступ блока времени. */}
+        {game.league_logo && (
+          <div className="g2-pop" style={{ position: 'absolute', top: -70, left: W / 2 - 50, '--d': '160ms' }}>
+            <Crest url={game.league_logo} size={100} />
           </div>
-
-          <PenaltyChips rows={penAway} align="right" column={3} />
-        </div>
+        )}
       </div>
-    </AnimationWrapper>
+
+      {/* Под полосой: удаления под своей половиной, по центру одна метка */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 16, marginTop: 12, minHeight: 38, padding: '0 18px' }}>
+        <Chips rows={tech.isTech ? [] : st.home} align="left" />
+        <div style={{ display: 'flex', justifyContent: 'center' }}>{center}</div>
+        <Chips rows={tech.isTech ? [] : st.away} align="right" />
+      </div>
+    </Reveal>
   );
 }

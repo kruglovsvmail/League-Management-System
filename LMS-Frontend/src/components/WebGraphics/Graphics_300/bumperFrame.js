@@ -1,6 +1,6 @@
-// src/components/WebGraphics/Graphics_2/bumperFrame.js
+// src/components/WebGraphics/defaultGraphics/bumperFrame.js
 //
-// Переход заставки лиги 2 — «срез конька». Рисуется на canvas и собирается
+// Переход заставки стандартной графики — «срез конька». Рисуется на canvas и собирается
 // панелью трансляции в WebM с прозрачностью (utils/exportBumperWebm.js); эфир
 // и Stinger в OBS играют один и тот же файл. DOM-версии перехода нет.
 //
@@ -10,11 +10,11 @@
 //              идёт из угла, нижняя правая навстречу; по кромкам — синие линии
 //              конька и цвет своей команды
 //    440       смыкание: по шву пробегает лезвие — бело-синяя вспышка
-//    480–900   по центру всплывает плитка лиги (графит иконки, линии конька),
-//              по створкам ползут контурные строки с названиями
-//    620–900   эмблемы команд в плитках влетают по диагонали из своих углов
-//    900       УДАР: эмблемы встают, от плитки лиги расходится контур той же
-//              скруглённой формы, кадр вздрагивает
+//    480–900   по центру всплывает логотип лиги, по створкам ползут
+//              контурные строки с названиями
+//    620–900   логотипы команд влетают по диагонали из своих углов
+//    900       УДАР: логотипы встают, от логотипа лиги расходятся круги,
+//              кадр вздрагивает
 //    900–1150  подписи: лига, дивизион (синяя плашка TR), названия команд
 //   1150–1780  статика, по створкам идёт блик
 //   1780–2060  содержимое уходит: растёт и тает
@@ -24,13 +24,13 @@
 // миллисекунду под переходом меняют картинку. Всё, что нарисовано по центру,
 // исчезает к T_HOLD — шов открывается первым.
 //
-// О ЦЕНЕ КАДРА: запись идёт в реальном времени, на кадр 33 мс. Плитки,
+// О ЦЕНЕ КАДРА: запись идёт в реальном времени, на кадр 33 мс. Логотипы,
 // подписи и строки рисуются один раз (prepareBumperAssets) и в кадре только
 // расставляются.
 
 export const SWEEP_MS = 2700;
 export const COVER_MS = 1400;
-// Переход лиги 2 — БЕЗ ЗВУКА. Сборщик (utils/exportBumperWebm.js) кладёт удар
+// Переход — БЕЗ ЗВУКА. Сборщик (utils/exportBumperWebm.js) кладёт удар
 // в звуковую дорожку, только если модуль экспортирует HIT_MS, поэтому момент
 // удара здесь внутренний и наружу не отдаётся. Захочется звук — экспортировать.
 const HIT_MS = 900;
@@ -49,8 +49,6 @@ const T_HOLD = 2060;
 
 // --- Палитра: графит иконок HockeyEco, синий TR -----------------------------
 const G_CENTER = '#1D1E1E';
-const G_MID = '#414343';
-const G_EDGE = '#505252';
 const SKATE = '#43B5F5';
 const ACCENT = '#1794DD';
 const ACCENT_DEEP = '#1379B5';
@@ -145,75 +143,16 @@ function drawContain(ctx, img, cx, cy, box) {
   ctx.drawImage(img, cx - (iw * k) / 2, cy - (ih * k) / 2, iw * k, ih * k);
 }
 
-// Плитка-иконка: графит с осветлением края, линии конька, эмблема внутри.
-// Запас по краям холста — под тень.
-function makeTile(size, img, lineColor) {
-  const pad = Math.round(size * 0.22);
+// Логотип без плитки-иконки (плитку Сергей убрал 11.10.2026), с тенью для
+// отделения от графита створок. Запас по краям холста — под тень.
+function makeLogo(size, img) {
+  const pad = Math.round(size * 0.16);
   const c = makeCanvas(size + pad * 2, size + pad * 2);
   const g = c.getContext('2d');
-  const r = size * 0.2;
-
-  g.save();
   g.shadowColor = 'rgba(0,0,0,0.55)';
-  g.shadowBlur = size * 0.16;
-  g.shadowOffsetY = size * 0.06;
-  roundRect(g, pad, pad, size, size, r);
-  g.fillStyle = G_CENTER;
-  g.fill();
-  g.restore();
-
-  g.save();
-  roundRect(g, pad, pad, size, size, r);
-  g.clip();
-  const rg = g.createRadialGradient(pad + size / 2, pad + size / 2, 0, pad + size / 2, pad + size / 2, size * 0.71);
-  rg.addColorStop(0, G_CENTER);
-  rg.addColorStop(0.42, G_CENTER);
-  rg.addColorStop(0.72, G_MID);
-  rg.addColorStop(1, G_EDGE);
-  g.fillStyle = rg;
-  g.fillRect(pad, pad, size, size);
-
-  // Линии конька в правом нижнем углу и подцветка — как на иконке TR
-  const s = size;
-  g.globalAlpha = 0.07;
-  g.fillStyle = lineColor;
-  g.beginPath();
-  g.moveTo(pad + s * 0.45, pad + s); g.lineTo(pad + s, pad + s * 0.45); g.lineTo(pad + s, pad + s); g.closePath();
-  g.fill();
-  g.globalAlpha = 1;
-  g.lineWidth = Math.max(2, s / 70);
-  g.strokeStyle = lineColor;
-  g.globalAlpha = 0.5;
-  g.beginPath(); g.moveTo(pad + s * 0.45, pad + s); g.lineTo(pad + s, pad + s * 0.45); g.stroke();
-  g.globalAlpha = 0.32;
-  g.beginPath(); g.moveTo(pad + s * 0.6, pad + s); g.lineTo(pad + s, pad + s * 0.6); g.stroke();
-  g.globalAlpha = 0.34;
-  g.lineWidth = Math.max(1.5, s / 110);
-  g.beginPath(); g.moveTo(pad - 4, pad + s * 0.34); g.lineTo(pad + s * 0.34, pad - 4); g.stroke();
-  g.globalAlpha = 1;
-
-  // Верхний блик и кромка — вместо стекла
-  const hl = g.createLinearGradient(0, pad, 0, pad + size * 0.5);
-  hl.addColorStop(0, 'rgba(255,255,255,0.09)');
-  hl.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = hl;
-  g.fillRect(pad, pad, size, size * 0.5);
-  g.restore();
-
-  g.save();
-  roundRect(g, pad + 0.5, pad + 0.5, size - 1, size - 1, r);
-  g.strokeStyle = 'rgba(255,255,255,0.12)';
-  g.lineWidth = 1.5;
-  g.stroke();
-  g.restore();
-
-  g.save();
-  g.shadowColor = 'rgba(0,0,0,0.45)';
-  g.shadowBlur = size * 0.05;
-  g.shadowOffsetY = size * 0.025;
-  drawContain(g, img, pad + size / 2, pad + size / 2, size * 0.7);
-  g.restore();
-
+  g.shadowBlur = size * 0.08;
+  g.shadowOffsetY = size * 0.035;
+  drawContain(g, img, pad + size / 2, pad + size / 2, size);
   return c;
 }
 
@@ -321,9 +260,10 @@ function makeRibbon(words) {
   return c;
 }
 
-const TILE_LEAGUE = 300;
-const TILE_TEAM = 220;
-const TEAM_DX = 560;
+// Логотипы команд крупнее логотипа лиги — так решил Сергей (11.10.2026).
+const LOGO_LEAGUE = 340;
+const LOGO_TEAM = 380;
+const TEAM_DX = 600;
 const MARKS_Y = CY - 70;
 
 /**
@@ -341,9 +281,9 @@ export async function prepareBumperAssets(raw, { onProgress } = {}) {
   const out = {
     ...raw,
     homeColor, awayColor,
-    leagueTile: makeTile(TILE_LEAGUE, raw.leagueImg, SKATE),
-    homeTile: makeTile(TILE_TEAM, raw.homeImg, homeColor),
-    awayTile: makeTile(TILE_TEAM, raw.awayImg, awayColor),
+    leagueTile: makeLogo(LOGO_LEAGUE, raw.leagueImg),
+    homeTile: makeLogo(LOGO_TEAM, raw.homeImg),
+    awayTile: makeLogo(LOGO_TEAM, raw.awayImg),
     leagueLabel: makeLeagueLabel(raw.leagueName, raw.division, raw.title),
     homeLabel: makeTeamLabel(raw.homeName, homeColor),
     awayLabel: makeTeamLabel(raw.awayName, awayColor),
@@ -368,9 +308,9 @@ function ensure(ctx, assets) {
     const words = [assets.leagueName, assets.division].filter(Boolean).map(v => String(v).toUpperCase()).join('   ');
     ctx.__g2Prepared = {
       ...assets, homeColor, awayColor,
-      leagueTile: makeTile(TILE_LEAGUE, assets.leagueImg, SKATE),
-      homeTile: makeTile(TILE_TEAM, assets.homeImg, homeColor),
-      awayTile: makeTile(TILE_TEAM, assets.awayImg, awayColor),
+      leagueTile: makeLogo(LOGO_LEAGUE, assets.leagueImg),
+      homeTile: makeLogo(LOGO_TEAM, assets.homeImg),
+      awayTile: makeLogo(LOGO_TEAM, assets.awayImg),
       leagueLabel: makeLeagueLabel(assets.leagueName, assets.division, assets.title),
       homeLabel: makeTeamLabel(assets.homeName, homeColor),
       awayLabel: makeTeamLabel(assets.awayName, awayColor),
@@ -560,26 +500,27 @@ function drawContent(ctx, ms, a) {
 
       if (ms >= T_LABEL - 120) {
         const lt = easeOut((ms - (T_LABEL - 120)) / 320);
-        blit(ctx, label, fx, TILE_TEAM / 2 + 64 + lerp(18, 0, lt), 1, lt);
+        blit(ctx, label, fx, LOGO_TEAM / 2 + 50 + lerp(18, 0, lt), 1, lt);
       }
     });
   }
 
-  // --- Плитка лиги ---
+  // --- Логотип лиги ---
   const lt = clamp01((ms - T_LEAGUE) / 380);
   const pulse = ms >= T_HIT ? 1 + decay(ms, T_HIT, 300, 3) * 0.06 : 1;
   blit(ctx, a.leagueTile, 0, 0, lerp(0.55, 1, easeBack(lt)) * pulse, Math.min(1, lt * 2));
 
-  // Контур удара: расходится от плитки лиги той же скруглённой формой
+  // Удар: от логотипа лиги расходятся круги
   if (ms >= T_HIT && ms < T_HIT + 620) {
     const t = (ms - T_HIT) / 620;
     [0, 0.18].forEach((delay, i) => {
       const tt = clamp01((t - delay) / (1 - delay));
       if (tt <= 0 || tt >= 1) return;
-      const s = TILE_LEAGUE * lerp(1, i ? 2.1 : 2.6, easeOut(tt));
+      const s = LOGO_LEAGUE * lerp(0.9, i ? 1.9 : 2.3, easeOut(tt));
       ctx.save();
       ctx.globalAlpha *= Math.pow(1 - tt, 1.6) * (i ? 0.5 : 0.85);
-      roundRect(ctx, -s / 2, -s / 2, s, s, s * 0.2);
+      ctx.beginPath();
+      ctx.arc(0, 0, s / 2, 0, Math.PI * 2);
       ctx.lineWidth = lerp(i ? 3 : 6, 1, tt);
       ctx.strokeStyle = i ? '#FFFFFF' : SKATE;
       ctx.stroke();
@@ -603,7 +544,7 @@ function drawContent(ctx, ms, a) {
   // --- Подписи лиги ---
   if (ms >= T_LABEL - 60) {
     const t = easeOut((ms - (T_LABEL - 60)) / 360);
-    blit(ctx, a.leagueLabel, 0, TILE_LEAGUE / 2 + 130 + lerp(20, 0, t), 1, t);
+    blit(ctx, a.leagueLabel, 0, LOGO_LEAGUE / 2 + 120 + lerp(20, 0, t), 1, t);
   }
 
   ctx.restore();

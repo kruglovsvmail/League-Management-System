@@ -1,214 +1,143 @@
-import React, { useState, useEffect } from 'react';
-import { getImageUrl } from '../../../utils/helpers';
-import { AnimationWrapper } from './AnimationWrapper';
-import { TickerBackground } from './TickerBackground';
-import { RippleField } from './RippleField';
+// src/components/WebGraphics/defaultGraphics/TeamRosterOverlay.jsx
+//
+// Состав команды списком: слева эмблема и название, справа два столбца —
+// вратари с защитниками и нападающие. Команды сменяются по очереди через
+// switchDuration. Высота строки подбирается под самый длинный столбец, чтобы
+// и короткий, и длинный состав стояли во всю высоту без обрезки.
+import React, { useEffect, useState } from 'react';
+import { Crest, TileRipple, Kicker, FitText, beat } from './kit';
+import { Stage, BODY_H } from './Stage';
+import { C, ACCENT_FILL, teamColor, teamInk, rgba } from './theme';
 
-export default function TeamRosterOverlay({ game, overlay, onScreenChange }) {
-  const isVisible = overlay.visible && overlay.type === 'team_roster';
-  
-  const [activeTeam, setActiveTeam] = useState('home');
-  const [isAnimating, setIsAnimating] = useState(false);
+const isTrue = v => v === true || v === 'true';
 
-  // Извлекаем переданное время (в секундах) из панели управления
-  const switchDuration = overlay.data?.switchDuration || 10;
+const ROW_MAX = 54;
+const ROW_MIN = 30;
+const GROUP_HEAD = 40;   // надстрочник группы с отступом
+const GROUP_GAP = 20;    // между группами
+
+function Row({ p, color, delay, h }) {
+  const captain = isTrue(p.is_captain);
+  const assistant = isTrue(p.is_assistant);
+  const k = h / ROW_MAX;
+  const badge = Math.round(30 * Math.max(0.75, k));
+  return (
+    <div className="g2-slide" style={{ '--d': `${delay}ms`, display: 'flex', alignItems: 'center', gap: 14, height: h }}>
+      <span className="g2-num" style={{ width: Math.round(50 * Math.max(0.8, k)), height: Math.round(h * 0.8), borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                         background: 'rgba(0,0,0,.34)', boxShadow: `inset 0 0 0 1px ${C.rim}, inset 3px 0 0 ${rgba(color, 0.9)}`,
+                                         fontSize: Math.round(21 * Math.max(0.8, k)), fontWeight: 800, color: C.text }}>
+        {p.jersey_number ?? '—'}
+      </span>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 10, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+        <span style={{ fontSize: Math.round(24 * Math.max(0.78, k)), fontWeight: 800, textTransform: 'uppercase', color: C.text, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.last_name}</span>
+        <span style={{ fontSize: Math.round(19 * Math.max(0.86, k)), fontWeight: 600, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.first_name}</span>
+      </div>
+      {captain && <span style={{ width: badge, height: badge, borderRadius: 8, background: ACCENT_FILL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#fff', flexShrink: 0 }}>К</span>}
+      {assistant && <span style={{ width: badge, height: badge, borderRadius: 8, boxShadow: `inset 0 0 0 2px ${C.accentSoft}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: C.accentSoft, flexShrink: 0 }}>А</span>}
+    </div>
+  );
+}
+
+function Group({ title, players, color, start, h }) {
+  if (!players.length) return null;
+  return (
+    <div style={{ marginBottom: GROUP_GAP }}>
+      <div className="g2-rise" style={{ '--d': `${start}ms`, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+        <Kicker size={16} color={C.accentSoft} spacing="0.2em">{title}</Kicker>
+        <span style={{ flex: 1, height: 1, background: C.divider }} />
+        <span className="g2-num" style={{ fontSize: 17, fontWeight: 800, color: C.subtle }}>{players.length}</span>
+      </div>
+      {players.map((p, i) => <Row key={p.player_id || p.id || `${p.jersey_number}_${p.last_name}`} p={p} color={color} h={h} delay={start + 60 + i * 28} />)}
+    </div>
+  );
+}
+
+export default function TeamRosterOverlay({ game, overlay }) {
+  const visible = overlay.visible && overlay.type === 'team_roster' && overlay.data?.rosterView !== 'lines';
+  const [side, setSide] = useState('home');
+  const [fading, setFading] = useState(false);
+  const seconds = overlay.data?.switchDuration || 10;
 
   useEffect(() => {
-    if (!isVisible) {
-      setActiveTeam('home');
-      setIsAnimating(false);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setIsAnimating(true);
-      
-      // Через 500мс (когда кончится CSS fade-анимация) переключаем команду и возвращаем видимость
-      setTimeout(() => {
-        setActiveTeam(prev => prev === 'home' ? 'away' : 'home');
-        setIsAnimating(false);
-        onScreenChange?.();
-      }, 500);
-      
-    }, switchDuration * 1000);
-
-    return () => clearInterval(interval);
-  }, [isVisible, switchDuration]);
+    if (!visible) { setSide('home'); setFading(false); return undefined; }
+    let t;
+    const id = setInterval(() => {
+      setFading(true);
+      t = setTimeout(() => { setSide(s => (s === 'home' ? 'away' : 'home')); setFading(false); }, 380);
+    }, seconds * 1000);
+    return () => { clearInterval(id); clearTimeout(t); };
+  }, [visible, seconds]);
 
   if (!game) return null;
 
-  // Аудио-реактивная линия под заголовком секции: «дышит» по уровню баса интро
-  // (--audio-level из audioReactive.js), при выключенном интро полностью невидима.
-  const AudioPulseLine = () => (
-    <div
-      className="h-px -mt-4 mb-4 bg-gradient-to-r from-transparent via-white/60 to-transparent pointer-events-none shrink-0"
-      style={{ opacity: 'var(--audio-level, 0)' }}
-    />
-  );
+  const color = teamColor(game, side);
+  const roster = (side === 'home' ? game.home_roster : game.away_roster) || [];
+  const coach = side === 'home' ? game.home_coach : game.away_coach;
+  const goalies = roster.filter(p => p.position_in_line === 'G');
+  const defense = roster.filter(p => p.position_in_line === 'LD' || p.position_in_line === 'RD');
+  const forwards = roster.filter(p => ['LW', 'C', 'RW'].includes(p.position_in_line));
+  const other = roster.filter(p => !['G', 'LD', 'RD', 'LW', 'C', 'RW'].includes(p.position_in_line));
 
-  // Определение текущей отображаемой команды
-  const isHome = activeTeam === 'home';
-  const currentTeamName = isHome ? game.home_team_name : game.away_team_name;
-  const currentTeamLogo = isHome ? getImageUrl(game.home_team_logo) : getImageUrl(game.away_team_logo);
-  const currentRoster = isHome ? (game.home_roster || []) : (game.away_roster || []);
-  const currentCoach = isHome ? game.home_coach : game.away_coach;
-
-  // Точная фильтрация из БД
-  const goalies = currentRoster.filter(p => p.position_in_line === 'G');
-  const defense = currentRoster.filter(p => p.position_in_line === 'LD' || p.position_in_line === 'RD');
-  const forwards = currentRoster.filter(p => p.position_in_line === 'LW' || p.position_in_line === 'C' || p.position_in_line === 'RW');
-
-  // Компонент строки игрока
-  const PlayerRow = ({ player }) => {
-    const isCaptain = player.is_captain === true || player.is_captain === 'true';
-    const isAssistant = player.is_assistant === true || player.is_assistant === 'true';
-
-    return (
-      <div className="flex items-center gap-4 py-2 border-b border-zinc-800/50 last:border-0 hover:bg-zinc-900/50 transition-colors">
-         <span className="w-8 text-right font-mono font-black text-zinc-500 text-xl tracking-tighter shrink-0">
-           {player.jersey_number || '00'}
-         </span>
-         <div className="flex items-baseline gap-2 truncate flex-1">
-            <span className="font-black text-white text-xl uppercase tracking-wide truncate">
-              {player.last_name}
-            </span>
-            <span className="font-bold text-zinc-400 text-sm uppercase tracking-widest truncate">
-              {player.first_name}
-            </span>
-         </div>
-         {/* Статус Капитана / Ассистента */}
-         {isCaptain && (
-           <div className="border border-orange px-1.5 rounded-sm shrink-0 shadow-sm">
-             <span className="text-orange font-black text-[18px] uppercase leading-none">K</span>
-           </div>
-         )}
-         {isAssistant && (
-           <div className="border border-status-accepted px-1.5 rounded-sm shrink-0 shadow-sm">
-             <span className="text-status-accepted font-black text-[18px] leading-none">A</span>
-           </div>
-         )}
-      </div>
-    );
+  // Высота строки — по самому «длинному» столбцу: строки плюс заголовки групп
+  const PAD = 34;
+  const avail = BODY_H - PAD * 2;
+  const need = (groups) => {
+    const filled = groups.filter(g => g.length);
+    return { rows: filled.reduce((n, g) => n + g.length, 0), heads: filled.length };
   };
+  const rowFor = ({ rows, heads }) => (rows ? (avail - heads * (GROUP_HEAD + GROUP_GAP)) / rows : ROW_MAX);
+  const h = Math.floor(Math.max(ROW_MIN, Math.min(ROW_MAX,
+    rowFor(need([goalies, defense, other])), rowFor(need([forwards])))));
+
+  const fade = { opacity: fading ? 0 : 1, transform: fading ? 'translateX(24px)' : 'none', transition: 'opacity .38s ease, transform .38s ease' };
 
   return (
-    <AnimationWrapper type="team_roster" isVisible={isVisible} className="absolute inset-0 flex items-center justify-center z-50 p-20">
-      <div className="flex flex-col items-center w-full max-w-[1500px] relative overflow-hidden rounded-[70px] shadow-2xl transform-gpu">
-        
-        {/* ГЛОБАЛЬНЫЙ БЛИК */}
-        <div className="absolute top-0 bottom-0 w-[80%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
-
-        {/* ШАПКА */}
-        <div className="flex justify-center items-center bg-black text-zinc-300 px-8 py-3 w-full relative z-10 shrink-0">
-          <span className="font-black uppercase tracking-[0.15em] text-[26px] text-white/70">
-            СОСТАВ КОМАНДЫ
-          </span>
-        </div>
-
-        {/* ТЕЛО ПЛАШКИ (Увеличена высота до 720px для компенсации убранного подвала) */}
-        <div className="flex w-full h-[680px] bg-zinc-950 overflow-hidden relative z-0">
-          <TickerBackground texts={[game.league_name, game.home_short_name, game.away_short_name, game.division_name, game.home_team_name, game.away_team_name]} />
-
-          {/* ЛЕВАЯ КОЛОНКА: Логотип, Название, Тренер (35%) */}
-          <div className="w-[35%] flex flex-col items-center justify-center relative px-10 py-12 z-10">
-             
-             {/* Фоновый размытый логотип */}
-             <div className={`absolute inset-0 transition-opacity duration-500 ease-in-out ${isAnimating ? 'opacity-0' : 'opacity-100'}`}>
-               {currentTeamLogo && (
-                 <img src={currentTeamLogo} alt="" className="w-full h-full object-cover opacity-20 blur-xl scale-150 z-0 pointer-events-none" />
-               )}
-             </div>
-
-             <div className={`flex flex-col items-center w-full z-10 transition-all duration-500 transform ${isAnimating ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}>
-                {currentTeamLogo && (
-                  <div className="relative mb-8">
-                    {/* Рябь под интро — независимые волны на бас/средние/высокие, см. RippleField.jsx */}
-                    <RippleField size={460} />
-                    <img src={currentTeamLogo} alt="Team Logo" className="relative z-10 w-64 h-64 object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.8)]" style={{ transform: 'scale(calc(1 + var(--audio-beat, 0) * 0.10 + var(--audio-pulse, 0) * 0.05))', willChange: 'transform' }} onError={(e) => e.target.style.display = 'none'} />
-                  </div>
-                )}
-                
-                <span className="text-5xl font-black text-white text-center uppercase tracking-tighter leading-none drop-shadow-md w-full">
-                  {currentTeamName}
-                </span>
-
-                {/* Главный тренер */}
-                {currentCoach && (
-                  <div className="mt-12 bg-zinc-900 border-l-4 border-blue-600 p-5 shadow-xl w-full text-left">
-                     <span className="text-zinc-500 font-bold uppercase tracking-[0.2em] text-xs block mb-2">
-                       ГЛАВНЫЙ ТРЕНЕР
-                     </span>
-                     <span className="font-black text-white text-2xl uppercase tracking-wide block truncate">
-                       {currentCoach.last_name}
-                     </span>
-                     <span className="font-bold text-zinc-400 text-base uppercase tracking-widest block truncate">
-                       {currentCoach.first_name}
-                     </span>
-                  </div>
-                )}
-             </div>
+    <Stage game={game} visible={visible} title="Состав команды" kicker={side === 'home' ? 'Хозяева' : 'Гости'} glow={[color, color]}
+           page={side === 'home' ? 0 : 1} pages={2}>
+      <div key={side} style={{ display: 'flex', height: BODY_H }}>
+        {/* ---------- Команда ---------- */}
+        <aside style={{ width: 520, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 46px',
+                        borderRight: `1px solid ${C.divider}`, ...fade }}>
+          <div className="g2-pop" style={{ '--d': '240ms', position: 'relative' }}>
+            <TileRipple tile={250} area={480} />
+            <div style={beat(1)}><Crest url={game[`${side}_team_logo`]} size={250} /></div>
           </div>
-
-          {/* ПРАВАЯ КОЛОНКА: 2 списка игроков (65%) */}
-          <div className="w-[65%] flex bg-zinc-900 relative z-10 overflow-hidden">
-             
-             <div className={`flex w-full h-full transition-all duration-500 transform ${isAnimating ? 'translate-x-12 opacity-0' : 'translate-x-0 opacity-100'}`}>
-                
-                {/* ВНУТРЕННЯЯ ЛЕВАЯ (Вратари и Защитники) */}
-                <div className="w-1/2 flex flex-col px-10 py-8 border-r-2 border-zinc-800">
-                   
-                   {/* Вратари */}
-                   <div className="flex flex-col shrink-0 mb-8">
-                      <span className="text-zinc-500 font-black uppercase tracking-[0.3em] text-xs mb-4 border-b border-zinc-800 pb-2">
-                        ВРАТАРИ
-                      </span>
-                      <AudioPulseLine />
-                      <div className="flex flex-col">
-                         {goalies.map(p => <PlayerRow key={p.id || `${p.jersey_number}_${p.last_name}`} player={p} />)}
-                      </div>
-                   </div>
-
-                   {/* Защитники */}
-                   <div className="flex flex-col flex-1 overflow-hidden">
-                      <span className="text-zinc-500 font-black uppercase tracking-[0.3em] text-xs mb-4 border-b border-zinc-800 pb-2 shrink-0">
-                        ЗАЩИТНИКИ
-                      </span>
-                      <AudioPulseLine />
-                      <div className="flex flex-col overflow-y-auto custom-scrollbar pr-2 h-full">
-                         {defense.map(p => <PlayerRow key={p.id || `${p.jersey_number}_${p.last_name}`} player={p} />)}
-                      </div>
-                   </div>
-
-                </div>
-
-                {/* ВНУТРЕННЯЯ ПРАВАЯ (Нападающие) */}
-                <div className="w-1/2 flex flex-col px-10 py-8">
-                   <div className="flex flex-col flex-1 overflow-hidden">
-                      <span className="text-zinc-500 font-black uppercase tracking-[0.3em] text-xs mb-4 border-b border-zinc-800 pb-2 shrink-0">
-                        НАПАДАЮЩИЕ
-                      </span>
-                      <AudioPulseLine />
-                      <div className="flex flex-col overflow-y-auto custom-scrollbar pr-2 h-full">
-                         {forwards.map(p => <PlayerRow key={p.id || `${p.jersey_number}_${p.last_name}`} player={p} />)}
-                      </div>
-                   </div>
-                </div>
-
-             </div>
-
-             {/* Заглушка, если пустой ростер */}
-             {currentRoster.length === 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-zinc-900/90 backdrop-blur-sm">
-                   <span className="text-zinc-600 font-black italic uppercase text-3xl">Состав не заполнен</span>
-                </div>
-             )}
+          <div className="g2-rise" style={{ '--d': '360ms', width: '100%', marginTop: 40, textAlign: 'center' }}>
+            <Kicker size={17} color={teamInk(game, side)} spacing="0.2em">{side === 'home' ? 'Хозяева' : 'Гости'}</Kicker>
+            <FitText align="center" min={0.6} style={{ marginTop: 12, fontSize: 46, fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.05, color: C.text }}>
+              {game[`${side}_team_name`]}
+            </FitText>
           </div>
+          {coach && (
+            <div className="g2-rise" style={{ '--d': '440ms', marginTop: 34, width: '100%', padding: '18px 22px', borderRadius: 20, background: 'rgba(0,0,0,.28)',
+                                                boxShadow: `inset 0 0 0 1px ${C.rim}, inset 4px 0 0 ${C.accent}` }}>
+              <Kicker size={16} color={C.muted} spacing="0.2em">Главный тренер</Kicker>
+              <div style={{ marginTop: 8, fontSize: 26, fontWeight: 800, textTransform: 'uppercase', color: C.text }}>{coach.last_name}</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: C.muted, marginTop: 2 }}>{coach.first_name}</div>
+            </div>
+          )}
+        </aside>
 
+        {/* ---------- Игроки ---------- */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: 60, padding: `${PAD}px 46px`, ...fade }}>
+          {roster.length === 0 ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 800, letterSpacing: '0.14em', color: C.subtle, textTransform: 'uppercase' }}>
+              Состав не заполнен
+            </div>
+          ) : (
+            <>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Group title="Вратари" players={goalies} color={color} start={300} h={h} />
+                <Group title="Защитники" players={defense} color={color} start={360} h={h} />
+                <Group title="Без позиции" players={other} color={color} start={420} h={h} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Group title="Нападающие" players={forwards} color={color} start={380} h={h} />
+              </div>
+            </>
+          )}
         </div>
-
-        {/* Подвал удален для увеличения места под контент */}
-
       </div>
-    </AnimationWrapper>
+    </Stage>
   );
 }

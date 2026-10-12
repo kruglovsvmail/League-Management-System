@@ -1,7 +1,7 @@
-// src/components/WebGraphics/Graphics_2/kit.jsx
+// src/components/WebGraphics/defaultGraphics/kit.jsx
 //
-// Общие детали графики лиги 2: появление «срезом конька», линии конька,
-// эмблема в плитке-иконке, фото, ужимание длинных фамилий, счётчики.
+// Общие детали стандартной графики: появление «срезом конька», линии конька,
+// эмблема без плитки, фото, ужимание длинных фамилий, счётчики.
 //
 // Стили — свои классы с префиксом g2-, без Tailwind: оверлей живёт в OBS, и
 // всё, от чего зависит картинка, должно лежать рядом с ней.
@@ -22,14 +22,20 @@ const toUrl = (url) => (url ? getImageUrl(url) : '');
 // углом, что линии конька на иконках HockeyEco, — а по кромке бежит синее
 // лезвие. Уходит тем же движением дальше вправо: въехала слева, уехала вправо.
 //
-// Угол держится ровно 45° на плашке любой пропорции: кромка считается в
-// пикселях от высоты элемента (--g2h, меряется в Reveal), а не в процентах.
-// --g2m — запас за край, чтобы тени плашки не обрезались.
+// Срез делается ТОЛЬКО сдвигом (transform): окно .g2-clip скошено на 45° и
+// едет поперёк плашки, а .g2-unclip внутри едет ровно назад — содержимое
+// стоит на месте, видна та его часть, что попала в окно. Такую анимацию
+// браузер отдаёт видеокарте, процессор кадр не перерисовывает.
 //
-// Ход кромки — зарегистрированное свойство --g2p (0 → 1). Его анимирует
-// Chromium, то есть и браузерный источник OBS.
+// Раньше кромку вела анимированная переменная в clip-path: каждый кадр
+// пересчитывались стили всего содержимого плашки и перерисовывалась она
+// целиком. На слабом ноутбуке с OBS это тормозило, а полноэкранные плашки
+// подвешивали оверлей насмерть. К такому способу не возвращаться.
+//
+// Размеры плашки (--g2w, --g2h) меряет Reveal. --g2m — запас за край, чтобы
+// тени не обрезались; --g2e — запас окна по бокам, чтобы его косые края в
+// покое не задевали плашку (половина скошенной высоты окна плюс запас).
 const CSS = `
-@property --g2p { syntax: '<number>'; inherits: true; initial-value: 0; }
 @font-face { font-family: 'Tektur'; src: url('/fonts/Tektur-ExtraBold.ttf') format('truetype'); font-weight: 700 800; font-display: block; }
 @font-face { font-family: 'Tektur'; src: url('/fonts/Tektur-Black.ttf') format('truetype'); font-weight: 900; font-display: block; }
 
@@ -39,45 +45,53 @@ const CSS = `
 /* Громкие слова (ГОЛ, УДАЛЕНИЕ) — тем же Tektur */
 .g2-loud { font-family: ${NUM}; font-weight: 900; letter-spacing: 0.02em; }
 
-.g2-reveal { --g2c: calc(-1 * var(--g2h) - 2 * var(--g2m) + var(--g2p) * (100% + var(--g2h) + 4 * var(--g2m))); }
+/* Корень — сетка из одной ячейки: окно растягивается на неё с отрицательными
+   полями, и размер корня по-прежнему задаёт содержимое (или style снаружи). */
+.g2-reveal { display: grid; --g2e: calc(var(--g2h) / 2 + 2 * var(--g2m) + 2px); }
 .g2-reveal.is-idle, .g2-reveal.is-gone { visibility: hidden; }
-.g2-reveal.is-in {
-  animation: g2CutIn var(--g2in, 700ms) cubic-bezier(.5,.02,.22,1) both;
-  clip-path: polygon(calc(-1 * var(--g2m)) calc(-1 * var(--g2m)),
-                     calc(var(--g2c) + var(--g2h) + var(--g2m)) calc(-1 * var(--g2m)),
-                     calc(var(--g2c) - var(--g2m)) calc(100% + var(--g2m)),
-                     calc(-1 * var(--g2m)) calc(100% + var(--g2m)));
-}
-.g2-reveal.is-out {
-  animation: g2CutOut var(--g2out, 460ms) cubic-bezier(.55,0,.78,.38) both;
-  clip-path: polygon(calc(var(--g2c) + var(--g2h) + var(--g2m)) calc(-1 * var(--g2m)),
-                     calc(100% + var(--g2m)) calc(-1 * var(--g2m)),
-                     calc(100% + var(--g2m)) calc(100% + var(--g2m)),
-                     calc(var(--g2c) - var(--g2m)) calc(100% + var(--g2m)));
-}
-@keyframes g2CutIn { from { --g2p: 0; } to { --g2p: 1; } }
-@keyframes g2CutOut { from { --g2p: 0; } to { --g2p: 1; } }
+.g2-clip { display: grid; margin: calc(-1 * var(--g2m)) calc(-1 * var(--g2e)); min-width: 0; min-height: 0; }
+.g2-unclip { display: grid; padding: var(--g2m) var(--g2e); min-width: 0; min-height: 0; }
+/* Тело — ровно на месте прежнего корня: от него по-прежнему отсчитываются
+   абсолютные дети и проценты высоты. */
+.g2-body { position: relative; min-width: 0; min-height: 0; }
+.g2-reveal.is-in > .g2-clip, .g2-reveal.is-out > .g2-clip { overflow: hidden; }
+.g2-reveal.is-in > .g2-clip { animation: g2ClipIn var(--g2in, 700ms) cubic-bezier(.5,.02,.22,1) both; }
+.g2-reveal.is-in > .g2-clip > .g2-unclip { animation: g2UnclipIn var(--g2in, 700ms) cubic-bezier(.5,.02,.22,1) both; }
+.g2-reveal.is-out > .g2-clip { animation: g2ClipOut var(--g2out, 460ms) cubic-bezier(.55,0,.78,.38) both; }
+.g2-reveal.is-out > .g2-clip > .g2-unclip { animation: g2UnclipOut var(--g2out, 460ms) cubic-bezier(.55,0,.78,.38) both; }
+/* Окно и содержимое — одного размера, поэтому 100% у них одинаковые и сдвиги
+   гасят друг друга точно. Порядок функций важен: окно сначала скошено, потом
+   сдвинуто; содержимое — наоборот. */
+@keyframes g2ClipIn { from { transform: translateX(-100%) skewX(-45deg); } to { transform: translateX(0) skewX(-45deg); } }
+@keyframes g2UnclipIn { from { transform: skewX(45deg) translateX(100%); } to { transform: skewX(45deg) translateX(0); } }
+@keyframes g2ClipOut { from { transform: translateX(0) skewX(-45deg); } to { transform: translateX(100%) skewX(-45deg); } }
+@keyframes g2UnclipOut { from { transform: skewX(45deg) translateX(0); } to { transform: skewX(45deg) translateX(-100%); } }
 
-/* Лезвие по кромке. Его можно положить и внутрь дочерней плашки (Blade), если
-   она начинается от левого края Reveal и той же ширины: --g2oy — насколько
-   она ниже верха Reveal, точки пересчитываются в её координаты. Так лезвие
-   режет только саму плашку, а не пустой кадр вокруг висячих деталей. */
+/* Лезвие по кромке — косая полоска, которая едет вместе с кромкой. Его можно
+   положить и внутрь дочерней плашки (Blade), если она начинается от левого
+   края Reveal: --g2oy — насколько она ниже верха содержимого Reveal. Так
+   лезвие режет только саму плашку, а не пустой кадр вокруг висячих деталей.
+   Путь полоски посчитан из той же геометрии окна, что и кромка, и идёт с тем
+   же замедлением, поэтому лежит точно на ней. */
 .g2-blade, .g2-blade-glow {
-  position: absolute; inset: 0; pointer-events: none; z-index: 40; opacity: 0;
-  --bt: calc(-1 * var(--g2m) - var(--g2oy, 0px));
-  --bb: calc(var(--g2h) + var(--g2m) - var(--g2oy, 0px));
-  --xt: calc(var(--g2c) + var(--g2h) + var(--g2m));
-  --xb: calc(var(--g2c) - var(--g2m));
+  position: absolute; left: 0; top: 0; bottom: 0; width: var(--bw);
+  pointer-events: none; z-index: 40; opacity: 0; transform-origin: 0 0;
 }
 .g2-blade { background: #BFE6FF; --bw: 4px; }
 .g2-blade-glow { background: rgba(67,181,245,0.28); --bw: 46px; }
 .g2-reveal.is-in .g2-blade, .g2-reveal.is-in .g2-blade-glow {
-  animation: g2Blade var(--g2in, 700ms) linear both;
-  clip-path: polygon(calc(var(--xt) - var(--bw)) var(--bt), var(--xt) var(--bt), var(--xb) var(--bb), calc(var(--xb) - var(--bw)) var(--bb));
+  animation: g2BladeIn var(--g2in, 700ms) cubic-bezier(.5,.02,.22,1) both, g2Blade var(--g2in, 700ms) linear both;
 }
 .g2-reveal.is-out .g2-blade, .g2-reveal.is-out .g2-blade-glow {
-  animation: g2Blade var(--g2out, 460ms) linear both;
-  clip-path: polygon(var(--xt) var(--bt), calc(var(--xt) + var(--bw)) var(--bt), calc(var(--xb) + var(--bw)) var(--bb), var(--xb) var(--bb));
+  animation: g2BladeOut var(--g2out, 460ms) cubic-bezier(.55,0,.78,.38) both, g2Blade var(--g2out, 460ms) linear both;
+}
+@keyframes g2BladeIn {
+  from { transform: translateX(calc(var(--g2h) / 2 - var(--g2e) - var(--g2oy, 0px) - var(--bw))) skewX(-45deg); }
+  to { transform: translateX(calc(var(--g2w) + var(--g2e) + var(--g2h) / 2 - var(--g2oy, 0px) - var(--bw))) skewX(-45deg); }
+}
+@keyframes g2BladeOut {
+  from { transform: translateX(calc(var(--g2h) / 2 - var(--g2e) - var(--g2oy, 0px))) skewX(-45deg); }
+  to { transform: translateX(calc(var(--g2w) + var(--g2e) + var(--g2h) / 2 - var(--g2oy, 0px))) skewX(-45deg); }
 }
 @keyframes g2Blade { 0% { opacity: 0; } 8% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -94,12 +108,15 @@ const CSS = `
 .g2-reveal.is-in .g2-skate path.g2-line, .g2-reveal.is-shown .g2-skate path.g2-line { animation: g2Draw 900ms cubic-bezier(.3,.7,.2,1) both; animation-delay: calc(var(--d, 0ms) + var(--ld, 260ms)); }
 @keyframes g2Draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 
-/* Блик, который раз в несколько секунд проходит по плашке */
+/* Блик, который раз в несколько секунд проходит по плашке. Двигается сдвигом
+   (transform), а не left: left заставлял браузер раскладывать страницу заново
+   на каждом кадре, и так без конца на каждой видимой плашке. Проценты сдвига —
+   от ширины самого блика (34% плашки): −147% ≈ −50% плашки, 368% ≈ 125%. */
 .g2-sheen { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: inherit; }
-.g2-sheen::after { content: ''; position: absolute; top: -20%; bottom: -20%; width: 34%; left: -50%;
+.g2-sheen::after { content: ''; position: absolute; top: -20%; bottom: -20%; width: 34%; left: 0; transform: translateX(-147%);
   background: linear-gradient(105deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.07) 45%, rgba(255,255,255,0.13) 50%, rgba(255,255,255,0.07) 55%, rgba(255,255,255,0) 100%);
   animation: g2Sheen var(--sheen, 7s) ease-in-out infinite; animation-delay: var(--sheen-d, 1.2s); }
-@keyframes g2Sheen { 0% { left: -50%; } 22% { left: 125%; } 100% { left: 125%; } }
+@keyframes g2Sheen { 0% { transform: translateX(-147%); } 22% { transform: translateX(368%); } 100% { transform: translateX(368%); } }
 
 /* Гол: счёт подпрыгивает, полоса команды вспыхивает, по ячейке проходит лезвие */
 @keyframes g2ScorePop { 0% { transform: scale(1); } 14% { transform: scale(1.42); } 30% { transform: scale(.94); } 46% { transform: scale(1.12); } 64% { transform: scale(1); } 100% { transform: scale(1); } }
@@ -120,17 +137,30 @@ const CSS = `
 .g2-page-out { opacity: 0; transform: translateX(-26px); transition: opacity 200ms ease-in, transform 200ms ease-in; }
 `;
 
-export function G2Style() {
-  return <style>{CSS}</style>;
+// Стили кладутся в <head> один раз на страницу. Раньше <style> стоял внутри
+// каждой плашки: любое появление или уход плашки добавляло или убирало целую
+// таблицу стилей со шрифтами, и браузер пересчитывал стили всей страницы.
+// При горячей замене модуля текст обновляется в том же теге.
+const STYLE_ID = 'g2-style';
+function ensureStyle() {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById(STYLE_ID);
+  if (!el) {
+    el = document.createElement('style');
+    el.id = STYLE_ID;
+    document.head.appendChild(el);
+  }
+  if (el.textContent !== CSS) el.textContent = CSS;
 }
+ensureStyle();
 
 // ---------------------------------------------------------------------------
 // ПОЯВЛЕНИЕ
 // ---------------------------------------------------------------------------
 //
-// ВНИМАНИЕ: кромка считается от рамки самого элемента, поэтому className
-// обязан его позиционировать (absolute). Свой transform элементу не задавайте
-// — центруйте раскладкой (inset-x + flex), как и в остальной графике.
+// ВНИМАНИЕ: className/style обязаны позиционировать корень (absolute). Свой
+// transform корню не задавайте — центруйте раскладкой (inset-x + flex), как и
+// в остальной графике.
 export function Blade({ offsetY = 0 }) {
   return (
     <>
@@ -143,13 +173,15 @@ export function Blade({ offsetY = 0 }) {
 // blade={false} — лезвие кладёт сам вызывающий (<Blade/> внутри плашки).
 export function Reveal({ visible, className = '', style, margin = 100, inMs = 700, outMs = 460, blade = true, children }) {
   const ref = useRef(null);
+  const clipRef = useRef(null);
   const [phase, setPhase] = useState('idle');   // idle → in → shown → out → gone
+  const [w, setW] = useState(0);
   const [h, setH] = useState(0);
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const measure = () => setH(el.offsetHeight || 0);
+    const measure = () => { setW(el.offsetWidth || 0); setH(el.offsetHeight || 0); };
     measure();
     if (typeof ResizeObserver !== 'function') return undefined;
     const ro = new ResizeObserver(measure);
@@ -173,21 +205,26 @@ export function Reveal({ visible, className = '', style, margin = 100, inMs = 70
   }, [phase, inMs, outMs]);
 
   const onEnd = (e) => {
-    if (e.target !== ref.current) return;
-    if (e.animationName === 'g2CutIn') setPhase('shown');
-    if (e.animationName === 'g2CutOut') setPhase('gone');
+    if (e.target !== clipRef.current) return;
+    if (e.animationName === 'g2ClipIn') setPhase('shown');
+    if (e.animationName === 'g2ClipOut') setPhase('gone');
   };
 
   return (
     <div
       ref={ref}
       className={`g2-root g2-reveal is-${phase} ${className}`}
-      style={{ ...style, '--g2h': `${h}px`, '--g2m': `${margin}px`, '--g2in': `${inMs}ms`, '--g2out': `${outMs}ms` }}
+      style={{ ...style, '--g2w': `${w}px`, '--g2h': `${h}px`, '--g2m': `${margin}px`, '--g2in': `${inMs}ms`, '--g2out': `${outMs}ms` }}
       onAnimationEnd={onEnd}
     >
-      <G2Style />
-      {children}
-      {blade && <Blade />}
+      <div ref={clipRef} className="g2-clip">
+        <div className="g2-unclip">
+          <div className="g2-body">
+            {children}
+            {blade && <Blade />}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -232,7 +269,7 @@ export function Img({ url, style, className, alt = '' }) {
 
 // Фото игрока: не загрузилось — заглушка лиги, не загрузилась и она — пусто.
 //
-// В графике лиги 2 фото игроков КВАДРАТНЫЕ. Исходники бывают любые: вытянутый
+// В этой графике фото игроков КВАДРАТНЫЕ. Исходники бывают любые: вытянутый
 // по вертикали снимок обрезается снизу (лицо — в верхней части кадра), по
 // горизонтали — с боков, по центру. Растягивать нельзя: только cover.
 export function Photo({ url, style, className }) {
@@ -250,18 +287,20 @@ export function Photo({ url, style, className }) {
   );
 }
 
-// Эмблема команды в плитке-иконке HockeyEco: графит с осветлением края,
-// скругление как у иконки (≈20%), линии конька цветом команды.
-export function Crest({ url, size = 200, color = C.skate, lines = true, fill = 0.7, style, imgStyle, children }) {
+// Эмблема команды или лиги — сам логотип на весь размер, без плитки-иконки: плитку
+// Сергей убрал (11.10.2026), логотипы должны быть крупнее. От фона плашки
+// логотип отделяет только тень. Нет логотипа — пустое место того же размера,
+// раскладка не прыгает.
+export function Crest({ url, size = 200, style, imgStyle, children }) {
   return (
     <div style={{
       position: 'relative', width: size, height: size, flexShrink: 0,
-      borderRadius: Math.round(size * 0.2), background: GRAPHITE, boxShadow: LIFT_SM,
-      overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', ...style,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', ...style,
     }}>
-      {lines && <SkateLines corner="br" size={size * 0.56} color={color} width={Math.max(1.5, size / 70)} />}
-      {lines && size >= 120 && <SkateLines corner="tl" size={size * 0.34} color={color} width={Math.max(1, size / 110)} tint={false} opacity={0.7} />}
-      <Img url={url} style={{ position: 'relative', width: `${fill * 100}%`, height: `${fill * 100}%`, objectFit: 'contain', filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.45))', ...imgStyle }} />
+      <Img url={url} style={{
+        width: '100%', height: '100%', objectFit: 'contain',
+        filter: `drop-shadow(0 ${Math.round(size / 28)}px ${Math.round(size / 12)}px rgba(0,0,0,0.5))`, ...imgStyle,
+      }} />
       {children}
     </div>
   );
@@ -483,24 +522,15 @@ export function Page({ pageKey, children, style, className = '' }) {
 // РЯБЬ ПОД ИНТРО
 // ---------------------------------------------------------------------------
 //
-// Под музыку интро от плитки-эмблемы расходятся контуры той же скруглённой
-// формы — по одному на каждый удар баса, средних и высоких (onBandOnset из
-// audioReactive.js). Без интро ударов нет — нет и ряби.
+// Под музыку интро от эмблемы расходятся круги — по одному на каждый удар
+// баса, средних и высоких (onBandOnset из audioReactive.js). Без интро ударов
+// нет — нет и ряби. Круги, а не скруглённые квадраты: форму плитки-иконки
+// Сергей убрал отовсюду.
 const RIPPLE = {
   bass: { from: 1.0, to: 1.55, life: 1000, width: 3, alpha: 0.42, color: '67,181,245' },
   mid: { from: 1.0, to: 1.35, life: 760, width: 1.5, alpha: 0.3, color: '232,232,228' },
   high: { from: 1.0, to: 1.25, life: 600, width: 1.2, alpha: 0.32, color: '96,165,250' },
 };
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
 
 export function TileRipple({ tile = 260, area = 520 }) {
   const ref = useRef(null);
@@ -527,7 +557,8 @@ export function TileRipple({ tile = 260, area = 520 }) {
         const e = 1 - (1 - t) * (1 - t);
         const s = tile * (cfg.from + (cfg.to - cfg.from) * e);
         const a = cfg.alpha * it.strength * Math.pow(1 - t, 1.4);
-        roundRect(ctx, (area - s) / 2, (area - s) / 2, s, s, s * 0.2);
+        ctx.beginPath();
+        ctx.arc(area / 2, area / 2, s / 2, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(${cfg.color},${a.toFixed(3)})`;
         ctx.lineWidth = cfg.width;
         ctx.stroke();

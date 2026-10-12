@@ -1,6 +1,6 @@
-// src/components/WebGraphics/Graphics_2/theme.js
+// src/components/WebGraphics/defaultGraphics/theme.js
 //
-// Эфирная графика лиги 2 — фирменный стиль HockeyEco (design/brand) в цветах
+// Стандартная эфирная графика — фирменный стиль HockeyEco (design/brand) в цветах
 // Team Room.
 //
 // ОТКУДА ЦВЕТА
@@ -107,11 +107,17 @@ export function rgba(hex, a) {
 
 // Хозяева по умолчанию — синий TR, гости — светлый текст TR.
 //
-// Если основной цвет формы почти чёрный, а второй цвет есть и он живой, берём
-// второй: чёрно-красная команда должна читаться красной, а не серой.
+// Цвет команды — цвета её ДОМАШНЕЙ формы (*_team_color), и у гостей тоже: у
+// гостевой формы акцент бывает белым, и команда выходила серой (решение
+// Сергея, 12.10.2026). Цвета формы на этот матч (*_color_1/2) — запасные, на
+// случай старого бэкенда без новых полей.
+//
+// Если первый цвет почти чёрный, а второй есть и он живой, берём второй:
+// чёрно-красная команда должна читаться красной, а не серой.
 const colorOf = (game, side) => {
-  const c1 = game?.[`${side}_color_1`];
-  const c2 = game?.[`${side}_color_2`];
+  const own = game?.[`${side}_team_color`];
+  const c1 = own || game?.[`${side}_color_1`];
+  const c2 = own ? game?.[`${side}_team_color_2`] : game?.[`${side}_color_2`];
   const l1 = parseHex(c1) ? luminance(parseHex(c1)) : null;
   const l2 = parseHex(c2) ? luminance(parseHex(c2)) : null;
   if (l1 != null && l1 < 0.03 && l2 != null && l2 >= 0.03 && l2 < 0.85) return c2;

@@ -1,9 +1,9 @@
-// src/components/WebGraphics/Graphics_2/IntermissionOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/IntermissionOverlay.jsx
 //
 // Перерыв: слева счёт с разбивкой по периодам, справа отсчёт до следующего
 // периода и авторы шайб — карусель, по карточке на гол.
 import React, { useEffect, useState } from 'react';
-import { Crest, Photo, Img, Kicker, FitText, useCountdown } from './kit';
+import { Crest, Photo, Kicker, FitText, useCountdown } from './kit';
 import { Stage, BODY_H } from './Stage';
 import { C, NUM, ACCENT_FILL, teamColor, teamInk, countdown, eventStamp, rgba, techScore } from './theme';
 
@@ -22,7 +22,7 @@ function TeamRow({ game, side, score, isTech, delay }) {
   return (
     <div className="g2-slide" style={{ '--d': `${delay}ms`, position: 'relative', flex: 1, display: 'flex', alignItems: 'center', gap: 34, padding: '0 46px', overflow: 'hidden',
                                         background: `linear-gradient(90deg, ${rgba(color, 0.28)} 0%, ${rgba(color, 0.06)} 55%, transparent 85%)` }}>
-      <Crest url={game[`${side}_team_logo`]} size={150} color={color} />
+      <Crest url={game[`${side}_team_logo`]} size={150} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <Kicker size={16} color={teamInk(game, side)} spacing="0.2em">{side === 'home' ? 'Хозяева' : 'Гости'}</Kicker>
         <FitText min={0.62} style={{ marginTop: 10, fontSize: 50, fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.05, color: C.text }}>
@@ -125,10 +125,7 @@ export default function IntermissionOverlay({ game, overlay, timerSeconds, perio
                 }}>
                   <div style={{ position: 'relative', width: 188, height: 220, flexShrink: 0 }}>
                     <Photo url={photoOf(g)} style={{ width: '100%', height: '100%', borderRadius: 22 }} />
-                    <div style={{ position: 'absolute', right: -14, bottom: -12, width: 64, height: 64, borderRadius: 16, background: C.g1, boxShadow: `inset 0 0 0 1px ${C.rimHi}, 0 8px 18px rgba(0,0,0,.5)`,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Img url={game[`${side}_team_logo`]} style={{ width: 46, height: 46, objectFit: 'contain' }} />
-                    </div>
+                    <Crest url={game[`${side}_team_logo`]} size={80} style={{ position: 'absolute', right: -20, bottom: -18 }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'inline-block', padding: '7px 12px', borderRadius: 9, background: ACCENT_FILL, fontSize: 18, fontWeight: 800, letterSpacing: '0.04em', color: '#fff', fontFamily: NUM }}>

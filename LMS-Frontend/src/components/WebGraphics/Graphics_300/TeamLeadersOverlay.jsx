@@ -1,4 +1,4 @@
-// src/components/WebGraphics/Graphics_2/TeamLeadersOverlay.jsx
+// src/components/WebGraphics/defaultGraphics/TeamLeadersOverlay.jsx
 //
 // Лидеры команд: по краям — лучшие игроки хозяев и гостей в текущей категории,
 // по центру — их статистика по всем категориям. Синяя плашка (кнопка TR)
@@ -56,8 +56,8 @@ function PlayerCard({ game, side, leader, active, leaving }) {
       )}
       <div style={{ position: 'relative', ...beat(0.6) }}>
         <Photo url={leader?.avatar_url} style={{ width: 290, height: 290, borderRadius: 34, boxShadow: `inset 0 0 0 1px ${C.rimHi}, 0 24px 50px -14px rgba(0,0,0,.7)` }} />
-        <div style={{ position: 'absolute', bottom: -22, [right ? 'left' : 'right']: -22 }}>
-          <Crest url={game[`${side}_team_logo`]} size={92} color={color} />
+        <div style={{ position: 'absolute', bottom: -30, [right ? 'left' : 'right']: -30 }}>
+          <Crest url={game[`${side}_team_logo`]} size={108} />
         </div>
       </div>
       <div style={{ marginTop: 40, width: '100%', textAlign: 'center' }}>

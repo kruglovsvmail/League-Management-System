@@ -28,6 +28,12 @@ export const getPublicGameById = async (req, res) => {
                    COALESCE(tt_away.snap_short_name, t2.short_name) as away_short_name,
                    COALESCE(tt_away.snap_logo_url, t2.logo_url) as away_team_logo,
                    COALESCE(tt_away.snap_color_away_1, t2.color_away_1) as away_color_1, COALESCE(tt_away.snap_color_away_2, t2.color_away_2) as away_color_2,
+                   -- Цвет команды в эфирной графике — цвета ДОМАШНЕЙ формы, и у гостей
+                   -- тоже (решение Сергея, 12.10.2026): у гостевой формы акцент бывает
+                   -- белым, и команда в плашках выходила серой. *_color_1/2 выше — цвета
+                   -- формы на этот матч, остаются запасными.
+                   COALESCE(tt_home.snap_color_home_1, t1.color_home_1) as home_team_color, COALESCE(tt_home.snap_color_home_2, t1.color_home_2) as home_team_color_2,
+                   COALESCE(tt_away.snap_color_home_1, t2.color_home_1) as away_team_color, COALESCE(tt_away.snap_color_home_2, t2.color_home_2) as away_team_color_2,
                    -- Джерси: приоритет tournament_teams → teams → дефолт
                    COALESCE(tt_home.custom_jersey_dark_url,  t1.jersey_dark_url)  as home_jersey_dark_url,
                    COALESCE(tt_home.custom_jersey_light_url, t1.jersey_light_url) as home_jersey_light_url,
@@ -467,6 +473,15 @@ export const getGameById = async (req, res) => {
                 a.timezone as arena_timezone,
                 COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_logo_url, ht.logo_url) as home_team_logo,
                 COALESCE(tt_away.snap_name, at.name) as away_team_name, COALESCE(tt_away.snap_logo_url, at.logo_url) as away_team_logo,
+                -- Цвета команд — как в getPublicGameById (слепок заявки → команда).
+                -- Нужны панели трансляции: переход заставки она собирает по ним,
+                -- без них в нём были цвета по умолчанию (синий / светлый).
+                COALESCE(tt_home.snap_color_home_1, ht.color_home_1) as home_color_1, COALESCE(tt_home.snap_color_home_2, ht.color_home_2) as home_color_2,
+                COALESCE(tt_away.snap_color_away_1, at.color_away_1) as away_color_1, COALESCE(tt_away.snap_color_away_2, at.color_away_2) as away_color_2,
+                -- Цвет команды в эфирной графике — цвета ДОМАШНЕЙ формы, и у гостей
+                -- тоже (как в getPublicGameById).
+                COALESCE(tt_home.snap_color_home_1, ht.color_home_1) as home_team_color, COALESCE(tt_home.snap_color_home_2, ht.color_home_2) as home_team_color_2,
+                COALESCE(tt_away.snap_color_home_1, at.color_home_1) as away_team_color, COALESCE(tt_away.snap_color_home_2, at.color_home_2) as away_team_color_2,
                 d.name as division_name,
                 -- Сезон дивизиона нужен странице матча: по ссылке «К списку матчей»
                 -- надо вернуться к тому же дивизиону того же сезона, а не к тому,

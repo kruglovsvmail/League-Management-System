@@ -1,6 +1,6 @@
-// src/components/WebGraphics/Graphics_2/Scoreboard.jsx
+// src/components/WebGraphics/defaultGraphics/Scoreboard.jsx
 //
-// Угловое табло лиги 2. Одна графитовая полоса: эмблема лиги, хозяева,
+// Угловое табло. Одна графитовая полоса: эмблема лиги, хозяева,
 // гости и синий блок времени — синий как основная кнопка TR. Ячейка команды
 // подкрашена её цветом слева направо. Цифры — Tektur, как на настоящем табло.
 // Под полосой «висят» удаления своей команды и подпись большинства под временем.
@@ -11,7 +11,7 @@
 // В серии буллитов вместо времени — «БУЛЛИТЫ», под командами — попытки.
 // При техническом результате под командами — красная плашка.
 import React, { useEffect, useState } from 'react';
-import { Reveal, Blade, Img, SkateLines, FitText, useGoalFlash } from './kit';
+import { Reveal, Blade, Img, Crest, SkateLines, FitText, useGoalFlash } from './kit';
 import {
   C, GRAPHITE_WIDE, ACCENT_FILL, LIFT, rgba, teamColor, teamShort, formatClock, periodRemaining,
   periodShort, strengthState, techScore, shootoutState, FULLSCREEN,
@@ -20,7 +20,7 @@ import {
 const H = 70;          // высота полосы
 const CELL = 246;      // ячейка команды
 const CLOCK = 150;     // блок времени
-const LEAGUE = 70;     // эмблема лиги
+const LEAGUE = 84;     // эмблема лиги
 
 function ShotMark({ shot }) {
   if (!shot) {
@@ -61,8 +61,8 @@ function TeamCell({ side, game, score, isTech, flash, flashKey, divider }) {
       )}
 
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 20, flex: 1, minWidth: 0 }}>
-        <div style={{ width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Img url={logo} style={{ maxWidth: 42, maxHeight: 42, objectFit: 'contain', filter: 'drop-shadow(0 3px 6px rgba(0,0,0,.45))' }} />
+        <div style={{ width: 50, height: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Img url={logo} style={{ maxWidth: 50, maxHeight: 50, objectFit: 'contain', filter: 'drop-shadow(0 3px 6px rgba(0,0,0,.45))' }} />
         </div>
         <FitText style={{ flex: 1, minWidth: 0, fontSize: 27, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', color: C.text, lineHeight: 1 }}>
           {teamShort(game, side)}
@@ -136,11 +136,9 @@ export default function Scoreboard({
         <div className="g2-sheen" style={{ '--sheen': '9s', '--sheen-d': '3s' }} />
         <Blade />
 
-        {/* Эмблема лиги */}
-        <div style={{ position: 'relative', width: LEAGUE, height: H, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: 'rgba(0,0,0,.22)', overflow: 'hidden' }}>
-          <SkateLines corner="br" size={42} width={2} />
-          <Img url={game.league_logo} style={{ position: 'relative', width: 50, height: 50, objectFit: 'contain' }} />
+        {/* Эмблема лиги — без плитки, почти во всю высоту полосы */}
+        <div style={{ position: 'relative', width: LEAGUE, height: H, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Crest url={game.league_logo} size={62} />
         </div>
 
         <TeamCell side="home" game={game} score={tech.home} isTech={tech.isTech} divider

@@ -1,247 +1,128 @@
-import React, { useState, useEffect } from 'react';
-import { getImageUrl } from '../../../utils/helpers';
-import { getSafeUrl } from '../../../utils/graphicsHelpers';
-import { AnimationWrapper } from './AnimationWrapper';
-import { TickerBackground } from './TickerBackground';
+// src/components/WebGraphics/defaultGraphics/TeamLeadersOverlay.jsx
+//
+// Лидеры команд: по краям — лучшие игроки хозяев и гостей в текущей категории,
+// по центру — их статистика по всем категориям. Синяя плашка (кнопка TR)
+// переезжает на текущую категорию, игроки сменяются вместе с ней.
+import React, { useEffect, useState } from 'react';
+import { Photo, Crest, Kicker, FitText, beat } from './kit';
+import { Stage, BODY_H } from './Stage';
+import { C, ACCENT_FILL, teamColor, teamInk, rgba } from './theme';
 
 const CATEGORIES = [
-  { key: 'points', label: 'ОЧКИ' },
-  { key: 'goals', label: 'ГОЛЫ' },
-  { key: 'assists', label: 'ПЕРЕДАЧИ' },
-  { key: 'plus_minus', label: '+ / -' }
+  { key: 'points', label: 'Очки' },
+  { key: 'goals', label: 'Голы' },
+  { key: 'assists', label: 'Передачи' },
+  { key: 'plus_minus', label: '+ / −' },
 ];
 
-export default function TeamLeadersOverlay({ game, overlay, onScreenChange }) {
-  const isVisible = overlay.visible && overlay.type === 'team_leaders';
+const ROW_H = 96;
+const ROW_GAP = 10;
 
-  const [catIndex, setCatIndex] = useState(0);
-  const switchDuration = overlay.data?.switchDuration || 7;
+function bestBy(roster, key, fallback) {
+  if (!Array.isArray(roster) || !roster.length) return fallback;
+  const sorted = [...roster].sort((a, b) => (parseFloat(b[key]) || 0) - (parseFloat(a[key]) || 0));
+  const best = sorted[0];
+  if (best && (parseFloat(best[key]) !== 0 || key === 'plus_minus')) return best;
+  return fallback || best;
+}
+
+const show = (v, key) => {
+  if (v == null || v === '') return '—';
+  const n = Number(v);
+  if (key === 'plus_minus' && n > 0) return `+${n}`;
+  if (key === 'plus_minus' && n < 0) return `−${Math.abs(n)}`;
+  return v;
+};
+
+function PlayerCard({ game, side, leader, active, leaving }) {
+  const color = teamColor(game, side);
+  const ink = teamInk(game, side);
+  const right = side === 'away';
+  const number = leader?.jersey_number;
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px',
+      opacity: active ? 1 : 0,
+      transform: active ? 'none' : leaving ? 'translateY(30px) scale(.97)' : 'translateY(-30px) scale(.97)',
+      transition: 'opacity .55s ease, transform .75s cubic-bezier(.2,.8,.2,1)',
+    }}>
+      {number != null && number !== '' && (
+        <div className="g2-num" style={{ position: 'absolute', top: 30, [right ? 'right' : 'left']: 34, fontSize: 170, fontWeight: 800, lineHeight: 1,
+                                           color: 'transparent', WebkitBackgroundClip: 'text', backgroundClip: 'text',
+                                           backgroundImage: `linear-gradient(180deg, ${rgba(ink, 0.36)} 0%, ${rgba(ink, 0.08)} 100%)`,
+                                           opacity: 'calc(0.8 + var(--audio-level, 0) * 0.2)' }}>
+          {number}
+        </div>
+      )}
+      <div style={{ position: 'relative', ...beat(0.6) }}>
+        <Photo url={leader?.avatar_url} style={{ width: 290, height: 290, borderRadius: 34, boxShadow: `inset 0 0 0 1px ${C.rimHi}, 0 24px 50px -14px rgba(0,0,0,.7)` }} />
+        <div style={{ position: 'absolute', bottom: -30, [right ? 'left' : 'right']: -30 }}>
+          <Crest url={game[`${side}_team_logo`]} size={108} />
+        </div>
+      </div>
+      <div style={{ marginTop: 40, width: '100%', textAlign: 'center' }}>
+        <FitText align="center" min={0.6} style={{ fontSize: 46, fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.05, color: C.text }}>
+          {leader?.last_name || 'Нет данных'}
+        </FitText>
+        <div style={{ marginTop: 10, fontSize: 28, fontWeight: 600, color: C.main }}>{leader?.first_name || ''}</div>
+      </div>
+    </div>
+  );
+}
+
+export default function TeamLeadersOverlay({ game, overlay }) {
+  const visible = overlay.visible && overlay.type === 'team_leaders';
+  const [cat, setCat] = useState(0);
+  const seconds = overlay.data?.switchDuration || 7;
 
   useEffect(() => {
-    if (!isVisible) {
-      setCatIndex(0);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setCatIndex(prev => (prev + 1) % CATEGORIES.length);
-      onScreenChange?.();
-    }, switchDuration * 1000);
-
-    return () => clearInterval(interval);
-  }, [isVisible, switchDuration]);
+    if (!visible) { setCat(0); return undefined; }
+    const id = setInterval(() => setCat(c => (c + 1) % CATEGORIES.length), seconds * 1000);
+    return () => clearInterval(id);
+  }, [visible, seconds]);
 
   if (!game) return null;
 
-  const homeLogo = getImageUrl(game.home_team_logo);
-  const awayLogo = getImageUrl(game.away_team_logo);
-  const defaultAvatar = getImageUrl('default/user_default.webp');
-
-  const dateObj = game.game_date ? new Date(game.game_date) : null;
-  const dateStr = dateObj ? dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
-  const cityText = game.arena_city ? game.arena_city.toUpperCase() : 'ГОРОД НЕ УКАЗАН';
-  const arenaText = (game.arena_name || game.location_text || 'ЛЕДОВАЯ АРЕНА').toUpperCase();
-  const displayDate = dateStr ? dateStr.toUpperCase() : 'ДАТА НЕ УКАЗАНА';
-
-  // Функция поиска лучшего игрока по категории
-  const getBestPlayer = (roster, statKey, fallbackLeader) => {
-    if (!roster || !Array.isArray(roster) || roster.length === 0) return fallbackLeader;
-    
-    const sorted = [...roster].sort((a, b) => {
-      const valA = parseFloat(a[statKey]) || 0;
-      const valB = parseFloat(b[statKey]) || 0;
-      return valB - valA;
-    });
-    
-    const best = sorted[0];
-    if (best && (parseFloat(best[statKey]) !== 0 || statKey === 'plus_minus')) {
-      return best;
-    }
-    return fallbackLeader || best;
-  };
-
-  // Вычисляем лидеров для КАЖДОЙ категории заранее
-  const homeLeaders = CATEGORIES.map(cat => getBestPlayer(game.home_tournament_roster || game.home_roster, cat.key, game.home_leader));
-  const awayLeaders = CATEGORIES.map(cat => getBestPlayer(game.away_tournament_roster || game.away_roster, cat.key, game.away_leader));
-
-  // Рендер карточки игрока для карусели
-  const renderPlayerCard = (leader, idx, isHome) => {
-    const isActive = idx === catIndex;
-    const isPrev = idx === (catIndex - 1 + CATEGORIES.length) % CATEGORIES.length;
-
-    // Анимация: сверху выезжает, вниз заезжает
-    let positionClass = '-translate-y-full opacity-0 pointer-events-none z-0'; // Ждет сверху
-    if (isActive) {
-      positionClass = 'translate-y-0 opacity-100 z-10'; // В центре
-    } else if (isPrev) {
-      positionClass = 'translate-y-full opacity-0 pointer-events-none z-0'; // Уехал вниз
-    }
-
-    const photo = leader ? (getSafeUrl(leader.avatar_url) || defaultAvatar) : defaultAvatar;
-    const firstName = leader?.first_name || 'НЕТ ДАННЫХ';
-    const lastName = leader?.last_name || '';
-    const number = leader?.jersey_number || '00';
-    const teamLogo = isHome ? homeLogo : awayLogo;
-
-    return (
-      <div 
-        key={`player_${isHome ? 'home' : 'away'}_${idx}`} 
-        className={`absolute inset-0 flex flex-col items-center justify-center p-8 transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] ${positionClass}`}
-      >
-         {/* Полупрозрачный номер на фоне — «дышит» по уровню баса интро (audioReactive.js) */}
-         <span className={`absolute top-10 ${isHome ? 'left-10' : 'right-10'} text-[100px] font-black italic text-white leading-none select-none z-0`} style={{ opacity: 'calc(0.2 + var(--audio-level, 0) * 0.3)' }}>
-           #{number}
-         </span>
-
-         {/* Фотография игрока (лёгкий пульс на бит под интро) */}
-         <div className="relative w-56 h-56 mb-6 z-10" style={{ transform: 'scale(calc(1 + var(--audio-beat, 0) * 0.06 + var(--audio-pulse, 0) * 0.03))', willChange: 'transform' }}>
-            <img 
-              src={photo} 
-              alt="Player" 
-              className="w-full h-full rounded-[24%] object-cover object-top" 
-              onError={(e) => { e.target.src = defaultAvatar; }} 
-            />
-            {teamLogo && (
-               <div className={`absolute -bottom-5 ${isHome ? '-right-5' : '-left-5'} w-20 h-20 drop-shadow-xl flex items-center justify-center`} style={{ transform: 'scale(calc(1 + var(--audio-beat, 0) * 0.12 + var(--audio-pulse, 0) * 0.06))', willChange: 'transform' }}>
-                  <img src={teamLogo} alt="Team" className="w-full h-full object-contain" onError={(e) => e.target.style.display = 'none'} />
-               </div>
-            )}
-         </div>
-
-         {/* Имя и фамилия */}
-         <div className="flex flex-col items-center text-center z-10 w-full px-4">
-            <span className="text-4xl font-black text-white uppercase tracking-tight leading-none truncate w-full drop-shadow-md mb-2">
-               {lastName}
-            </span>
-            <span className="text-xl font-bold text-zinc-400 uppercase tracking-widest leading-none truncate w-full">
-               {firstName}
-            </span>
-         </div>
-      </div>
-    );
-  };
+  const home = CATEGORIES.map(c => bestBy(game.home_tournament_roster?.length ? game.home_tournament_roster : game.home_roster, c.key, game.home_leader));
+  const away = CATEGORIES.map(c => bestBy(game.away_tournament_roster?.length ? game.away_tournament_roster : game.away_roster, c.key, game.away_leader));
+  const prev = (cat - 1 + CATEGORIES.length) % CATEGORIES.length;
+  const listH = CATEGORIES.length * ROW_H + (CATEGORIES.length - 1) * ROW_GAP;
 
   return (
-    <AnimationWrapper type="team_leaders" isVisible={isVisible} className="absolute inset-0 flex items-center justify-center z-50 p-20">
-      <div className="flex flex-col items-center w-full max-w-[1500px] relative overflow-hidden rounded-[70px] shadow-2xl transform-gpu">
-        
-        {/* ГЛОБАЛЬНЫЙ БЛИК */}
-        <div className="absolute top-0 bottom-0 w-[80%] bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-30deg] animate-glare pointer-events-none z-50"></div>
-
-        {/* ШАПКА */}
-        <div className="flex justify-center items-center bg-black text-zinc-300 px-8 py-3 w-full relative z-10">
-          <span className="font-black uppercase tracking-[0.15em] text-[26px] text-white/70">
-            ЛИДЕРЫ КОМАНД
-          </span>
+    <Stage game={game} visible={visible} title="Лидеры команд" kicker={CATEGORIES[cat].label} glow={[teamColor(game, 'home'), teamColor(game, 'away')]}
+           page={cat} pages={CATEGORIES.length}>
+      <div style={{ display: 'flex', height: BODY_H }}>
+        <div className="g2-rise" style={{ '--d': '280ms', position: 'relative', flex: 1, minWidth: 0 }}>
+          {CATEGORIES.map((c, i) => <PlayerCard key={c.key} game={game} side="home" leader={home[i]} active={i === cat} leaving={i === prev} />)}
         </div>
 
-        {/* ТЕЛО ПЛАШКИ (3 КОЛОНКИ: Игрок - Статистика - Игрок) */}
-        <div className="flex w-full h-[550px] bg-zinc-950 overflow-hidden relative z-0">
-          <TickerBackground texts={[game.league_name, game.home_short_name, game.away_short_name, game.division_name, game.home_team_name, game.away_team_name]} />
-
-          {/* ЛЕВАЯ КОЛОНКА: Игрок Хозяев (35%) */}
-          <div className="w-[35%] flex flex-col relative overflow-hidden bg-zinc-950 group">
-             {/* Крупный логотип на фоне (с сильным затемнением) */}
-             {homeLogo && (
-               <img src={homeLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-[150%] z-0 pointer-events-none" />
-             )}
-             
-             {/* Карусель игроков хозяев */}
-             <div className="relative w-full h-full">
-               {CATEGORIES.map((cat, idx) => renderPlayerCard(homeLeaders[idx], idx, true))}
-             </div>
+        <div style={{ width: 560, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 20px' }}>
+          <div className="g2-rise" style={{ '--d': '360ms', position: 'relative', height: listH }}>
+            {/* Синяя плашка текущей категории */}
+            <div style={{ position: 'absolute', left: 0, right: 0, height: ROW_H, borderRadius: 24, background: ACCENT_FILL,
+                          boxShadow: `0 18px 40px -14px ${rgba(C.accent, 0.8)}`, transform: `translateY(${cat * (ROW_H + ROW_GAP)}px)`,
+                          transition: 'transform .75s cubic-bezier(.2,.8,.2,1)' }} />
+            {CATEGORIES.map((c, i) => {
+              const on = i === cat;
+              return (
+                <div key={c.key} style={{ position: 'absolute', left: 0, right: 0, top: i * (ROW_H + ROW_GAP), height: ROW_H, display: 'flex', alignItems: 'center',
+                                          padding: '0 30px', borderRadius: 24, boxShadow: on ? 'none' : `inset 0 0 0 1px ${C.rim}`, background: on ? 'transparent' : 'rgba(0,0,0,.18)' }}>
+                  <span className="g2-num" style={{ width: 90, fontSize: 48, fontWeight: 800, color: on ? '#fff' : C.muted, transition: 'color .5s' }}>{show(home[cat]?.[c.key], c.key)}</span>
+                  <span style={{ flex: 1, textAlign: 'center', fontSize: 20, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: on ? '#fff' : C.main, transition: 'color .5s' }}>{c.label}</span>
+                  <span className="g2-num" style={{ width: 90, textAlign: 'right', fontSize: 48, fontWeight: 800, color: on ? '#fff' : C.muted, transition: 'color .5s' }}>{show(away[cat]?.[c.key], c.key)}</span>
+                </div>
+              );
+            })}
           </div>
-
-          {/* ЦЕНТРАЛЬНАЯ КОЛОНКА: Динамический список (30%) */}
-          <div className="w-[30%] flex flex-col items-center justify-center bg-zinc-900 relative z-10 shadow-[0_0_50px_rgba(0,0,0,0.8)] px-6">
-             
-             <span className="text-zinc-500/20 font-black uppercase tracking-[0.3em] text-xs mb-8 z-20">
-               СРАВНЕНИЕ СТАТИСТИКИ
-             </span>
-
-             <div className="relative flex flex-col w-full gap-2 z-10">
-                
-                {/* Физический скользящий бегунок */}
-                <div 
-                  className="absolute left-0 right-0 h-[72px] bg-zinc-100/5 shadow-[0_10px_30px_rgba(0,0,0,0.3)] transition-all duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] z-0 rounded-md"
-                  style={{ transform: `translateY(${catIndex * 80}px)` }} // 72px (высота) + 8px (отступ gap-2) = 80px шаг
-                />
-
-                {/* Статический список категорий (значения обновляются под игроков) */}
-                {CATEGORIES.map((cat, idx) => {
-                  const isActive = idx === catIndex;
-                  
-                  // Берем статистику АКТИВНЫХ в данный момент игроков для всех строк
-                  const currentHLeader = homeLeaders[catIndex];
-                  const currentALeader = awayLeaders[catIndex];
-                  
-                  let hStat = currentHLeader ? currentHLeader[cat.key] : '-';
-                  let aStat = currentALeader ? currentALeader[cat.key] : '-';
-                  
-                  if (cat.key === 'plus_minus') {
-                    if (hStat > 0) hStat = `+${hStat}`;
-                    if (aStat > 0) aStat = `+${aStat}`;
-                  }
-
-                  return (
-                    <div 
-                      key={cat.key} 
-                      className="flex items-center justify-between w-full h-[72px] px-6 relative z-10"
-                    >
-                       <span className={`w-16 text-center text-3xl font-black tabular-nums transition-colors duration-700 ${isActive ? 'text-white' : 'text-white/30'}`}>
-                         {hStat}
-                       </span>
-                       <span className={`text-xl font-black uppercase tracking-widest transition-colors duration-700 ${isActive ? 'text-white' : 'text-zinc-500'}`}>
-                         {cat.label}
-                       </span>
-                       <span className={`w-16 text-center text-3xl font-black tabular-nums transition-colors duration-700 ${isActive ? 'text-white' : 'text-white/30'}`}>
-                         {aStat}
-                       </span>
-                    </div>
-                  );
-                })}
-             </div>
-          </div>
-
-          {/* ПРАВАЯ КОЛОНКА: Игрок Гостей (35%) */}
-          <div className="w-[35%] flex flex-col relative overflow-hidden bg-zinc-950 group">
-             {/* Крупный логотип на фоне (с сильным затемнением) */}
-             {awayLogo && (
-               <img src={awayLogo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-[150%] z-0 pointer-events-none" />
-             )}
-
-             {/* Карусель игроков гостей */}
-             <div className="relative w-full h-full">
-               {CATEGORIES.map((cat, idx) => renderPlayerCard(awayLeaders[idx], idx, false))}
-             </div>
-          </div>
-
+          <Kicker size={16} color={C.subtle} spacing="0.2em" style={{ textAlign: 'center', marginTop: 26 }}>
+            {game.division_id ? 'Статистика турнира' : 'Статистика за команду'}
+          </Kicker>
         </div>
 
-        {/* ПОДВАЛ */}
-        <div className="flex justify-between items-center bg-black text-zinc-300 px-16 py-3 w-full relative z-10">
-          <div className="flex items-center gap-4 text-left w-[33%]">
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-             </svg>
-             <span className={`font-bold uppercase tracking-widest text-[20px] ${dateStr ? 'text-zinc-200' : 'text-zinc-500'}`}>
-               {displayDate}
-             </span>
-          </div>
-          <div className="text-center w-[33%] px-4">
-             <span className={`font-bold uppercase tracking-widest text-[20px] ${game.arena_city ? 'text-zinc-200' : 'text-zinc-500'}`}>
-               {cityText}
-             </span>
-          </div>
-          <div className="text-right w-[33%]">
-             <span className={`font-bold uppercase tracking-widest text-[20px] ${(game.arena_name || game.location_text) ? 'text-zinc-200' : 'text-zinc-500'}`}>
-               {arenaText}
-             </span>
-          </div>
+        <div className="g2-rise" style={{ '--d': '320ms', position: 'relative', flex: 1, minWidth: 0 }}>
+          {CATEGORIES.map((c, i) => <PlayerCard key={c.key} game={game} side="away" leader={away[i]} active={i === cat} leaving={i === prev} />)}
         </div>
-
       </div>
-    </AnimationWrapper>
+    </Stage>
   );
 }
