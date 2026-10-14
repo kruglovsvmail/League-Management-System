@@ -615,8 +615,10 @@ export const deleteRegistryFile = async (req, res) => {
 //               ИМПОРТ ИЗ EXCEL
 // ==========================================
 // Файл формы: Фамилия, Имя, Отчество, Дата рождения, Рост, Вес, Телефон, Email,
-// Команда, Виртуальный. Порядок колонок роли не играет — строки разбираются по
-// заголовкам, английские ключи (first_name, phone, team_id...) тоже принимаются.
+// Команда, Амплуа, Игровой номер, Виртуальный. Порядок колонок роли не играет —
+// строки разбираются по заголовкам, английские ключи (first_name, phone, team_id...)
+// тоже принимаются. Амплуа и номер читаются только при заполненной «Команде»:
+// с обоими человек идёт и в игровой состав команды, с одним — только в команду.
 
 // Телефон — это логин, поэтому в базе он строго +7XXXXXXXXXX. В файле же разрешаем
 // всё, что похоже на российский номер: 79220005675, +7 (922) 000-56-75, 89220005675,
@@ -673,6 +675,37 @@ const parseImportInt = (raw) => {
     return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+// Колонка «Амплуа»: полные слова, сокращения из протокола и одна буква, без учёта
+// регистра. Английские значения — так строки возвращаются с ревью.
+const IMPORT_POSITIONS = {
+    goalie: ['вратарь', 'вр', 'в', 'goalie'],
+    defense: ['защитник', 'защ', 'з', 'defense'],
+    forward: ['нападающий', 'нап', 'н', 'forward'],
+};
+const IMPORT_POSITION_SHORT = { goalie: 'Вр', defense: 'Защ', forward: 'Нап' };
+
+const parseImportPosition = (raw) => {
+    if (raw === null || raw === undefined || String(raw).trim() === '') return { position: null, error: null };
+    const str = String(raw).trim();
+    const key = str.toLowerCase().replace(/\.$/, '');
+    const position = Object.keys(IMPORT_POSITIONS).find(p => IMPORT_POSITIONS[p].includes(key)) || null;
+    if (!position) {
+        return { position: null, error: `Непонятное амплуа «${str}» — нужно Вратарь, Защитник или Нападающий` };
+    }
+    return { position, error: null };
+};
+
+// Колонка «Игровой номер»: целое 1..99, как и в ручном вводе состава.
+const parseImportJersey = (raw) => {
+    if (raw === null || raw === undefined || String(raw).trim() === '') return { jersey: null, error: null };
+    const str = String(raw).trim();
+    const n = Number(str);
+    if (!/^\d{1,2}$/.test(str) || !Number.isInteger(n) || n < 1 || n > 99) {
+        return { jersey: null, error: `Некорректный игровой номер «${str}» — нужно целое число от 1 до 99` };
+    }
+    return { jersey: n, error: null };
+};
+
 // Одна строка файла -> карточка пользователя + ошибки разбора (телефон, команда).
 // Общая для предпросмотра и подтверждения: на втором шаге фронт присылает уже
 // разобранные строки, но сервер разбирает их заново — доверять клиенту незачем.
@@ -690,6 +723,30 @@ const parseImportRow = (row) => {
     const { teamId, error: teamError } = parseImportTeamId(get('Команда', 'team_id'));
     if (teamError) errors.push(teamError);
 
+    // Амплуа и номер без команды не читаем вовсе — им некуда относиться.
+    // Половина пары — не ошибка, а предупреждение: человек уйдёт только в команду.
+    const warnings = [];
+    let position = null;
+    let jerseyNumber = null;
+    if (teamId) {
+        const pos = parseImportPosition(get('Амплуа', 'position'));
+        if (pos.error) errors.push(pos.error);
+        const jersey = parseImportJersey(get('Игровой номер', 'Номер', 'jersey_number'));
+        if (jersey.error) errors.push(jersey.error);
+        position = pos.position;
+        jerseyNumber = jersey.jersey;
+        if (position && !jerseyNumber && !jersey.error) {
+            warnings.push('Указано амплуа, но нет игрового номера — в игровой состав не попадёт, только в команду');
+        }
+        if (jerseyNumber && !position && !pos.error) {
+            warnings.push('Указан игровой номер, но нет амплуа — в игровой состав не попадёт, только в команду');
+        }
+    }
+
+    // Только со второго шага: админ выбрал «В команду» у найденного в базе человека —
+    // новый аккаунт не создаётся, в команду идёт он
+    const bindUserId = Number(row.bind_user_id);
+
     const rawVirtual = get('Виртуальный', 'is_virtual');
     const isVirtual = rawVirtual === true || String(rawVirtual || '').trim().toLowerCase() === 'да';
 
@@ -706,25 +763,49 @@ const parseImportRow = (row) => {
         height: parseImportInt(get('Рост', 'height')),
         weight: parseImportInt(get('Вес', 'weight')),
         team_id: teamId,
+        // В состав идёт только полная пара
+        position: position && jerseyNumber ? position : null,
+        jersey_number: position && jerseyNumber ? jerseyNumber : null,
+        bind_user_id: Number.isInteger(bindUserId) && bindUserId > 0 ? bindUserId : null,
         errors,
+        warnings,
     };
 };
 
 // Ошибки, которые видны только на всём наборе строк: несуществующие команды,
-// повторы телефона и email внутри файла. Дописывает errors и team_name прямо в строки.
-const validateImportRows = async (db, rows) => {
+// повторы телефона и email внутри файла, игровые номера (повтор в одной команде
+// внутри файла или номер уже у действующего игрока этой команды). Дописывает errors
+// и team_name прямо в строки.
+// allowedHolders(row, idx) — id людей, которым номер можно уже носить: если номер
+// в составе у того самого человека, которого админ вправе выбрать «В команду», это
+// не ошибка файла. Такой строке ставится jersey_holder — решение проверит ревью.
+const validateImportRows = async (db, rows, allowedHolders = () => []) => {
     const teamIds = [...new Set(rows.map(r => r.team_id).filter(Boolean))];
     const teamNames = new Map();
+    const jerseyHolders = new Map();
     if (teamIds.length > 0) {
         const { rows: teams } = await db.query('SELECT id, name FROM teams WHERE id = ANY($1::int[])', [teamIds]);
         teams.forEach(t => teamNames.set(t.id, t.name));
+        const { rows: taken } = await db.query(`
+            SELECT tr.team_id, tr.jersey_number, u.id AS user_id, u.last_name, u.first_name
+              FROM team_rosters tr
+              JOIN team_members tm ON tm.id = tr.member_id
+              JOIN users u ON u.id = tm.user_id
+             WHERE tr.team_id = ANY($1::int[]) AND tr.left_at IS NULL AND tr.jersey_number IS NOT NULL
+        `, [teamIds]);
+        taken.forEach(t => jerseyHolders.set(`${t.team_id}:${t.jersey_number}`, t));
     }
 
     const phoneRows = new Map();
     const emailRows = new Map();
+    const jerseyRows = new Map();
     rows.forEach((row, idx) => {
         if (row.phone) phoneRows.set(row.phone, [...(phoneRows.get(row.phone) || []), idx]);
         if (row.email) emailRows.set(row.email.toLowerCase(), [...(emailRows.get(row.email.toLowerCase()) || []), idx]);
+        if (row.team_id && row.jersey_number) {
+            const key = `${row.team_id}:${row.jersey_number}`;
+            jerseyRows.set(key, [...(jerseyRows.get(key) || []), idx]);
+        }
     });
 
     // Номер строки в файле: заголовок — первая, данные начинаются со второй
@@ -742,6 +823,23 @@ const validateImportRows = async (db, rows) => {
         if (row.email && emailRows.get(row.email.toLowerCase()).length > 1) {
             const others = emailRows.get(row.email.toLowerCase()).filter(i => i !== idx).map(fileLine);
             row.errors.push(`Email ${row.email} повторяется в файле (строка ${others.join(', ')})`);
+        }
+        if (row.team_id && row.jersey_number && teamNames.has(row.team_id)) {
+            const key = `${row.team_id}:${row.jersey_number}`;
+            const team = teamNames.get(row.team_id);
+            if (jerseyRows.get(key).length > 1) {
+                const others = jerseyRows.get(key).filter(i => i !== idx).map(fileLine);
+                row.errors.push(`Номер ${row.jersey_number} в команде «${team}» повторяется в файле (строка ${others.join(', ')})`);
+            }
+            const holder = jerseyHolders.get(key);
+            if (holder) {
+                const holderName = `${holder.last_name} ${holder.first_name}`;
+                if (allowedHolders(row, idx).includes(holder.user_id)) {
+                    row.jersey_holder = { user_id: holder.user_id, name: holderName };
+                } else {
+                    row.errors.push(`Номер ${row.jersey_number} в команде «${team}» уже занят: ${holderName} (ID ${holder.user_id})`);
+                }
+            }
         }
     });
 };
@@ -795,7 +893,8 @@ export const previewUserImport = async (req, res) => {
         });
 
         const parsedRows = rows.map(parseImportRow);
-        await validateImportRows(pool, parsedRows);
+        // Выбор «В команду» бывает только на ревью — из файла его не берём
+        parsedRows.forEach(r => { r.bind_user_id = null; });
 
         // Тёзки по Фамилии+Имени — предупреждение, решает админ
         const dupRows = await findNameDuplicates(pool, parsedRows.map(r => ({
@@ -832,13 +931,54 @@ export const previewUserImport = async (req, res) => {
             });
         }
 
+        // Кого из базы админ может выбрать «В команду» по этой строке: при совпавшем
+        // телефоне — только его владельца, иначе — любого тёзку
+        const candidatesOf = (row, idx) => {
+            const phoneMatch = row.phone ? takenByPhone.get(row.phone) : null;
+            return phoneMatch ? [phoneMatch] : (matchesByIdx[String(idx)] || []);
+        };
+
+        await validateImportRows(pool, parsedRows, (row, idx) => candidatesOf(row, idx).map(u => u.id));
+
+        // Где кандидаты уже стоят в команде из строки: админ должен видеть, что человек
+        // там есть, — его амплуа и номер импорт не перезаписывает
+        const pairTeams = [];
+        const pairUsers = [];
+        parsedRows.forEach((row, idx) => {
+            if (!row.team_id) return;
+            candidatesOf(row, idx).forEach(u => { pairTeams.push(row.team_id); pairUsers.push(u.id); });
+        });
+        const teamState = new Map();
+        if (pairTeams.length > 0) {
+            const { rows: states } = await pool.query(`
+                SELECT tm.team_id, tm.user_id,
+                       tm.left_at IS NULL AS is_member,
+                       (tr.id IS NOT NULL AND tr.left_at IS NULL) AS in_roster,
+                       tr.position, tr.jersey_number
+                  FROM team_members tm
+                  LEFT JOIN team_rosters tr ON tr.member_id = tm.id
+                 WHERE (tm.team_id, tm.user_id) IN (SELECT * FROM unnest($1::int[], $2::int[]))
+            `, [pairTeams, pairUsers]);
+            states.forEach(s => teamState.set(`${s.team_id}:${s.user_id}`, {
+                is_member: s.is_member,
+                roster: s.is_member && s.in_roster
+                    ? { position: s.position, position_short: IMPORT_POSITION_SHORT[s.position] || null, jersey_number: s.jersey_number }
+                    : null,
+            }));
+        }
+        const withTeamState = (row, user) => user && ({
+            ...user,
+            in_team: row.team_id ? (teamState.get(`${row.team_id}:${user.id}`) || { is_member: false, roster: null }) : null,
+        });
+
         const resultRows = parsedRows.map((row, idx) => {
             const phoneMatch = row.phone ? takenByPhone.get(row.phone) || null : null;
             const emailMatch = row.email ? takenByEmail.get(row.email.toLowerCase()) || null : null;
             return {
                 ...row,
-                matches: matchesByIdx[String(idx)] || [],
-                phone_match: phoneMatch,
+                position_short: IMPORT_POSITION_SHORT[row.position] || null,
+                matches: (matchesByIdx[String(idx)] || []).map(m => withTeamState(row, m)),
+                phone_match: withTeamState(row, phoneMatch),
                 // Занятый email при свободном телефоне — это, скорее всего, опечатка в
                 // файле, а не тот же человек: блокируем как ошибку строки
                 errors: emailMatch && !phoneMatch
@@ -854,8 +994,54 @@ export const previewUserImport = async (req, res) => {
     }
 };
 
+// Строка импорта с командой -> членство в команде и, при полной паре амплуа+номер,
+// строка игрового состава. Членство создаётся или переоткрывается, команда в клубе
+// тянет человека и в базу клуба. Уже стоящего в составе не трогаем — его амплуа и
+// номер импорт не перезаписывает. Номер к этому моменту проверен validateImportRows.
+const joinImportedToTeam = async (client, row, userId) => {
+    const tmRes = await client.query(
+        'SELECT id, left_at FROM team_members WHERE team_id = $1 AND user_id = $2 ORDER BY left_at IS NULL DESC LIMIT 1',
+        [row.team_id, userId]
+    );
+    let memberId;
+    if (tmRes.rows.length === 0) {
+        const ins = await client.query(
+            'INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, CURRENT_DATE) RETURNING id',
+            [row.team_id, userId]
+        );
+        memberId = ins.rows[0].id;
+    } else {
+        memberId = tmRes.rows[0].id;
+        if (tmRes.rows[0].left_at !== null) {
+            await client.query('UPDATE team_members SET left_at = NULL, joined_at = CURRENT_DATE WHERE id = $1', [memberId]);
+        }
+    }
+    await syncClubMembershipOnTeamJoin(row.team_id, userId, client);
+
+    if (!row.position || !row.jersey_number) return { rostered: false };
+
+    const rosterRes = await client.query('SELECT left_at FROM team_rosters WHERE member_id = $1', [memberId]);
+    if (rosterRes.rows.length > 0 && rosterRes.rows[0].left_at === null) return { rostered: false };
+
+    const teamRes = await client.query('SELECT club_id FROM teams WHERE id = $1', [row.team_id]);
+    const clubId = teamRes.rows[0]?.club_id || null;
+
+    // Строка состава уникальна по членству: у выведенного из состава она осталась
+    // с датой в left_at — переоткрываем её, а не заводим вторую
+    await client.query(`
+        INSERT INTO team_rosters (club_id, team_id, member_id, position, jersey_number, joined_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (member_id) DO UPDATE
+        SET left_at = NULL, club_id = EXCLUDED.club_id, team_id = EXCLUDED.team_id,
+            position = EXCLUDED.position, jersey_number = EXCLUDED.jersey_number,
+            is_captain = false, is_assistant = false, joined_at = NOW()
+    `, [clubId, row.team_id, memberId, row.position, row.jersey_number]);
+    return { rostered: true };
+};
+
 // Шаг 2/2 импорта: принимает отревьюженный на фронте список строк (новые + явно
-// подтверждённые тёзки) и вставляет их одной транзакцией. Строки разбираются и
+// подтверждённые тёзки + найденные в базе люди, которых админ выбрал «В команду»,
+// у них bind_user_id) и проводит их одной транзакцией. Строки разбираются и
 // проверяются заново: телефон снова нормализуется, команды перепроверяются — если
 // что-то не сходится, импорт отменяется целиком с указанием строки, как и при
 // дубле телефона в базе.
@@ -873,7 +1059,30 @@ export const confirmUserImport = async (req, res) => {
         // понимает и их. Порядок строк в списке — не порядок в файле (часть отфильтрована
         // на ревью), поэтому в сообщениях называем человека, а не номер строки.
         const rows = incoming.map(parseImportRow);
-        await validateImportRows(client, rows);
+        await validateImportRows(client, rows, (row) => (row.bind_user_id ? [row.bind_user_id] : []));
+
+        // «В команду» — только тот, кого ревью могло предложить по этой строке:
+        // владелец телефона из файла или тёзка по Фамилии+Имени
+        const bindIds = [...new Set(rows.map(r => r.bind_user_id).filter(Boolean))];
+        const bindUsers = new Map();
+        if (bindIds.length > 0) {
+            const { rows: found } = await client.query(
+                'SELECT id, first_name, last_name, phone FROM users WHERE id = ANY($1::int[])', [bindIds]
+            );
+            found.forEach(u => bindUsers.set(u.id, u));
+        }
+        rows.forEach(row => {
+            if (!row.bind_user_id) return;
+            const u = bindUsers.get(row.bind_user_id);
+            const sameName = u && String(u.first_name || '').toLowerCase() === row.first_name.toLowerCase()
+                && String(u.last_name || '').toLowerCase() === row.last_name.toLowerCase();
+            if (!row.team_id) row.errors.push('Не указана команда — добавлять некуда');
+            else if (!u) row.errors.push(`Пользователь ID ${row.bind_user_id} не найден`);
+            else if (!(row.phone && u.phone === row.phone) && !sameName) {
+                row.errors.push(`Пользователь ID ${row.bind_user_id} не совпадает со строкой ни по телефону, ни по ФИ`);
+            }
+        });
+
         const broken = rows.find(r => r.errors.length > 0);
         if (broken) {
             return res.status(400).json({
@@ -884,10 +1093,21 @@ export const confirmUserImport = async (req, res) => {
 
         let importedCount = 0;
         let boundCount = 0;
+        let linkedCount = 0;
+        let rosteredCount = 0;
         await client.query('BEGIN');
 
         for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
             const row = rows[rowIdx];
+
+            // Человек уже есть в базе — аккаунт не создаём, только ставим в команду
+            if (row.bind_user_id) {
+                const { rostered } = await joinImportedToTeam(client, row, row.bind_user_id);
+                linkedCount++;
+                if (rostered) rosteredCount++;
+                continue;
+            }
+
             let email = row.email;
             let needsEmailUpdate = false;
 
@@ -922,23 +1142,24 @@ export const confirmUserImport = async (req, res) => {
                 await client.query('UPDATE users SET email = $1 WHERE id = $2', [finalEmail, newId]);
             }
 
-            // Колонка «Команда»: только в базу команды (team_members), без игрового состава
-            // и штаба — их команда ведёт сама. Команда в клубе тянет человека и в базу клуба.
+            // Колонка «Команда»: в базу команды (team_members), с амплуа и номером — ещё
+            // и в игровой состав. Штаб команда ведёт сама.
             if (row.team_id) {
-                await client.query(
-                    'INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, CURRENT_DATE)',
-                    [row.team_id, newId]
-                );
-                await syncClubMembershipOnTeamJoin(row.team_id, newId, client);
+                const { rostered } = await joinImportedToTeam(client, row, newId);
                 boundCount++;
+                if (rostered) rosteredCount++;
             }
 
             importedCount++;
         }
 
         await client.query('COMMIT');
-        const boundNote = boundCount > 0 ? `, привязано к командам: ${boundCount}` : '';
-        res.json({ success: true, count: importedCount, message: `Успешно импортировано ${importedCount} пользователей${boundNote}` });
+        const notes = [];
+        if (boundCount > 0) notes.push(`привязано к командам: ${boundCount}`);
+        if (linkedCount > 0) notes.push(`из базы добавлено в команды: ${linkedCount}`);
+        if (rosteredCount > 0) notes.push(`внесено в игровой состав: ${rosteredCount}`);
+        const notesText = notes.length ? `, ${notes.join(', ')}` : '';
+        res.json({ success: true, count: importedCount, message: `Успешно импортировано ${importedCount} пользователей${notesText}` });
 
     } catch (err) {
         await client.query('ROLLBACK').catch(() => {});

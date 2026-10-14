@@ -3,7 +3,8 @@ import React from 'react';
 // Карточка одного существующего пользователя, найденного по совпадению
 // Фамилия+Имя — используется и в модалке ручного добавления, и в ревью
 // перед импортом. Помогает решить: это тот же человек или тёзка.
-export function UserMatchCard({ user }) {
+// children — доп. строка под карточкой (ревью импорта: «В команду» и состав).
+export function UserMatchCard({ user, children }) {
   const fio = [user.last_name, user.first_name, user.middle_name].filter(Boolean).join(' ');
   const year = user.birth_date ? new Date(user.birth_date).getFullYear() : null;
 
@@ -21,6 +22,7 @@ export function UserMatchCard({ user }) {
       <div className="text-[12px] text-graphite-light">
         Команды: <b className="text-graphite">{(user.teams && user.teams.length) ? user.teams.join(', ') : '—'}</b>
       </div>
+      {children}
     </div>
   );
 }
