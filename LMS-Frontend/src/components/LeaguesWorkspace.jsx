@@ -24,10 +24,11 @@ import { SettingsCard } from './Settings/SettingsCard';
  * штат про владельцев не знает, они просто всё могут.
  *
  * Второй блок — глобальные параметры лиги: настройки, которые не отдаются руководству
- * лиги на вкладке «Параметры». Сейчас их два: «Состав заявки из общей базы»
+ * лиги на вкладке «Параметры». Сейчас их три: «Состав заявки из общей базы»
  * (leagues.league_roster_global_search) — меняет правила работы с чужими данными (общая
- * база пользователей, составы команд), и режим дисквалификаций (leagues.disqualification_mode),
- * перенесённый сюда с вкладки «Параметры».
+ * база пользователей, составы команд), режим дисквалификаций (leagues.disqualification_mode),
+ * перенесённый сюда с вкладки «Параметры», и «Создание аккаунтов владельцем»
+ * (leagues.allow_owner_virtual_users) — форма в «Справочнике».
  *
  * Третий — диктор арены: звуки лиги и сценарий бипа (см. ArenaAnnouncerSection).
  *
@@ -136,6 +137,10 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
         // СДК», а страница дисквалификаций выбирает свой вид. Правим профиль сразу, без F5.
         if (field === 'disqualification_mode') {
           onPatchLeague?.(selectedLeague.id, { disqualification_mode: saved.disqualification_mode });
+        }
+        // По этому тумблеру «Справочник» показывает форму создания аккаунта
+        if (field === 'allow_owner_virtual_users') {
+          onPatchLeague?.(selectedLeague.id, { allow_owner_virtual_users: saved.allow_owner_virtual_users });
         }
       } else {
         setGlobalParams(prev);
@@ -357,6 +362,29 @@ export function LeaguesWorkspace({ showToast, selectedLeague, onSelectLeague }) 
                   <Switch
                     checked={!!globalParams.league_roster_global_search}
                     onChange={(e) => handleParamChange('league_roster_global_search', e.target.checked)}
+                    disabled={!!savingParam}
+                  />
+                ) : (
+                  <div className="w-[40px] h-[22px] rounded-pill bg-graphite/10 animate-pulse" />
+                )}
+              </div>
+            </div>
+          </SettingsCard>
+
+          {/* СОЗДАНИЕ АККАУНТОВ ВЛАДЕЛЬЦЕМ — форма под фильтрами в «Справочнике» */}
+          <SettingsCard
+            icon="player"
+            title="Создание аккаунтов владельцем"
+            description="Владелец лиги может создавать виртуальные аккаунты в «Справочнике»: ФИО, дата рождения и телефон (без телефона — следующий служебный номер). Перед созданием система показывает похожие аккаунты, после — секретный код для активации. В метрике видно, кто и когда создал аккаунт."
+            saving={savingParam === 'allow_owner_virtual_users'}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] font-bold text-graphite/70">Разрешить</span>
+              <div className="shrink-0">
+                {globalParams ? (
+                  <Switch
+                    checked={!!globalParams.allow_owner_virtual_users}
+                    onChange={(e) => handleParamChange('allow_owner_virtual_users', e.target.checked)}
                     disabled={!!savingParam}
                   />
                 ) : (

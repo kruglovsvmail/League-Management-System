@@ -4,16 +4,8 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
 import * as xlsx from 'xlsx';
 import { syncClubMembershipOnTeamJoin } from '../utils/clubMembership.js';
-
-// --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: Генерация 5-значного кода ---
-const generateVirtualCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 5; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-};
+// Секретный код и служебные номера — общие с «Справочником» владельца лиги
+import { generateVirtualCode, nextVirtualPhone, VIRTUAL_PHONES_EXHAUSTED_ERROR } from '../utils/virtualAccounts.js';
 
 // Поиск существующих пользователей с совпадающей Фамилией+Именем (без учёта
 // регистра, без учёта Отчества — намеренно, чтобы не пропустить тёзку без
@@ -368,34 +360,14 @@ export const getUsers = async (req, res) => {
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };
 
-// Диапазон виртуальных номеров для карточек без реального телефона: +70000000001–+70000000999.
-// Префикс "000" намеренно не пересекается ни с одним реальным операторским кодом
-// (900/990 и т.п. — настоящие префиксы сотовых операторов, 000 — нет).
-const VIRTUAL_PHONE_PREFIX = '+70000000';
-const VIRTUAL_PHONE_MAX = 999;
-
 // ── GET /api/registry/users/next-virtual-phone ───────────────────────────
 // Возвращает следующий свободный номер в виртуальном диапазоне (для кнопки
-// "Подставить номер" в форме создания виртуального пользователя).
+// "Подставить номер" в форме создания виртуального пользователя). Диапазон — в
+// utils/virtualAccounts.js.
 export const getNextVirtualPhone = async (req, res) => {
     try {
-        const { rows } = await pool.query(
-            `SELECT MAX(phone) AS last_phone FROM users WHERE phone LIKE $1`,
-            [`${VIRTUAL_PHONE_PREFIX}%`]
-        );
-        const lastSuffix = rows[0].last_phone
-            ? parseInt(rows[0].last_phone.slice(VIRTUAL_PHONE_PREFIX.length), 10)
-            : 0;
-        const nextSuffix = lastSuffix + 1;
-
-        if (nextSuffix > VIRTUAL_PHONE_MAX) {
-            return res.status(409).json({
-                success: false,
-                error: `Виртуальные номера в диапазоне ${VIRTUAL_PHONE_PREFIX}001–${VIRTUAL_PHONE_PREFIX}${VIRTUAL_PHONE_MAX} закончились`,
-            });
-        }
-
-        const phone = `${VIRTUAL_PHONE_PREFIX}${String(nextSuffix).padStart(3, '0')}`;
+        const phone = await nextVirtualPhone(pool);
+        if (!phone) return res.status(409).json({ success: false, error: VIRTUAL_PHONES_EXHAUSTED_ERROR });
         res.json({ success: true, phone });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -459,10 +431,13 @@ export const createUser = async (req, res) => {
             needsEmailUpdate = true;
         }
 
+        // created_via = 'admin': аккаунт внёс глобальный администратор формой реестра
         const result = await pool.query(
-            `INSERT INTO users (first_name, last_name, middle_name, email, phone, virtual_code, birth_date, gender, height, weight, grip, pronunciation)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-            [first_name, last_name, middle_name, email, phone || null, virtual_code, birth_date || null, gender || null, height || null, weight || null, grip || null, pronunciation || null]
+            `INSERT INTO users (first_name, last_name, middle_name, email, phone, virtual_code, birth_date, gender, height, weight, grip, pronunciation,
+                                created_via, created_by_user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'admin', $13) RETURNING id`,
+            [first_name, last_name, middle_name, email, phone || null, virtual_code, birth_date || null, gender || null, height || null, weight || null, grip || null, pronunciation || null,
+             req.user?.id || null]
         );
         
         const newId = result.rows[0].id;
@@ -615,7 +590,8 @@ export const deleteRegistryFile = async (req, res) => {
 //               ИМПОРТ ИЗ EXCEL
 // ==========================================
 // Файл формы: Фамилия, Имя, Отчество, Дата рождения, Рост, Вес, Телефон, Email,
-// Команда, Амплуа, Игровой номер, Виртуальный. Порядок колонок роли не играет —
+// Команда, Амплуа, Игровой номер (колонка «Виртуальный» из старой формы больше не
+// читается — все новые аккаунты из файла виртуальные). Порядок колонок роли не играет —
 // строки разбираются по заголовкам, английские ключи (first_name, phone, team_id...)
 // тоже принимаются. Амплуа и номер читаются только при заполненной «Команде»:
 // с обоими человек идёт и в игровой состав команды, с одним — только в команду.
@@ -747,8 +723,9 @@ const parseImportRow = (row) => {
     // новый аккаунт не создаётся, в команду идёт он
     const bindUserId = Number(row.bind_user_id);
 
-    const rawVirtual = get('Виртуальный', 'is_virtual');
-    const isVirtual = rawVirtual === true || String(rawVirtual || '').trim().toLowerCase() === 'да';
+    // Колонку «Виртуальный» с 16.10.2026 не читаем: новый аккаунт из файла всегда
+    // виртуальный, реальным его делает только активация (см. confirmUserImport)
+    const isVirtual = true;
 
     const email = get('Email', 'email');
 
@@ -1116,14 +1093,20 @@ export const confirmUserImport = async (req, res) => {
                 needsEmailUpdate = true;
             }
 
-            const virtual_code = row.is_virtual ? generateVirtualCode() : null;
+            // Из файла аккаунт всегда виртуальный: реальным он становится только активацией
+            // (человек сам подтверждает телефон и получает пароль), а колонку «Виртуальный»
+            // в файле с 16.10.2026 не учитываем. Найденных в базе людей импорт не трогает
+            // вовсе — их только ставят в команду (bind_user_id выше).
+            const virtual_code = generateVirtualCode();
 
             let result;
             try {
                 result = await client.query(
-                    `INSERT INTO users (first_name, last_name, middle_name, email, phone, virtual_code, birth_date, height, weight)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-                    [row.first_name, row.last_name, row.middle_name || null, email, row.phone || null, virtual_code, row.birth_date || null, row.height || null, row.weight || null]
+                    `INSERT INTO users (first_name, last_name, middle_name, email, phone, virtual_code, birth_date, height, weight,
+                                        created_via, created_by_user_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'import', $10) RETURNING id`,
+                    [row.first_name, row.last_name, row.middle_name || null, email, row.phone || null, virtual_code, row.birth_date || null, row.height || null, row.weight || null,
+                     req.user?.id || null]
                 );
             } catch (insertErr) {
                 insertErr._who = `${row.last_name} ${row.first_name}`;

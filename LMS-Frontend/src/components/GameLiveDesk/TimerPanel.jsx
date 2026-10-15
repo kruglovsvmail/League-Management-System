@@ -19,7 +19,9 @@ export const TimerPanel = ({
   autoStopOnEvent, setAutoStopOnEvent,
   arenaAnnouncer, setArenaAnnouncer, setToast, onResetAnnouncer,
   socketConnected, onSetTime, onAdjustTime,
-  onRecalculate, onFinishGame, isFinishing, isRecalculating, isReadOnly
+  onRecalculate, onFinishGame, isFinishing, isRecalculating, isReadOnly,
+  // false — лига скрыла корректировку времени (см. canAdjustTime в GameLiveDesk)
+  canAdjustTime = true
 }) => {
   const [isEditingTimer, setIsEditingTimer] = useState(false);
   const [manualTimerInput, setManualTimerInput] = useState('');
@@ -154,7 +156,7 @@ export const TimerPanel = ({
             </span>
           )}
 
-          {!isEditingTimer && !isReadOnly && !isShootout && (
+          {!isEditingTimer && !isReadOnly && !isShootout && canAdjustTime && (
             <button
               onClick={openTimerEdit}
               className="absolute top-2 right-2 p-1.5 rounded text-white/20 hover:text-white hover:bg-white/10 transition-colors opacity-40 hover:opacity-100"
@@ -197,7 +199,7 @@ export const TimerPanel = ({
         )}
       </div>
 
-      {!isReadOnly && (
+      {!isReadOnly && canAdjustTime && (
         <div className={`mb-6 rounded-lg border transition-colors ${isAdjustEnabled ? 'bg-white/5 border-white/15' : 'bg-white/[0.02] border-white/5'}`}>
           <div className="flex items-center justify-between px-3 py-4">
             <span className={`text-[12px] uppercase font-semibold tracking-widest transition-colors ${isAdjustEnabled ? 'text-white/60' : 'text-white/25'}`}>Корректировка времени</span>

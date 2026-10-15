@@ -55,6 +55,7 @@ export function PreferencesTab({ setToast }) {
     sec_penalty_release_on_goal: true,
     sec_penalty_manual_end: false,
     sec_coincident_penalties: true,
+    sec_hide_time_adjust: false,
     protocol_esign_label: false
   });
 
@@ -89,6 +90,7 @@ export function PreferencesTab({ setToast }) {
             sec_penalty_release_on_goal: data.data.sec_penalty_release_on_goal ?? true,
             sec_penalty_manual_end: data.data.sec_penalty_manual_end ?? false,
             sec_coincident_penalties: data.data.sec_coincident_penalties ?? true,
+            sec_hide_time_adjust: data.data.sec_hide_time_adjust ?? false,
             protocol_esign_label: data.data.protocol_esign_label ?? false
           });
         }
@@ -418,6 +420,20 @@ export function PreferencesTab({ setToast }) {
               <Switch
                 checked={formData.sec_coincident_penalties}
                 onChange={(e) => handleStepChange('sec_coincident_penalties', e.target.checked)}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
+          <div
+            className="flex items-center justify-between gap-3"
+            title="Блок «Корректировка времени» (±1 и ±10 секунд) и правка времени на табло пропадают из панели у всех, кроме владельца лиги и глобального администратора. Скрытие только в панели: сам сервер такие команды не проверяет."
+          >
+            <span className="text-[11px] font-bold text-graphite/70 leading-snug">Скрыть корректировку времени (кроме владельца лиги)</span>
+            <div className="shrink-0">
+              <Switch
+                checked={formData.sec_hide_time_adjust}
+                onChange={(e) => handleStepChange('sec_hide_time_adjust', e.target.checked)}
                 disabled={!canEdit}
               />
             </div>

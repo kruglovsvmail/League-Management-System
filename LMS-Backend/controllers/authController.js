@@ -145,7 +145,9 @@ const fetchUserProfile = async (userId) => {
              -- Обозначения экипировки по возрасту («ушк» и «к» в составах) — настройка лиги
              equip_mark_ushk_enabled, equip_mark_ushk_max_age, equip_mark_mouthguard_enabled,
              to_char(equip_mark_mouthguard_born_after, 'YYYY-MM-DD') AS equip_mark_mouthguard_born_after,
-             allow_match_jersey_change, allow_match_letters_change
+             allow_match_jersey_change, allow_match_letters_change,
+             -- Форма создания виртуального аккаунта в «Справочнике» (тумблер глобального админа)
+             allow_owner_virtual_users
       FROM leagues
     `);
   } else {
@@ -162,6 +164,8 @@ const fetchUserProfile = async (userId) => {
              l.equip_mark_ushk_enabled, l.equip_mark_ushk_max_age, l.equip_mark_mouthguard_enabled,
              to_char(l.equip_mark_mouthguard_born_after, 'YYYY-MM-DD') AS equip_mark_mouthguard_born_after,
              l.allow_match_jersey_change, l.allow_match_letters_change,
+             -- Форма создания виртуального аккаунта в «Справочнике» (тумблер глобального админа)
+             l.allow_owner_virtual_users,
              CONCAT_WS(', ',
                (SELECT string_agg(ls.role, ', ') FROM league_staff ls
                  WHERE ls.league_id = l.id AND ls.user_id = $1 AND ls.end_date IS NULL),

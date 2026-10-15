@@ -50,6 +50,31 @@ const PAGE_COLORS = {
 };
 const colorForPage = (page) => PAGE_COLORS[page] || CHART_INK;
 
+// Как созданы аккаунты (users.created_via): группы — те же, что в getAccountOrigin на бэкенде
+const ACCOUNT_ORIGINS = {
+  self:   { label: 'Зарегистрировались сами', color: CHART_ORANGE },
+  league: { label: 'Создала лига',            color: CHART_BLUE },
+  admin:  { label: 'Внёс глобальный админ',   color: CHART_AQUA },
+};
+// Подробно, по значению колонки — для найденного по телефону аккаунта
+const ORIGIN_DETAILS = {
+  self: 'Зарегистрировался сам в Team-Room',
+  league: 'Создал владелец лиги в «Справочнике»',
+  admin: 'Внёс глобальный администратор (форма реестра)',
+  import: 'Внёс глобальный администратор (импорт Excel)',
+};
+
+// 10 цифр после +7 → (922) 000-56-75
+const formatPhoneDynamic = (raw) => {
+  if (!raw) return '';
+  let res = '';
+  if (raw.length > 0) res += '(' + raw.substring(0, 3);
+  if (raw.length >= 4) res += ') ' + raw.substring(3, 6);
+  if (raw.length >= 7) res += '-' + raw.substring(6, 8);
+  if (raw.length >= 9) res += '-' + raw.substring(8, 10);
+  return res;
+};
+
 // Статичный список разделов-чипсов для графика (совпадает с PAGE_LABELS бэкенда).
 // Бэкенд всегда отдаёт данные по всем разделам сразу («page=all») плюс суммарную
 // линию «Общие» — переключение чипсов ничего не перезапрашивает, а лишь скрывает/
@@ -394,20 +419,53 @@ export function MetricsPage() {
   const [pushStats, setPushStats] = useState(null);
   const [clients, setClients] = useState(null);
   const [audience, setAudience] = useState(null);
+  const [accountOrigin, setAccountOrigin] = useState(null);
+
+  // Поиск аккаунта по телефону: кто, когда и как его создал
+  const [originPhone, setOriginPhone] = useState('');
+  const [originLookup, setOriginLookup] = useState(null); // { user } после поиска
+  const [originError, setOriginError] = useState('');
+  const [isOriginSearching, setIsOriginSearching] = useState(false);
+
+  const handleOriginLookup = async () => {
+    if (originPhone.length !== 10) {
+      setOriginError('Введите номер полностью: 10 цифр после +7');
+      setOriginLookup(null);
+      return;
+    }
+    setIsOriginSearching(true);
+    setOriginError('');
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/metrics/account-origin/lookup?phone=${encodeURIComponent('+7' + originPhone)}`,
+        { headers: getAuthHeaders() }
+      );
+      const data = await res.json();
+      if (data.success) setOriginLookup({ user: data.user });
+      else { setOriginError(data.error); setOriginLookup(null); }
+    } catch (err) {
+      setOriginError('Не удалось выполнить поиск');
+      setOriginLookup(null);
+    } finally {
+      setIsOriginSearching(false);
+    }
+  };
 
   useEffect(() => {
     const fetchInitial = async () => {
       setIsLoading(true);
       try {
-        const [pushRes, clientsRes, audienceRes] = await Promise.all([
+        const [pushRes, clientsRes, audienceRes, originRes] = await Promise.all([
           fetch(`${import.meta.env.VITE_API_URL}/api/metrics/push`, { headers: getAuthHeaders() }),
           fetch(`${import.meta.env.VITE_API_URL}/api/metrics/clients`, { headers: getAuthHeaders() }),
           fetch(`${import.meta.env.VITE_API_URL}/api/metrics/audience`, { headers: getAuthHeaders() }),
+          fetch(`${import.meta.env.VITE_API_URL}/api/metrics/account-origin`, { headers: getAuthHeaders() }),
         ]);
-        const [pushData, clientsData, audienceData] = await Promise.all([pushRes.json(), clientsRes.json(), audienceRes.json()]);
+        const [pushData, clientsData, audienceData, originData] = await Promise.all([pushRes.json(), clientsRes.json(), audienceRes.json(), originRes.json()]);
         if (pushData.success) setPushStats(pushData);
         if (clientsData.success) setClients(clientsData);
         if (audienceData.success) setAudience(audienceData);
+        if (originData.success) setAccountOrigin(originData);
       } catch (err) {
         console.error('Ошибка загрузки метрик:', err);
       } finally {
@@ -764,6 +822,107 @@ export function MetricsPage() {
                   )}
                 </div>
               </>
+            )}
+          </div>
+
+        </div>
+
+        {/* КАК СОЗДАНЫ АККАУНТЫ + ПОИСК АККАУНТА ПО ТЕЛЕФОНУ */}
+        <div className="grid grid-cols-2 gap-6">
+
+          <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+            <h3 className="text-[16px] font-bold text-graphite mb-1">Как созданы аккаунты</h3>
+            <p className="text-[12px] text-graphite-light mb-4">
+              Активация виртуального аккаунта — не регистрация: он остаётся за тем, кто его создал
+            </p>
+
+            {!accountOrigin ? (
+              <div className="h-20 flex items-center justify-center"><Loader text="" /></div>
+            ) : accountOrigin.marked === 0 ? (
+              <div className="text-center py-8 text-graphite/40 text-[13px]">
+                Данных пока нет — они появятся с первыми новыми аккаунтами
+              </div>
+            ) : (
+              <>
+                <DonutChart
+                  segments={accountOrigin.items.map((it) => ({
+                    label: ACCOUNT_ORIGINS[it.key].label,
+                    value: it.user_count,
+                    pct: it.pct,
+                    color: ACCOUNT_ORIGINS[it.key].color,
+                  }))}
+                  centerValue={accountOrigin.marked.toLocaleString('ru')}
+                  centerLabel="с отметкой"
+                />
+                {accountOrigin.unknown > 0 && (
+                  <div className="text-[12px] text-graphite-light mt-4">
+                    Ещё {accountOrigin.unknown.toLocaleString('ru')} аккаунтов созданы до появления отметки — в доли не входят
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="bg-white/70 backdrop-blur-[12px] border-[1px] border-white/40 rounded-lg shadow-[4px_0_24px_rgba(0,0,0,0.04)] p-6">
+            <h3 className="text-[16px] font-bold text-graphite mb-1">Кто создал аккаунт</h3>
+            <p className="text-[12px] text-graphite-light mb-4">Найдите аккаунт по номеру телефона</p>
+
+            <div className="flex items-center gap-3">
+              <div className="relative flex items-center flex-1 border border-graphite/40 rounded-md bg-white transition-all duration-300 focus-within:border-orange overflow-hidden">
+                <div className="pl-3 pr-2 text-[13px] text-graphite font-semibold border-r border-graphite/20 py-2.5 bg-graphite/5 h-full flex items-center shrink-0">+7</div>
+                <input
+                  type="tel"
+                  placeholder="(000) 000-00-00"
+                  value={formatPhoneDynamic(originPhone)}
+                  onChange={(e) => setOriginPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleOriginLookup(); }}
+                  className="w-full px-3 py-2.5 bg-transparent text-graphite text-[13px] outline-none placeholder:text-graphite/40 font-medium"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleOriginLookup}
+                disabled={isOriginSearching}
+                className="px-5 py-2.5 rounded-md bg-orange text-white font-bold text-[13px] hover:bg-orange-hover transition-colors disabled:opacity-50"
+              >
+                {isOriginSearching ? 'Ищем...' : 'Найти'}
+              </button>
+            </div>
+
+            {originError && <div className="text-[12px] text-status-rejected mt-3">{originError}</div>}
+
+            {originLookup && !originLookup.user && (
+              <div className="text-[13px] text-graphite/50 mt-4">Аккаунт с таким номером не найден</div>
+            )}
+
+            {originLookup?.user && (
+              <div className="mt-4 flex flex-col gap-2 text-[13px] border-t border-graphite/10 pt-4">
+                <div className="text-[15px] font-bold text-graphite">{originLookup.user.full_name}</div>
+                <div className="text-graphite-light">
+                  {originLookup.user.activated ? 'Активирован' : 'Виртуальный — ещё не активирован'}
+                </div>
+                <div>
+                  <span className="text-graphite-light">Как: </span>
+                  <b className="text-graphite">
+                    {originLookup.user.created_via
+                      ? ORIGIN_DETAILS[originLookup.user.created_via]
+                      : 'Неизвестно — создан до появления отметки'}
+                  </b>
+                </div>
+                {originLookup.user.creator_name && (
+                  <div>
+                    <span className="text-graphite-light">Кто: </span>
+                    <b className="text-graphite">{originLookup.user.creator_name}</b>
+                    {originLookup.user.league_name && <span className="text-graphite-light"> · лига «{originLookup.user.league_name}»</span>}
+                  </div>
+                )}
+                <div>
+                  <span className="text-graphite-light">Когда: </span>
+                  <b className="text-graphite">
+                    {originLookup.user.created_at ? dayjs(originLookup.user.created_at).format('DD.MM.YYYY HH:mm') : '—'}
+                  </b>
+                </div>
+              </div>
             )}
           </div>
 

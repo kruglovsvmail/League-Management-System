@@ -503,6 +503,9 @@ export const getGameById = async (req, res) => {
                 l.sec_panel_view,
                 l.sec_goalie_autofill, l.sec_penalty_release_on_goal, l.sec_penalty_manual_end,
                 l.sec_coincident_penalties,
+                -- Скрыть корректировку времени от всех, кроме владельца лиги (решает фронт:
+                -- маршрут матча открыт без токена, кто смотрит — сервер здесь не знает)
+                l.sec_hide_time_adjust,
                 COALESCE(tt_home.custom_jersey_dark_url,  ht.jersey_dark_url)  as home_jersey_dark_url,
                 COALESCE(tt_home.custom_jersey_light_url, ht.jersey_light_url) as home_jersey_light_url,
                 COALESCE(tt_away.custom_jersey_dark_url,  at.jersey_dark_url)  as away_jersey_dark_url,

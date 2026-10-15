@@ -12,6 +12,7 @@ import { Badge } from '../ui/Badge';
 import { Input } from '../ui/Input';
 import { useAccess } from '../hooks/useAccess';
 import { getImageUrl, getToken } from '../utils/helpers';
+import { CreateVirtualUserCard } from '../components/Handbook/CreateVirtualUserCard';
 
 export function HandbookPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,10 +20,15 @@ export function HandbookPage() {
   // присвоение работают в ТЕКУЩЕЙ выбранной лиге: человек из чужой лиги показывает прочерк,
   // и ему можно присвоить квалификацию в своей.
   const { selectedLeague } = useOutletContext();
-  const { checkAccess } = useAccess();
+  const { checkAccess, hasFullLeagueAccess } = useAccess();
   const leagueId = selectedLeague?.id || null;
+  // Создавать виртуальные аккаунты может владелец лиги, если глобальный администратор
+  // включил лиге тумблер «Создание аккаунтов владельцем». Сервер проверяет то же самое.
+  const canCreateVirtualUsers = !!leagueId && hasFullLeagueAccess && !!selectedLeague?.allow_owner_virtual_users;
 
   const activeTab = parseInt(searchParams.get('tab') || '0', 10);
+  // Форма нового аккаунта — только на вкладке «Пользователи»
+  const showCreateCard = activeTab === 0 && canCreateVirtualUsers;
   const matchType = parseInt(searchParams.get('match') || '0', 10);
   const searchQuery = searchParams.get('q') || '';
   // Фильтр по команде живёт только на вкладке «Пользователи» и сбрасывается вместе
@@ -317,7 +323,12 @@ export function HandbookPage() {
       {toast && <div className="fixed top-[110px] right-10 z-[9999]"><Toast {...toast} onClose={() => setToast(null)} /></div>}
 
       <div className="flex items-start px-10 pt-8 gap-8 relative z-10">
-        <div className="w-[340px] shrink-0 sticky top-[128px] h-[320px] overflow-y-auto bg-white/70 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6 custom-scrollbar z-20">
+        {/* Левая колонка: фильтры и под ними — форма нового аккаунта (только на вкладке
+            «Пользователи» и только у лиги с включённым тумблером). Своего скролла у колонки
+            нет: с формой она длиннее экрана, поэтому тогда и не липнет — до кнопки
+            «Создать аккаунт» доходят обычной прокруткой страницы. */}
+        <div className={`w-[340px] shrink-0 flex flex-col gap-4 z-20 ${showCreateCard ? '' : 'sticky top-[128px]'}`}>
+        <div className="shrink-0 bg-white/70 backdrop-blur-md rounded-2xl shadow-[4px_0_24px_rgba(0,0,0,0.04)] border border-white/50 p-6 flex flex-col gap-6">
           <div className="shrink-0 mb-2">
             <SegmentButton options={['Пользов.', 'Команды', 'Арены']} defaultIndex={activeTab} onChange={setActiveTab} />
           </div>
@@ -340,6 +351,11 @@ export function HandbookPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {showCreateCard && (
+          <CreateVirtualUserCard key={leagueId} leagueId={leagueId} onToast={setToast} />
+        )}
         </div>
 
         <div className="flex-1 relative z-10 min-h-[500px]">

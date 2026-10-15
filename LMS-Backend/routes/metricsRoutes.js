@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
-import { getSummary, getTopUsers, getUserDetail, getDaily, getPushStats, getClients, getAudience } from '../controllers/metricsController.js';
+import { getSummary, getTopUsers, getUserDetail, getDaily, getPushStats, getClients, getAudience, getAccountOrigin, lookupAccountOrigin } from '../controllers/metricsController.js';
 
 const router = express.Router();
 
@@ -14,5 +14,8 @@ router.get('/metrics/daily', getDaily);
 router.get('/metrics/push', getPushStats);
 router.get('/metrics/clients', getClients);
 router.get('/metrics/audience', getAudience);
+// Кто и как создал аккаунт: доли и поиск по телефону
+router.get('/metrics/account-origin', getAccountOrigin);
+router.get('/metrics/account-origin/lookup', lookupAccountOrigin);
 
 export default router;

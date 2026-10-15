@@ -156,7 +156,11 @@ export function GameLiveDesk() {
   const [authUser, setAuthUser] = useState(null);
   
   const activeLeague = authUser?.leagues?.find(l => l.id === game?.league_id) || null;
-  const { checkAccess, checkMatchEditAccess } = useAccess(authUser, activeLeague);
+  const { checkAccess, checkMatchEditAccess, hasFullLeagueAccess } = useAccess(authUser, activeLeague);
+  // Корректировку времени (±1/±10 сек и правку времени на табло) лига может скрыть от
+  // всех, кроме владельца лиги и глобального админа (sec_hide_time_adjust в «Параметрах»).
+  // Скрытие только в панели: команды таймера идут сокетом, и сервер их не проверяет.
+  const canAdjustTime = !game?.sec_hide_time_adjust || hasFullLeagueAccess;
 
   const gameStaffArray = useMemo(() => {
     if (!game?.officials) return [];
@@ -1267,6 +1271,7 @@ export function GameLiveDesk() {
         isRecalculating={isRecalculatingStats}
         onSetTime={handleSetTime}
         onAdjustTime={handleAdjustTime}
+        canAdjustTime={canAdjustTime}
         isReadOnly={isReadOnly}
       />
 

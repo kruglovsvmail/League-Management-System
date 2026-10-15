@@ -36,6 +36,8 @@ export const getLeaguePreferences = async (req, res) => {
               -- Галочка «Обоюдное» в окне вида штрафа: штраф заводится парой, второй команде
               -- двойник без нарушителя и причины
               sec_coincident_penalties,
+              -- Скрыть корректировку времени в панели от всех, кроме владельца лиги
+              sec_hide_time_adjust,
               -- Протокол: «подписано электронной подписью» под главными судьями и секретарём
               -- завершённого матча, даже без подписи ПИН-кодом (надпись декоративная)
               protocol_esign_label
@@ -61,7 +63,7 @@ export const updateLeaguePreferences = async (req, res) => {
             sec_auto_time_goals, sec_auto_time_penalties, sec_auto_time_goalie_log,
             sec_panel_view,
             sec_goalie_autofill, sec_penalty_release_on_goal, sec_penalty_manual_end,
-            sec_coincident_penalties, protocol_esign_label } = req.body;
+            sec_coincident_penalties, protocol_esign_label, sec_hide_time_adjust } = req.body;
 
     // Тумблеры: undefined — поле не прислали (вкладка «Арены» шлёт только своё),
     // false — выключили осознанно. Без этого различия COALESCE ниже не отработает.
@@ -98,7 +100,8 @@ export const updateLeaguePreferences = async (req, res) => {
          sec_penalty_release_on_goal = COALESCE($19, sec_penalty_release_on_goal),
          sec_penalty_manual_end = COALESCE($20, sec_penalty_manual_end),
          sec_coincident_penalties = COALESCE($21, sec_coincident_penalties),
-         protocol_esign_label = COALESCE($22, protocol_esign_label)
+         protocol_esign_label = COALESCE($22, protocol_esign_label),
+         sec_hide_time_adjust = COALESCE($23, sec_hide_time_adjust)
        WHERE id = $16`,
       [sec_access_before_hours ?? null, sec_access_after_hours ?? null, arena_sort_order ?? null,
        toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
@@ -108,7 +111,7 @@ export const updateLeaguePreferences = async (req, res) => {
        toggle(sec_auto_time_goals), toggle(sec_auto_time_penalties), toggle(sec_auto_time_goalie_log),
        leagueId, sec_panel_view ?? null,
        toggle(sec_goalie_autofill), toggle(sec_penalty_release_on_goal), toggle(sec_penalty_manual_end),
-       toggle(sec_coincident_penalties), toggle(protocol_esign_label)]
+       toggle(sec_coincident_penalties), toggle(protocol_esign_label), toggle(sec_hide_time_adjust)]
     );
     res.json({ success: true });
   } catch (err) {
@@ -627,12 +630,15 @@ export const removeLeagueOwner = async (req, res) => {
 // disqualification_mode — как лига ведёт дисквалификации: 'light' (простой реестр банов)
 // или 'sdk' (заседания комитета с решениями). Раньше переключался руководством лиги на
 // вкладке «Параметры», теперь — только здесь.
+//
+// allow_owner_virtual_users — владелец лиги может создавать виртуальные аккаунты в
+// «Справочнике» (см. leagueVirtualUsersController). По умолчанию выключено.
 
 export const getLeagueGlobalParams = async (req, res) => {
   try {
     const { leagueId } = req.params;
     const { rows } = await pool.query(
-      'SELECT league_roster_global_search, disqualification_mode FROM leagues WHERE id = $1',
+      'SELECT league_roster_global_search, disqualification_mode, allow_owner_virtual_users FROM leagues WHERE id = $1',
       [leagueId]
     );
     if (rows.length === 0) {
@@ -647,7 +653,7 @@ export const getLeagueGlobalParams = async (req, res) => {
 export const updateLeagueGlobalParams = async (req, res) => {
   try {
     const { leagueId } = req.params;
-    const { league_roster_global_search, disqualification_mode } = req.body;
+    const { league_roster_global_search, disqualification_mode, allow_owner_virtual_users } = req.body;
 
     // Поле не прислали — не трогаем: карточка шлёт только то, что переключила
     const toggle = (value) => (value === undefined ? null : !!value);
@@ -659,10 +665,11 @@ export const updateLeagueGlobalParams = async (req, res) => {
     const { rows } = await pool.query(
       `UPDATE leagues
           SET league_roster_global_search = COALESCE($1, league_roster_global_search),
-              disqualification_mode = COALESCE($2, disqualification_mode)
+              disqualification_mode = COALESCE($2, disqualification_mode),
+              allow_owner_virtual_users = COALESCE($4, allow_owner_virtual_users)
         WHERE id = $3
-        RETURNING league_roster_global_search, disqualification_mode`,
-      [toggle(league_roster_global_search), disqualification_mode ?? null, leagueId]
+        RETURNING league_roster_global_search, disqualification_mode, allow_owner_virtual_users`,
+      [toggle(league_roster_global_search), disqualification_mode ?? null, leagueId, toggle(allow_owner_virtual_users)]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Лига не найдена' });

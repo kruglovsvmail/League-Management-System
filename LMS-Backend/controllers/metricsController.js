@@ -520,3 +520,89 @@ export const getPushStats = async (req, res) => {
     res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке статистики push-подписок' });
   }
 };
+
+// Как созданы аккаунты (users.created_via, с 16.10.2026). Группы диаграммы: сами
+// зарегистрировались в Team-Room, создала лига (владелец в «Справочнике»), внёс глобальный
+// администратор (форма реестра и импорт Excel вместе). Активация виртуального аккаунта —
+// не регистрация: у активированного остаётся отметка того, кто его создал.
+const ORIGIN_GROUPS = [
+  { key: 'self', vias: ['self'] },
+  { key: 'league', vias: ['league'] },
+  { key: 'admin', vias: ['admin', 'import'] },
+];
+
+// ── GET /api/metrics/account-origin ──────────────────────────────────────
+// Доли считаются от аккаунтов с отметкой. Созданные до появления колонки (NULL) идут
+// отдельным числом unknown — их происхождение неизвестно.
+export const getAccountOrigin = async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT created_via, COUNT(*) AS cnt
+       FROM users
+       WHERE status = 'active' AND global_role IS DISTINCT FROM 'service'
+       GROUP BY created_via`
+    );
+    const counts = new Map(rows.map((r) => [r.created_via, Number(r.cnt)]));
+    const items = ORIGIN_GROUPS.map((g) => ({
+      key: g.key,
+      user_count: g.vias.reduce((sum, v) => sum + (counts.get(v) || 0), 0),
+    }));
+    const marked = items.reduce((sum, it) => sum + it.user_count, 0);
+
+    res.json({
+      success: true,
+      items: items.map((it) => ({ ...it, pct: pct(it.user_count, marked) })),
+      marked,
+      unknown: counts.get(null) || 0,
+    });
+  } catch (err) {
+    console.error('Ошибка в metricsController.getAccountOrigin:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке статистики создания аккаунтов' });
+  }
+};
+
+// ── GET /api/metrics/account-origin/lookup?phone=+7 (922) 000-56-75 ───────
+// Аккаунт по телефону: кто, когда и как его создал. Телефон принимается в любом виде.
+export const lookupAccountOrigin = async (req, res) => {
+  try {
+    const digits = String(req.query.phone || '').replace(/\D/g, '');
+    const national = digits.length === 11 && (digits[0] === '7' || digits[0] === '8') ? digits.slice(1) : digits;
+    if (national.length !== 10) {
+      return res.status(400).json({ success: false, error: 'Введите номер полностью: 10 цифр после +7' });
+    }
+    const phone = `+7${national}`;
+
+    const { rows } = await pool.query(
+      `SELECT u.id, u.last_name, u.first_name, u.middle_name, u.phone,
+              u.created_at, u.created_via,
+              (u.virtual_code IS NULL) AS activated,
+              cb.last_name AS creator_last_name, cb.first_name AS creator_first_name,
+              cl.name AS league_name
+       FROM users u
+       LEFT JOIN users cb ON cb.id = u.created_by_user_id
+       LEFT JOIN leagues cl ON cl.id = u.created_league_id
+       WHERE u.phone = $1
+       LIMIT 1`,
+      [phone]
+    );
+    if (rows.length === 0) return res.json({ success: true, user: null });
+
+    const u = rows[0];
+    res.json({
+      success: true,
+      user: {
+        id: u.id,
+        full_name: [u.last_name, u.first_name, u.middle_name].filter(Boolean).join(' ') || 'Без имени',
+        phone: u.phone,
+        created_at: u.created_at,
+        created_via: u.created_via,
+        activated: u.activated,
+        creator_name: [u.creator_last_name, u.creator_first_name].filter(Boolean).join(' ') || null,
+        league_name: u.league_name,
+      },
+    });
+  } catch (err) {
+    console.error('Ошибка в metricsController.lookupAccountOrigin:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера при поиске аккаунта' });
+  }
+};
