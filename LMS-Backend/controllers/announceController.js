@@ -11,6 +11,7 @@ import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
 import { buildAnnouncePages } from '../src/announces/announce-factory.js';
 import { renderAnnouncePngs } from '../utils/announceScreenshot.js';
+import { DRAFT_SELECT } from '../utils/gameSchedule.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -48,7 +49,7 @@ const loadAnnounceData = async (divisionId, gameIds) => {
     // Матчи только этого дивизиона: чужие id из запроса молча отбрасываются,
     // права проверены по дивизиону. Порядок — по времени начала.
     const gamesRes = await pool.query(`
-        SELECT g.id, g.game_date, g.stage_type, g.stage_label, g.series_number, g.playoff_match_type,
+        SELECT g.id, g.game_date, ${DRAFT_SELECT}, g.stage_type, g.stage_label, g.series_number, g.playoff_match_type,
                g.status, g.home_score, g.away_score, g.end_type, g.is_technical,
                a.name AS arena_name, a.city AS arena_city, a.timezone AS arena_timezone,
                COALESCE(tt_h.snap_name, ht.name) AS home_name,
@@ -66,17 +67,20 @@ const loadAnnounceData = async (divisionId, gameIds) => {
         LEFT JOIN tournament_teams tt_a ON tt_a.team_id = g.away_team_id AND tt_a.division_id = g.division_id
         LEFT JOIN arenas a ON a.id = g.arena_id
         WHERE g.division_id = $1 AND g.id = ANY($2::int[])
-        ORDER BY g.game_date ASC NULLS LAST, g.game_number ASC NULLS LAST, g.id ASC
+        ORDER BY g.draft_date ASC NULLS LAST, g.draft_time ASC NULLS LAST, g.game_number ASC NULLS LAST, g.id ASC
     `, [divisionId, gameIds]);
 
     const games = gamesRes.rows.map(r => {
-        // Время — в поясе арены, как в карточке матча и в протоколе.
-        const d = r.game_date ? dayjs.utc(r.game_date).tz(r.arena_timezone || 'UTC') : null;
+        // Дата и время — из черновика расписания: это и есть «часы арены», как их вписал
+        // организатор. Дата может быть без времени — тогда hours/minutes пустые и шаблон
+        // пишет вместо времени заглушку.
+        const d = r.draft_date ? dayjs(r.draft_date) : null;
+        const [hours, minutes] = r.draft_time ? r.draft_time.split(':') : [null, null];
         return {
             id: r.id,
             date: d ? {
                 day: d.date(), month: d.month() + 1, year: d.year(), weekday: d.day(),
-                hours: d.format('HH'), minutes: d.format('mm'),
+                hours, minutes,
             } : null,
             stage: {
                 type: r.stage_type,

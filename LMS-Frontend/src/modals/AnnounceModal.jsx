@@ -35,15 +35,19 @@ const groupLabel = (g) => {
     return g.series_number ? `${stage} · Тур ${g.series_number}` : `${stage} · без тура`;
 };
 
-const gameDateLabel = (g) => (g.game_date
-    ? dayjs.utc(g.game_date).tz(g.arena_timezone || 'UTC').format('DD.MM, dd · HH:mm')
-    : 'Дата не назначена');
+// Дата и время — из черновика расписания (часы арены), любое из них может быть пустым
+const gameDateLabel = (g) => {
+    if (!g.draft_date && !g.draft_time) return 'Дата не назначена';
+    const day = g.draft_date ? dayjs(g.draft_date).format('DD.MM, dd') : 'Дата не назначена';
+    return `${day} · ${g.draft_time || 'время не назначено'}`;
+};
 
+// Без даты — в конец, без времени — в конец своего дня
+const draftKey = (g) => `${g.draft_date || '9999-12-31'} ${g.draft_time || '99:99'}`;
 const byDate = (a, b) => {
-    if (!a.game_date && !b.game_date) return a.id - b.id;
-    if (!a.game_date) return 1;
-    if (!b.game_date) return -1;
-    return new Date(a.game_date) - new Date(b.game_date);
+    const ka = draftKey(a), kb = draftKey(b);
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return a.id - b.id;
 };
 
 const dataUrlToBlob = (dataUrl) => {

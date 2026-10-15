@@ -108,7 +108,7 @@ const ticket = (game, center, tilt) => {
     const result = game.result;
     const second = result
         ? `${result.home}:${result.away}`
-        : (game.date ? `${game.date.hours}:${game.date.minutes}` : 'скоро');
+        : (game.date?.hours ? `${game.date.hours}:${game.date.minutes}` : 'скоро');
     const note = !result
         ? (game.arena?.name || 'Арена уточняется')
         : result.technical ? 'Техническое поражение'

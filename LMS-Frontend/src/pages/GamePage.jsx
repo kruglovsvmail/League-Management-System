@@ -186,14 +186,26 @@ export function GamePage() {
   const isScheduled = game?.status === 'scheduled';
   const canEditRosters = isScheduled || game?.status === 'live'; 
 
+  // Пояс арены — из самого матча: в списке арен лиги арены матча может не оказаться
+  // (её отвязали от лиги), и тогда время показывалось бы по Гринвичу
   const arenaTz = useMemo(() => {
-    return arenas.find(a => a.id === game?.arena_id)?.timezone || 'UTC';
-  }, [arenas, game?.arena_id]);
+    return game?.arena_timezone || arenas.find(a => a.id === game?.arena_id)?.timezone || 'UTC';
+  }, [arenas, game?.arena_id, game?.arena_timezone]);
 
   const gameDate = useMemo(() => {
     if (!game?.game_date) return null;
     return dayjs.utc(game.game_date).tz(arenaTz);
   }, [game?.game_date, arenaTz]);
+
+  // Матч лиги показываем по черновику расписания («часы арены», дата или время могут
+  // быть пустыми); у матча вне лиг черновика нет — только точное начало.
+  const scheduleLabel = useMemo(() => {
+    if (!game) return null;
+    if (game.is_leagueless) return gameDate ? gameDate.format('DD MMMM YYYY, HH:mm') : null;
+    if (!game.draft_date && !game.draft_time) return null;
+    const day = game.draft_date ? dayjs(game.draft_date).format('DD MMMM YYYY') : 'Дата не назначена';
+    return `${day}, ${game.draft_time || 'время не назначено'}`;
+  }, [game, gameDate]);
 
   const officials = game?.officials || {};
   const hasOfficials = Object.values(officials).some(val => val && (typeof val === 'object' ? val.name : val.trim() !== ''));
@@ -857,7 +869,7 @@ export function GamePage() {
               <div>
                 <div className="text-[10px] text-graphite-light mb-0.5">Дата и время</div>
                 <div className="text-[13px] font-bold text-graphite">
-                  {gameDate ? gameDate.format('DD MMMM YYYY, HH:mm') : 'Не назначено'}
+                  {scheduleLabel || 'Не назначено'}
                 </div>
                 {gameDate && (
                   <div className="text-[9px] font-bold text-graphite/40 uppercase">

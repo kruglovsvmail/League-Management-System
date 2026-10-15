@@ -10,6 +10,8 @@ import { checkGameEditAccess, checkProtocolSignLock, secretarySignedSql } from '
 import { loadReserveGoaliesForGame, validateReserveGoalies } from '../utils/reserveGoalies.js';
 // Заставки трансляции: слоты лиги со ссылками на S3 для оверлея в OBS.
 import { buildPublicBumpers, findGameTransitionUrl } from './broadcastAssetsController.js';
+// Расписание матча: черновик организатора (арена, дата, время) и расчёт точного начала.
+import { DRAFT_SELECT, normalizeDraftDate, normalizeDraftTime, syncGameStart, SCHEDULE_INCOMPLETE_ERROR } from '../utils/gameSchedule.js';
 
 export const getPublicGameById = async (req, res) => {
     try {
@@ -377,7 +379,7 @@ export const getGames = async (req, res) => {
             SELECT 
                 g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type, g.is_technical, g.needs_recalc,
                 g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
-                g.home_team_id, g.away_team_id, g.arena_id,
+                g.home_team_id, g.away_team_id, g.arena_id, ${DRAFT_SELECT},
                 a.name as location_text,
                 a.timezone as arena_timezone,
                 COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_logo_url, ht.logo_url) as home_team_logo,
@@ -431,7 +433,9 @@ export const getGames = async (req, res) => {
         else if (status === '2') query += ` AND g.status = 'finished'`;
         else if (status) query += ` AND g.status IN ('scheduled', 'live', 'finished', 'cancelled')`;
 
-        query += ` ORDER BY g.game_number ASC NULLS LAST, g.game_date ASC NULLS LAST, g.id ASC`;
+        // Без номера матчи встают по черновой дате и времени: точного начала у части
+        // расписания может ещё не быть.
+        query += ` ORDER BY g.game_number ASC NULLS LAST, g.draft_date ASC NULLS LAST, g.draft_time ASC NULLS LAST, g.id ASC`;
 
         const result = await pool.query(query, params);
         res.json({ success: true, data: result.rows });
@@ -447,6 +451,8 @@ export const getGameById = async (req, res) => {
         const query = `
             SELECT 
                 g.*,
+                -- Черновик расписания строками поверх g.* (см. utils/gameSchedule.js)
+                ${DRAFT_SELECT},
                 gt.period_length, gt.ot_length, gt.so_length, gt.periods_count, gt.auto_stop_on_event, gt.shootout_status, gt.arena_announcer,
                 -- Разминка и перерыв: своё значение матча, если секретарь его менял, иначе живое
                 -- из дивизиона (та же логика, что при загрузке таймера в sockets/timerHandler.js)
@@ -726,8 +732,9 @@ export const createGame = async (req, res) => {
             SELECT 
                 g.id, g.game_date, g.status, g.home_score, g.away_score, g.end_type,
                 g.stage_type, g.stage_label, g.playoff_match_type, g.series_number, g.game_number,
-                g.home_team_id, g.away_team_id, g.arena_id,
+                g.home_team_id, g.away_team_id, g.arena_id, ${DRAFT_SELECT},
                 a.name as location_text,
+                a.timezone as arena_timezone,
                 COALESCE(tt_home.snap_name, ht.name) as home_team_name, COALESCE(tt_home.snap_logo_url, ht.logo_url) as home_team_logo,
                 COALESCE(tt_away.snap_name, at.name) as away_team_name, COALESCE(tt_away.snap_logo_url, at.logo_url) as away_team_logo,
                 d.name as division_name,
@@ -752,26 +759,82 @@ export const createGame = async (req, res) => {
 export const updateGameInfo = async (req, res) => {
     try {
         const { gameId } = req.params;
-        const updates = req.body;
-        
-        const gameRes = await pool.query('SELECT id, status, division_id, home_team_id, away_team_id, stage_type, stage_label FROM games WHERE id = $1', [gameId]);
+        const updates = { ...req.body };
+
+        const gameRes = await pool.query(`
+            SELECT g.id, g.status, g.division_id, g.home_team_id, g.away_team_id, g.stage_type, g.stage_label,
+                   g.arena_id, ${DRAFT_SELECT}
+            FROM games g WHERE g.id = $1
+        `, [gameId]);
         if(gameRes.rows.length === 0) return res.status(404).json({success: false, error: 'Матч не найден'});
-        
+
         const game = gameRes.rows[0];
         const divisionId = game.division_id;
+
+        // Матч лиги: точное начало (game_date) напрямую не пишется — его считает сервер
+        // из арены, черновой даты и времени (utils/gameSchedule.js). Окно «Форма и медиа»
+        // по-прежнему присылает game_date как есть — просто не берём его.
+        // У матчей вне лиг (Team-Room) черновика нет, game_date остаётся как было.
+        if (divisionId) {
+            delete updates.game_date;
+        } else {
+            delete updates.draft_date;
+            delete updates.draft_time;
+        }
+
+        if (updates.draft_date !== undefined) {
+            const r = normalizeDraftDate(updates.draft_date);
+            if (r.error) return res.status(400).json({ success: false, error: r.error });
+            updates.draft_date = r.value;
+        }
+        if (updates.draft_time !== undefined) {
+            const r = normalizeDraftTime(updates.draft_time);
+            if (r.error) return res.status(400).json({ success: false, error: r.error });
+            updates.draft_time = r.value;
+        }
+
+        // Пересчитываем начало, только если арена, дата или время действительно сменились:
+        // окно «Форма и медиа» шлёт арену вместе со ссылками, и без этой проверки каждое его
+        // сохранение трогало бы game_date.
+        const nextArenaId = updates.arena_id !== undefined ? (updates.arena_id === '' ? null : updates.arena_id) : game.arena_id;
+        const nextDraftDate = updates.draft_date !== undefined ? updates.draft_date : game.draft_date;
+        const nextDraftTime = updates.draft_time !== undefined ? updates.draft_time : game.draft_time;
+        const scheduleChanged = Boolean(divisionId) && (
+            String(nextArenaId ?? '') !== String(game.arena_id ?? '') ||
+            (nextDraftDate ?? null) !== (game.draft_date ?? null) ||
+            (nextDraftTime ?? null) !== (game.draft_time ?? null)
+        );
+        const nextScheduleComplete = Boolean(nextArenaId && nextDraftDate && nextDraftTime);
+
+        // Начатый и сыгранный матч без арены, даты и времени остаться не может: по ним
+        // считаются статистика игроков в TR, периоды дисквалификаций, дата в протоколе.
+        // Поменять их можно, убрать — нет. Запустить или завершить матч без них — тоже нет.
+        if (divisionId && !nextScheduleComplete) {
+            const PLAYED = ['live', 'finished'];
+            const nextStatus = updates.status !== undefined ? updates.status : game.status;
+            const becomesPlayed = PLAYED.includes(nextStatus) && !PLAYED.includes(game.status);
+            if (becomesPlayed || (PLAYED.includes(nextStatus) && scheduleChanged)) {
+                return res.status(400).json({ success: false, error: SCHEDULE_INCOMPLETE_ERROR });
+            }
+        }
 
         // Подписанный секретарём протокол: то, что в него входит, меняют только владелец
         // лиги и глобальный админ. Форма команд и ссылки на видео в протокол не входят —
         // их можно править и после подписи. Смотрим на изменение, а не на присланное поле:
         // окно «Форма и медиа» шлёт дату, арену и этап вместе со ссылками, как есть.
         const PROTOCOL_INFO_FIELDS = [
-            'game_date', 'arena_id', 'stage_type', 'stage_label', 'playoff_match_type', 'series_number',
+            'game_date', 'draft_date', 'draft_time', 'arena_id', 'stage_type', 'stage_label', 'playoff_match_type', 'series_number',
             'home_team_id', 'away_team_id', 'game_number', 'status',
             'actual_start_time', 'actual_end_time', 'spectators'
         ];
+        // Черновик читаем строками — в том же виде, в каком его шлёт фронт
+        const PROTOCOL_FIELD_SELECT = {
+            draft_date: `to_char(draft_date, 'YYYY-MM-DD') AS draft_date`,
+            draft_time: `to_char(draft_time, 'HH24:MI') AS draft_time`,
+        };
         const sentProtocolFields = PROTOCOL_INFO_FIELDS.filter(k => updates[k] !== undefined);
         if (sentProtocolFields.length > 0) {
-            const currentRes = await pool.query(`SELECT ${sentProtocolFields.join(', ')} FROM games WHERE id = $1`, [gameId]);
+            const currentRes = await pool.query(`SELECT ${sentProtocolFields.map(k => PROTOCOL_FIELD_SELECT[k] || k).join(', ')} FROM games WHERE id = $1`, [gameId]);
             const current = currentRes.rows[0] || {};
             const isEmpty = (v) => v === undefined || v === null || v === '';
             const sameValue = (was, now) => {
@@ -865,7 +928,7 @@ export const updateGameInfo = async (req, res) => {
         let idx = 1;
 
         const allowedFields = [
-            'game_date', 'arena_id', 'stage_type', 'stage_label', 'playoff_match_type', 'series_number',
+            'game_date', 'draft_date', 'draft_time', 'arena_id', 'stage_type', 'stage_label', 'playoff_match_type', 'series_number',
             'video_yt_url', 'video_vk_url', 'home_jersey_type', 'away_jersey_type',
             'home_team_id', 'away_team_id', 'game_number', 'status',
             'actual_start_time', 'actual_end_time', 'spectators'
@@ -886,6 +949,10 @@ export const updateGameInfo = async (req, res) => {
         
         // ОПЕЧАТКА УБРАНА: Заменено pool.query suicide на pool.query
         await pool.query(`UPDATE games SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+
+        // Новое точное начало отдаём фронту: от него зависят окно секретаря и прочее
+        let gameDate;
+        if (scheduleChanged) gameDate = await syncGameStart(pool, gameId);
 
         if (updates.stage_type !== undefined && updates.stage_type !== game.stage_type && game.status === 'scheduled') {
             const divSettingsRes = await pool.query('SELECT * FROM divisions WHERE id = $1', [divisionId]);
@@ -912,7 +979,7 @@ export const updateGameInfo = async (req, res) => {
             }
         }
         
-        res.json({success: true});
+        res.json(gameDate !== undefined ? { success: true, data: { game_date: gameDate } } : { success: true });
     } catch (err) {
         console.error('Ошибка обновления инфо матча:', err);
         res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -934,12 +1001,23 @@ export const updateGameStatus = async (req, res) => {
 
         await client.query('BEGIN');
 
-        const gameRes = await client.query('SELECT division_id, status, stage_type, home_team_id, away_team_id, is_technical, end_type, home_score, away_score FROM games WHERE id = $1', [gameId]);
+        const gameRes = await client.query('SELECT division_id, status, stage_type, home_team_id, away_team_id, is_technical, end_type, home_score, away_score, game_date, arena_id FROM games WHERE id = $1', [gameId]);
         if (gameRes.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ success: false, error: 'Матч не найден' });
         }
         const game = gameRes.rows[0];
+
+        // Начать или завершить матч лиги (и техническим результатом тоже) можно, только
+        // когда у него есть арена и точное начало: без них сыгранный матч выпадает из
+        // статистики игроков в TR и из периодов дисквалификаций, в протоколе нет даты.
+        // Окно секретаря такой матч и так не откроет — проверка для руководства лиги,
+        // которое окно обходит.
+        const PLAYED = ['live', 'finished'];
+        if (game.division_id && PLAYED.includes(status) && !PLAYED.includes(game.status) && (!game.game_date || !game.arena_id)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ success: false, error: SCHEDULE_INCOMPLETE_ERROR });
+        }
 
         // Штрафной бросок, у которого секретарь так и не отметил исход, к моменту
         // завершения матча трактуется как нереализованный: назначенный бросок был,

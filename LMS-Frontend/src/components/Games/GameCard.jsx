@@ -137,10 +137,9 @@ export function GameCard({
             }
         }
 
-        if ('arena_id' in updates) {
-    updates.game_date = null;
-}
-onUpdate(game.id, updates);
+        // Арена, дата и время независимы: смена арены дату и время не стирает — точное
+        // начало сервер пересчитает по поясу новой арены от тех же «часов арены».
+        onUpdate(game.id, updates);
     };
 
     if (isRowEditing) {
@@ -164,7 +163,6 @@ onUpdate(game.id, updates);
             }))
         ];
 
-        const isDateDisabled = isFinishedOrLive || !game.arena_id;
 
         const currentBracket = game.stage_type === 'playoff'
             ? brackets.find(b => b.rounds?.some(r => r.name === game.stage_label)) || brackets[0]
@@ -254,38 +252,20 @@ onUpdate(game.id, updates);
                             options={arenaOptions}
                             value={currentArenaIdStr}
                             onChange={(val) => {
-                                if (val === 'none') {
-                                    handleFieldChange({ arena_id: null, game_date: null });
-                                } else {
-                                    handleFieldChange({ arena_id: parseInt(val, 10), game_date: null });
-                                }
+                                handleFieldChange({ arena_id: val === 'none' ? null : parseInt(val, 10) });
                             }}
                             disabled={isFinishedOrLive}
                         />
                     </div>
                     
-                    <div className={`w-full ${isDateDisabled ? 'opacity-50' : ''}`}>
-                        {!game.arena_id && !isFinishedOrLive ? (
-                            <Tooltip title="Выберите арену" noUnderline={true}>
-                                <div className="pointer-events-none w-full min-w-[170px]">
-                                    <DateTimePicker 
-    value={game.game_date} 
-    onChange={(val) => handleFieldChange('game_date', val)} 
-    placeholder="Дата не назначена"
-    timezone={arenas.find(a => a.id === game.arena_id)?.timezone || 'UTC'}
-/>
-                                </div>
-                            </Tooltip>
-                        ) : (
-                            <div className={isDateDisabled ? 'pointer-events-none' : ''}>
-                                <DateTimePicker 
-    value={game.game_date} 
-    onChange={(val) => handleFieldChange('game_date', val)} 
-    placeholder="Дата не назначена"
-    timezone={arenas.find(a => String(a.id) === String(game.arena_id))?.timezone || 'UTC'}
-/>
-                            </div>
-                        )}
+                    <div className={`w-full ${isFinishedOrLive ? 'pointer-events-none opacity-50' : ''}`}>
+                        <DateTimePicker
+                            date={game.draft_date}
+                            time={game.draft_time}
+                            onChange={({ date, time }) => handleFieldChange({ draft_date: date, draft_time: time })}
+                            placeholder="Дата не назначена"
+                            disabled={isFinishedOrLive}
+                        />
                     </div>
                 </div>
 
@@ -452,9 +432,11 @@ onUpdate(game.id, updates);
         );
     }
 
-    const arenaTz = arenas.find(a => a.id === game.arena_id)?.timezone || 'UTC';
-const gameDate = game.game_date ? dayjs.utc(game.game_date).tz(arenaTz) : null;
-const dateStr = gameDate ? `${gameDate.format('D MMMM YYYY')}  |  ${gameDate.format('HH:mm')}` : 'Время не назначено';
+    // Дата и время — черновик расписания, «часы арены»; любое из них может быть пустым
+    const hasSchedule = Boolean(game.draft_date || game.draft_time);
+    const dateStr = hasSchedule
+        ? `${game.draft_date ? dayjs(game.draft_date).format('D MMMM YYYY') : 'Дата не назначена'}  |  ${game.draft_time || 'время не назначено'}`
+        : 'Дата не назначена';
 
     const currentArena = arenas.find(a => a.id === game.arena_id);
     const arenaName = currentArena ? currentArena.name : (game.location_text || 'Арена не назначена');
@@ -502,7 +484,7 @@ const dateStr = gameDate ? `${gameDate.format('D MMMM YYYY')}  |  ${gameDate.for
                         </span>
                     )}
                 </div>
-                <span className={`text-[11px] font-medium ${game.game_date ? 'text-graphite/80' : 'text-graphite/40'} mt-0.5`}>
+                <span className={`text-[11px] font-medium ${hasSchedule ? 'text-graphite/80' : 'text-graphite/40'} mt-0.5`}>
                     {dateStr}
                 </span>
             </div>

@@ -106,7 +106,8 @@ const card = (game, top, league) => {
     const date = game.date
         ? zeroAsO(`${pad(game.date.day)}.${pad(game.date.month)}.${String(game.date.year).slice(-2)}`)
         : 'ДАТА УТОЧНЯЕТСЯ';
-    const time = game.date ? zeroAsO(`${game.date.hours}:${game.date.minutes}`) : '';
+    // Дата без времени бывает: организатор знает день, но не час
+    const time = game.date?.hours ? zeroAsO(`${game.date.hours}:${game.date.minutes}`) : '';
 
     // Город арены пишем, только если он не совпадает с городом лиги: в макете
     // «ТМО» стоит под «Звездой», а под тюменскими аренами города нет.

@@ -1,30 +1,41 @@
 // DateTimePicker.jsx
+//
+// Дата и время матча в расписании — по отдельности: организатор может знать день, но не
+// час, или час, но не день. Оба значения — «часы арены» без часового пояса:
+// date — 'YYYY-MM-DD', time — 'HH:MM', любое может быть null. Точное начало матча из
+// них и пояса арены считает сервер (LMS-Backend/utils/gameSchedule.js), здесь поясов нет.
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import dayjs from 'dayjs'; // Используем настроенный dayjs
 
-export function DateTimePicker({ value, onChange, placeholder = "Дата и время", timezone = 'UTC' }) {
+const pad = (n) => String(n).padStart(2, '0');
+const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// 'YYYY-MM-DD' → местная полночь этого дня (только для сетки календаря)
+const parseDateStr = (s) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+const formatDateRu = (s) => {
+  const [y, m, d] = s.split('-');
+  return `${d}.${m}.${y}`;
+};
+
+export function DateTimePicker({ date, time, onChange, placeholder = "Дата не назначена", disabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
   const [coords, setCoords] = useState({ left: 0, top: 0 });
-  
-  // Переводим пришедший UTC value в таймзону арены для отображения в календаре
-  const initialDate = value ? dayjs.utc(value).tz(timezone).toDate() : new Date();
-  
-  const [viewDate, setViewDate] = useState(initialDate);
-  const [selectedDate, setSelectedDate] = useState(value ? initialDate : null);
-  
-  const [time, setTime] = useState(() => {
-    if (!value) return '12:00';
-    // Достаем часы и минуты с учетом таймзоны арены
-    return dayjs.utc(value).tz(timezone).format('HH:mm');
-  });
+
+  const [viewDate, setViewDate] = useState(() => (date ? parseDateStr(date) : new Date()));
+
+  // Открыли заново — показываем месяц выбранной даты
+  useEffect(() => {
+    if (isOpen) setViewDate(date ? parseDateStr(date) : new Date());
+  }, [isOpen]);
 
   const updatePosition = () => {
     if (isOpen && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const popupWidth = 260; 
-      const popupHeight = 360; 
+      const popupWidth = 260;
+      const popupHeight = 380;
       const gap = 8;
       let calculatedLeft = rect.left;
       let calculatedTop = rect.bottom + window.scrollY + gap;
@@ -65,60 +76,50 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
   let firstDayIndex = new Date(year, month, 1).getDay() - 1;
   if (firstDayIndex === -1) firstDayIndex = 6;
 
-  // Главная логика отправки: говорим dayjs, что выбранные цифры — это время в таймзоне арены, и переводим в UTC
-  const emitChange = (d, t) => {
-    if (!d) return onChange(null);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    
-    // Формируем ISO строку в UTC для БД (например: 2026-10-15T13:00:00Z)
-    const utcISOString = dayjs.tz(`${dateStr} ${t}:00`, timezone).utc().format();
-    onChange(utcISOString); 
-  };
+  const selectedDate = date ? parseDateStr(date) : null;
 
   const handleSelectDate = (dayNum) => {
-    const d = new Date(year, month, dayNum);
-    setSelectedDate(d);
-    emitChange(d, time);
+    onChange({ date: toDateStr(new Date(year, month, dayNum)), time: time || null });
   };
 
+  // Пустое поле времени (стёрли) — время не назначено
   const handleTimeChange = (e) => {
-    const newTime = e.target.value;
-    setTime(newTime);
-    if (selectedDate) emitChange(selectedDate, newTime);
+    onChange({ date: date || null, time: e.target.value || null });
   };
 
-  const handleReset = (e) => {
+  const handleResetDate = (e) => {
     e.stopPropagation();
-    setSelectedDate(null);
-    setTime('12:00');
-    onChange(null);
-    setIsOpen(false);
+    onChange({ date: null, time: time || null });
   };
 
-  // Красивое отображение в инпуте: показываем локальное время арены
+  const handleResetTime = (e) => {
+    e.stopPropagation();
+    onChange({ date: date || null, time: null });
+  };
+
   let displayValue = '';
-  if (value) {
-     displayValue = dayjs.utc(value).tz(timezone).format('DD.MM.YYYY в HH:mm');
-  } else if (selectedDate) {
-     displayValue = `${selectedDate.toLocaleDateString('ru-RU')} в ${time}`;
-  }
+  if (date && time) displayValue = `${formatDateRu(date)} в ${time}`;
+  else if (date) displayValue = `${formatDateRu(date)}, без времени`;
+  else if (time) displayValue = `Без даты, в ${time}`;
+
+  const hasValue = Boolean(date || time);
 
   return (
     <div className="relative font-sans w-full" ref={containerRef}>
-      <div 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full px-4 py-[10px] rounded-md bg-white border cursor-pointer flex justify-between items-center transition-all duration-300 hover:border-orange ${isOpen ? 'border-orange shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' : 'border-graphite/40'}`}
+      <div
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        className={`w-full px-4 py-[10px] rounded-md bg-white border flex justify-between items-center transition-all duration-300 ${disabled ? 'cursor-default' : 'cursor-pointer hover:border-orange'} ${isOpen ? 'border-orange shadow-[0_0_0_3px_rgba(255,122,0,0.2)]' : 'border-graphite/40'}`}
       >
-        <span className={`text-[13px] font-semibold truncate ${value || selectedDate ? 'text-graphite' : 'text-graphite/40'}`}>
+        <span className={`text-[13px] font-semibold truncate ${hasValue ? 'text-graphite' : 'text-graphite/40'}`}>
           {displayValue || placeholder}
         </span>
-        <svg className={`w-4 h-4 shrink-0 transition-colors duration-300 ${value || selectedDate ? 'text-graphite-light' : 'text-graphite/40'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg className={`w-4 h-4 shrink-0 transition-colors duration-300 ${hasValue ? 'text-graphite-light' : 'text-graphite/40'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>
         </svg>
       </div>
 
-      {isOpen && createPortal(
-        <div 
+      {isOpen && !disabled && createPortal(
+        <div
           className="datetimepicker-portal absolute bg-white/95 backdrop-blur-xl rounded-md border border-graphite/10 shadow-[0_15px_35px_rgba(0,0,0,0.15)] z-[100000] animate-zoom-in p-4 w-[260px]"
           style={{ top: `${coords.top}px`, left: `${coords.left}px` }}
         >
@@ -138,8 +139,8 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
               const isSelected = selectedDate && selectedDate.getDate() === dayNum && selectedDate.getMonth() === month && selectedDate.getFullYear() === year;
 
               return (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   onClick={() => handleSelectDate(dayNum)}
                   className={`h-7 flex items-center justify-center text-[12px] font-semibold rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-orange text-white' : 'text-graphite hover:bg-orange/10 hover:text-orange'}`}
                 >
@@ -151,17 +152,20 @@ export function DateTimePicker({ value, onChange, placeholder = "Дата и в�
 
           <div className="border-t border-graphite/10 pt-3 mb-2 flex items-center justify-between">
             <span className="text-[11px] font-bold text-graphite-light uppercase tracking-wide">Время матча</span>
-            <input 
-              type="time" 
-              value={time} 
+            <input
+              type="time"
+              value={time || ''}
               onChange={handleTimeChange}
               className="bg-graphite/5 border border-graphite/10 text-graphite font-bold text-[13px] px-2 py-1 rounded-md outline-none focus:border-orange transition-colors"
             />
           </div>
 
-          <div className="border-t border-graphite/10 pt-2 flex justify-center mt-2">
-            <button onClick={handleReset} className="text-[11px] font-bold text-status-rejected hover:text-status-rejected-hover uppercase tracking-wide">
-              Сбросить
+          <div className="border-t border-graphite/10 pt-2 flex justify-between mt-2">
+            <button onClick={handleResetDate} disabled={!date} className="text-[11px] font-bold text-status-rejected hover:text-status-rejected-hover uppercase tracking-wide disabled:text-graphite/20 disabled:cursor-not-allowed">
+              Сбросить дату
+            </button>
+            <button onClick={handleResetTime} disabled={!time} className="text-[11px] font-bold text-status-rejected hover:text-status-rejected-hover uppercase tracking-wide disabled:text-graphite/20 disabled:cursor-not-allowed">
+              Сбросить время
             </button>
           </div>
         </div>,

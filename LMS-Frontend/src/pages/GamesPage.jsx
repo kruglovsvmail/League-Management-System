@@ -244,10 +244,6 @@ export function GamesPage() {
         let payloads = { ...updatesObj };
         let extraUpdates = {};
 
-        if ('game_date' in updatesObj && updatesObj.game_date) {
-    payloads.game_date = updatesObj.game_date;
-}
-        
         if ('home_team_id' in updatesObj) {
             const t = scheduleTeams.find(t => t.team_id === updatesObj.home_team_id);
             if (t) { extraUpdates.home_team_name = t.name; extraUpdates.home_team_logo = t.logo_url; }
@@ -278,7 +274,10 @@ export function GamesPage() {
             const data = await res.json();
             
             if (data.success) {
-                setGames(prev => prev.map(g => g.id === gameId ? { ...g, ...updatesObj, ...extraUpdates } : g));
+                // После смены арены, даты или времени сервер возвращает пересчитанное точное
+                // начало (game_date) — пусто, пока не известны все три
+                const serverUpdates = data.data && 'game_date' in data.data ? { game_date: data.data.game_date } : {};
+                setGames(prev => prev.map(g => g.id === gameId ? { ...g, ...updatesObj, ...extraUpdates, ...serverUpdates } : g));
             } else {
                 setToast({ title: 'Действие отменено', message: data.error || 'Ошибка', type: 'error' });
                 loadGames();
