@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getImageUrl, setExpiringStorage, getExpiringStorage, getToken } from '../../utils/helpers';
-import { DivisionTeamsList } from './DivisionTeamsList';
+import { DivisionTeamsList, STATUS_KEYS } from './DivisionTeamsList';
 import { TeamRosterTable } from './TeamRosterTable';
 import { DivisionStandings } from './DivisionStandings';
 import { DivisionPlayoffs } from './DivisionPlayoffs';
@@ -56,7 +56,9 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
   const [isExportingApplication, setIsExportingApplication] = useState(false);
 
   const initialExpanded = getExpiringStorage(`div_${division.id}_expanded`) === true;
-  const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTab`)) || 0;
+  // Вкладка статусов запоминается номером. Ключ сменён вместе с порядком вкладок
+  // (15.10.2026): по старому номеру открылась бы соседняя вкладка.
+  const initialTeamsTab = Number(getExpiringStorage(`div_${division.id}_teamsTabV2`)) || 0;
   const initialRosterTab = Number(getExpiringStorage(`div_${division.id}_rosterTab`)) || 0;
   
   const initialTeamId = getExpiringStorage(`div_${division.id}_selectedTeamId`);
@@ -95,7 +97,7 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
   // Порядок квалификаций и показ описаний настраиваются в лиге и приходят вместе со списком
   const [qualShowDescriptions, setQualShowDescriptions] = useState(true);
 
-  useEffect(() => { setExpiringStorage(`div_${division.id}_teamsTab`, teamsTab); }, [teamsTab, division.id]);
+  useEffect(() => { setExpiringStorage(`div_${division.id}_teamsTabV2`, teamsTab); }, [teamsTab, division.id]);
   useEffect(() => { setExpiringStorage(`div_${division.id}_rosterTab`, rosterTab); }, [rosterTab, division.id]);
 
   useEffect(() => {
@@ -325,7 +327,6 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
       const data = await res.json();
       if (data.success) { 
         setGlobalToast({ title: 'Успешно', message: 'Статус изменен', type: 'success' }); 
-        const STATUS_KEYS = ['approved', 'pending', 'revision', 'rejected'];
         const newIndex = STATUS_KEYS.indexOf(newStatus);
         if (newIndex !== -1) setTeamsTab(newIndex);
         if (selectedTeam && selectedTeam.id === activeTeamForModal.id) {
@@ -433,12 +434,12 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
   const STATUS_LABELS = {
     approved: 'Команда допущена',
     pending: 'Команда на проверке',
-    revision: 'Команда на исправлении',
+    revision: 'Команда на доработке',
     rejected: 'Команда отклонена'
   };
 
   // canChange здесь — это «кнопка реально кликается» (isStatusClickable), а не голое право:
-  // у владельца лиги статус меняется и в «На исправлении», и кнопка должна выглядеть живой,
+  // у владельца лиги статус меняется и в «На доработке», и кнопка должна выглядеть живой,
   // а не серой заглушкой.
   const getStatusButtonStyle = (status, canChange) => {
     if (status === 'revision' && !canChange) return 'bg-blue-500/10 text-blue-600 cursor-not-allowed border-transparent opacity-90';
@@ -457,7 +458,7 @@ export function DivisionCard({ division, leagueId, seasonName, onDelete, onRefre
     }
   };
 
-  // В «На исправлении» заявка у команды, и статус ей обычно не меняют. Владельцу лиги
+  // В «На доработке» заявка у команды, и статус ей обычно не меняют. Владельцу лиги
   // и глобальному админу это правило не писано: они правят заявку в любом состоянии.
   const isStatusClickable = canChangeTeamStatus && (hasFullLeagueAccess || selectedTeam?.status !== 'revision');
 

@@ -37,7 +37,7 @@ export function Tabs({ tabs = [], activeTab, onChange }) {
             badgeClass = 'bg-status-accepted text-white shadow-[0_2px_6px_rgba(52,199,89,0.3)]'; // Зеленый
           } else if (lowerLabel.includes('проверк')) {
             badgeClass = 'bg-orange text-white shadow-[0_2px_6px_rgba(255,122,0,0.3)]'; // Оранжевый
-          } else if (lowerLabel.includes('исправлен')) {
+          } else if (lowerLabel.includes('доработк')) {
             badgeClass = 'bg-blue-500 text-white shadow-[0_2px_6px_rgba(59,130,246,0.3)]'; // Синий
           } else if (lowerLabel.includes('отклонен')) {
             badgeClass = 'bg-status-rejected text-white shadow-[0_2px_6px_rgba(255,59,48,0.3)]'; // Красный

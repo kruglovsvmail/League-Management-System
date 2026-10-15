@@ -11,7 +11,9 @@ import { formatAge, getImageUrl, getToken } from '../../utils/helpers';
 // Импортируем новую систему прав
 import { useAccess } from '../../hooks/useAccess';
 
-const STATUS_KEYS = ['approved', 'pending', 'revision', 'rejected'];
+// Вкладки статусов заявок по порядку. Вкладка выбирается по номеру в этом списке —
+// DivisionCard берёт его же, чтобы после смены статуса открыть нужную вкладку.
+export const STATUS_KEYS = ['approved', 'revision', 'pending', 'rejected'];
 
 export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId, onTeamSelect, activeTab, onTabChange, isAppWindowOpen, onRefresh }) {
   const { checkAccess, hasFullLeagueAccess } = useAccess();
@@ -89,9 +91,10 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
   );
 
   const tabsCounts = [
+    // Порядок — как в STATUS_KEYS
     `Допущенные (${teams.filter(t => t.status === 'approved').length})`,
+    `На доработке (${teams.filter(t => t.status === 'revision').length})`,
     `На проверке (${teams.filter(t => t.status === 'pending').length})`,
-    `На исправлении (${teams.filter(t => t.status === 'revision').length})`,
     `Отклоненные (${teams.filter(t => t.status === 'rejected').length})`
   ];
 
@@ -185,7 +188,7 @@ export function DivisionTeamsList({ teams, division, onOpenModal, selectedTeamId
     
     { label: '', width: 'w-[50px]', align: 'right', render: (row) => {
       // Иконка статуса появляется только если есть права
-      // В «На исправлении» заявка у команды и статус ей обычно не меняют. Владельцу
+      // В «На доработке» заявка у команды и статус ей обычно не меняют. Владельцу
       // лиги и глобальному админу это правило не писано.
       const canChangeStatus = checkAccess('DIVISIONS_TEAM_STATUS') && (hasFullLeagueAccess || row.status !== 'revision');
 

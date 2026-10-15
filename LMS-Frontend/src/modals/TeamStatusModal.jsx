@@ -18,6 +18,16 @@ const STATUS_OPTIONS = [
     desc: 'Команда допущена к участию в турнире' 
   },
   { 
+    value: 'revision', 
+    label: 'На доработке', 
+    styles: {
+      bg: 'bg-blue-500/10', border: 'border-blue-500', 
+      text: 'text-blue-600', hover: 'hover:border-blue-500/40', 
+      dot: 'bg-blue-500'
+    },
+    desc: 'Команда исправляет недочеты или дополняет заявку' 
+  },
+  { 
     value: 'pending', 
     label: 'На проверке', 
     styles: {
@@ -26,16 +36,6 @@ const STATUS_OPTIONS = [
       dot: 'bg-orange'
     },
     desc: 'Заявка ожидает решения' 
-  },
-  { 
-    value: 'revision', 
-    label: 'На исправлении', 
-    styles: {
-      bg: 'bg-blue-500/10', border: 'border-blue-500', 
-      text: 'text-blue-600', hover: 'hover:border-blue-500/40', 
-      dot: 'bg-blue-500'
-    },
-    desc: 'Команда исправляет недочеты или дополняет заявку' 
   },
   { 
     value: 'rejected', 
