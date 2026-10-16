@@ -27,8 +27,8 @@ const mapDbPositionToUI = (dbPos) => {
 export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onSuccess, readOnly = false, league}) {
   const [available, setAvailable] = useState([]);
   const [selected, setSelected] = useState([]);
-  // Пул резервных вратарей дивизиона: их нет в заявке команды, поэтому список
-  // приходит отдельно и живёт в шторке отдельным блоком под заявкой.
+  // Резервные вратари лиги, отмеченные в дивизионе матча: их нет в заявке команды,
+  // поэтому список приходит отдельно и живёт в шторке отдельным блоком под заявкой.
   const [reservePool, setReservePool] = useState([]);
   const [reserveSettings, setReserveSettings] = useState({ enabled: false, max_per_game: 0, block_back_to_back: false, block_with_own_goalie: false });
   // Представители на матч: пул — допущенный штаб из заявки на сезон, выбранные —
@@ -126,7 +126,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     setSelected(prev => [...prev, { ...player, is_captain: false, is_assistant: false }]);
   };
 
-  // Резервный вратарь приходит из пула дивизиона, а не из заявки: амплуа у него
+  // Резервный вратарь приходит из резерва лиги, а не из заявки: амплуа у него
   // всегда вратарское, номер подставляется по умолчанию из списка (если задан),
   // нашивки капитана и ассистента ему не выдаются.
   const handleAddReserve = (goalie) => {
@@ -227,7 +227,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
   const reserveInLineup = selected.filter(p => p.is_reserve_goalie).length;
   const limitReached = reserveInLineup >= reserveSettings.max_per_game;
 
-  // Лига может добавить в пул дивизиона игрока, заявленного за одну из его команд.
+  // Лига может взять в резерв игрока, заявленного за одну из команд дивизиона.
   // Для СВОЕЙ команды он не резервный, а обычный игрок заявки — иначе его можно
   // было бы вписать в протокол дважды, и статистика уехала бы не в ту таблицу.
   const ownRosterIds = new Set([
