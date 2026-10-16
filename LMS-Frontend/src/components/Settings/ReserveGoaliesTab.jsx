@@ -30,25 +30,25 @@ import { getToken, getImageUrl } from '../../utils/helpers';
 
 // Порядок — как в бейдже документов состава дивизиона: медсправка → полис → согласие
 const DOC_TYPES = [
-  { key: 'medical', reqKey: 'reserve_goalie_req_med_cert', label: 'медсправки' },
-  { key: 'insurance', reqKey: 'reserve_goalie_req_insurance', label: 'страхового полиса' },
-  { key: 'consent', reqKey: 'reserve_goalie_req_consent', label: 'согласия' },
+  { key: 'medical', reqKey: 'reserve_goalie_req_med_cert', missing: 'Нет медсправки', expired: 'Истекла медсправка' },
+  { key: 'insurance', reqKey: 'reserve_goalie_req_insurance', missing: 'Нет страховки', expired: 'Истекла страховка' },
+  { key: 'consent', reqKey: 'reserve_goalie_req_consent', missing: 'Нет согласия', expired: 'Истекло согласие' },
 ];
 
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim();
 
-// Что видят команды — по тем же правилам, что у сервера, но на сегодня. Выключенного
-// нет в списках Team Room и сайта лиги вовсе; без обязательного документа он там есть,
-// но без телефона, с пометкой «вратарь не доступен». Дисквалификации здесь не
-// учитываются: это решает шторка состава на матч.
+// Короткая пометка под фамилией: чего не хватает. По тем же правилам, что у сервера, но
+// на сегодня. Выключенного нет в списках Team Room и сайта лиги вовсе; без обязательного
+// документа он там есть, но без телефона, с пометкой «вратарь не доступен».
+// Дисквалификации здесь не учитываются: это решает шторка состава на матч.
 const teamsNotice = (row, settings) => {
   if (!row.is_active) return 'Не виден командам: выключен';
   const today = dayjs().format('YYYY-MM-DD');
   for (const t of DOC_TYPES) {
     if (!settings?.[t.reqKey]) continue;
-    if (!row[`${t.key}_url`]) return `Не доступен командам: нет ${t.label}`;
+    if (!row[`${t.key}_url`]) return t.missing;
     const exp = row[`${t.key}_expires_at`];
-    if (exp && exp < today) return `Не доступен командам: истёк срок ${t.label}`;
+    if (exp && exp < today) return t.expired;
   }
   return null;
 };

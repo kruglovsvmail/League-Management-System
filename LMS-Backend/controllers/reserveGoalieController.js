@@ -90,6 +90,32 @@ const loadSeasonApplicationIds = async (userId, seasonId) => {
     return rows.map(r => r.id);
 };
 
+// Медсправка и полис, уже лежащие в заявках человека в командах этой лиги, — сразу
+// в резерв при добавлении. Триггер reserve_goalie_docs_sync копирует только новые
+// загрузки в заявке, и справка, загруженная до того, как человека взяли в резерв, иначе
+// в резерве не появилась бы никогда. Если заявок несколько (разные команды, сезоны),
+// берётся документ, который действует дольше всех (без срока — дольше всех), — по тому
+// же правилу засчитываются документы при допуске (utils/reserveGoalies.js). Время правки
+// заявки тут не годится: оно меняется от любого документа, хоть от согласия.
+const copyApplicationDocs = async (reserveId) => {
+    for (const type of OWN_DOC_TYPES) {
+        await pool.query(`
+            UPDATE league_reserve_goalies lrg
+               SET ${type}_url = x.url, ${type}_expires_at = x.expires_at, updated_at = NOW()
+              FROM (SELECT tpd.${type}_url AS url, tpd.${type}_expires_at AS expires_at
+                      FROM league_reserve_goalies r
+                      JOIN tournament_person_docs tpd ON tpd.user_id = r.player_id AND tpd.${type}_url IS NOT NULL
+                      JOIN tournament_teams tt ON tt.id = tpd.tournament_team_id
+                      JOIN divisions d ON d.id = tt.division_id
+                      JOIN seasons s ON s.id = d.season_id AND s.league_id = r.league_id
+                     WHERE r.id = $1
+                     ORDER BY tpd.${type}_expires_at DESC NULLS FIRST, tpd.updated_at DESC, tpd.id DESC
+                     LIMIT 1) x
+             WHERE lrg.id = $1 AND lrg.${type}_url IS NULL
+        `, [reserveId]);
+    }
+};
+
 const fileExt = (file) => (file.originalname.split('.').pop() || 'bin').toLowerCase();
 
 // Номер по умолчанию: пустая строка — это «не задан», а не ноль
@@ -361,6 +387,11 @@ export const addReserveGoalie = async (req, res) => {
              RETURNING id`,
             [leagueId, player_id, jersey, readNote(note), req.user?.id || null]
         );
+
+        // Вратарь уже добавлен — не подтянулись документы, значит, их просто загрузят
+        // во вкладке. Падать из-за этого незачем
+        await copyApplicationDocs(rows[0].id)
+            .catch((err) => console.error('Не удалось подтянуть документы из заявки в резерв:', err));
 
         res.json({ success: true, id: rows[0].id, message: 'Резервный вратарь добавлен' });
     } catch (err) {
