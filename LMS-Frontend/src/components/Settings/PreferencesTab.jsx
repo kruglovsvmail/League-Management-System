@@ -38,9 +38,6 @@ export function PreferencesTab({ setToast }) {
   const [formData, setFormData] = useState({
     sec_access_before_hours: 12,
     sec_access_after_hours: 3,
-    reserve_goalies_enabled: false,
-    reserve_goalie_dq_games_enabled: true,
-    reserve_goalie_own_dq_blocks: true,
     equip_mark_ushk_enabled: false,
     equip_mark_ushk_max_age: 20,
     equip_mark_mouthguard_enabled: false,
@@ -73,9 +70,6 @@ export function PreferencesTab({ setToast }) {
           setFormData({
             sec_access_before_hours: data.data.sec_access_before_hours ?? 12,
             sec_access_after_hours: data.data.sec_access_after_hours ?? 3,
-            reserve_goalies_enabled: data.data.reserve_goalies_enabled ?? false,
-            reserve_goalie_dq_games_enabled: data.data.reserve_goalie_dq_games_enabled ?? true,
-            reserve_goalie_own_dq_blocks: data.data.reserve_goalie_own_dq_blocks ?? true,
             equip_mark_ushk_enabled: data.data.equip_mark_ushk_enabled ?? false,
             equip_mark_ushk_max_age: data.data.equip_mark_ushk_max_age ?? 20,
             equip_mark_mouthguard_enabled: data.data.equip_mark_mouthguard_enabled ?? false,
@@ -141,8 +135,9 @@ export function PreferencesTab({ setToast }) {
 
   // Карточки двух размеров (см. SettingsCard): маленькие — на одну строку сетки,
   // большие — на две. Порядок подобран под автораскладку сетки: на трёх столбцах две
-  // большие встают рядом, а слева от них — «Доступ» над «Резервными вратарями»; на двух
-  // столбцах большие расходятся по диагонали, и дыр не остаётся.
+  // большие встают рядом, а слева от них — «Доступ» над «Составом на матч»; на двух
+  // столбцах большие расходятся по диагонали, и дыр не остаётся. Резервных вратарей
+  // здесь больше нет — их параметры в шторке на вкладке «Резерв. вратари».
   return (
     <div className="flex flex-col gap-6 animate-zoom-in">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -253,58 +248,6 @@ export function PreferencesTab({ setToast }) {
 
         {/* ТРАНСЛЯЦИИ — эфирные файлы лиги: аудио-интро и три видео-заставки. Большая карточка */}
         <BroadcastAssetsSection leagueId={selectedLeague?.id} canEdit={canEdit} setToast={setToast} />
-
-        {/* РЕЗЕРВНЫЕ ВРАТАРИ. Короткие подписи у контролов, развёрнутые пояснения — в
-            подсказках, иначе длинный текст растягивает строку и перекашивает тумблер. */}
-        <SettingsCard
-          icon="swap"
-          title="Резервные вратари"
-          description="Вратари на замену в дивизионе: секретарь вписывает такого в состав, если свой не вышел на матч"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] font-bold text-graphite/70">Использовать</span>
-            <div className="shrink-0">
-              <Switch
-                checked={formData.reserve_goalies_enabled}
-                onChange={(e) => handleStepChange('reserve_goalies_enabled', e.target.checked)}
-                disabled={!canEdit}
-              />
-            </div>
-          </div>
-
-          {/* Правила дисквалификаций нужны только при включённой механике */}
-          {formData.reserve_goalies_enabled && (
-            <>
-              <div
-                className="flex items-center justify-between gap-3 animate-zoom-in"
-                title="Резервному вратарю можно назначить пропуск матчей. Отсчёт идёт по календарю той команды, за которую он выходил и получил наказание. Выключено — остаётся только денежный штраф."
-              >
-                <span className="text-[11px] font-bold text-graphite/70 leading-snug">Наказывать матчами</span>
-                <div className="shrink-0">
-                  <Switch
-                    checked={formData.reserve_goalie_dq_games_enabled}
-                    onChange={(e) => handleStepChange('reserve_goalie_dq_games_enabled', e.target.checked)}
-                    disabled={!canEdit}
-                  />
-                </div>
-              </div>
-
-              <div
-                className="flex items-center justify-between gap-3 animate-zoom-in"
-                title="Пока вратарь отбывает наказание, полученное в своей команде, его нельзя вписать резервным за другие. Выключено — такие наказания резервным выходам не мешают. Наказание, полученное именно резервным, закрывает его везде в любом случае."
-              >
-                <span className="text-[11px] font-bold text-graphite/70 leading-snug">Дисквалификация закрывает резерв</span>
-                <div className="shrink-0">
-                  <Switch
-                    checked={formData.reserve_goalie_own_dq_blocks}
-                    onChange={(e) => handleStepChange('reserve_goalie_own_dq_blocks', e.target.checked)}
-                    disabled={!canEdit}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-        </SettingsCard>
 
         {/* СОСТАВ НА МАТЧ — что команда может менять в формации в Team-Room */}
         <SettingsCard

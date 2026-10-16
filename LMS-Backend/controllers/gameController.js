@@ -7,7 +7,7 @@ import { recalculateTeamStatistics } from '../utils/teamStatsCalculator.js';
 // Временное окно управления матчем — общее для контроллеров и маршрутов.
 import { checkGameEditAccess, checkProtocolSignLock, secretarySignedSql } from '../utils/gameEditWindow.js';
 // Правила резервных вратарей — общие для шторки состава и его сохранения.
-import { loadReserveGoaliesForGame, validateReserveGoalies } from '../utils/reserveGoalies.js';
+import { loadReserveGoaliesForGame, validateReserveGoalies, RESERVE_GOALIE_PHOTO_SQL } from '../utils/reserveGoalies.js';
 // Заставки трансляции: слоты лиги со ссылками на S3 для оверлея в OBS.
 import { buildPublicBumpers, findGameTransitionUrl } from './broadcastAssetsController.js';
 // Расписание матча: черновик организатора (арена, дата, время) и расчёт точного начала.
@@ -1212,7 +1212,7 @@ export const getGameRoster = async (req, res) => {
                 staffRoster: [],
                 staffPool: [],
                 reserveGoalies: [],
-                reserveSettings: { enabled: false, max_per_game: 0, block_back_to_back: false }
+                reserveSettings: { enabled: false, max_per_game: 0, block_back_to_back: false, block_with_own_goalie: false }
             });
         }
 
@@ -1254,8 +1254,8 @@ export const getGameRoster = async (req, res) => {
                        gr.is_reserve_goalie,
                        u.first_name, u.last_name, u.middle_name, u.avatar_url,
                        -- Тот же снимок, что и в заявке; у резервного вратаря заявки в этой
-                       -- команде нет, поэтому у него остаётся фото в составе своей команды
-                       COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
+                       -- команде нет, поэтому у него фото резерва лиги (как в пуле шторки)
+                       COALESCE(tr.photo_snapshot_url, ${RESERVE_GOALIE_PHOTO_SQL}, tm.photo_url) AS photo_url,
                        to_char(u.birth_date, 'YYYY-MM-DD') AS birth_date,
                        ${dqSubquery('gr.player_id')}
                 FROM game_rosters gr
@@ -1265,6 +1265,8 @@ export const getGameRoster = async (req, res) => {
                 LEFT JOIN tournament_teams tt ON tt.team_id = gr.team_id AND tt.division_id = g.division_id
                 LEFT JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id AND tr.player_id = gr.player_id
                      AND tr.period_end IS NULL
+                LEFT JOIN league_reserve_goalies lrg
+                       ON gr.is_reserve_goalie AND lrg.player_id = gr.player_id AND lrg.league_id = $3
                 WHERE gr.game_id = $1 AND gr.team_id = $2
                 ORDER BY u.last_name
             `, [gameId, teamId, leagueId]),
@@ -1288,7 +1290,7 @@ export const getGameRoster = async (req, res) => {
             pool.query(loadStaffPoolQuery, [gameId, teamId, leagueId])
         ]);
 
-        // Резервные вратари дивизиона: отдельным списком под заявкой команды.
+        // Резервные вратари лиги, отмеченные в дивизионе матча: отдельным списком под заявкой команды.
         // Причину блокировки считает сервер и отдаёт готовым текстом — шторка её
         // только показывает, а те же правила заново проверяются при сохранении.
         const reserve = await loadReserveGoaliesForGame(pool, gameId, teamId);
@@ -1303,7 +1305,8 @@ export const getGameRoster = async (req, res) => {
             reserveSettings: {
                 enabled: reserve.enabled,
                 max_per_game: reserve.maxPerGame,
-                block_back_to_back: reserve.blockBackToBack
+                block_back_to_back: reserve.blockBackToBack,
+                block_with_own_goalie: reserve.blockWithOwnGoalie
             }
         });
     } catch (err) {
@@ -1340,8 +1343,8 @@ export const saveGameRoster = async (req, res) => {
             // Резервные вратари в общую проверку не идут: у них своё правило —
             // дисквалификация, полученная в своей команде, закрывает резервный
             // выход только при включённом тумблере лиги. Их проверяет
-            // validateReserveGoalies ниже, и строже: там ещё список дивизиона,
-            // лимит на матч и запрет двух матчей подряд.
+            // validateReserveGoalies ниже, и строже: там ещё отметка дивизиона,
+            // тумблер «Активен», документы, лимит на матч и запрет двух матчей подряд.
             const reservePlayerIds = roster.filter(p => p.is_reserve_goalie).map(p => p.player_id);
             const reserveIdSet = new Set(reservePlayerIds.map(Number));
             const regularPlayerIds = playerIds.filter(id => !reserveIdSet.has(Number(id)));
@@ -1362,7 +1365,8 @@ export const saveGameRoster = async (req, res) => {
             }
 
             // Шторка — подсказка, защита здесь: те же правила проверяются заново
-            const reserveError = await validateReserveGoalies(client, gameId, teamId, reservePlayerIds);
+            const hasOwnGoalie = roster.some(p => !p.is_reserve_goalie && p.position === 'goalie');
+            const reserveError = await validateReserveGoalies(client, gameId, teamId, reservePlayerIds, { hasOwnGoalie });
             if (reserveError) {
                 return res.status(400).json({ success: false, error: reserveError });
             }

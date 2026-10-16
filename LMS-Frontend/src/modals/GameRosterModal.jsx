@@ -30,7 +30,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
   // Пул резервных вратарей дивизиона: их нет в заявке команды, поэтому список
   // приходит отдельно и живёт в шторке отдельным блоком под заявкой.
   const [reservePool, setReservePool] = useState([]);
-  const [reserveSettings, setReserveSettings] = useState({ enabled: false, max_per_game: 0, block_back_to_back: false });
+  const [reserveSettings, setReserveSettings] = useState({ enabled: false, max_per_game: 0, block_back_to_back: false, block_with_own_goalie: false });
   // Представители на матч: пул — допущенный штаб из заявки на сезон, выбранные —
   // те, кто едет на этот матч (их выбирает команда при отправке заявки из Team Room
   // или секретарь здесь). В протокол и в подписанты попадают только выбранные.
@@ -45,7 +45,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
       loadData();
     } else {
       setAvailable([]); setSelected([]); setSearch('');
-      setReservePool([]); setReserveSettings({ enabled: false, max_per_game: 0, block_back_to_back: false });
+      setReservePool([]); setReserveSettings({ enabled: false, max_per_game: 0, block_back_to_back: false, block_with_own_goalie: false });
       setStaffPool([]); setSelectedStaff([]);
     }
   }, [isOpen, gameId, teamId]);
@@ -112,7 +112,7 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
         setAvailable(newAvailable);
         setSelected(newSelected);
         setReservePool(data.reserveGoalies || []);
-        setReserveSettings(data.reserveSettings || { enabled: false, max_per_game: 0, block_back_to_back: false });
+        setReserveSettings(data.reserveSettings || { enabled: false, max_per_game: 0, block_back_to_back: false, block_with_own_goalie: false });
         setStaffPool(data.staffPool || []);
         setSelectedStaff(data.staffRoster || []);
       }
@@ -235,14 +235,22 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
     ...selected.filter(p => !p.is_reserve_goalie).map(p => p.id),
   ]);
 
+  // Правило лиги «свой вратарь в составе — резервный не нужен» зависит от того, кого
+  // секретарь выбрал прямо сейчас, поэтому считается здесь, как и лимит. Сервер при
+  // сохранении проверит то же самое (validateReserveGoalies).
+  const ownGoalieInLineup = selected.some(p => !p.is_reserve_goalie && p.position === 'goalie');
+  const blockedByOwnGoalie = !!reserveSettings.block_with_own_goalie && ownGoalieInLineup;
+
   const filteredReserve = reservePool
     .filter(g => !selectedIds.has(g.player_id) && !ownRosterIds.has(g.player_id))
     .filter(matchesSearch)
     .map(g => ({
       ...g,
-      block_reason: g.block_reason || (limitReached
-        ? `На матч можно заявить не больше ${reserveSettings.max_per_game} ${reserveSettings.max_per_game === 1 ? 'резервного вратаря' : 'резервных вратарей'}`
-        : null)
+      block_reason: g.block_reason
+        || (blockedByOwnGoalie ? 'В составе есть вратарь команды — по правилу лиги резервный не нужен' : null)
+        || (limitReached
+          ? `На матч можно заявить не больше ${reserveSettings.max_per_game} ${reserveSettings.max_per_game === 1 ? 'резервного вратаря' : 'резервных вратарей'}`
+          : null)
     }));
 
   const showReserveBlock = reserveSettings.enabled && reservePool.length > 0;
@@ -528,20 +536,21 @@ export function GameRosterModal({ isOpen, onClose, gameId, teamId, teamName, onS
                     ))}
                   </div>
 
-                  {/* Резервные вратари дивизиона — через разделитель под заявкой
+                  {/* Резервные вратари лиги, отмеченные в дивизионе, — через разделитель под заявкой
                       команды. Недоступных не прячем: секретарю нужно видеть, что
                       вратарь в списке есть, и понимать, почему его нельзя взять. */}
                   {showReserveBlock && (
                     <div className="mt-4 pt-4 border-t-2 border-dashed border-graphite/15">
                       <div className="px-3 pb-2">
                         <div className="text-[12px] font-black uppercase text-graphite tracking-wide">
-                          Резервные вратари дивизиона
+                          Резервные вратари
                         </div>
                         <div className="text-[11px] text-graphite-light leading-snug mt-1">
                           {reserveSettings.max_per_game === 1
                             ? 'Не более одного на матч.'
                             : `Не более ${reserveSettings.max_per_game} на матч.`}
                           {reserveSettings.block_back_to_back && ' Два матча подряд за одну команду запрещены.'}
+                          {reserveSettings.block_with_own_goalie && ' Только если в составе нет своего вратаря.'}
                         </div>
                       </div>
 

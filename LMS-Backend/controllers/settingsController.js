@@ -17,7 +17,8 @@ export const getLeaguePreferences = async (req, res) => {
     const { leagueId } = req.params;
     const result = await pool.query(
       `SELECT sec_access_before_hours, sec_access_after_hours, arena_sort_order,
-              reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
+              -- Резервных вратарей здесь нет: их параметры живут в шторке на вкладке
+              -- «Резерв. вратари» (reserveGoalieController.getReserveGoalieSettings)
               -- Обозначения экипировки по возрасту: «ушк» и «к» рядом с фамилией в составах
               equip_mark_ushk_enabled, equip_mark_ushk_max_age,
               equip_mark_mouthguard_enabled,
@@ -56,7 +57,6 @@ export const updateLeaguePreferences = async (req, res) => {
     // disqualification_mode из тела не берём, даже если прислали: руководство лиги его
     // больше не меняет — только глобальный администратор (см. updateLeagueGlobalParams).
     const { sec_access_before_hours, sec_access_after_hours, arena_sort_order,
-            reserve_goalies_enabled, reserve_goalie_dq_games_enabled, reserve_goalie_own_dq_blocks,
             equip_mark_ushk_enabled, equip_mark_ushk_max_age,
             equip_mark_mouthguard_enabled, equip_mark_mouthguard_born_after,
             allow_match_jersey_change, allow_match_letters_change,
@@ -83,28 +83,24 @@ export const updateLeaguePreferences = async (req, res) => {
          sec_access_before_hours = COALESCE($1, sec_access_before_hours),
          sec_access_after_hours = COALESCE($2, sec_access_after_hours),
          arena_sort_order = COALESCE($3, arena_sort_order),
-         reserve_goalies_enabled = COALESCE($4, reserve_goalies_enabled),
-         reserve_goalie_dq_games_enabled = COALESCE($5, reserve_goalie_dq_games_enabled),
-         reserve_goalie_own_dq_blocks = COALESCE($6, reserve_goalie_own_dq_blocks),
-         equip_mark_ushk_enabled = COALESCE($7, equip_mark_ushk_enabled),
-         equip_mark_ushk_max_age = COALESCE($8, equip_mark_ushk_max_age),
-         equip_mark_mouthguard_enabled = COALESCE($9, equip_mark_mouthguard_enabled),
-         equip_mark_mouthguard_born_after = COALESCE($10, equip_mark_mouthguard_born_after),
-         allow_match_jersey_change = COALESCE($11, allow_match_jersey_change),
-         allow_match_letters_change = COALESCE($12, allow_match_letters_change),
-         sec_auto_time_goals = COALESCE($13, sec_auto_time_goals),
-         sec_auto_time_penalties = COALESCE($14, sec_auto_time_penalties),
-         sec_auto_time_goalie_log = COALESCE($15, sec_auto_time_goalie_log),
-         sec_panel_view = COALESCE($17, sec_panel_view),
-         sec_goalie_autofill = COALESCE($18, sec_goalie_autofill),
-         sec_penalty_release_on_goal = COALESCE($19, sec_penalty_release_on_goal),
-         sec_penalty_manual_end = COALESCE($20, sec_penalty_manual_end),
-         sec_coincident_penalties = COALESCE($21, sec_coincident_penalties),
-         protocol_esign_label = COALESCE($22, protocol_esign_label),
-         sec_hide_time_adjust = COALESCE($23, sec_hide_time_adjust)
-       WHERE id = $16`,
+         equip_mark_ushk_enabled = COALESCE($4, equip_mark_ushk_enabled),
+         equip_mark_ushk_max_age = COALESCE($5, equip_mark_ushk_max_age),
+         equip_mark_mouthguard_enabled = COALESCE($6, equip_mark_mouthguard_enabled),
+         equip_mark_mouthguard_born_after = COALESCE($7, equip_mark_mouthguard_born_after),
+         allow_match_jersey_change = COALESCE($8, allow_match_jersey_change),
+         allow_match_letters_change = COALESCE($9, allow_match_letters_change),
+         sec_auto_time_goals = COALESCE($10, sec_auto_time_goals),
+         sec_auto_time_penalties = COALESCE($11, sec_auto_time_penalties),
+         sec_auto_time_goalie_log = COALESCE($12, sec_auto_time_goalie_log),
+         sec_panel_view = COALESCE($14, sec_panel_view),
+         sec_goalie_autofill = COALESCE($15, sec_goalie_autofill),
+         sec_penalty_release_on_goal = COALESCE($16, sec_penalty_release_on_goal),
+         sec_penalty_manual_end = COALESCE($17, sec_penalty_manual_end),
+         sec_coincident_penalties = COALESCE($18, sec_coincident_penalties),
+         protocol_esign_label = COALESCE($19, protocol_esign_label),
+         sec_hide_time_adjust = COALESCE($20, sec_hide_time_adjust)
+       WHERE id = $13`,
       [sec_access_before_hours ?? null, sec_access_after_hours ?? null, arena_sort_order ?? null,
-       toggle(reserve_goalies_enabled), toggle(reserve_goalie_dq_games_enabled), toggle(reserve_goalie_own_dq_blocks),
        toggle(equip_mark_ushk_enabled), equip_mark_ushk_max_age ?? null,
        toggle(equip_mark_mouthguard_enabled), equip_mark_mouthguard_born_after || null,
        toggle(allow_match_jersey_change), toggle(allow_match_letters_change),

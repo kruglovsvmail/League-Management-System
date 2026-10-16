@@ -29,14 +29,6 @@ import {
     copyNominationsToSeason
 } from '../controllers/nominationController.js';
 
-import {
-    getReserveGoalies,
-    getReserveGoalieCandidates,
-    addReserveGoalie,
-    updateReserveGoalie,
-    deleteReserveGoalie
-} from '../controllers/reserveGoalieController.js';
-
 import { previewAnnounce, renderAnnounce } from '../controllers/announceController.js';
 
 const router = express.Router();
@@ -92,18 +84,6 @@ router.put('/divisions/:divisionId/nominations/:nominationId', requirePermission
 router.delete('/divisions/:divisionId/nominations/:nominationId', requirePermission('SETTINGS_NOMINATIONS_MANAGE'), deleteNomination);
 
 // --- РЕЗЕРВНЫЕ ВРАТАРИ ---
-// Параметр назван :divisionId по той же причине, что и у номинаций — по нему
-// getLeagueIdFromContext находит лигу для RBAC. Поиск кандидатов идёт по общей
-// базе пользователей, поэтому закрыт правом на управление списком, а не на
-// просмотр: это подбор, а не витрина.
-// Маршрут поиска объявлен ДО :reserveId — иначе "candidates" уедет в параметр.
-router.get('/divisions/:divisionId/reserve-goalies/candidates', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), getReserveGoalieCandidates);
-
-router.get('/divisions/:divisionId/reserve-goalies', requirePermission('SETTINGS_RESERVE_GOALIES_VIEW'), getReserveGoalies);
-router.post('/divisions/:divisionId/reserve-goalies', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), addReserveGoalie);
-router.put('/divisions/:divisionId/reserve-goalies/:reserveId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), updateReserveGoalie);
-router.delete('/divisions/:divisionId/reserve-goalies/:reserveId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), deleteReserveGoalie);
-
 // --- АНОНС МАТЧЕЙ ---
 // Картинка для соцсетей из расписания дивизиона. Право то же, что у самой страницы
 // расписания: анонс только читает матчи и ничего в базе не меняет. POST — потому что

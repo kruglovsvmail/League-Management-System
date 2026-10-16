@@ -32,19 +32,46 @@ export function AppUpdater() {
   });
 
   /**
-   * Обновление по кнопке — то же самое, что Ctrl+F5: снимаем сервис-воркера,
-   * выкидываем все его кэши и перезагружаемся. Свежая сборка зарегистрирует
-   * воркера заново уже сама.
+   * Обновление по кнопке.
    *
-   * Через updateServiceWorker(true) перезагрузки можно было не дождаться вовсе:
-   * он лишь отправляет SKIP_WAITING ждущему воркеру, а reload происходит только
-   * по событию controlling. Если к моменту нажатия registration.waiting уже пуст
-   * (окно провисело открытым, воркера подобрала другая вкладка), сообщение уходит
-   * в никуда, события нет — и кнопка крутится бесконечно. Здесь ждать нечего:
-   * воркера больше нет, загрузка идёт прямо в сеть.
+   * Сначала штатный путь: ждущему воркеру — SKIP_WAITING, ждём, пока он возьмёт
+   * управление (controllerchange), и перезагружаемся уже под ним. Одного «снять
+   * воркера и перезагрузиться» мало: пока страница перезагружается, старый воркер
+   * ещё её обслуживает, и регистрация переживает перезагрузку вместе с ждущим
+   * воркером — тот так и остаётся в waiting, и окно появляется снова, сколько ни
+   * нажимай. Локально это видно после каждого перезапуска vite: у dev-воркера
+   * при каждом запуске новая ревизия, то есть «новая версия».
+   *
+   * Запасной путь — то же, что Ctrl+F5: снимаем сервис-воркера, выкидываем все его
+   * кэши и перезагружаемся. Нужен, когда ждать некого: registration.waiting уже
+   * пуст (окно провисело открытым, воркера подобрала другая вкладка) или воркер
+   * не ответил за 3 секунды. Ждать события здесь нельзя без тайм-аута — раньше
+   * через updateServiceWorker(true) кнопка в таком случае крутилась бесконечно.
    */
   const applyUpdate = async () => {
     setNeedRefresh(false);
+
+    try {
+      const registration = registrationRef.current
+        || (('serviceWorker' in navigator) ? await navigator.serviceWorker.getRegistration() : null);
+      const waiting = registration?.waiting;
+      if (waiting && navigator.serviceWorker.controller) {
+        const activated = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(false), 3000);
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            clearTimeout(timer);
+            resolve(true);
+          }, { once: true });
+          waiting.postMessage({ type: 'SKIP_WAITING' });
+        });
+        if (activated) {
+          window.location.reload();
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Ждущий воркер не взял управление, обновляемся через сброс:', err);
+    }
 
     try {
       if ('serviceWorker' in navigator) {

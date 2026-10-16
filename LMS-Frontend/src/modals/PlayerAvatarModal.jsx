@@ -3,7 +3,8 @@ import { Modal } from './Modal';
 import { Uploader } from '../ui/Uploader';
 import { Button } from '../ui/Button';
 
-export function PlayerAvatarModal({ isOpen, onClose, onSave, isSaving = false, initialAvatar }) {
+// title и label переопределяет вкладка «Резерв. вратари»: там это фото от лиги, а не аватар
+export function PlayerAvatarModal({ isOpen, onClose, onSave, isSaving = false, initialAvatar, title = 'Аватар игрока', label = 'Загрузите фото профиля' }) {
   const [avatarFile, setAvatarFile] = useState(null);
   const [isCleared, setIsCleared] = useState(false);
 
@@ -21,11 +22,11 @@ export function PlayerAvatarModal({ isOpen, onClose, onSave, isSaving = false, i
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Аватар игрока" size="normal">
+    <Modal isOpen={isOpen} onClose={onClose} title={title} size="normal">
       
       <div className="mb-6">
         <Uploader 
-          label="Загрузите фото профиля" 
+          label={label} 
           heightClass="h-[232px]" 
           accept=".jpg,.png,.jpeg,.webp" 
           initialUrl={initialAvatar}

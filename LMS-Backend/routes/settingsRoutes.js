@@ -17,6 +17,11 @@ import {
 import {
   getAnnounceAssets, uploadAnnounceAsset, deleteAnnounceAsset, uploadLeagueBackground
 } from '../controllers/announceAssetsController.js';
+import {
+  getReserveGoalies, getReserveGoalieCandidates, addReserveGoalie, updateReserveGoalie, deleteReserveGoalie,
+  setReserveGoalieDivision, uploadReserveGoaliePhoto, deleteReserveGoaliePhoto, uploadReserveGoalieDocs,
+  getReserveGoalieSettings, updateReserveGoalieSettings
+} from '../controllers/reserveGoalieController.js';
 import { verifyToken, requirePermission } from '../controllers/authController.js';
 import upload from '../config/upload.js'; // ИМПОРТИРУЕМ НАШ UPLOAD
 import uploadBroadcast from '../config/uploadBroadcast.js';
@@ -88,5 +93,26 @@ router.get('/leagues/:leagueId/service-accounts', requirePermission('SETTINGS_SE
 router.post('/leagues/:leagueId/service-accounts', upload.single('photo'), requirePermission('SETTINGS_SERVICE_ACCOUNTS_MANAGE'), createLeagueServiceAccount);
 router.put('/leagues/:leagueId/service-accounts/:id', upload.single('photo'), requirePermission('SETTINGS_SERVICE_ACCOUNTS_MANAGE'), updateLeagueServiceAccount);
 router.delete('/leagues/:leagueId/service-accounts/:id', requirePermission('SETTINGS_SERVICE_ACCOUNTS_MANAGE'), deleteLeagueServiceAccount);
+
+// РЕЗЕРВНЫЕ ВРАТАРИ ЛИГИ (вкладка «Резерв. вратари»). Поиск кандидатов идёт по общей
+// базе пользователей, поэтому закрыт правом на управление списком, а не на просмотр:
+// это подбор, а не витрина. Маршруты со словами (settings, candidates) объявлены ДО
+// :reserveId — иначе слово уедет в параметр. Права проверяются раньше разбора файлов:
+// чужой запрос не должен успеть загрузить что-то в память.
+router.get('/leagues/:leagueId/reserve-goalies/settings', requirePermission('SETTINGS_RESERVE_GOALIES_VIEW'), getReserveGoalieSettings);
+router.put('/leagues/:leagueId/reserve-goalies/settings', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), updateReserveGoalieSettings);
+router.get('/leagues/:leagueId/reserve-goalies/candidates', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), getReserveGoalieCandidates);
+router.get('/leagues/:leagueId/reserve-goalies', requirePermission('SETTINGS_RESERVE_GOALIES_VIEW'), getReserveGoalies);
+router.post('/leagues/:leagueId/reserve-goalies', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), addReserveGoalie);
+router.put('/leagues/:leagueId/reserve-goalies/:reserveId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), updateReserveGoalie);
+router.delete('/leagues/:leagueId/reserve-goalies/:reserveId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), deleteReserveGoalie);
+router.put('/leagues/:leagueId/reserve-goalies/:reserveId/divisions/:divisionId', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), setReserveGoalieDivision);
+router.post('/leagues/:leagueId/reserve-goalies/:reserveId/photo', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), upload.single('file'), uploadReserveGoaliePhoto);
+router.delete('/leagues/:leagueId/reserve-goalies/:reserveId/photo', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), deleteReserveGoaliePhoto);
+router.post('/leagues/:leagueId/reserve-goalies/:reserveId/docs', requirePermission('SETTINGS_RESERVE_GOALIES_MANAGE'), upload.fields([
+  { name: 'medical', maxCount: 1 },
+  { name: 'insurance', maxCount: 1 },
+  { name: 'consent', maxCount: 1 },
+]), uploadReserveGoalieDocs);
 
 export default router;

@@ -13,6 +13,7 @@ import { ArenasTab } from '../components/Settings/ArenasTab';
 import { ServiceAccountsTab } from '../components/Settings/ServiceAccountsTab';
 import { PreferencesTab } from '../components/Settings/PreferencesTab';
 import { SdkReferencesTab } from '../components/Settings/SdkReferencesTab';
+import { ReserveGoaliesTab } from '../components/Settings/ReserveGoaliesTab';
 
 export function SettingsPage() {
   const { selectedLeague } = useOutletContext();
@@ -26,6 +27,7 @@ export function SettingsPage() {
   const canViewServiceAccounts = checkAccess('SETTINGS_SERVICE_ACCOUNTS_VIEW'); 
   const canViewPreferences = checkAccess('SETTINGS_DIVISIONS_VIEW'); // Используем то же право, что и для дивизионов
   const canViewSdkReferences = checkAccess('SDK_REFERENCES_VIEW');
+  const canViewReserveGoalies = checkAccess('SETTINGS_RESERVE_GOALIES_VIEW');
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTabParam = searchParams.get('tab');
@@ -39,6 +41,8 @@ export function SettingsPage() {
   if (canViewQuals) availableTabs.push({ index: 4, label: 'Квалификации' });
   if (canViewPreferences) availableTabs.push({ index: 5, label: 'Параметры' });
   if (canViewSdkReferences) availableTabs.push({ index: 6, label: 'Справочники' });
+  // Видна всегда, даже при выключенной механике: тумблер «Использовать» живёт в её же шторке
+  if (canViewReserveGoalies) availableTabs.push({ index: 7, label: 'Резерв. вратари' });
 
   const defaultTabIndex = availableTabs.length > 0 ? availableTabs[0].index : 0;
   const activeTab = activeTabParam ? parseInt(activeTabParam, 10) : defaultTabIndex;
@@ -106,6 +110,7 @@ export function SettingsPage() {
       case 4: return <QualificationsTab setToast={setToast} />; 
       case 5: return <PreferencesTab setToast={setToast} />;
       case 6: return <SdkReferencesTab setToast={setToast} />;
+      case 7: return <ReserveGoaliesTab setToast={setToast} />;
       default: return null;
     }
   };

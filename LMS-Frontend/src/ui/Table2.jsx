@@ -4,7 +4,9 @@ import React, { useState, useMemo } from 'react';
 // обязательными, а колонка без width забирает весь остаток. Нужен там, где иначе таблица
 // раздувается под содержимое и вылезает горизонтальный скролл (статистика матча).
 // По умолчанию выключен, поведение остальных таблиц не меняется.
-export function Table({ columns, data, rowClassName, hideHeader = false, fixedLayout = false }) {
+// cellPadding — вертикальный отступ ячеек: py-3 вместо обычного py-2 делает строки выше
+// (вкладка «Резерв. вратари»). Остальные таблицы его не передают.
+export function Table({ columns, data, rowClassName, hideHeader = false, fixedLayout = false, cellPadding = 'py-2' }) {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const sortedData = useMemo(() => {
@@ -96,7 +98,7 @@ export function Table({ columns, data, rowClassName, hideHeader = false, fixedLa
                 else if (col.align === 'right') alignClass = 'text-right';
 
                 return (
-                  <td key={colIndex} className={`py-2 px-4 align-middle text-[14px] text-graphite border-b border-graphite/20 group-last:border-b-0 ${col.width || ''} ${alignClass}`}>
+                  <td key={colIndex} className={`${cellPadding} px-4 align-middle text-[14px] text-graphite border-b border-graphite/20 group-last:border-b-0 ${col.width || ''} ${alignClass}`}>
                     {col.render ? col.render(row, rowIndex) : row[col.key]}
                   </td>
                 );

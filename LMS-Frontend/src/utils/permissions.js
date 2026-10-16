@@ -80,8 +80,8 @@ export const PERMISSIONS = {                                                    
   PLAYOFF_RESET: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                       // Право на сброс текущей сетки плей-офф
   SETTINGS_NOMINATIONS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],           // Право на просмотр наградных номинаций дивизиона
   SETTINGS_NOMINATIONS_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],         // Право на создание, изменение и удаление номинаций дивизиона
-  SETTINGS_RESERVE_GOALIES_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],       // Право на просмотр списка резервных вратарей дивизиона и их статистики
-  SETTINGS_RESERVE_GOALIES_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],     // Право на добавление, изменение и удаление резервных вратарей в списке дивизиона
+  SETTINGS_RESERVE_GOALIES_VIEW: [ROLES.TOP_MANAGER],       // Право на просмотр вкладки «Резерв. вратари». Только руководитель; владелец лиги и глобальный админ проходят всегда
+  SETTINGS_RESERVE_GOALIES_MANAGE: [ROLES.TOP_MANAGER],     // Право на добавление, изменение и удаление резервных вратарей лиги, их документов и параметров механики
   SETTINGS_ARENAS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],                // Право на просмотр списка арен лиги
   SETTINGS_ARENAS_MANAGE: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],              // Право на добавление и удаление арен из лиги
   SETTINGS_SERVICE_ACCOUNTS_VIEW: [ROLES.TOP_MANAGER, ROLES.LEAGUE_ADMIN],      // Право на просмотр списка сервисных аккаунтов лиги

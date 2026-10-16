@@ -15,7 +15,6 @@ import { getToken, getImageUrl } from '../../utils/helpers';
 
 import { PlayoffStructureView } from './PlayoffStructureView';
 import { NominationsSection } from './NominationsSection';
-import { ReserveGoaliesSection } from './ReserveGoaliesSection';
 
 const TYPE_OPTIONS = ['Регулярный чемпионат', 'Плей-офф', 'Регулярный + Плей-офф'];
 const TYPE_MAP = { 'Регулярный чемпионат': 'regular', 'Плей-офф': 'playoff', 'Регулярный + Плей-офф': 'mixed' };
@@ -106,9 +105,6 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
       // Один флаг на дивизион: контроль административный, регулярку и плей-офф не разделяем
       track_timer_log: div.track_timer_log ?? false,
 
-      reserve_goalie_max_per_game: div.reserve_goalie_max_per_game ?? 1,
-      reserve_goalie_block_back_to_back: div.reserve_goalie_block_back_to_back ?? false,
-
       req_med_cert: div.req_med_cert ?? true, req_insurance: div.req_insurance ?? true, req_consent: div.req_consent ?? true, digital_applications_only: div.digital_applications_only ?? true,
       // Тумблер в форме подписан «Скан заяв. листа» и включён, когда скан ТРЕБУЕТСЯ,
       // то есть при digital_applications_only = false. Инверсия живёт только в рендере:
@@ -131,8 +127,6 @@ const getInitialFormData = (div = null, isTournamentDefault = false) => {
     playoff_periods_count: 3, playoff_period_length: 20, playoff_has_overtime: true, playoff_ot_length: 20, playoff_has_shootouts: false, playoff_so_length: 0, playoff_track_plus_minus: false, playoff_track_shots: true,
     reg_warmup_length: 0, reg_break_length: 0, playoff_warmup_length: 0, playoff_break_length: 0,
     track_timer_log: false,
-
-    reserve_goalie_max_per_game: 1, reserve_goalie_block_back_to_back: false,
 
     req_med_cert: true, req_insurance: true, req_consent: true, digital_applications_only: true,
     league_managed_roster: true,
@@ -219,8 +213,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   const canEditPlayoff = checkAccess('SETTINGS_PLAYOFF_CONSTRUCTOR');
   const canViewNominations = checkAccess('SETTINGS_NOMINATIONS_VIEW');
   const canManageNominations = checkAccess('SETTINGS_NOMINATIONS_MANAGE');
-  const canViewReserveGoalies = checkAccess('SETTINGS_RESERVE_GOALIES_VIEW');
-  const canManageReserveGoalies = checkAccess('SETTINGS_RESERVE_GOALIES_MANAGE');
 
   const isLocked = !canEdit;
 
@@ -539,11 +531,8 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
   if (showPlayoff) menuItems.push({ id: 'playoff', label: 'Плей-офф' });
   // Номинации не зависят от типа турнира: их разыгрывают и в чистой регулярке
   if (canViewNominations) menuItems.push({ id: 'nominations', label: 'Номинации' });
-  // Резервные вратари — механика опциональная: раздела нет вовсе, пока лига не
-  // включила её тумблером в «Управление лигой → Параметры»
-  if (canViewReserveGoalies && selectedLeague?.reserve_goalies_enabled) {
-    menuItems.push({ id: 'reserve_goalies', label: 'Резервные вратари' });
-  }
+  // Резервных вратарей здесь нет: они принадлежат лиге и ведутся на вкладке
+  // «Резерв. вратари» в «Управлении лигой», где и отмечаются дивизионы
 
   if (formData && !menuItems.find(m => m.id === activeSection)) {
     setActiveSection('general');
@@ -1072,28 +1061,6 @@ export function DivisionsTab({ setToast, setHeaderActions }) {
                                 divisionId={formData.id}
                                 canManage={canManageNominations}
                                 setToast={setToast}
-                            />
-                        )}
-                    </div>
-                )}
-
-                {/* РАЗДЕЛ 7: РЕЗЕРВНЫЕ ВРАТАРИ */}
-                {activeSection === 'reserve_goalies' && canViewReserveGoalies && (
-                    <div className="animate-zoom-in w-full h-full">
-                        {isCreatingNew ? (
-                            <div className="text-center bg-white/40 border border-dashed border-graphite/20 rounded-md text-graphite-light py-12 px-6">
-                                Сначала создайте и сохраните {entityNom}, чтобы собрать для него список резервных вратарей.
-                            </div>
-                        ) : (
-                            /* Список правится сразу, а два правила — часть формы дивизиона
-                               и уходят общей кнопкой «Сохранить настройки» слева */
-                            <ReserveGoaliesSection
-                                divisionId={formData.id}
-                                canManage={canManageReserveGoalies}
-                                setToast={setToast}
-                                formData={formData}
-                                onChange={handleChange}
-                                isLocked={isLocked}
                             />
                         )}
                     </div>
