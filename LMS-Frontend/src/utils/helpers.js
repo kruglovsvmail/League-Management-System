@@ -86,13 +86,15 @@ export const getAuthHeaders = () => {
  * Раунд плей-офф (games.stage_label, например "Финал") может физически содержать
  * несколько разных пар (playoff_matchups) — за 1-е место и за 3-е место и т.д.
  * games.playoff_match_type хранит это (NULL — обычная/главная пара, используем
- * stage_label как есть; "place_3"/"place_5"/... — переопределяем текст на "Матч за
+ * stage_label как есть; "place_3"/"place_5"/... — переопределяем текст на "За
  * N-е место"), заполняется в GameCard.jsx при назначении игры на раунд.
  */
+// Без слова «Матч»: «За 3-е место» — так короче, и в заголовках, где рядом и так
+// стоит «матч», не выходит «матч … Матч за 3-е место»
 export const getPlayoffStageDisplayLabel = (stageLabel, playoffMatchType) => {
   if (!playoffMatchType) return stageLabel;
   const n = playoffMatchType.replace('place_', '');
-  return `Матч за ${n}-е место`;
+  return `За ${n}-е место`;
 };
 
 /**

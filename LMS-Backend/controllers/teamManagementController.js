@@ -8,6 +8,7 @@ import { alignPersonAdmission } from '../utils/personAdmission.js';
 import { logPersonEvent, logPersonEvents } from '../utils/personLog.js';
 import { assertJerseyNumbersFree } from '../utils/jerseyNumbers.js';
 import { ROLES } from '../utils/permissions.js';
+import { recalculateDivisionStandings } from '../utils/standingsCalculator.js';
 
 /**
  * Роли представителя в турнирной заявке — их ровно три. В ролях внутри команды (team_roles)
@@ -702,7 +703,22 @@ export const createTeamApplication = async (req, res) => {
 export const deleteTeamApplication = async (req, res) => {
     try {
         const { appId } = req.params;
-        await pool.query(`DELETE FROM tournament_teams WHERE id = $1`, [appId]);
+        const { rows } = await pool.query(
+            `DELETE FROM tournament_teams WHERE id = $1 RETURNING division_id`,
+            [appId]
+        );
+
+        // Команда ушла из дивизиона — таблицу пересчитываем сразу, иначе её строка
+        // в division_standings дожила бы до следующего сыгранного матча
+        const divisionId = rows[0]?.division_id;
+        if (divisionId) {
+            try {
+                await recalculateDivisionStandings(divisionId);
+            } catch (calcErr) {
+                console.error('Ошибка пересчета таблицы после удаления заявки:', calcErr);
+            }
+        }
+
         res.json({ success: true });
     } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 };

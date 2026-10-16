@@ -263,6 +263,15 @@ export const recalculateDivisionStandings = async (divisionId) => {
             ]);
         }
 
+        // Строки команд, которых в дивизионе больше нет (заявку отклонили, вернули на
+        // доработку или удалили), убираем. Раньше они оставались со старым местом: LMS и
+        // сайт ТФХ их отфильтровывали, а приложение команд и посев плей-офф (читает
+        // division_standings без фильтра) видели лишние команды.
+        await client.query(`
+            DELETE FROM division_standings
+            WHERE division_id = $1 AND NOT (team_id = ANY($2::int[]))
+        `, [divisionId, finalSortedTeams.map(team => team.team_id)]);
+
         await client.query('COMMIT');
     } catch (err) {
         await client.query('ROLLBACK');

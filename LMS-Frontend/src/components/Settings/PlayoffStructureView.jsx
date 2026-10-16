@@ -4,13 +4,13 @@ import { Icon } from '../../ui/Icon';
 const getMatchBadge = (type) => {
     const badges = {
         'place_1': { text: 'Финал', classes: 'bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white shadow-md' },
-        'place_3': { text: 'Матч за 3 место', classes: 'bg-[#FFEDD5] text-[#9A3412]' },
-        'place_5': { text: 'Матч за 5 место', classes: 'bg-graphite/10 text-graphite' },
-        'place_7': { text: 'Матч за 7 место', classes: 'bg-graphite/10 text-graphite' },
-        'place_9': { text: 'Матч за 9 место', classes: 'bg-graphite/10 text-graphite' },
-        'place_11': { text: 'Матч за 11 место', classes: 'bg-graphite/10 text-graphite' },
-        'place_13': { text: 'Матч за 13 место', classes: 'bg-graphite/10 text-graphite' },
-        'place_15': { text: 'Матч за 15 место', classes: 'bg-graphite/10 text-graphite' }
+        'place_3': { text: 'За 3 место', classes: 'bg-[#FFEDD5] text-[#9A3412]' },
+        'place_5': { text: 'За 5 место', classes: 'bg-graphite/10 text-graphite' },
+        'place_7': { text: 'За 7 место', classes: 'bg-graphite/10 text-graphite' },
+        'place_9': { text: 'За 9 место', classes: 'bg-graphite/10 text-graphite' },
+        'place_11': { text: 'За 11 место', classes: 'bg-graphite/10 text-graphite' },
+        'place_13': { text: 'За 13 место', classes: 'bg-graphite/10 text-graphite' },
+        'place_15': { text: 'За 15 место', classes: 'bg-graphite/10 text-graphite' }
     };
     return badges[type] || null;
 };

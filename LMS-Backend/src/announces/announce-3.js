@@ -71,7 +71,8 @@ const stageText = (stage) => {
     const parts = [];
     const label = (stage.label || '').trim().replace(/^(\d+)-[йяе]\s+/i, '$1 ');
     if (stage.matchType) {
-        parts.push(`Матч за ${stage.matchType.replace('place_', '')}-е место`);
+        // Без слова «Матч» — как во всей системе: «ЗА 3-Е МЕСТО»
+        parts.push(`За ${stage.matchType.replace('place_', '')}-е место`);
     } else {
         if (label) parts.push(label);
         if (stage.number) parts.push(stage.type === 'playoff' ? `Матч ${stage.number}` : `${stage.number} тур`);
